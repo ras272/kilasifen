@@ -9,9 +9,17 @@ from pysifen.sdk.errors import (
     SifenTransportError,
     SifenValidationError,
 )
+from pysifen.sdk.polling import (
+    PollingConfig,
+    poll_dte_async_status,
+    poll_lote_status,
+)
 
 __all__ = [
     "SifenClient",
+    "PollingConfig",
+    "poll_lote_status",
+    "poll_dte_async_status",
     "SifenError",
     "SifenValidationError",
     "SifenSignatureError",
