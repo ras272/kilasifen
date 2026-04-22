@@ -1,9 +1,27 @@
 """Mixin comum para todos os bindings do SIFEN."""
+from functools import lru_cache
 from pathlib import Path
 
 from xsdata.formats.dataclass.parsers import XmlParser
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
+
+
+@lru_cache(maxsize=1)
+def _get_xml_parser() -> XmlParser:
+    """Return a reusable XML parser instance."""
+    return XmlParser()
+
+
+@lru_cache(maxsize=2)
+def _get_xml_serializer(pretty_print: bool) -> XmlSerializer:
+    """Return a reusable XML serializer instance for the requested format."""
+    config = SerializerConfig(
+        pretty_print=pretty_print,
+        xml_declaration=True,
+        encoding="UTF-8",
+    )
+    return XmlSerializer(config=config)
 
 
 class CommonMixin:
@@ -12,24 +30,16 @@ class CommonMixin:
     @classmethod
     def from_xml(cls, xml_string: str):
         """Deserializa um XML string em objeto Python."""
-        parser = XmlParser()
-        return parser.from_string(xml_string, cls)
+        return _get_xml_parser().from_string(xml_string, cls)
 
     @classmethod
     def from_path(cls, file_path: str):
         """Deserializa um arquivo XML em objeto Python."""
-        parser = XmlParser()
-        return parser.from_path(Path(file_path), cls)
+        return _get_xml_parser().from_path(Path(file_path), cls)
 
     def to_xml(self, pretty_print: bool = True) -> str:
         """Serializa o objeto Python em XML string."""
-        config = SerializerConfig(
-            pretty_print=pretty_print,
-            xml_declaration=True,
-            encoding="UTF-8",
-        )
-        serializer = XmlSerializer(config=config)
-        return serializer.render(self)
+        return _get_xml_serializer(pretty_print).render(self)
 
     def validate_xml(self) -> list:
         """Valida o XML contra o schema XSD correspondente."""
