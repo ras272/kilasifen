@@ -571,3 +571,63 @@ class TestTransmissaoBase:
         t._cert_files = ("/tmp/fake_cert.pem", "/tmp/fake_key.pem")
         t.cleanup()
         assert t._cert_files is None
+
+    def test_close_idempotente(self, monkeypatch):
+        from pysifen.transmissao.base import TransmissaoBase
+        from pysifen.transmissao.config import TEST
+
+        removed = []
+
+        def fake_unlink(path):
+            removed.append(path)
+
+        monkeypatch.setattr("os.unlink", fake_unlink)
+
+        t = TransmissaoBase(
+            ambiente=TEST,
+            pkcs12_data=b"fake",
+            pkcs12_password="fake",
+        )
+        t._cert_files = ("/tmp/fake_cert.pem", "/tmp/fake_key.pem")
+
+        t.close()
+        t.close()
+
+        assert removed == ["/tmp/fake_cert.pem", "/tmp/fake_key.pem"]
+        assert t._cert_files is None
+
+    def test_context_manager_close_recursos(self, monkeypatch):
+        from pysifen.transmissao.base import TransmissaoBase
+        from pysifen.transmissao.config import TEST
+
+        removed = []
+
+        def fake_unlink(path):
+            removed.append(path)
+
+        monkeypatch.setattr("os.unlink", fake_unlink)
+
+        with TransmissaoBase(
+            ambiente=TEST,
+            pkcs12_data=b"fake",
+            pkcs12_password="fake",
+        ) as t:
+            t._cert_files = ("/tmp/fake_cert.pem", "/tmp/fake_key.pem")
+
+        assert removed == ["/tmp/fake_cert.pem", "/tmp/fake_key.pem"]
+        assert t._cert_files is None
+
+    def test_operacao_pos_close_lanca_erro_tipado(self):
+        from pysifen.sdk.errors import SifenTransportClosedError
+        from pysifen.transmissao.base import TransmissaoBase
+        from pysifen.transmissao.config import TEST
+
+        t = TransmissaoBase(
+            ambiente=TEST,
+            pkcs12_data=b"fake",
+            pkcs12_password="fake",
+        )
+        t.close()
+
+        with pytest.raises(SifenTransportClosedError):
+            t._get_client("recep_de")

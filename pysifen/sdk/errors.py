@@ -17,5 +17,9 @@ class SifenTransportError(SifenError):
     """Error al transportar mensajes SOAP."""
 
 
+class SifenTransportClosedError(SifenTransportError):
+    """Error al usar un transport ya cerrado."""
+
+
 class SifenTimeoutError(SifenTransportError):
     """Error de tiempo de espera durante el transporte."""

@@ -10,6 +10,7 @@ def test_error_hierarchy_exports():
         SifenError,
         SifenSignatureError,
         SifenTimeoutError,
+        SifenTransportClosedError,
         SifenTransportError,
         SifenValidationError,
     )
@@ -17,6 +18,7 @@ def test_error_hierarchy_exports():
     assert issubclass(SifenValidationError, SifenError)
     assert issubclass(SifenSignatureError, SifenError)
     assert issubclass(SifenTransportError, SifenError)
+    assert issubclass(SifenTransportClosedError, SifenTransportError)
     assert issubclass(SifenTimeoutError, SifenTransportError)
 
 

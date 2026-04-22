@@ -9,6 +9,7 @@ from xsdata.formats.dataclass.serializers.config import (
     SerializerConfig,
 )
 
+from pysifen.sdk.errors import SifenTransportClosedError
 from pysifen.transmissao.config import get_endpoint
 
 
@@ -38,13 +39,22 @@ class TransmissaoBase:
             )
         )
         self._cert_files = None
+        self._closed = False
+
+    def _ensure_open(self):
+        """Falha se a instancia já foi fechada."""
+        if self._closed:
+            raise SifenTransportClosedError(
+                "A instancia de transporte ya fue cerrada"
+            )
 
     def _get_cert_files(self) -> tuple[str, str]:
         """Extrai cert e key do PKCS12 para arquivos temporários.
 
-        Retorna tupla (cert_path, key_path) para uso com
-        requests/httpx.
+        Retorna tupla (cert_path, key_path) para uso com requests/httpx.
         """
+        self._ensure_open()
+
         if self._cert_files is not None:
             return self._cert_files
 
@@ -87,8 +97,7 @@ class TransmissaoBase:
     def _get_client(self, servico: str):
         """Retorna xsdata SOAP client para o serviço.
 
-        O client é configurado com mTLS usando o certificado
-        PKCS12.
+        O client é configurado com mTLS usando o certificado PKCS12.
         """
         from xsdata.formats.dataclass.client import Client, Config
 
@@ -120,6 +129,17 @@ class TransmissaoBase:
 
     def cleanup(self):
         """Remove arquivos temporários de certificado."""
+        self.close()
+
+    def close(self):
+        """Fecha a instancia e libera recursos temporários."""
+        if self._closed:
+            return
+
+        self._closed = True
+        self._cleanup_cert_files()
+
+    def _cleanup_cert_files(self):
         import os
 
         if self._cert_files:
@@ -131,7 +151,18 @@ class TransmissaoBase:
             self._cert_files = None
 
     def __del__(self):
-        self.cleanup()
+        try:
+            self.cleanup()
+        except Exception:
+            pass
+
+    def __enter__(self):
+        self._ensure_open()
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+        return False
 
 
 def _create_transport(cert_path: str, key_path: str):

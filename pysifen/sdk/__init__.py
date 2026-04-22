@@ -4,6 +4,7 @@ from pysifen.sdk.errors import (
     SifenError,
     SifenSignatureError,
     SifenTimeoutError,
+    SifenTransportClosedError,
     SifenTransportError,
     SifenValidationError,
 )
@@ -13,5 +14,6 @@ __all__ = [
     "SifenValidationError",
     "SifenSignatureError",
     "SifenTransportError",
+    "SifenTransportClosedError",
     "SifenTimeoutError",
 ]
