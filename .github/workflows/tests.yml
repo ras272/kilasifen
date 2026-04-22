@@ -37,6 +37,68 @@ jobs:
         run: |
           pytest tests/ -v --tb=short
 
+  build-artifacts:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build wheel and sdist
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: Install built wheel
+        run: |
+          python -m pip install dist/*.whl
+
+      - name: Smoke test top-level public API
+        run: |
+          python - <<'PY'
+          from pysifen import (
+              ENDPOINTS,
+              PRODUCCION,
+              TEST,
+              ConsultaSIFEN,
+              TransmissaoDE,
+              TransmissaoEvento,
+              __all__,
+              __version__,
+              get_endpoint,
+              sign_xml,
+          )
+
+          assert __version__
+          assert callable(sign_xml)
+          assert PRODUCCION == 1
+          assert TEST == 2
+          assert isinstance(ENDPOINTS, dict)
+          assert callable(get_endpoint)
+          assert TransmissaoDE.__name__ == "TransmissaoDE"
+          assert ConsultaSIFEN.__name__ == "ConsultaSIFEN"
+          assert TransmissaoEvento.__name__ == "TransmissaoEvento"
+          expected = {
+              "__version__",
+              "sign_xml",
+              "PRODUCCION",
+              "TEST",
+              "ENDPOINTS",
+              "get_endpoint",
+              "TransmissaoDE",
+              "ConsultaSIFEN",
+              "TransmissaoEvento",
+          }
+          assert set(__all__) == expected
+          print("public api smoke ok")
+          PY
+
   check-schemas:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
