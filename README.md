@@ -1,10 +1,10 @@
-﻿# kilasifen
+# kilasifen
 
-Bindings Python para leer y generar XML del **SIFEN** (Sistema Integrado de FacturaciÃ³n ElectrÃ³nica Nacional) de Paraguay.
+Bindings Python para leer y generar XML del **SIFEN** (Sistema Integrado de Facturación Electrónica Nacional) de Paraguay.
 
-Generados automÃ¡ticamente a partir de los XSD oficiales de la SET usando [xsdata](https://xsdata.readthedocs.io/), siguiendo el mismo enfoque de [nfelib](https://github.com/akretion/nfelib).
+Generados automáticamente a partir de los XSD oficiales de la SET usando [xsdata](https://xsdata.readthedocs.io/), siguiendo el mismo enfoque de [nfelib](https://github.com/akretion/nfelib).
 
-## InstalaciÃ³n
+## Instalación
 
 ```bash
 pip install kilasifen
@@ -16,7 +16,7 @@ Con firma digital (RSA-SHA256):
 pip install kilasifen[sign]
 ```
 
-Con transmisiÃ³n SOAP (envÃ­o al SIFEN):
+Con transmisión SOAP (envío al SIFEN):
 
 ```bash
 pip install kilasifen[transmissao]
@@ -60,7 +60,7 @@ rde = RDe.from_xml(xml_string)
 print(rde.DE.gDatGralOpe.gEmis.dRucEm)       # RUC del emisor
 print(rde.DE.gDatGralOpe.gEmis.dNomEmi)       # Nombre del emisor
 print(rde.DE.gDtipDE.gCamFE.iIndPres)         # Indicador de presencia
-print(len(rde.DE.gDtipDE.gCamItem))            # Cantidad de Ã­tems
+print(len(rde.DE.gDtipDE.gCamItem))            # Cantidad de ítems
 ```
 
 ### Serializar a XML
@@ -84,7 +84,7 @@ assert rde.DE.Id == rde2.DE.Id
 ```python
 errors = rde.validate_xml()
 if not errors:
-    print("XML vÃ¡lido!")
+    print("XML válido!")
 else:
     for error in errors:
         print(error)
@@ -103,7 +103,7 @@ signed = rde.sign_xml(xml, cert_data, "password", rde.DE.Id)
 ```
 
 Usa `signxml` directamente con RSA-SHA256 y C14N, conforme lo exigido por el SIFEN.
-La funciÃ³n centralizada tambiÃ©n estÃ¡ disponible en:
+La función centralizada también está disponible en:
 
 ```python
 from pysifen.assinatura import sign_xml
@@ -111,13 +111,13 @@ from pysifen.assinatura import sign_xml
 signed = sign_xml(xml, cert_data, "password", doc_id)
 ```
 
-### TransmisiÃ³n SOAP al SIFEN
+### Transmisión SOAP al SIFEN
 
 ```bash
 pip install kilasifen[transmissao]
 ```
 
-#### Enviar DE (sÃ­ncrono)
+#### Enviar DE (síncrono)
 
 ```python
 from pysifen.transmissao import TransmissaoDE, TEST
@@ -129,10 +129,10 @@ transmissao = TransmissaoDE(
 )
 resultado = transmissao.enviar_de(rde)
 print(resultado.rProtDe.dEstRes)      # "Aprobado"
-print(resultado.rProtDe.dProtAut)     # Protocolo de autorizaciÃ³n
+print(resultado.rProtDe.dProtAut)     # Protocolo de autorización
 ```
 
-#### Enviar lote de DEs (asÃ­ncrono)
+#### Enviar lote de DEs (asíncrono)
 
 ```python
 resultado = transmissao.enviar_lote([rde1, rde2, rde3])
@@ -156,11 +156,11 @@ resultado = consulta.consultar_de("01800695631001001000000612024112917595714694"
 
 ```python
 resultado = consulta.consultar_ruc("80069563")
-print(resultado.xContRUC.dRazCons)      # RazÃ³n social
+print(resultado.xContRUC.dRazCons)      # Razón social
 print(resultado.xContRUC.dRUCFactElec)  # "S" = habilitado para FE
 ```
 
-#### Enviar eventos (cancelaciÃ³n, inutilizaciÃ³n, etc.)
+#### Enviar eventos (cancelación, inutilización, etc.)
 
 ```python
 from pysifen.transmissao import TransmissaoEvento, TEST
@@ -173,32 +173,32 @@ evento_transmissao = TransmissaoEvento(
 resultado = evento_transmissao.enviar_evento(evento)
 ```
 
-## Tipos de Documento ElectrÃ³nico
+## Tipos de Documento Electrónico
 
-| Tipo | CÃ³digo | DescripciÃ³n |
+| Tipo | Código | Descripción |
 |------|--------|-------------|
-| Factura ElectrÃ³nica | 1 | Factura electrÃ³nica estÃ¡ndar |
-| FE ExportaciÃ³n | 2 | Factura de exportaciÃ³n |
-| FE ImportaciÃ³n | 3 | Factura de importaciÃ³n |
+| Factura Electrónica | 1 | Factura electrónica estándar |
+| FE Exportación | 2 | Factura de exportación |
+| FE Importación | 3 | Factura de importación |
 | Autofactura | 4 | Autofactura |
-| Nota de CrÃ©dito | 5 | Nota de crÃ©dito electrÃ³nica |
-| Nota de DÃ©bito | 6 | Nota de dÃ©bito electrÃ³nica |
-| Nota de RemisiÃ³n | 7 | Nota de remisiÃ³n electrÃ³nica |
-| Comprobante de RetenciÃ³n | 8 | Comprobante de retenciÃ³n |
+| Nota de Crédito | 5 | Nota de crédito electrónica |
+| Nota de Débito | 6 | Nota de débito electrónica |
+| Nota de Remisión | 7 | Nota de remisión electrónica |
+| Comprobante de Retención | 8 | Comprobante de retención |
 
-## MÃ³dulos
+## Módulos
 
-### Bindings (generados automÃ¡ticamente)
+### Bindings (generados automáticamente)
 
-| MÃ³dulo | DescripciÃ³n |
+| Módulo | Descripción |
 |--------|-------------|
-| `fe_v141` | Documento ElectrÃ³nico principal (RDe, TDe, TgEmis, ...) |
+| `fe_v141` | Documento Electrónico principal (RDe, TDe, TgEmis, ...) |
 | `de_v150` | Tipos adicionales del DE v150 |
 | `de_types_v150` | Tipos base (enums, restricciones) |
-| `evento_v150` | Eventos (cancelaciÃ³n, inutilizaciÃ³n, conformidad, ...) |
+| `evento_v150` | Eventos (cancelación, inutilización, conformidad, ...) |
 | `evento_types_v150` | Tipos de eventos |
-| `ws_si_recep_de_v150` | WS RecepciÃ³n DE |
-| `ws_si_recep_evento_v150` | WS RecepciÃ³n Evento |
+| `ws_si_recep_de_v150` | WS Recepción DE |
+| `ws_si_recep_evento_v150` | WS Recepción Evento |
 | `ws_si_cons_de_v141` | WS Consulta DE |
 | `ws_si_cons_ruc_v141` | WS Consulta RUC |
 | `prot_proces_de_v150` | Protocolo de procesamiento |
@@ -206,24 +206,24 @@ resultado = evento_transmissao.enviar_evento(evento)
 
 ### Firma (`pysifen.assinatura`)
 
-| FunciÃ³n | DescripciÃ³n |
+| Función | Descripción |
 |---------|-------------|
 | `sign_xml()` | Firma XML con PKCS12/RSA-SHA256 usando `signxml` |
 
-### TransmisiÃ³n (`pysifen.transmissao`)
+### Transmisión (`pysifen.transmissao`)
 
-| Clase | DescripciÃ³n |
+| Clase | Descripción |
 |-------|-------------|
-| `TransmissaoDE` | EnvÃ­o de DEs (sÃ­ncrono y lote) con mTLS |
+| `TransmissaoDE` | Envío de DEs (síncrono y lote) con mTLS |
 | `ConsultaSIFEN` | Consultas (DE por CDC, lote, RUC, DTE) |
-| `TransmissaoEvento` | EnvÃ­o de eventos (cancelaciÃ³n, inutilizaciÃ³n, etc.) |
-| `TransmissaoBase` | Clase base con SOAP client, mTLS y serializaciÃ³n |
+| `TransmissaoEvento` | Envío de eventos (cancelación, inutilización, etc.) |
+| `TransmissaoBase` | Clase base con SOAP client, mTLS y serialización |
 
 ### Ambientes
 
-| Constante | Valor | DescripciÃ³n |
+| Constante | Valor | Descripción |
 |-----------|-------|-------------|
-| `PRODUCCION` | 1 | Ambiente de producciÃ³n (`sifen.set.gov.py`) |
+| `PRODUCCION` | 1 | Ambiente de producción (`sifen.set.gov.py`) |
 | `TEST` | 2 | Ambiente de pruebas (`sifen-test.set.gov.py`) |
 
 ## Dependencias Opcionales
@@ -231,7 +231,7 @@ resultado = evento_transmissao.enviar_evento(evento)
 | Extra | Paquetes | Uso |
 |-------|----------|-----|
 | `sign` | `signxml`, `cryptography`, `lxml` | Firma digital RSA-SHA256 |
-| `transmissao` | `xsdata[soap]`, `signxml`, `cryptography`, `requests`, `lxml` | TransmisiÃ³n SOAP con mTLS |
+| `transmissao` | `xsdata[soap]`, `signxml`, `cryptography`, `requests`, `lxml` | Transmisión SOAP con mTLS |
 | `soap` | `xsdata[soap]` | Solo cliente SOAP |
 | `test` | `pytest`, `pytest-cov`, `xmldiff`, `lxml` | Tests |
 
@@ -259,7 +259,7 @@ ruff check pysifen/ tests/
 ## Referencias
 
 - [XSD oficiales SIFEN](https://ekuatia.set.gov.py/sifen/xsd/)
-- [Manual TÃ©cnico v150](https://www.dnit.gov.py/documents/20123/420592/Manual+T%C3%A9cnico+Versi%C3%B3n+150.pdf)
+- [Manual Técnico v150](https://www.dnit.gov.py/documents/20123/420592/Manual+T%C3%A9cnico+Versi%C3%B3n+150.pdf)
 - [Portal e-Kuatia](https://ekuatia.set.gov.py)
 - [nfelib (referencia)](https://github.com/akretion/nfelib)
 - [xsdata](https://xsdata.readthedocs.io/)
