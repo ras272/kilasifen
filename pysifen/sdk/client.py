@@ -1,7 +1,15 @@
 """High-level SDK client facade for SIFEN operations."""
 from __future__ import annotations
 
-from pysifen.sdk.polling import PollingConfig, poll_dte_async_status
+from pysifen.sdk.fiscal import (
+    generate_cdc as _generate_cdc,
+    generate_dcarqr as _generate_dcarqr,
+)
+from pysifen.sdk.polling import (
+    PollingConfig,
+    poll_dte_async_status,
+    poll_lote_status,
+)
 from pysifen.transmissao import (
     ConsultaSIFEN,
     TransmissaoDE,
@@ -75,6 +83,60 @@ class SifenClient:
             protocol_id,
             config=config,
         )
+
+    def consultar_dte_async_y_esperar(
+        self,
+        consulta_dte_async,
+        fetch_status,
+        polling_config: PollingConfig = PollingConfig(),
+    ):
+        """Dispara consulta async e espera resposta terminal com polling."""
+        async_response = self.consultar_dte_async(consulta_dte_async)
+        protocol_id = str(
+            getattr(async_response, "dProtConsDTEAsync", "") or ""
+        ).strip()
+        if not protocol_id:
+            raise ValueError(
+                "consulta_dte_async response must include dProtConsDTEAsync"
+            )
+        final_status = self.poll_dte_async(
+            fetch_status=fetch_status,
+            protocol_id=protocol_id,
+            config=polling_config,
+        )
+        return async_response, final_status
+
+    def enviar_lote_y_esperar(
+        self,
+        lista_rde: list,
+        lote_id: int | None = None,
+        sign: bool = True,
+        polling_config: PollingConfig = PollingConfig(),
+    ):
+        """Envia lote e bloqueia até estado terminal via polling."""
+        envio = self.enviar_lote(
+            lista_rde=lista_rde,
+            lote_id=lote_id,
+            sign=sign,
+        )
+        prot_lote = getattr(envio, "dProtConsLote", None)
+        if prot_lote is None:
+            raise ValueError(
+                "enviar_lote response must include dProtConsLote"
+            )
+        return poll_lote_status(
+            consultar_lote=self.consultar_lote,
+            prot_lote=prot_lote,
+            config=polling_config,
+        )
+
+    def generar_cdc(self, **kwargs):
+        """Convenience wrapper around SDK fiscal CDC generator."""
+        return _generate_cdc(**kwargs)
+
+    def generar_dcarqr(self, **kwargs):
+        """Convenience wrapper around SDK fiscal dCarQR generator."""
+        return _generate_dcarqr(**kwargs)
 
     def enviar_evento(self, evento):
         return self._evento.enviar_evento(evento)

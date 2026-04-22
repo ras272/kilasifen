@@ -243,6 +243,31 @@ evento_transmissao = TransmissaoEvento(
 resultado = evento_transmissao.enviar_evento(evento)
 ```
 
+### Integración rápida con SifenClient
+
+```python
+from pysifen.sdk.client import SifenClient
+
+client = SifenClient(
+    ambiente=TEST,
+    pkcs12_data=cert_data,
+    pkcs12_password="password",
+)
+
+# Wrappers de núcleo fiscal
+cdc = client.generar_cdc(...)
+dcarqr = client.generar_dcarqr(...)
+
+# Envío de lote + espera con polling en una llamada
+estado_lote = client.enviar_lote_y_esperar([rde1, rde2], sign=True)
+
+# Consulta DTE async + espera con polling en una llamada
+solicitud, estado = client.consultar_dte_async_y_esperar(
+    consulta_dte_async=consulta_dte_async,
+    fetch_status=mi_funcion_de_estado,
+)
+```
+
 ## Tipos de Documento Electrónico
 
 | Tipo | Código | Descripción |

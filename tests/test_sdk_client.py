@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from pysifen.sdk.client import SifenClient
 
 
@@ -97,6 +99,159 @@ def test_sifen_client_delegates_all_operations():
     cons.consultar_dte_async.assert_called_once_with("payload-async")
     poll_async.assert_called_once()
     evt.enviar_evento.assert_called_once_with("evento")
+
+
+def test_sifen_client_enviar_lote_y_esperar_uses_polling_helper():
+    de = MagicMock()
+    cons = MagicMock()
+    evt = MagicMock()
+
+    envio_lote = MagicMock(dProtConsLote="123456")
+    de.enviar_lote.return_value = envio_lote
+
+    with patch(
+        "pysifen.sdk.client.TransmissaoDE", return_value=de
+    ), patch(
+        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
+    ), patch(
+        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
+    ), patch(
+        "pysifen.sdk.client.poll_lote_status",
+        return_value="lote-final",
+    ) as poll_lote:
+        client = SifenClient(
+            ambiente=2,
+            pkcs12_data=b"cert",
+            pkcs12_password="pwd",
+        )
+        result = client.enviar_lote_y_esperar(
+            lista_rde=["rde"],
+            lote_id=12,
+            sign=False,
+        )
+
+    assert result == "lote-final"
+    de.enviar_lote.assert_called_once_with(
+        ["rde"],
+        lote_id=12,
+        sign=False,
+    )
+    poll_lote.assert_called_once()
+
+
+def test_sifen_client_consultar_dte_async_y_esperar_returns_both():
+    de = MagicMock()
+    cons = MagicMock()
+    evt = MagicMock()
+
+    async_response = MagicMock(dProtConsDTEAsync="ABC123")
+    cons.consultar_dte_async.return_value = async_response
+
+    with patch(
+        "pysifen.sdk.client.TransmissaoDE", return_value=de
+    ), patch(
+        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
+    ), patch(
+        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
+    ), patch(
+        "pysifen.sdk.client.poll_dte_async_status",
+        return_value="estado-final",
+    ) as poll_async:
+        client = SifenClient(
+            ambiente=2,
+            pkcs12_data=b"cert",
+            pkcs12_password="pwd",
+        )
+        response, status = client.consultar_dte_async_y_esperar(
+            consulta_dte_async="payload",
+            fetch_status="fetch-fn",
+        )
+
+    assert response is async_response
+    assert status == "estado-final"
+    cons.consultar_dte_async.assert_called_once_with("payload")
+    poll_async.assert_called_once()
+
+
+def test_sifen_client_consultar_dte_async_y_esperar_requires_protocol():
+    de = MagicMock()
+    cons = MagicMock()
+    evt = MagicMock()
+    cons.consultar_dte_async.return_value = MagicMock(
+        dProtConsDTEAsync=""
+    )
+
+    with patch(
+        "pysifen.sdk.client.TransmissaoDE", return_value=de
+    ), patch(
+        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
+    ), patch(
+        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
+    ):
+        client = SifenClient(
+            ambiente=2,
+            pkcs12_data=b"cert",
+            pkcs12_password="pwd",
+        )
+        with pytest.raises(ValueError, match="dProtConsDTEAsync"):
+            client.consultar_dte_async_y_esperar(
+                consulta_dte_async="payload",
+                fetch_status="fetch-fn",
+            )
+
+
+def test_sifen_client_enviar_lote_y_esperar_requires_protocol():
+    de = MagicMock()
+    cons = MagicMock()
+    evt = MagicMock()
+    de.enviar_lote.return_value = MagicMock(dProtConsLote=None)
+
+    with patch(
+        "pysifen.sdk.client.TransmissaoDE", return_value=de
+    ), patch(
+        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
+    ), patch(
+        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
+    ):
+        client = SifenClient(
+            ambiente=2,
+            pkcs12_data=b"cert",
+            pkcs12_password="pwd",
+        )
+        with pytest.raises(ValueError, match="dProtConsLote"):
+            client.enviar_lote_y_esperar(lista_rde=["rde"])
+
+
+def test_sifen_client_wraps_fiscal_generators():
+    de = MagicMock()
+    cons = MagicMock()
+    evt = MagicMock()
+
+    with patch(
+        "pysifen.sdk.client.TransmissaoDE", return_value=de
+    ), patch(
+        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
+    ), patch(
+        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
+    ), patch(
+        "pysifen.sdk.client._generate_cdc",
+        return_value="CDC-OK",
+    ) as gen_cdc, patch(
+        "pysifen.sdk.client._generate_dcarqr",
+        return_value="QRCODE-OK",
+    ) as gen_qr:
+        client = SifenClient(
+            ambiente=2,
+            pkcs12_data=b"cert",
+            pkcs12_password="pwd",
+        )
+        cdc = client.generar_cdc(foo="bar")
+        qr = client.generar_dcarqr(foo="bar")
+
+    assert cdc == "CDC-OK"
+    assert qr == "QRCODE-OK"
+    gen_cdc.assert_called_once_with(foo="bar")
+    gen_qr.assert_called_once_with(foo="bar")
 
 
 def test_sifen_client_close_is_idempotent():
