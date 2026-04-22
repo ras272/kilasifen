@@ -1,5 +1,6 @@
 """Exports publicos del SDK PySIFEN."""
 
+from pysifen.sdk.client import SifenClient
 from pysifen.sdk.errors import (
     SifenError,
     SifenSignatureError,
@@ -10,6 +11,7 @@ from pysifen.sdk.errors import (
 )
 
 __all__ = [
+    "SifenClient",
     "SifenError",
     "SifenValidationError",
     "SifenSignatureError",
