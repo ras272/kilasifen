@@ -254,6 +254,48 @@ def test_sifen_client_wraps_fiscal_generators():
     gen_qr.assert_called_once_with(foo="bar")
 
 
+def test_sifen_client_wraps_kude_helpers():
+    de = MagicMock()
+    cons = MagicMock()
+    evt = MagicMock()
+
+    with patch(
+        "pysifen.sdk.client.TransmissaoDE", return_value=de
+    ), patch(
+        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
+    ), patch(
+        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
+    ), patch(
+        "pysifen.sdk.client._render_kude_html",
+        return_value="<html>kude</html>",
+    ) as render_kude, patch(
+        "pysifen.sdk.client._save_kude_html",
+        return_value="out.html",
+    ) as save_kude:
+        client = SifenClient(
+            ambiente=2,
+            pkcs12_data=b"cert",
+            pkcs12_password="pwd",
+        )
+        html = client.render_kude_html("rde", title="Doc")
+        out = client.save_kude_html(
+            "rde",
+            "tmp/kude.html",
+            title="Doc",
+            encoding="utf-8",
+        )
+
+    assert html == "<html>kude</html>"
+    assert out == "out.html"
+    render_kude.assert_called_once_with("rde", title="Doc")
+    save_kude.assert_called_once_with(
+        "rde",
+        "tmp/kude.html",
+        title="Doc",
+        encoding="utf-8",
+    )
+
+
 def test_sifen_client_close_is_idempotent():
     de = MagicMock()
     cons = MagicMock()

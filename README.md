@@ -268,6 +268,22 @@ solicitud, estado = client.consultar_dte_async_y_esperar(
 )
 ```
 
+### KuDE HTML (salida imprimible v1)
+
+```python
+from pysifen.sdk import render_kude_html, save_kude_html
+
+html = render_kude_html(rde, title="KuDE Factura")
+save_kude_html(rde, "outputs/kude_factura.html", title="KuDE Factura")
+```
+
+Con `SifenClient`:
+
+```python
+html = client.render_kude_html(rde, title="KuDE Factura")
+client.save_kude_html(rde, "outputs/kude_factura.html")
+```
+
 ## Tipos de Documento Electrónico
 
 | Tipo | Código | Descripción |

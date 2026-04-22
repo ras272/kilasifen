@@ -5,6 +5,10 @@ from pysifen.sdk.fiscal import (
     generate_cdc as _generate_cdc,
     generate_dcarqr as _generate_dcarqr,
 )
+from pysifen.sdk.kude import (
+    render_kude_html as _render_kude_html,
+    save_kude_html as _save_kude_html,
+)
 from pysifen.sdk.polling import (
     PollingConfig,
     poll_dte_async_status,
@@ -137,6 +141,26 @@ class SifenClient:
     def generar_dcarqr(self, **kwargs):
         """Convenience wrapper around SDK fiscal dCarQR generator."""
         return _generate_dcarqr(**kwargs)
+
+    def render_kude_html(self, rde, *, title: str = "KuDE"):
+        """Render a printable KuDE HTML."""
+        return _render_kude_html(rde, title=title)
+
+    def save_kude_html(
+        self,
+        rde,
+        file_path,
+        *,
+        title: str = "KuDE",
+        encoding: str = "utf-8",
+    ):
+        """Render and save KuDE HTML to disk."""
+        return _save_kude_html(
+            rde,
+            file_path,
+            title=title,
+            encoding=encoding,
+        )
 
     def enviar_evento(self, evento):
         return self._evento.enviar_evento(evento)

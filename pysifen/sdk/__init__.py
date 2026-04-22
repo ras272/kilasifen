@@ -16,6 +16,12 @@ from pysifen.sdk.fiscal import (
     generate_dcarqr,
     generate_cdc,
 )
+from pysifen.sdk.kude import (
+    build_kude_context,
+    render_kude_html,
+    render_kude_html_from_xml,
+    save_kude_html,
+)
 from pysifen.sdk.polling import (
     PollingConfig,
     poll_dte_async_status,
@@ -38,4 +44,8 @@ __all__ = [
     "format_cdc_for_kude",
     "build_qr_payload",
     "generate_dcarqr",
+    "build_kude_context",
+    "render_kude_html",
+    "render_kude_html_from_xml",
+    "save_kude_html",
 ]
