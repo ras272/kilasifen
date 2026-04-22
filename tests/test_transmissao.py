@@ -1,4 +1,5 @@
 """Testes unitários do módulo de transmissão SIFEN."""
+import os
 import warnings
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
@@ -8,6 +9,8 @@ import pytest
 pytest.importorskip("requests", reason="requests not installed")
 
 warnings.filterwarnings("ignore")
+
+TEST_CERT_PATH = os.path.join(os.path.dirname(__file__), "test_cert.pfx")
 
 
 # ── Config ────────────────────────────────────────────
@@ -521,6 +524,46 @@ class TestTransmissaoEvento:
 
 class TestTransmissaoBase:
     """Testes da classe base."""
+
+    def test_sign_xml_reusa_estado_pkcs12(self, monkeypatch):
+        from cryptography.hazmat.primitives.serialization import pkcs12
+
+        from pysifen.sdk import signer as signer_module
+        from pysifen.transmissao.base import TransmissaoBase
+        from pysifen.transmissao.config import TEST
+
+        if not os.path.exists(TEST_CERT_PATH):
+            pytest.skip("test_cert.pfx not found")
+
+        with open(TEST_CERT_PATH, "rb") as f:
+            cert_data = f.read()
+
+        signer_module.clear_pkcs12_signer_cache()
+
+        calls = []
+        original_loader = pkcs12.load_key_and_certificates
+
+        def wrapped_loader(*args, **kwargs):
+            calls.append(1)
+            return original_loader(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "cryptography.hazmat.primitives.serialization.pkcs12.load_key_and_certificates",
+            wrapped_loader,
+        )
+
+        t = TransmissaoBase(
+            ambiente=TEST,
+            pkcs12_data=cert_data,
+            pkcs12_password="test1234",
+        )
+
+        first = t._sign_xml("<root Id='doc'><child /></root>", "doc")
+        second = t._sign_xml("<root Id='doc'><child /></root>", "doc")
+
+        assert "SignatureValue" in first
+        assert second == first
+        assert len(calls) == 1
 
     def test_serialize(self):
         from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (

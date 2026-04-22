@@ -1,4 +1,4 @@
-"""Classe base para transmissão SOAP ao SIFEN."""
+"""Classe base para transmissÃ£o SOAP ao SIFEN."""
 from __future__ import annotations
 
 import tempfile
@@ -15,7 +15,7 @@ from pysifen.transmissao.config import get_endpoint
 
 
 class TransmissaoBase:
-    """Base para transmissão SOAP com mTLS ao SIFEN.
+    """Base para transmissÃ£o SOAP com mTLS ao SIFEN.
 
     Args:
         ambiente: PRODUCCION (1) ou TEST (2)
@@ -46,19 +46,20 @@ class TransmissaoBase:
             )
         )
         self._cert_files = None
+        self._signer = None
         self._transport = None
         self._clients = {}
         self._closed = False
 
     def _ensure_open(self):
-        """Falha se a instancia já foi fechada."""
+        """Falha se a instancia jÃ¡ foi fechada."""
         if self._closed:
             raise SifenTransportClosedError(
                 "A instancia de transporte ya fue cerrada"
             )
 
     def _get_cert_files(self) -> tuple[str, str]:
-        """Extrai cert e key do PKCS12 para arquivos temporários.
+        """Extrai cert e key do PKCS12 para arquivos temporÃ¡rios.
 
         Retorna tupla (cert_path, key_path) para uso com requests/httpx.
         """
@@ -104,9 +105,9 @@ class TransmissaoBase:
         return self._cert_files
 
     def _get_client(self, servico: str):
-        """Retorna xsdata SOAP client para o serviço.
+        """Retorna xsdata SOAP client para o serviÃ§o.
 
-        O client é configurado com mTLS usando o certificado PKCS12.
+        O client Ã© configurado com mTLS usando o certificado PKCS12.
         """
         from xsdata.formats.dataclass.client import Client, Config
 
@@ -124,7 +125,7 @@ class TransmissaoBase:
         return client
 
     def _get_transport(self):
-        """Retorna o transport compartilhado da instância."""
+        """Retorna o transport compartilhado da instÃ¢ncia."""
         self._ensure_open()
 
         if self._transport is not None:
@@ -140,13 +141,24 @@ class TransmissaoBase:
         )
         return self._transport
 
+    def _get_signer(self):
+        """Retorna o signer PKCS12 reutilizado pela instancia."""
+        self._ensure_open()
+
+        if self._signer is not None:
+            return self._signer
+
+        from pysifen.sdk.signer import get_pkcs12_signer
+
+        self._signer = get_pkcs12_signer(
+            self.pkcs12_data,
+            self.pkcs12_password,
+        )
+        return self._signer
+
     def _sign_xml(self, xml: str, doc_id: str) -> str:
         """Assina XML com certificado PKCS12 (RSA-SHA256)."""
-        from pysifen.assinatura import sign_xml
-
-        return sign_xml(
-            xml, self.pkcs12_data, self.pkcs12_password, doc_id
-        )
+        return self._get_signer().sign(xml, doc_id)
 
     def _serialize(self, obj) -> str:
         """Serializa um objeto binding para XML string."""
@@ -157,17 +169,18 @@ class TransmissaoBase:
         return self._parser.from_string(xml, clazz)
 
     def cleanup(self):
-        """Remove arquivos temporários de certificado."""
+        """Remove arquivos temporÃ¡rios de certificado."""
         self.close()
 
     def close(self):
-        """Fecha a instancia e libera recursos temporários."""
+        """Fecha a instancia e libera recursos temporÃ¡rios."""
         if self._closed:
             return
 
         self._closed = True
         self._cleanup_transport()
         self._cleanup_cert_files()
+        self._signer = None
 
     def _cleanup_transport(self):
         transport = self._transport
@@ -257,7 +270,7 @@ class RequestsTransport:
             except Timeout as exc:
                 if attempt >= self._max_retries:
                     raise SifenTimeoutError(
-                        "Timeout ao enviar requisição SOAP"
+                        "Timeout ao enviar requisiÃ§Ã£o SOAP"
                     ) from exc
                 self._sleep_before_retry(attempt)
             except HTTPError as exc:

@@ -42,6 +42,39 @@ def sample_rde():
 class TestSignXml:
     """Testes de assinatura XML com signxml."""
 
+    def test_reuses_pkcs12_parsing_for_repeated_signatures(
+        self, cert_data, sample_rde, monkeypatch
+    ):
+        """Reaproveita o estado PKCS12 para assinaturas repetidas."""
+        from cryptography.hazmat.primitives.serialization import pkcs12
+
+        from pysifen.assinatura import sign_xml
+        from pysifen.sdk import signer as signer_module
+
+        signer_module.clear_pkcs12_signer_cache()
+
+        calls = []
+        original_loader = pkcs12.load_key_and_certificates
+
+        def wrapped_loader(*args, **kwargs):
+            calls.append(1)
+            return original_loader(*args, **kwargs)
+
+        monkeypatch.setattr(
+            "cryptography.hazmat.primitives.serialization.pkcs12.load_key_and_certificates",
+            wrapped_loader,
+        )
+
+        xml = sample_rde.to_xml()
+        doc_id = sample_rde.DE.Id
+
+        first = sign_xml(xml, cert_data, "test1234", doc_id)
+        second = sign_xml(xml, cert_data, "test1234", doc_id)
+
+        assert "SignatureValue" in first
+        assert second == first
+        assert len(calls) == 1
+
     def test_sign_xml_with_test_cert(
         self, cert_data, sample_rde
     ):
