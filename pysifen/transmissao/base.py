@@ -152,14 +152,29 @@ def _create_transport(cert_path: str, key_path: str):
             self._session = session
 
         def post(self, url, data, headers=None):
-            response = self._session.post(
-                url,
-                data=data,
-                headers=headers or {
-                    "Content-Type": "text/xml; charset=utf-8"
-                },
+            from pysifen.sdk.errors import (
+                SifenTimeoutError,
+                SifenTransportError,
             )
-            response.raise_for_status()
-            return response.content
+            from requests.exceptions import RequestException, Timeout
+
+            try:
+                response = self._session.post(
+                    url,
+                    data=data,
+                    headers=headers or {
+                        "Content-Type": "text/xml; charset=utf-8"
+                    },
+                )
+                response.raise_for_status()
+                return response.content
+            except Timeout as exc:
+                raise SifenTimeoutError(
+                    "Timeout ao enviar requisição SOAP"
+                ) from exc
+            except RequestException as exc:
+                raise SifenTransportError(
+                    "Falha no transporte SOAP"
+                ) from exc
 
     return RequestsTransport(session)
