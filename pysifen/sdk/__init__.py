@@ -9,6 +9,11 @@ from pysifen.sdk.errors import (
     SifenTransportError,
     SifenValidationError,
 )
+from pysifen.sdk.fiscal import (
+    calculate_mod11_dv,
+    format_cdc_for_kude,
+    generate_cdc,
+)
 from pysifen.sdk.polling import (
     PollingConfig,
     poll_dte_async_status,
@@ -26,4 +31,7 @@ __all__ = [
     "SifenTransportError",
     "SifenTransportClosedError",
     "SifenTimeoutError",
+    "calculate_mod11_dv",
+    "generate_cdc",
+    "format_cdc_for_kude",
 ]

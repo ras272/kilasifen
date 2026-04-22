@@ -118,6 +118,29 @@ from pysifen.assinatura import sign_xml
 signed = sign_xml(xml, cert_data, "password", doc_id)
 ```
 
+### Generar CDC (SIFEN v150)
+
+```python
+from pysifen.sdk import generate_cdc
+
+cdc = generate_cdc(
+    i_tide=1,
+    d_ruc_em="44444401",
+    d_dv_emi=7,
+    d_est="001",
+    d_pun_exp="001",
+    d_num_doc="14528",
+    i_tip_cont=2,
+    d_fe_emi_de="2017-01-25T15:58:17",
+    i_tip_emi=1,
+    d_cod_seg="587326098",
+)
+# 01444444017001001001452822017012515873260988
+```
+
+El dígito verificador del CDC se calcula con módulo 11 conforme a la guía
+oficial de SET/DNIT.
+
 ### Transmisión SOAP al SIFEN
 
 ```bash
