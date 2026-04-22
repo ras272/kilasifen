@@ -46,6 +46,13 @@ from pysifen import (
 
 Esta es la forma recomendada de consumir la librería para código de aplicación. La fachada top-level mantiene los imports más usados en un solo lugar y evita depender de la estructura interna del paquete.
 
+### Ejemplos ejecutables
+
+- [Envio sincrono de factura](docs/examples/send_factura_sync.py)
+- [Envio de lote](docs/examples/send_lote.py)
+
+Estos scripts estan pensados para copiar/ejecutar con un certificado PKCS12 y XMLs DE listos.
+
 
 ```python
 from pysifen.de.bindings.v150.fe_v141 import RDe
