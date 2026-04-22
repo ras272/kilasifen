@@ -23,6 +23,26 @@ def nota_credito_path():
 
 
 @pytest.fixture
+def factura_exportacion_path():
+    return os.path.join(SAMPLES_DIR, "factura_exportacion.xml")
+
+
+@pytest.fixture
+def factura_importacion_path():
+    return os.path.join(SAMPLES_DIR, "factura_importacion.xml")
+
+
+@pytest.fixture
+def nota_debito_path():
+    return os.path.join(SAMPLES_DIR, "nota_debito.xml")
+
+
+@pytest.fixture
+def comprobante_retencion_path():
+    return os.path.join(SAMPLES_DIR, "comprobante_retencion.xml")
+
+
+@pytest.fixture
 def autofactura_path():
     return os.path.join(SAMPLES_DIR, "autofactura.xml")
 
@@ -135,6 +155,26 @@ class TestReadNotaCredito:
         assert len(assoc) > 0
 
 
+class TestReadFacturaExportacion:
+    """Testes de leitura de FE Exportación (tipo 2)."""
+
+    def test_parse_factura_exportacion(self, factura_exportacion_path):
+        from pysifen.de.bindings.v150.fe_v141 import RDe
+
+        rde = RDe.from_path(factura_exportacion_path)
+        assert rde.DE.gTimb.iTiDE == "2"
+
+
+class TestReadFacturaImportacion:
+    """Testes de leitura de FE Importación (tipo 3)."""
+
+    def test_parse_factura_importacion(self, factura_importacion_path):
+        from pysifen.de.bindings.v150.fe_v141 import RDe
+
+        rde = RDe.from_path(factura_importacion_path)
+        assert rde.DE.gTimb.iTiDE == "3"
+
+
 class TestReadAutofactura:
     """Testes de leitura de Autofactura (tipo 4)."""
 
@@ -174,6 +214,28 @@ class TestReadNotaRemision:
             assert mot[0].value == 1
         else:
             assert mot.value == 1
+
+
+class TestReadNotaDebito:
+    """Testes de leitura de Nota de Débito (tipo 6)."""
+
+    def test_parse_nota_debito(self, nota_debito_path):
+        from pysifen.de.bindings.v150.fe_v141 import RDe
+
+        rde = RDe.from_path(nota_debito_path)
+        assert rde.DE.gTimb.iTiDE == "6"
+
+
+class TestReadComprobanteRetencion:
+    """Testes de leitura de Comprobante de Retención (tipo 8)."""
+
+    def test_parse_comprobante_retencion(
+        self, comprobante_retencion_path
+    ):
+        from pysifen.de.bindings.v150.fe_v141 import RDe
+
+        rde = RDe.from_path(comprobante_retencion_path)
+        assert rde.DE.gTimb.iTiDE == "8"
 
 
 class TestFromXml:
@@ -225,6 +287,19 @@ class TestSerialization:
             xml = rde1.to_xml()
             rde2 = RDe.from_xml(xml)
             assert rde1.DE.Id == rde2.DE.Id, f"Round-trip failed for {filename}"
+
+    def test_samples_cover_de_types_1_to_8(self):
+        from pysifen.de.bindings.v150.fe_v141 import RDe
+
+        tipos = set()
+        for filename in os.listdir(SAMPLES_DIR):
+            if not filename.endswith(".xml"):
+                continue
+            path = os.path.join(SAMPLES_DIR, filename)
+            rde = RDe.from_path(path)
+            tipos.add(str(rde.DE.gTimb.iTiDE))
+
+        assert tipos == {"1", "2", "3", "4", "5", "6", "7", "8"}
 
     def test_to_xml_compact(self, factura_path):
         from pysifen.de.bindings.v150.fe_v141 import RDe
