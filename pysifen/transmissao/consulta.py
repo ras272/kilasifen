@@ -11,6 +11,10 @@ from pysifen.de.bindings.v150.ws_si_cons_dte import (
     RConsDteRequest,
     RConsDteResponse,
 )
+from pysifen.de.bindings.v150.ws_si_cons_dteasync import (
+    REnviConsDteAsyncRequest,
+    REnviConsDteAsyncResponse,
+)
 from pysifen.de.bindings.v150.ws_si_cons_lote_v141 import (
     REnviConsLoteDe,
     RResEnviConsLoteDe,
@@ -142,6 +146,34 @@ class ConsultaSIFEN(TransmissaoBase):
             response if isinstance(response, str)
             else response.decode(),
             RConsDteResponse,
+        )
+
+    def consultar_dte_async(
+        self, consulta_dte_async
+    ) -> REnviConsDteAsyncResponse:
+        """Dispara consulta DTE async y retorna protocolo de consulta.
+
+        Args:
+            consulta_dte_async: instância de RConsultaDte
+                (si_consulta_dteasync)
+
+        Returns:
+            REnviConsDteAsyncResponse com protocolo e mensagem.
+        """
+        request = REnviConsDteAsyncRequest(
+            rConsultaDTE=consulta_dte_async,
+        )
+
+        client = self._get_client("cons_dte_async")
+        response = client.send(request)
+
+        if isinstance(response, REnviConsDteAsyncResponse):
+            return response
+
+        return self._parse(
+            response if isinstance(response, str)
+            else response.decode(),
+            REnviConsDteAsyncResponse,
         )
 
 

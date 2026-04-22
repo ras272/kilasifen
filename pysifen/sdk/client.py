@@ -1,6 +1,7 @@
 """High-level SDK client facade for SIFEN operations."""
 from __future__ import annotations
 
+from pysifen.sdk.polling import PollingConfig, poll_dte_async_status
 from pysifen.transmissao import (
     ConsultaSIFEN,
     TransmissaoDE,
@@ -59,6 +60,21 @@ class SifenClient:
 
     def consultar_dte(self, consulta_dte):
         return self._consulta.consultar_dte(consulta_dte)
+
+    def consultar_dte_async(self, consulta_dte_async):
+        return self._consulta.consultar_dte_async(consulta_dte_async)
+
+    def poll_dte_async(
+        self,
+        fetch_status,
+        protocol_id: str,
+        config: PollingConfig = PollingConfig(),
+    ):
+        return poll_dte_async_status(
+            fetch_status,
+            protocol_id,
+            config=config,
+        )
 
     def enviar_evento(self, evento):
         return self._evento.enviar_evento(evento)

@@ -29,6 +29,10 @@ ENDPOINTS = {
             "https://sifen.set.gov.py/"
             "de/ws/consultas/consulta-dte.wsdl"
         ),
+        "cons_dte_async": (
+            "https://sifen.set.gov.py/"
+            "de/ws/consultas/consulta-dte-async.wsdl"
+        ),
     },
     TEST: {
         "recep_de": (
@@ -57,6 +61,10 @@ ENDPOINTS = {
         "cons_dte": (
             "https://sifen-test.set.gov.py/"
             "de/ws/consultas/consulta-dte.wsdl"
+        ),
+        "cons_dte_async": (
+            "https://sifen-test.set.gov.py/"
+            "de/ws/consultas/consulta-dte-async.wsdl"
         ),
     },
 }

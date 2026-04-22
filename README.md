@@ -214,6 +214,22 @@ print(resultado.xContRUC.dRazCons)      # Razón social
 print(resultado.xContRUC.dRUCFactElec)  # "S" = habilitado para FE
 ```
 
+#### Consultar DTE async (inicio + polling)
+
+```python
+respuesta_async = consulta.consultar_dte_async(consulta_dte_async)
+protocolo = respuesta_async.dProtConsDTEAsync
+
+# Opcional: esperar estado final con helper de polling
+from pysifen.sdk import PollingConfig, poll_dte_async_status
+
+estado_final = poll_dte_async_status(
+    fetch_status=mi_funcion_de_estado,  # callback(protocol_id) -> response
+    protocol_id=protocolo,
+    config=PollingConfig(interval_seconds=2, timeout_seconds=120),
+)
+```
+
 #### Enviar eventos (cancelación, inutilización, etc.)
 
 ```python

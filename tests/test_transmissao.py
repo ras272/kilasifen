@@ -44,6 +44,7 @@ class TestConfig:
             "cons_ruc",
             "evento",
             "cons_dte",
+            "cons_dte_async",
         ]
         for servico in servicos:
             assert servico in endpoints
@@ -460,6 +461,31 @@ class TestConsultaSIFEN:
 
         assert isinstance(result, RConsDteResponse)
         assert result.dMsgRes == "Consulta exitosa"
+
+    @patch(
+        "pysifen.transmissao.base.TransmissaoBase._get_client"
+    )
+    def test_consultar_dte_async_mock(self, mock_client):
+        from pysifen.de.bindings.v150.ws_si_cons_dteasync import (
+            REnviConsDteAsyncResponse,
+        )
+
+        mock_response = REnviConsDteAsyncResponse(
+            dFecProc="2024-11-29T18:00:00",
+            dProtConsDTEAsync="123456789",
+            dMsgRes="Consulta async registrada",
+        )
+        client_mock = MagicMock()
+        client_mock.send.return_value = mock_response
+        mock_client.return_value = client_mock
+
+        c = self._make_consulta()
+        consulta_dte_async = MagicMock()
+        result = c.consultar_dte_async(consulta_dte_async)
+
+        assert isinstance(result, REnviConsDteAsyncResponse)
+        assert result.dProtConsDTEAsync == "123456789"
+        assert result.dMsgRes == "Consulta async registrada"
 
 
 # ── TransmissaoEvento ─────────────────────────────────

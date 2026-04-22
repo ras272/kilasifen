@@ -44,6 +44,7 @@ def test_sifen_client_delegates_all_operations():
     cons.consultar_lote.return_value = "cons-lote"
     cons.consultar_ruc.return_value = "cons-ruc"
     cons.consultar_dte.return_value = "cons-dte"
+    cons.consultar_dte_async.return_value = "cons-dte-async"
     evt.enviar_evento.return_value = "evt-ok"
 
     with patch(
@@ -52,7 +53,10 @@ def test_sifen_client_delegates_all_operations():
         "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
     ), patch(
         "pysifen.sdk.client.TransmissaoEvento", return_value=evt
-    ):
+    ), patch(
+        "pysifen.sdk.client.poll_dte_async_status",
+        return_value="polled-async",
+    ) as poll_async:
         client = SifenClient(
             ambiente=2,
             pkcs12_data=b"cert",
@@ -72,6 +76,14 @@ def test_sifen_client_delegates_all_operations():
         assert client.consultar_lote(123) == "cons-lote"
         assert client.consultar_ruc("80069563") == "cons-ruc"
         assert client.consultar_dte("payload") == "cons-dte"
+        assert client.consultar_dte_async("payload-async") == "cons-dte-async"
+        assert (
+            client.poll_dte_async(
+                fetch_status="fetch-fn",
+                protocol_id="123",
+            )
+            == "polled-async"
+        )
         assert client.enviar_evento("evento") == "evt-ok"
 
     de.enviar_de.assert_called_once_with("rde", sign=False)
@@ -82,6 +94,8 @@ def test_sifen_client_delegates_all_operations():
     cons.consultar_lote.assert_called_once_with(123)
     cons.consultar_ruc.assert_called_once_with("80069563")
     cons.consultar_dte.assert_called_once_with("payload")
+    cons.consultar_dte_async.assert_called_once_with("payload-async")
+    poll_async.assert_called_once()
     evt.enviar_evento.assert_called_once_with("evento")
 
 
