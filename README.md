@@ -141,6 +141,30 @@ cdc = generate_cdc(
 El dígito verificador del CDC se calcula con módulo 11 conforme a la guía
 oficial de SET/DNIT.
 
+### Generar dCarQR (SIFEN v150)
+
+```python
+from pysifen.sdk import generate_dcarqr
+
+dcarqr = generate_dcarqr(
+    cdc="01444444017001001001452822017012515873260988",
+    d_fe_emi_de="2017-01-25T09:35:17",
+    digest_value="yzGYhUx1/XYYzksWB+fPR3Qc50c=",
+    id_csc="0001",
+    csc="ABCD0000000000000000000000000000",
+    d_ruc_rec="88899990",
+    d_tot_gral_ope="300000",
+    d_tot_iva="27272",
+    c_items=2,
+)
+```
+
+Para insertar en XML con escape HTML (`&amp;`) usa:
+
+```python
+dcarqr_xml = generate_dcarqr(..., xml_escaped=True)
+```
+
 ### Transmisión SOAP al SIFEN
 
 ```bash

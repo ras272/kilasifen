@@ -3,8 +3,10 @@ from datetime import date, datetime
 import pytest
 
 from pysifen.sdk.fiscal import (
+    build_qr_payload,
     calculate_mod11_dv,
     format_cdc_for_kude,
+    generate_dcarqr,
     generate_cdc,
 )
 
@@ -120,3 +122,91 @@ def test_format_cdc_for_kude_groups_by_four():
     assert format_cdc_for_kude(cdc) == (
         "0144 4444 0170 0100 1001 4528 2201 7012 5158 7326 0988"
     )
+
+
+def test_build_qr_payload_matches_manual_v150_example():
+    payload = build_qr_payload(
+        cdc="01444444017001001001452822017012515873260988",
+        d_fe_emi_de="2017-01-25T09:35:17",
+        digest_value="yzGYhUx1/XYYzksWB+fPR3Qc50c=",
+        id_csc="0001",
+        csc="ABCD0000000000000000000000000000",
+        d_ruc_rec="88899990",
+        d_tot_gral_ope="300000",
+        d_tot_iva="27272",
+        c_items=2,
+        environment="production",
+    )
+
+    assert payload["c_hash_qr"] == (
+        "97ddbb3c1e7d65af03a70ffe21f2b348"
+        "46ab1c89e0566c35222086766b7374ed"
+    )
+    assert payload["url"] == (
+        "https://ekuatia.set.gov.py/consultas/qr?"
+        "nVersion=150"
+        "&Id=01444444017001001001452822017012515873260988"
+        "&dFeEmiDE=323031372d30312d32355430393a33353a3137"
+        "&dRucRec=88899990"
+        "&dTotGralOpe=300000"
+        "&dTotIVA=27272"
+        "&cItems=2"
+        "&DigestValue=797a4759685578312f5859597a6b7357422b6650523351633530633d"
+        "&IdCSC=0001"
+        "&cHashQR="
+        "97ddbb3c1e7d65af03a70ffe21f2b348"
+        "46ab1c89e0566c35222086766b7374ed"
+    )
+
+
+def test_generate_dcarqr_xml_escaped():
+    dcarqr = generate_dcarqr(
+        cdc="01444444017001001001452822017012515873260988",
+        d_fe_emi_de="2017-01-25T09:35:17",
+        digest_value="yzGYhUx1/XYYzksWB+fPR3Qc50c=",
+        id_csc="0001",
+        csc="ABCD0000000000000000000000000000",
+        d_ruc_rec="88899990",
+        d_tot_gral_ope="300000",
+        d_tot_iva="27272",
+        c_items=2,
+        xml_escaped=True,
+    )
+    assert "&amp;" in dcarqr
+    assert "&cHashQR=" not in dcarqr
+
+
+def test_build_qr_payload_uses_default_zero_values():
+    payload = build_qr_payload(
+        cdc="01444444017001001001452822017012515873260988",
+        d_fe_emi_de="2017-01-25",
+        digest_value="abc123=",
+        id_csc=1,
+        csc="ABCD0000000000000000000000000000",
+        d_num_id_rec=None,
+        d_tot_gral_ope=None,
+        d_tot_iva=None,
+        c_items=None,
+        environment="test",
+    )
+
+    assert "&dRucRec=0" in payload["step1"]
+    assert "&dTotGralOpe=0" in payload["step1"]
+    assert "&dTotIVA=0" in payload["step1"]
+    assert "&cItems=0" in payload["step1"]
+    assert payload["url"].startswith(
+        "https://ekuatia.set.gov.py/consultas-test/qr?"
+    )
+
+
+def test_build_qr_payload_rejects_both_receptor_identifiers():
+    with pytest.raises(ValueError, match="either d_ruc_rec or d_num_id_rec"):
+        build_qr_payload(
+            cdc="01444444017001001001452822017012515873260988",
+            d_fe_emi_de="2017-01-25T09:35:17",
+            digest_value="yzGYhUx1/XYYzksWB+fPR3Qc50c=",
+            id_csc="0001",
+            csc="ABCD0000000000000000000000000000",
+            d_ruc_rec="88899990",
+            d_num_id_rec="1234567",
+        )

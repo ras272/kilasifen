@@ -10,8 +10,10 @@ from pysifen.sdk.errors import (
     SifenValidationError,
 )
 from pysifen.sdk.fiscal import (
+    build_qr_payload,
     calculate_mod11_dv,
     format_cdc_for_kude,
+    generate_dcarqr,
     generate_cdc,
 )
 from pysifen.sdk.polling import (
@@ -34,4 +36,6 @@ __all__ = [
     "calculate_mod11_dv",
     "generate_cdc",
     "format_cdc_for_kude",
+    "build_qr_payload",
+    "generate_dcarqr",
 ]

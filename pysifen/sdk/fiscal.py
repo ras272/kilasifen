@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from hashlib import sha256
 import re
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DATE_COMPACT_RE = re.compile(r"^\d{8}$")
+_DATE_TIME_RE = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$"
+)
+
+QR_BASE_URLS = {
+    "production": "https://ekuatia.set.gov.py/consultas/qr?",
+    "test": "https://ekuatia.set.gov.py/consultas-test/qr?",
+}
 
 
 def calculate_mod11_dv(value: str, base_max: int = 11) -> int:
@@ -125,6 +134,122 @@ def format_cdc_for_kude(cdc: str) -> str:
     return " ".join(cdc[i : i + 4] for i in range(0, len(cdc), 4))
 
 
+def build_qr_payload(
+    *,
+    cdc: str,
+    d_fe_emi_de: date | datetime | str,
+    digest_value: str,
+    id_csc: int | str,
+    csc: str,
+    qr_version: int | str = 150,
+    d_ruc_rec: str | None = None,
+    d_num_id_rec: str | None = None,
+    d_tot_gral_ope: int | float | str | None = None,
+    d_tot_iva: int | float | str | None = None,
+    c_items: int | str | None = None,
+    environment: str = "production",
+) -> dict[str, str]:
+    """Build QR payload components according to Manual Técnico v150."""
+
+    if d_ruc_rec and d_num_id_rec:
+        raise ValueError("use either d_ruc_rec or d_num_id_rec, not both")
+
+    qr_version_value = _numeric_field(
+        qr_version,
+        size=3,
+        name="qr_version",
+        min_value=1,
+    )
+    cdc_value = _validate_cdc(cdc)
+    fecha_hex = _to_hex(_normalize_issue_datetime(d_fe_emi_de))
+    digest_hex = _to_hex(_normalize_digest_value(digest_value))
+    id_csc_value = _numeric_field(
+        id_csc,
+        size=4,
+        name="id_csc",
+        min_value=1,
+    )
+    csc_value = _normalize_csc(csc)
+
+    if d_num_id_rec is not None:
+        receptor_key = "dNumIDRec"
+        receptor_value = _normalize_receptor(d_num_id_rec)
+    else:
+        receptor_key = "dRucRec"
+        receptor_value = _normalize_receptor(d_ruc_rec)
+
+    total_operacion = _normalize_qr_numeric(d_tot_gral_ope)
+    total_iva = _normalize_qr_numeric(d_tot_iva)
+    items_value = _normalize_items_count(c_items)
+
+    step1 = (
+        f"nVersion={qr_version_value}"
+        f"&Id={cdc_value}"
+        f"&dFeEmiDE={fecha_hex}"
+        f"&{receptor_key}={receptor_value}"
+        f"&dTotGralOpe={total_operacion}"
+        f"&dTotIVA={total_iva}"
+        f"&cItems={items_value}"
+        f"&DigestValue={digest_hex}"
+        f"&IdCSC={id_csc_value}"
+    )
+    hash_input = f"{step1}{csc_value}"
+    c_hash_qr = sha256(hash_input.encode("utf-8")).hexdigest()
+
+    base_url = _resolve_qr_base_url(environment)
+    url = f"{base_url}{step1}&cHashQR={c_hash_qr}"
+
+    if len(url) < 100 or len(url) > 600:
+        raise ValueError(
+            "generated dCarQR URL length must be between 100 and 600"
+        )
+
+    return {
+        "step1": step1,
+        "hash_input": hash_input,
+        "c_hash_qr": c_hash_qr,
+        "url": url,
+        "dcarqr_xml": url.replace("&", "&amp;"),
+    }
+
+
+def generate_dcarqr(
+    *,
+    cdc: str,
+    d_fe_emi_de: date | datetime | str,
+    digest_value: str,
+    id_csc: int | str,
+    csc: str,
+    qr_version: int | str = 150,
+    d_ruc_rec: str | None = None,
+    d_num_id_rec: str | None = None,
+    d_tot_gral_ope: int | float | str | None = None,
+    d_tot_iva: int | float | str | None = None,
+    c_items: int | str | None = None,
+    environment: str = "production",
+    xml_escaped: bool = False,
+) -> str:
+    """Generate dCarQR URL string for XML or external QR rendering."""
+
+    payload = build_qr_payload(
+        cdc=cdc,
+        d_fe_emi_de=d_fe_emi_de,
+        digest_value=digest_value,
+        id_csc=id_csc,
+        csc=csc,
+        qr_version=qr_version,
+        d_ruc_rec=d_ruc_rec,
+        d_num_id_rec=d_num_id_rec,
+        d_tot_gral_ope=d_tot_gral_ope,
+        d_tot_iva=d_tot_iva,
+        c_items=c_items,
+        environment=environment,
+    )
+    if xml_escaped:
+        return payload["dcarqr_xml"]
+    return payload["url"]
+
+
 def _numeric_field(
     value: int | str,
     *,
@@ -184,6 +309,112 @@ def _normalize_issue_date(value: date | datetime | str) -> str:
             "YYYY-MM-DDTHH:MM:SS or YYYYMMDD)"
         )
     return candidate.replace("-", "")
+
+
+def _normalize_issue_datetime(value: date | datetime | str) -> str:
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%dT%H:%M:%S")
+    if isinstance(value, date):
+        return f"{value.strftime('%Y-%m-%d')}T00:00:00"
+
+    raw = str(value).strip()
+    if not raw:
+        raise ValueError("d_fe_emi_de must not be empty")
+    if _DATE_TIME_RE.fullmatch(raw):
+        return raw
+    if _DATE_RE.fullmatch(raw):
+        return f"{raw}T00:00:00"
+    raise ValueError(
+        "d_fe_emi_de must be datetime-like "
+        "(YYYY-MM-DDTHH:MM:SS or YYYY-MM-DD)"
+    )
+
+
+def _validate_cdc(value: str) -> str:
+    cdc = str(value).strip()
+    if not re.fullmatch(r"\d{44}", cdc):
+        raise ValueError("cdc must be exactly 44 digits")
+    return cdc
+
+
+def _normalize_digest_value(value: str) -> str:
+    digest = str(value).strip()
+    if not digest:
+        raise ValueError("digest_value must not be empty")
+    if len(digest) > 512:
+        raise ValueError("digest_value is too long")
+    if any(char in "&?" for char in digest):
+        raise ValueError("digest_value contains unsupported URL characters")
+    return digest
+
+
+def _normalize_csc(value: str) -> str:
+    csc = str(value).strip()
+    if not csc:
+        raise ValueError("csc must not be empty")
+    if not re.fullmatch(r"[0-9A-Za-z]{32}", csc):
+        raise ValueError("csc must be 32 alphanumeric characters")
+    return csc
+
+
+def _normalize_receptor(value: str | None) -> str:
+    if value is None:
+        return "0"
+    receptor = str(value).strip()
+    if not receptor:
+        return "0"
+    if len(receptor) > 20:
+        raise ValueError("receptor identifier must have max 20 chars")
+    if any(char in "&?=" for char in receptor):
+        raise ValueError(
+            "receptor identifier contains unsupported URL characters"
+        )
+    return receptor
+
+
+def _normalize_qr_numeric(value: int | float | str | None) -> str:
+    if value is None:
+        return "0"
+    if isinstance(value, int):
+        if value < 0:
+            raise ValueError("numeric QR values must be >= 0")
+        return str(value)
+    if isinstance(value, float):
+        if value < 0:
+            raise ValueError("numeric QR values must be >= 0")
+        normalized = f"{value:.8f}".rstrip("0").rstrip(".")
+        return normalized or "0"
+
+    raw = str(value).strip()
+    if not raw:
+        return "0"
+    if not re.fullmatch(r"\d+(\.\d+)?", raw):
+        raise ValueError("numeric QR values must be digits or decimal string")
+    return raw
+
+
+def _normalize_items_count(value: int | str | None) -> str:
+    if value is None:
+        return "0"
+    raw = str(value).strip()
+    if not raw.isdigit():
+        raise ValueError("c_items must contain only digits")
+    if int(raw) < 0:
+        raise ValueError("c_items must be >= 0")
+    return raw
+
+
+def _resolve_qr_base_url(environment: str) -> str:
+    key = str(environment).strip().lower()
+    if key not in QR_BASE_URLS:
+        raise ValueError(
+            "environment must be either 'production' or 'test'"
+        )
+    return QR_BASE_URLS[key]
+
+
+def _to_hex(value: str) -> str:
+    return value.encode("utf-8").hex()
 
 
 def _to_ascii_digits(value: str) -> str:
