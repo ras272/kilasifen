@@ -113,7 +113,7 @@ pysifen/
 ├── ext/
 │   └── pysifen.jpg                     # Logo/imagem do projeto
 ├── pysifen/
-│   ├── __init__.py                      # __version__ = "0.1.0"
+│   ├── __init__.py                      # __version__ = "0.1.1"
 │   ├── CommonMixin.py                   # Mixin com from_xml, to_xml, from_path, validate_xml, sign_xml
 │   └── de/                              # Documento Electrónico
 │       ├── __init__.py
@@ -164,7 +164,7 @@ pysifen/
 
 ### Convenção de versionamento
 
-Seguindo a nfelib, usar apenas **2 dígitos** para a versão do schema na pasta: v150 corresponde à versão 1.50 do Manual Técnico. Se a SET lançar uma versão 1.51 que mantém os mesmos 2 primeiros dígitos, os XSD se sobrepõem na mesma pasta. Uma eventual versão 2.00 ganharia uma pasta `v200/`.
+Seguindo a nfelib, usar **3 dígitos** para a versão do schema na pasta: `v150` corresponde à versão 1.50 do Manual Técnico. Se a SET lançar uma versão 1.51 que mantém os mesmos 3 primeiros dígitos, os XSD se sobrepõem na mesma pasta. Uma eventual versão 2.00 ganharia uma pasta `v200/`.
 
 ---
 
@@ -333,7 +333,7 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.backends._legacy:_Backend"
 
 [project]
-name = "pysifen"
+name = "kilasifen"
 description = "Bindings Python para ler e gerar XML do SIFEN (Paraguay)"
 readme = "README.md"
 license = "MIT"
@@ -358,8 +358,8 @@ dependencies = [
 dynamic = ["version"]
 
 [project.urls]
-Homepage = "https://github.com/SEU_USER/pysifen"
-Source = "https://github.com/SEU_USER/pysifen"
+Homepage = "https://github.com/ras272/kilasifen"
+Source = "https://github.com/ras272/kilasifen"
 
 [project.optional-dependencies]
 sign = ["erpbrasil.assinatura"]
@@ -430,13 +430,13 @@ select = ["E", "F", "I", "W"]
 - [ ] Executar: `xsdata generate pysifen/de/schemas/v150 --package pysifen.de.bindings.v150`
 - [ ] Resolver erros de geração (tipos conflitantes, imports circulares, etc.)
 - [ ] Ajustar `Substitutions` no `.xsdata.xml` se necessário
-- [ ] Verificar que os bindings são importáveis: `from pysifen.de.bindings.v150.de_v150 import Rde`
+- [ ] Verificar que os bindings são importáveis: `from pysifen.de.bindings.v150.fe_v141 import RDe`
 - [ ] Commitar os bindings gerados
 
 **Verificação:**
 ```python
-from pysifen.de.bindings.v150.de_v150 import Rde
-print(Rde.__dataclass_fields__.keys())
+from pysifen.de.bindings.v150.fe_v141 import RDe
+print(RDe.__dataclass_fields__.keys())
 ```
 
 **Problemas esperados:**
@@ -483,9 +483,9 @@ print(Rde.__dataclass_fields__.keys())
 Exemplo de teste:
 ```python
 def test_read_factura():
-    from pysifen.de.bindings.v150.si_recep_de_v150 import Rde
-    rde = Rde.from_path("pysifen/de/samples/v150/factura_electronica.xml")
-    assert rde.DE.gOpeDE.iTipEmi == "1"
+    from pysifen.de.bindings.v150.fe_v141 import RDe
+    rde = RDe.from_path("pysifen/de/samples/v150/factura_electronica.xml")
+    assert rde.DE.gTimb.iTiDE == "1"
     assert rde.DE.gDatGralOpe.gEmis.dRucEm is not None
 ```
 
@@ -500,13 +500,13 @@ def test_read_factura():
 - [ ] Testar construção de DE do zero:
 
 ```python
-from pysifen.de.bindings.v150.de_v150 import Rde, TgOpeDE, TgDatGralOpe
-rde = Rde(
-    dVerFor=150,
-    DE=TDE(
+from pysifen.de.bindings.v150.fe_v141 import RDe, TDe, TgCopeDe, TgDaGoc
+rde = RDe(
+    dVerFor="150",
+    DE=TDe(
         Id="01800695631001001000000312024112917595714694",
-        gOpeDE=TgOpeDE(iTipEmi=1),
-        gDatGralOpe=TgDatGralOpe(...)
+        gOpeDE=TgCopeDe(iTipEmi="1"),
+        gDatGralOpe=TgDaGoc(...)
     )
 )
 xml = rde.to_xml()
@@ -537,7 +537,7 @@ xml = rde.to_xml()
 - [ ] Configurar GitHub Actions para CI (testes + lint)
 - [ ] Configurar publicação no PyPI
 - [ ] Criar tag de release `v0.1.0`
-- [ ] Publicar: `pip install pysifen`
+- [ ] Publicar: `pip install kilasifen`
 
 ---
 
@@ -591,13 +591,13 @@ O `DE_v150.xsd` é um schema muito extenso com dezenas de grupos (gOpeDE, gDatGr
 
 ```python
 # === Ler um Documento Electrónico (DE) ===
-from pysifen.de.bindings.v150.si_recep_de_v150 import Rde
-rde = Rde.from_path("factura.xml")
-# ou: rde = Rde.from_xml(xml_string)
+from pysifen.de.bindings.v150.fe_v141 import RDe
+rde = RDe.from_path("factura.xml")
+# ou: rde = RDe.from_xml(xml_string)
 
 # Navegar nos dados
 print(rde.DE.gDatGralOpe.gEmis.dRucEm)       # RUC do emissor
-print(rde.DE.gDatGralOpe.gEmis.dNomEm)       # Nome do emissor
+print(rde.DE.gDatGralOpe.gEmis.dNomEmi)       # Nome do emissor
 print(rde.DE.gDtipDE.gCamFE.iIndPres)         # Indicador de presença
 print(len(rde.DE.gDtipDE.gCamItem))            # Quantidade de itens
 
@@ -610,22 +610,22 @@ if not errors:
     print("XML válido!")
 
 # === Construir do zero ===
-from pysifen.de.bindings.v150.de_v150 import *
-de = TDE(
+from pysifen.de.bindings.v150.fe_v141 import *
+de = TDe(
     Id="01800695631001001000000312024112917595714694",
     dDVId=9,
-    gOpeDE=TgOpeDE(iTipEmi=1, dDesTipEmi="Normal"),
-    gDatGralOpe=TgDatGralOpe(
+    gOpeDE=TgCopeDe(iTipEmi="1", dDesTipEmi="Normal"),
+    gDatGralOpe=TgDaGoc(
         dFeEmiDE="2024-11-29T17:59:57",
         gEmis=TgEmis(
             dRucEm="80069563",
-            dDVEmi=1,
-            iTipCont=1,
-            dNomEm="Mi Empresa S.A.",
+            dDVEmi="1",
+            iTipCont="1",
+            dNomEmi="Mi Empresa S.A.",
         ),
     ),
 )
-rde = Rde(dVerFor=150, DE=de)
+rde = RDe(dVerFor="150", DE=de)
 print(rde.to_xml())
 
 # === Assinar ===

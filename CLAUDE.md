@@ -11,7 +11,7 @@ Biblioteca Python que gera automaticamente bindings (dataclasses) a partir dos s
 - **Licença:** MIT
 - **Copyright:** KMEE
 - **Autor:** mileo
-- **GitHub:** `KMEE/pysifen`
+- **GitHub:** `ras272/kilasifen`
 - **Python:** >=3.10
 - **Dependência principal:** xsdata
 
@@ -25,7 +25,7 @@ pysifen/
 ├── README.md
 ├── MIT-LICENSE
 ├── pysifen/
-│   ├── __init__.py                # __version__ = "0.1.0"
+│   ├── __init__.py                # __version__ = "0.1.1"
 │   ├── CommonMixin.py             # Mixin: from_xml, to_xml, from_path, validate_xml, sign_xml
 │   ├── assinatura.py              # sign_xml() — signxml direto com RSA-SHA256
 │   ├── de/                        # Documento Electrónico
@@ -195,9 +195,9 @@ O plano detalhado está em `plano-sifenlib.md`. Resumo:
 0. Setup inicial (git, pyproject.toml, .xsdata.xml) ✓
 1. Download e organização dos XSD (ajustar schemaLocation para paths relativos) ✓
 2. Geração dos bindings com xsdata ✓
-3. XMLs de exemplo para cada tipo de DE ✓
+3. XMLs de exemplo para tipos 1, 4, 5 e 7 ✓ (faltam 2, 3, 6 e 8)
 4. Testes de leitura (parsing) ✓
-5. Testes de escrita (serialização + round-trip) ✓
+5. Testes de escrita (serialização + round-trip) para tipos 1, 5, 6 e 7 ✓
 6. Detecção automática de atualizações de schema ✓
 7. Documentação, README, CI/CD, publicação PyPI ✓
 8. Assinatura digital com signxml (RSA-SHA256) ✓
