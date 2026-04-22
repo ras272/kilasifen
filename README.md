@@ -271,6 +271,12 @@ ruff check pysifen/ tests/
 - [nfelib (referencia)](https://github.com/akretion/nfelib)
 - [xsdata](https://xsdata.readthedocs.io/)
 
+## Comunidad y OSS
+
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
+- [Security Policy](SECURITY.md)
+
 ## Licencia
 
 MIT License - Copyright (c) KMEE
