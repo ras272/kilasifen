@@ -17,9 +17,9 @@ def _get_xml_parser() -> XmlParser:
 def _get_xml_serializer(pretty_print: bool) -> XmlSerializer:
     """Return a reusable XML serializer instance for the requested format."""
     config = SerializerConfig(
-        pretty_print=pretty_print,
         xml_declaration=True,
         encoding="UTF-8",
+        indent="  " if pretty_print else None,
     )
     return XmlSerializer(config=config)
 
