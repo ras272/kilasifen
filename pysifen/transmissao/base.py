@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import tempfile
+import time
 
+from xsdata.formats.dataclass.client import Client, Config
 from xsdata.formats.dataclass.parsers import XmlParser
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import (
@@ -27,10 +29,12 @@ class TransmissaoBase:
         ambiente: int,
         pkcs12_data: bytes,
         pkcs12_password: str,
+        timeout: float = 30.0,
     ):
         self.ambiente = ambiente
         self.pkcs12_data = pkcs12_data
         self.pkcs12_password = pkcs12_password
+        self.timeout = timeout
         self._parser = XmlParser()
         self._serializer = XmlSerializer(
             config=SerializerConfig(
@@ -39,6 +43,8 @@ class TransmissaoBase:
             )
         )
         self._cert_files = None
+        self._transport = None
+        self._clients = {}
         self._closed = False
 
     def _ensure_open(self):
@@ -99,17 +105,33 @@ class TransmissaoBase:
 
         O client é configurado com mTLS usando o certificado PKCS12.
         """
-        from xsdata.formats.dataclass.client import Client, Config
+        self._ensure_open()
+
+        if servico in self._clients:
+            return self._clients[servico]
 
         url = get_endpoint(self.ambiente, servico)
-        cert_path, key_path = self._get_cert_files()
+        transport = self._get_transport()
 
-        config = Config.from_service(
-            None,
-            location=url,
+        config = Config.from_service(None, location=url)
+        client = Client(config=config, transport=transport)
+        self._clients[servico] = client
+        return client
+
+    def _get_transport(self):
+        """Retorna o transport compartilhado da instância."""
+        self._ensure_open()
+
+        if self._transport is not None:
+            return self._transport
+
+        cert_path, key_path = self._get_cert_files()
+        self._transport = _create_transport(
+            cert_path,
+            key_path,
+            timeout=self.timeout,
         )
-        transport = _create_transport(cert_path, key_path)
-        return Client(config=config, transport=transport)
+        return self._transport
 
     def _sign_xml(self, xml: str, doc_id: str) -> str:
         """Assina XML com certificado PKCS12 (RSA-SHA256)."""
@@ -137,7 +159,23 @@ class TransmissaoBase:
             return
 
         self._closed = True
+        self._cleanup_transport()
         self._cleanup_cert_files()
+
+    def _cleanup_transport(self):
+        transport = self._transport
+        self._transport = None
+        self._clients = {}
+
+        if transport is None:
+            return
+
+        close = getattr(transport, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
 
     def _cleanup_cert_files(self):
         import os
@@ -165,7 +203,96 @@ class TransmissaoBase:
         return False
 
 
-def _create_transport(cert_path: str, key_path: str):
+class RequestsTransport:
+    """Transport HTTP usando requests com reintentos conservadores."""
+
+    def __init__(
+        self,
+        session,
+        timeout: float,
+        max_retries: int = 2,
+        backoff_factor: float = 0.2,
+    ):
+        self._session = session
+        self._timeout = timeout
+        self._max_retries = max_retries
+        self._backoff_factor = backoff_factor
+
+    def close(self):
+        self._session.close()
+
+    def post(self, url, data, headers=None):
+        from pysifen.sdk.errors import (
+            SifenTimeoutError,
+            SifenTransportError,
+        )
+        from requests.exceptions import (
+            ConnectionError,
+            HTTPError,
+            RequestException,
+            Timeout,
+        )
+
+        request_headers = headers or {
+            "Content-Type": "text/xml; charset=utf-8"
+        }
+
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = self._session.post(
+                    url,
+                    data=data,
+                    headers=request_headers,
+                    timeout=self._timeout,
+                )
+                response.raise_for_status()
+                return response.content
+            except Timeout as exc:
+                if attempt >= self._max_retries:
+                    raise SifenTimeoutError(
+                        "Timeout ao enviar requisição SOAP"
+                    ) from exc
+                self._sleep_before_retry(attempt)
+            except HTTPError as exc:
+                if self._is_non_retryable_http_error(exc):
+                    raise SifenTransportError(
+                        "Falha no transporte SOAP"
+                    ) from exc
+                if attempt >= self._max_retries:
+                    raise SifenTransportError(
+                        "Falha no transporte SOAP"
+                    ) from exc
+                self._sleep_before_retry(attempt)
+            except ConnectionError as exc:
+                if attempt >= self._max_retries:
+                    raise SifenTransportError(
+                        "Falha no transporte SOAP"
+                    ) from exc
+                self._sleep_before_retry(attempt)
+            except RequestException as exc:
+                raise SifenTransportError(
+                    "Falha no transporte SOAP"
+                ) from exc
+
+        raise SifenTransportError("Falha no transporte SOAP")
+
+    def _is_non_retryable_http_error(self, exc):
+        response = getattr(exc, "response", None)
+        status_code = getattr(response, "status_code", None)
+        return status_code is not None and 400 <= status_code < 500
+
+    def _sleep_before_retry(self, attempt: int):
+        delay = self._backoff_factor * (2**attempt)
+        if delay > 0:
+            time.sleep(delay)
+
+def _create_transport(
+    cert_path: str,
+    key_path: str,
+    timeout: float = 30.0,
+    max_retries: int = 2,
+    backoff_factor: float = 0.2,
+):
     """Cria transport HTTP com mTLS para o SOAP client.
 
     Usa requests.Session com certificado cliente.
@@ -175,37 +302,9 @@ def _create_transport(cert_path: str, key_path: str):
     session = Session()
     session.cert = (cert_path, key_path)
     session.verify = True
-
-    class RequestsTransport:
-        """Transport adapter usando requests para mTLS."""
-
-        def __init__(self, session):
-            self._session = session
-
-        def post(self, url, data, headers=None):
-            from pysifen.sdk.errors import (
-                SifenTimeoutError,
-                SifenTransportError,
-            )
-            from requests.exceptions import RequestException, Timeout
-
-            try:
-                response = self._session.post(
-                    url,
-                    data=data,
-                    headers=headers or {
-                        "Content-Type": "text/xml; charset=utf-8"
-                    },
-                )
-                response.raise_for_status()
-                return response.content
-            except Timeout as exc:
-                raise SifenTimeoutError(
-                    "Timeout ao enviar requisição SOAP"
-                ) from exc
-            except RequestException as exc:
-                raise SifenTransportError(
-                    "Falha no transporte SOAP"
-                ) from exc
-
-    return RequestsTransport(session)
+    return RequestsTransport(
+        session,
+        timeout=timeout,
+        max_retries=max_retries,
+        backoff_factor=backoff_factor,
+    )

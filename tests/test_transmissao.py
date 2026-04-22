@@ -631,3 +631,117 @@ class TestTransmissaoBase:
 
         with pytest.raises(SifenTransportClosedError):
             t._get_client("recep_de")
+
+    def test_transport_reintenta_timeout_y_sucede(self, monkeypatch):
+        from requests.exceptions import Timeout
+
+        from pysifen.transmissao.base import _create_transport
+
+        transport = _create_transport(
+            "cert.pem",
+            "key.pem",
+            timeout=0.01,
+            max_retries=1,
+            backoff_factor=0.0,
+        )
+
+        class Response:
+            content = b"<soap />"
+
+            def raise_for_status(self):
+                return None
+
+        calls = []
+
+        def fake_post(*args, **kwargs):
+            calls.append(1)
+            if len(calls) == 1:
+                raise Timeout("slow")
+            return Response()
+
+        monkeypatch.setattr(transport._session, "post", fake_post)
+
+        result = transport.post("https://example.invalid", b"<xml />")
+
+        assert result == b"<soap />"
+        assert len(calls) == 2
+
+    def test_transport_no_reintenta_http_4xx(self, monkeypatch):
+        from requests.exceptions import HTTPError
+
+        from pysifen.sdk.errors import SifenTransportError
+        from pysifen.transmissao.base import _create_transport
+
+        transport = _create_transport(
+            "cert.pem",
+            "key.pem",
+            timeout=0.01,
+            max_retries=3,
+            backoff_factor=0.0,
+        )
+
+        class Response:
+            content = b""
+            status_code = 400
+
+            def raise_for_status(self):
+                raise HTTPError("400 client error", response=self)
+
+        calls = []
+
+        def fake_post(*args, **kwargs):
+            calls.append(1)
+            return Response()
+
+        monkeypatch.setattr(transport._session, "post", fake_post)
+
+        with pytest.raises(SifenTransportError):
+            transport.post("https://example.invalid", b"<xml />")
+
+        assert len(calls) == 1
+
+    def test_get_client_reutiliza_transport_y_cliente(self, monkeypatch):
+        from pysifen.transmissao.base import TransmissaoBase
+        from pysifen.transmissao.config import TEST
+
+        created = []
+
+        class ClientStub:
+            def __init__(self, config, transport):
+                self.config = config
+                self.transport = transport
+                self.send = MagicMock()
+
+        def fake_create_transport(*args, **kwargs):
+            transport = MagicMock()
+            transport._session = MagicMock()
+            created.append(transport)
+            return transport
+
+        monkeypatch.setattr(
+            "pysifen.transmissao.base._create_transport",
+            fake_create_transport,
+        )
+        monkeypatch.setattr(
+            "pysifen.transmissao.base.Client",
+            ClientStub,
+        )
+        monkeypatch.setattr(
+            TransmissaoBase,
+            "_get_cert_files",
+            lambda self: ("cert.pem", "key.pem"),
+        )
+
+        t = TransmissaoBase(
+            ambiente=TEST,
+            pkcs12_data=b"fake",
+            pkcs12_password="fake",
+            timeout=12,
+        )
+
+        client_1 = t._get_client("recep_de")
+        client_2 = t._get_client("recep_de")
+
+        assert client_1 is client_2
+        assert client_1.transport is client_2.transport
+        assert len(created) == 1
