@@ -705,6 +705,7 @@ class TestTransmissaoBase:
         from pysifen.transmissao.config import TEST
 
         created = []
+        create_transport_calls = []
 
         class ClientStub:
             def __init__(self, config, transport):
@@ -713,6 +714,7 @@ class TestTransmissaoBase:
                 self.send = MagicMock()
 
         def fake_create_transport(*args, **kwargs):
+            create_transport_calls.append((args, kwargs))
             transport = MagicMock()
             transport._session = MagicMock()
             created.append(transport)
@@ -723,7 +725,7 @@ class TestTransmissaoBase:
             fake_create_transport,
         )
         monkeypatch.setattr(
-            "pysifen.transmissao.base.Client",
+            "xsdata.formats.dataclass.client.Client",
             ClientStub,
         )
         monkeypatch.setattr(
@@ -737,6 +739,8 @@ class TestTransmissaoBase:
             pkcs12_data=b"fake",
             pkcs12_password="fake",
             timeout=12,
+            max_retries=4,
+            retry_backoff=0.5,
         )
 
         client_1 = t._get_client("recep_de")
@@ -745,3 +749,8 @@ class TestTransmissaoBase:
         assert client_1 is client_2
         assert client_1.transport is client_2.transport
         assert len(created) == 1
+        assert len(create_transport_calls) == 1
+        _, kwargs = create_transport_calls[0]
+        assert kwargs["timeout"] == 12
+        assert kwargs["max_retries"] == 4
+        assert kwargs["backoff_factor"] == 0.5

@@ -4,7 +4,6 @@ from __future__ import annotations
 import tempfile
 import time
 
-from xsdata.formats.dataclass.client import Client, Config
 from xsdata.formats.dataclass.parsers import XmlParser
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import (
@@ -30,11 +29,15 @@ class TransmissaoBase:
         pkcs12_data: bytes,
         pkcs12_password: str,
         timeout: float = 30.0,
+        max_retries: int = 2,
+        retry_backoff: float = 0.2,
     ):
         self.ambiente = ambiente
         self.pkcs12_data = pkcs12_data
         self.pkcs12_password = pkcs12_password
         self.timeout = timeout
+        self.max_retries = max_retries
+        self.retry_backoff = retry_backoff
         self._parser = XmlParser()
         self._serializer = XmlSerializer(
             config=SerializerConfig(
@@ -105,6 +108,8 @@ class TransmissaoBase:
 
         O client é configurado com mTLS usando o certificado PKCS12.
         """
+        from xsdata.formats.dataclass.client import Client, Config
+
         self._ensure_open()
 
         if servico in self._clients:
@@ -130,6 +135,8 @@ class TransmissaoBase:
             cert_path,
             key_path,
             timeout=self.timeout,
+            max_retries=self.max_retries,
+            backoff_factor=self.retry_backoff,
         )
         return self._transport
 
@@ -285,6 +292,7 @@ class RequestsTransport:
         delay = self._backoff_factor * (2**attempt)
         if delay > 0:
             time.sleep(delay)
+
 
 def _create_transport(
     cert_path: str,
