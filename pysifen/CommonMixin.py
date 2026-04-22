@@ -1,5 +1,4 @@
 """Mixin comum para todos os bindings do SIFEN."""
-import os
 from pathlib import Path
 
 from xsdata.formats.dataclass.parsers import XmlParser
@@ -34,35 +33,25 @@ class CommonMixin:
 
     def validate_xml(self) -> list:
         """Valida o XML contra o schema XSD correspondente."""
-        from lxml import etree
-
-        xml_string = self.to_xml()
-        xml_doc = etree.fromstring(xml_string.encode())
+        from pysifen.sdk.validation import validate_xml
 
         module = self.__class__.__module__
         parts = module.split(".")
-        # pysifen.de.bindings.v150.de_v150 -> pysifen/de/schemas/v150/
-        schema_dir = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            parts[1],  # "de"
-            "schemas",
-            parts[3],  # "v150"
+
+        schema_family = "de"
+        schema_version = "v150"
+        # Exemplo esperado: pysifen.de.bindings.v150.fe_v141
+        if len(parts) >= 4 and parts[0] == "pysifen":
+            if parts[1]:
+                schema_family = parts[1]
+            if parts[3].startswith("v"):
+                schema_version = parts[3]
+
+        return validate_xml(
+            self.to_xml(),
+            schema_family=schema_family,
+            schema_version=schema_version,
         )
-        schema_files = [f for f in os.listdir(schema_dir) if f.endswith(".xsd")]
-        errors = []
-        for schema_file in schema_files:
-            try:
-                schema_path = os.path.join(schema_dir, schema_file)
-                with open(schema_path, "rb") as f:
-                    schema_doc = etree.parse(f)
-                schema = etree.XMLSchema(schema_doc)
-                schema.assertValid(xml_doc)
-                return []
-            except etree.DocumentInvalid as e:
-                errors = [str(err) for err in e.error_log]
-            except Exception:
-                continue
-        return errors
 
     def sign_xml(self, xml, pkcs12_data, pkcs12_password, doc_id):
         """Assina o XML usando certificado PKCS12 (RSA-SHA256)."""
