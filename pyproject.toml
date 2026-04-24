@@ -48,7 +48,16 @@ transmissao = [
     "requests",
     "lxml",
 ]
+platform = [
+    "fastapi>=0.115,<1",
+    "pydantic>=2,<3",
+    "pydantic-settings>=2,<3",
+]
 test = [
+    "fastapi>=0.115,<1",
+    "httpx>=0.28,<1",
+    "pydantic>=2,<3",
+    "pydantic-settings>=2,<3",
     "pytest",
     "pytest-cov",
     "xmldiff",
@@ -58,7 +67,7 @@ test = [
 [tool.setuptools]
 include-package-data = true
 [tool.setuptools.packages.find]
-include = ["pysifen*"]
+include = ["pysifen*", "kilasifen*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "pysifen.__version__"}
