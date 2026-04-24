@@ -109,7 +109,11 @@ class TransmissaoBase:
 
         O client Ã© configurado com mTLS usando o certificado PKCS12.
         """
-        from xsdata.formats.dataclass.client import Client, Config
+        from xsdata.formats.dataclass.client import (
+            Client,
+            Config,
+            TransportTypes,
+        )
 
         self._ensure_open()
 
@@ -122,7 +126,10 @@ class TransmissaoBase:
 
         config = Config.from_service(
             None,
+            style="document",
             location=url,
+            transport=TransportTypes.SOAP,
+            soap_action="",
             input=input_type,
             output=output_type,
         )

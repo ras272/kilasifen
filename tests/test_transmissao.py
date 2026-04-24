@@ -774,6 +774,7 @@ class TestTransmissaoBase:
             REnviDe,
             RRetEnviDe,
         )
+        from xsdata.formats.dataclass.client import TransportTypes
         from pysifen.transmissao.base import TransmissaoBase
         from pysifen.transmissao.config import TEST
 
@@ -825,6 +826,8 @@ class TestTransmissaoBase:
         assert len(create_transport_calls) == 1
         assert client_1.config.input is REnviDe
         assert client_1.config.output is RRetEnviDe
+        assert client_1.config.transport == TransportTypes.SOAP
+        assert client_1.config.style == "document"
         _, kwargs = create_transport_calls[0]
         assert kwargs["timeout"] == 12
         assert kwargs["max_retries"] == 4
