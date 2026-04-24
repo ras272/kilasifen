@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import tempfile
 import time
+import re
 from xml.etree import ElementTree
 
 from xsdata.formats.dataclass.parsers import XmlParser
@@ -352,6 +353,7 @@ def _wrap_soap_envelope(data: str | bytes) -> bytes:
     payload = payload.strip()
     if "<soap:Envelope" in payload or "<soapenv:Envelope" in payload:
         return payload.encode("utf-8")
+    payload = re.sub(r"^\s*<\?xml[^>]*\?>", "", payload).strip()
 
     envelope = (
         '<?xml version="1.0" encoding="UTF-8"?>'

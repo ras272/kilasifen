@@ -817,11 +817,15 @@ class TestTransmissaoBase:
 
         result = transport.post(
             "https://example.invalid",
-            b"<rEnviConsRUC><dId>1</dId></rEnviConsRUC>",
+            (
+                b'<?xml version="1.0" encoding="UTF-8"?>'
+                b"<rEnviConsRUC><dId>1</dId></rEnviConsRUC>"
+            ),
         )
 
         assert b"<soap:Envelope" in captured["data"]
         assert b"<soap:Body>" in captured["data"]
+        assert captured["data"].count(b"<?xml") == 1
         assert b"<rEnviConsRUC>" in captured["data"]
         assert result == b"<rRespuesta>ok</rRespuesta>"
 
