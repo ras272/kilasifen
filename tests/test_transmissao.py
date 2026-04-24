@@ -375,6 +375,11 @@ class TestConsultaSIFEN:
         with pytest.raises(ValueError, match="entre 5 e 8"):
             c.consultar_ruc("123456789")
 
+    def test_consultar_ruc_formato_invalido(self):
+        c = self._make_consulta()
+        with pytest.raises(ValueError, match="Formato de RUC invalido"):
+            c.consultar_ruc("80024135-")
+
     @patch(
         "pysifen.transmissao.base.TransmissaoBase._get_client"
     )
@@ -453,6 +458,29 @@ class TestConsultaSIFEN:
         assert isinstance(result, RResEnviConsRuc)
         assert result.xContRUC.dRazCons == "Empresa Demo S.A."
         assert result.xContRUC.dRUCFactElec == "S"
+
+    @patch(
+        "pysifen.transmissao.base.TransmissaoBase._get_client"
+    )
+    def test_consultar_ruc_normaliza_formato_con_dv(self, mock_client):
+        from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
+            RResEnviConsRuc,
+        )
+
+        mock_response = RResEnviConsRuc(
+            dCodRes="0502",
+            dMsgRes="Contribuyente encontrado",
+        )
+        client_mock = MagicMock()
+        client_mock.send.return_value = mock_response
+        mock_client.return_value = client_mock
+
+        c = self._make_consulta()
+        result = c.consultar_ruc("80024135-5")
+
+        assert result.dCodRes == "0502"
+        sent_request = client_mock.send.call_args.args[0]
+        assert sent_request.dRUCCons == "80024135"
 
     @patch(
         "pysifen.transmissao.base.TransmissaoBase._get_client"

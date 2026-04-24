@@ -98,6 +98,7 @@ class ConsultaSIFEN(TransmissaoBase):
         Returns:
             RResEnviConsRuc com dados do contribuinte
         """
+        ruc = _normalize_ruc(ruc)
         if not (5 <= len(ruc) <= 8):
             raise ValueError(
                 f"RUC deve ter entre 5 e 8 caracteres. "
@@ -182,3 +183,14 @@ def _generate_id() -> int:
     import time
 
     return int(time.time() * 1000) % 999999999999999
+
+
+def _normalize_ruc(ruc: str) -> str:
+    """Normaliza formatos humanos como 80024135-5 para dRUCCons."""
+    value = str(ruc).strip().replace(" ", "")
+    if "-" in value:
+        parts = value.split("-")
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise ValueError(f"Formato de RUC invalido: '{ruc}'")
+        value = parts[0]
+    return value
