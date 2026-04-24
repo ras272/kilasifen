@@ -23,10 +23,10 @@ from pysifen.transmissao.de import TransmissaoDE
 
 SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
-TOTAL_OPERACION = "110000.00000000"
-TOTAL_IVA = "10000.00000000"
-BASE_GRAVADA = "100000.00000000"
-TOTAL_CANTIDAD = "1.00000000"
+TOTAL_OPERACION = "110000"
+TOTAL_IVA = "10000"
+BASE_GRAVADA = "100000"
+TOTAL_CANTIDAD = "1"
 
 
 def _el(parent, name: str, text=None):
@@ -126,7 +126,7 @@ def build_unsigned_de_base(
     _el(grec, "iTiOpe", "1")
     _el(grec, "cPaisRec", "PRY")
     _el(grec, "dDesPaisRe", "Paraguay")
-    _el(grec, "iTiContRec", "1")
+    _el(grec, "iTiContRec", "2")
     _el(grec, "dRucRec", "80069563")
     _el(grec, "dDVRec", "1")
     _el(grec, "dNomRec", "TIPS S.A")
@@ -155,34 +155,43 @@ def build_unsigned_de_base(
     _el(valor, "dPUniProSer", TOTAL_OPERACION)
     _el(valor, "dTotBruOpeItem", TOTAL_OPERACION)
     resta = _el(valor, "gValorRestaItem")
-    _el(resta, "dDescItem", "0.00000000")
-    _el(resta, "dDescGloItem", "0.00000000")
-    _el(resta, "dAntPreUniIt", "0.00000000")
-    _el(resta, "dAntGloPreUniIt", "0.00000000")
+    _el(resta, "dDescItem", "0")
+    _el(resta, "dPorcDesIt", "0.00")
+    _el(resta, "dAntPreUniIt", "0")
+    _el(resta, "dAntGloPreUniIt", "0")
     _el(resta, "dTotOpeItem", TOTAL_OPERACION)
     iva = _el(item, "gCamIVA")
     _el(iva, "iAfecIVA", "1")
     _el(iva, "dDesAfecIVA", "Gravado IVA")
-    _el(iva, "dPropIVA", "100.00000000")
+    _el(iva, "dPropIVA", "100")
     _el(iva, "dTasaIVA", "10")
     _el(iva, "dBasGravIVA", BASE_GRAVADA)
     _el(iva, "dLiqIVAItem", TOTAL_IVA)
-    _el(iva, "dBasExe", "0.00000000")
+    _el(iva, "dBasExe", "0")
 
     tot = _el(de, "gTotSub")
+    _el(tot, "dSubExe", "0")
+    _el(tot, "dSubExo", "0")
+    _el(tot, "dSub5", "0")
     _el(tot, "dSub10", TOTAL_OPERACION)
     _el(tot, "dTotOpe", TOTAL_OPERACION)
-    _el(tot, "dTotDesc", "0.00000000")
-    _el(tot, "dTotDescGlotem", "0.00000000")
-    _el(tot, "dTotAntItem", "0.00000000")
-    _el(tot, "dTotAnt", "0.00000000")
-    _el(tot, "dPorcDescTotal", "0.00000000")
-    _el(tot, "dDescTotal", "0.00000000")
-    _el(tot, "dAnticipo", "0.00000000")
-    _el(tot, "dRedon", "0.00000000")
+    _el(tot, "dTotDesc", "0")
+    _el(tot, "dTotDescGlotem", "0")
+    _el(tot, "dTotAntItem", "0")
+    _el(tot, "dTotAnt", "0")
+    _el(tot, "dPorcDescTotal", "0.00")
+    _el(tot, "dDescTotal", "0")
+    _el(tot, "dAnticipo", "0")
+    _el(tot, "dRedon", "0")
+    _el(tot, "dComi", "0")
     _el(tot, "dTotGralOpe", TOTAL_OPERACION)
+    _el(tot, "dIVA5", "0")
     _el(tot, "dIVA10", TOTAL_IVA)
+    _el(tot, "dLiqTotIVA5", "0")
+    _el(tot, "dLiqTotIVA10", "0")
+    _el(tot, "dIVAComi", "0")
     _el(tot, "dTotIVA", TOTAL_IVA)
+    _el(tot, "dBaseGrav5", "0")
     _el(tot, "dBaseGrav10", BASE_GRAVADA)
     _el(tot, "dTBasGraIVA", BASE_GRAVADA)
 

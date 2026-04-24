@@ -45,14 +45,16 @@ def test_build_unsigned_de_base_has_required_v150_fields():
     assert root.find("s:DE/s:gTimb/s:dNumTim", ns).text == "17094237"
     assert root.find("s:DE/s:gDatGralOpe/s:gEmis/s:gActEco/s:cActEco", ns).text == "82999"
     assert root.find("s:DE/s:gDtipDE/s:gCamFE/s:dDesIndPres", ns).text == "Operación presencial"
-    assert root.find("s:DE/s:gDatGralOpe/s:gDatRec/s:iTiContRec", ns).text == "1"
-    assert root.find(".//s:gCamIVA/s:dBasExe", ns).text == "0.00000000"
+    assert root.find("s:DE/s:gDatGralOpe/s:gDatRec/s:iTiContRec", ns).text == "2"
+    assert root.find(".//s:gCamIVA/s:dBasExe", ns).text == "0"
     assert root.find(".//s:gValorItem/s:dTiCamIt", ns) is None
     assert root.find(".//s:gValorRestaItem/s:dTotOpeGs", ns) is None
     assert root.find(".//s:gTotSub/s:dTotalGs", ns) is None
-    assert root.find(".//s:gTotSub/s:dTotGralOpe", ns).text == "110000.00000000"
-    assert root.find(".//s:gTotSub/s:dTotIVA", ns).text == "10000.00000000"
-    assert root.find(".//s:gTotSub/s:dTotDescGlotem", ns).text == "0.00000000"
+    assert root.find(".//s:gTotSub/s:dTotGralOpe", ns).text == "110000"
+    assert root.find(".//s:gTotSub/s:dTotIVA", ns).text == "10000"
+    assert root.find(".//s:gTotSub/s:dTotDescGlotem", ns).text == "0"
+    assert root.find(".//s:gTotSub/s:dComi", ns).text == "0"
+    assert root.find(".//s:gValorRestaItem/s:dPorcDesIt", ns).text == "0.00"
     assert root.find("s:gCamFuFD", ns) is None
 
 

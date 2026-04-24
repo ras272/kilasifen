@@ -76,7 +76,7 @@ class Pkcs12Signer:
                 signature_algorithm="rsa-sha256",
                 digest_algorithm="sha256",
                 c14n_algorithm=(
-                    "http://www.w3.org/TR/2001/REC-xml-c14n-20010315"
+                    "http://www.w3.org/2001/10/xml-exc-c14n#"
                 ),
             )
             ref_uri = f"#{doc_id}" if doc_id else None
