@@ -32,6 +32,7 @@ def test_build_unsigned_de_base_has_required_v150_fields():
     xml = module.build_unsigned_de_base(
         numero_documento="0000001",
         fecha_emision="2026-04-24T12:00:00",
+        timbrado="17094237",
         fecha_inicio_timbrado="2025-07-07",
         codigo_seguridad="123456789",
     )
@@ -39,6 +40,7 @@ def test_build_unsigned_de_base_has_required_v150_fields():
     ns = {"s": "http://ekuatia.set.gov.py/sifen/xsd"}
 
     assert root.find("s:DE/s:dSisFact", ns).text == "1"
+    assert root.find("s:DE/s:gTimb/s:dNumTim", ns).text == "17094237"
     assert root.find(".//s:gCamIVA/s:dBasExe", ns).text == "0"
     assert root.find(".//s:gValorItem/s:dTiCamIt", ns).text == "1"
     assert root.find(".//s:gTotSub/s:dTotDescGlotem", ns).text == "0"
