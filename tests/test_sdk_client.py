@@ -239,7 +239,10 @@ def test_sifen_client_wraps_fiscal_generators():
     ) as gen_cdc, patch(
         "pysifen.sdk.client._generate_dcarqr",
         return_value="QRCODE-OK",
-    ) as gen_qr:
+    ) as gen_qr, patch(
+        "pysifen.sdk.client._generate_dcarqr_from_signed_xml",
+        return_value="QRCODE-XML-OK",
+    ) as gen_qr_xml:
         client = SifenClient(
             ambiente=2,
             pkcs12_data=b"cert",
@@ -247,13 +250,14 @@ def test_sifen_client_wraps_fiscal_generators():
         )
         cdc = client.generar_cdc(foo="bar")
         qr = client.generar_dcarqr(foo="bar")
+        qr_xml = client.generar_dcarqr_desde_xml_firmado(foo="bar")
 
     assert cdc == "CDC-OK"
     assert qr == "QRCODE-OK"
+    assert qr_xml == "QRCODE-XML-OK"
     gen_cdc.assert_called_once_with(foo="bar")
     gen_qr.assert_called_once_with(foo="bar")
-
-
+    gen_qr_xml.assert_called_once_with(foo="bar")
 def test_sifen_client_wraps_kude_helpers():
     de = MagicMock()
     cons = MagicMock()
@@ -344,3 +348,4 @@ def test_sifen_client_context_manager_closes_services():
     de.close.assert_called_once()
     cons.close.assert_called_once()
     evt.close.assert_called_once()
+

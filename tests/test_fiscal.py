@@ -4,9 +4,11 @@ import pytest
 
 from pysifen.sdk.fiscal import (
     build_qr_payload,
+    build_qr_payload_from_signed_xml,
     calculate_mod11_dv,
     format_cdc_for_kude,
     generate_dcarqr,
+    generate_dcarqr_from_signed_xml,
     generate_cdc,
 )
 
@@ -210,3 +212,81 @@ def test_build_qr_payload_rejects_both_receptor_identifiers():
             d_ruc_rec="88899990",
             d_num_id_rec="1234567",
         )
+
+
+def test_build_qr_payload_from_signed_xml_uses_literal_totals():
+    signed_xml = """
+<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">
+  <dVerFor>150</dVerFor>
+  <DE Id="01800241355001001000075122026042411234567890">
+    <gTimb><iTiDE>1</iTiDE></gTimb>
+    <gDatGralOpe>
+      <dFeEmiDE>2026-04-24T09:55:00</dFeEmiDE>
+      <gOpeCom><iTImp>1</iTImp></gOpeCom>
+      <gDatRec><iNatRec>1</iNatRec><dRucRec>80069563</dRucRec></gDatRec>
+    </gDatGralOpe>
+    <gDtipDE><gCamItem/><gCamItem/></gDtipDE>
+    <gTotSub>
+      <dTotGralOpe>110000.00</dTotGralOpe>
+      <dTotIVA>10000.00</dTotIVA>
+    </gTotSub>
+  </DE>
+  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+    <SignedInfo>
+      <Reference URI="#01800241355001001000075122026042411234567890">
+        <DigestValue>B7+e93lmdfIpt96amatjsp7YyStylWGyREb4GtutGAE=</DigestValue>
+      </Reference>
+    </SignedInfo>
+  </Signature>
+</rDE>
+"""
+    payload = build_qr_payload_from_signed_xml(
+        signed_xml=signed_xml,
+        id_csc="0001",
+        csc="ABCD0000000000000000000000000000",
+        environment="test",
+    )
+    assert "&dRucRec=80069563" in payload["step1"]
+    assert "&dTotGralOpe=110000.00" in payload["step1"]
+    assert "&dTotIVA=10000.00" in payload["step1"]
+    assert "&cItems=2" in payload["step1"]
+    assert payload["url"].startswith(
+        "https://ekuatia.set.gov.py/consultas-test/qr?"
+    )
+
+
+def test_generate_dcarqr_from_signed_xml_uses_remision_zero_totals():
+    signed_xml = """
+<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">
+  <dVerFor>150</dVerFor>
+  <DE Id="01800241355001001000075222026042411234567898">
+    <gTimb><iTiDE>7</iTiDE></gTimb>
+    <gDatGralOpe>
+      <dFeEmiDE>2026-04-24T09:56:00</dFeEmiDE>
+      <gOpeCom><iTImp>1</iTImp></gOpeCom>
+      <gDatRec><iNatRec>2</iNatRec></gDatRec>
+    </gDatGralOpe>
+    <gDtipDE><gCamItem/></gDtipDE>
+    <gTotSub>
+      <dTotGralOpe>999999.99</dTotGralOpe>
+      <dTotIVA>777.77</dTotIVA>
+    </gTotSub>
+  </DE>
+  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
+    <SignedInfo>
+      <Reference URI="#01800241355001001000075222026042411234567898">
+        <DigestValue>B7+e93lmdfIpt96amatjsp7YyStylWGyREb4GtutGAE=</DigestValue>
+      </Reference>
+    </SignedInfo>
+  </Signature>
+</rDE>
+"""
+    url = generate_dcarqr_from_signed_xml(
+        signed_xml=signed_xml,
+        id_csc="0001",
+        csc="ABCD0000000000000000000000000000",
+        environment="test",
+    )
+    assert "&dNumIDRec=0" in url
+    assert "&dTotGralOpe=0" in url
+    assert "&dTotIVA=0" in url

@@ -4,6 +4,7 @@ from __future__ import annotations
 from pysifen.sdk.fiscal import (
     generate_cdc as _generate_cdc,
     generate_dcarqr as _generate_dcarqr,
+    generate_dcarqr_from_signed_xml as _generate_dcarqr_from_signed_xml,
 )
 from pysifen.sdk.kude import (
     render_kude_html as _render_kude_html,
@@ -141,6 +142,10 @@ class SifenClient:
     def generar_dcarqr(self, **kwargs):
         """Convenience wrapper around SDK fiscal dCarQR generator."""
         return _generate_dcarqr(**kwargs)
+
+    def generar_dcarqr_desde_xml_firmado(self, **kwargs):
+        """Build dCarQR using literal values from a signed DE XML."""
+        return _generate_dcarqr_from_signed_xml(**kwargs)
 
     def render_kude_html(self, rde, *, title: str = "KuDE"):
         """Render a printable KuDE HTML."""

@@ -14,11 +14,14 @@ from lxml import etree
 
 from pysifen import TEST
 from pysifen.assinatura import sign_xml
-from pysifen.sdk.fiscal import build_qr_payload, calculate_mod11_dv, generate_cdc
+from pysifen.sdk.fiscal import (
+    build_qr_payload_from_signed_xml,
+    calculate_mod11_dv,
+    generate_cdc,
+)
 from pysifen.transmissao.de import TransmissaoDE
 
 SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
-DS_NS = "http://www.w3.org/2000/09/xmldsig#"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
 TOTAL_OPERACION = "110000.00000000"
 TOTAL_IVA = "10000.00000000"
@@ -195,19 +198,10 @@ def finalize_signed_de_with_qr(
     csc: str,
 ) -> bytes:
     root = etree.fromstring(signed_xml.encode("utf-8"))
-    digest = root.find(f".//{{{DS_NS}}}DigestValue")
-    if digest is None or not digest.text:
-        raise RuntimeError("No DigestValue found in signed XML")
-    qr = build_qr_payload(
-        cdc=cdc,
-        d_fe_emi_de=fecha_emision,
-        digest_value=digest.text,
+    qr = build_qr_payload_from_signed_xml(
+        signed_xml=signed_xml,
         id_csc=id_csc,
         csc=csc,
-        d_ruc_rec="80069563",
-        d_tot_gral_ope=TOTAL_OPERACION,
-        d_tot_iva=TOTAL_IVA,
-        c_items=1,
         environment="test",
     )
     gcam = etree.Element(f"{{{SIFEN_NS}}}gCamFuFD")

@@ -11,7 +11,9 @@ from pysifen.sdk.errors import (
 )
 from pysifen.sdk.fiscal import (
     build_qr_payload,
+    build_qr_payload_from_signed_xml,
     calculate_mod11_dv,
+    generate_dcarqr_from_signed_xml,
     format_cdc_for_kude,
     generate_dcarqr,
     generate_cdc,
@@ -43,7 +45,9 @@ __all__ = [
     "generate_cdc",
     "format_cdc_for_kude",
     "build_qr_payload",
+    "build_qr_payload_from_signed_xml",
     "generate_dcarqr",
+    "generate_dcarqr_from_signed_xml",
     "build_kude_context",
     "render_kude_html",
     "render_kude_html_from_xml",
