@@ -71,7 +71,7 @@ def test_finalize_signed_de_places_signature_before_qr():
         signed,
         cdc="01800241355001001000000122026042411234567899",
         fecha_emision="2026-04-24T12:00:00",
-        id_csc="001",
+        id_csc="0001",
         csc="ABCD0000000000000000000000000000",
     )
     root = etree.fromstring(final_xml)

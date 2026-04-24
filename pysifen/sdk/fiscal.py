@@ -166,7 +166,7 @@ def build_qr_payload(
     digest_hex = _to_hex(_normalize_digest_value(digest_value))
     id_csc_value = _numeric_field(
         id_csc,
-        size=3,
+        size=4,
         name="id_csc",
         min_value=1,
     )
