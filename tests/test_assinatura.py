@@ -90,6 +90,20 @@ class TestSignXml:
         assert "SignatureValue" in signed
         assert "SignedInfo" in signed
 
+    def test_sign_xml_removes_existing_signature(
+        self, cert_data, sample_rde
+    ):
+        from lxml import etree
+
+        from pysifen.assinatura import sign_xml
+
+        xml = sample_rde.to_xml()
+        signed = sign_xml(xml, cert_data, "test1234", sample_rde.DE.Id)
+        root = etree.fromstring(signed.encode())
+        ns = {"ds": "http://www.w3.org/2000/09/xmldsig#"}
+
+        assert len(root.findall(".//ds:Signature", ns)) == 1
+
     def test_sign_xml_sha256(self, cert_data, sample_rde):
         """Verifica que usa SHA256 (não SHA1)."""
         from pysifen.assinatura import sign_xml

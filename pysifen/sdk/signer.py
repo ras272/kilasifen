@@ -58,6 +58,12 @@ class Pkcs12Signer:
             from signxml import XMLSigner, methods
 
             root = _normalize_xml(xml_input)
+            for signature in root.findall(
+                ".//{http://www.w3.org/2000/09/xmldsig#}Signature"
+            ):
+                parent = signature.getparent()
+                if parent is not None:
+                    parent.remove(signature)
 
             for el in root.iter("*"):
                 if el.text is not None and not el.text.strip():

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+from lxml import etree
 
 from pysifen.de.bindings.v150.ws_si_recep_de_v150 import (
     REnviDe,
@@ -36,16 +37,11 @@ class TransmissaoDE(TransmissaoBase):
             if doc_id:
                 xml_de = self._sign_xml(xml_de, doc_id)
 
-        envi_de = REnviDe(
-            dId=_generate_id(),
-            xDE=REnviDe.XDe(),
+        request_xml = _build_enviar_de_request_xml(
+            d_id=_generate_id(),
+            xml_de=xml_de,
         )
-
-        client = self._get_client("recep_de")
-        response = client.send(
-            envi_de,
-            headers={"xml_de": xml_de},
-        )
+        response = self._send_raw_xml("recep_de", request_xml)
 
         if isinstance(response, RRetEnviDe):
             return response
@@ -115,6 +111,33 @@ class TransmissaoDE(TransmissaoBase):
             else response.decode(),
             RResEnviLoteDe,
         )
+
+
+def _build_enviar_de_request_xml(d_id: int, xml_de: str) -> bytes:
+    ns = "http://ekuatia.set.gov.py/sifen/xsd"
+    r_envi_de = etree.Element(f"{{{ns}}}rEnviDe", nsmap={None: ns})
+    d_id_el = etree.SubElement(r_envi_de, f"{{{ns}}}dId")
+    d_id_el.text = str(d_id)
+    xde = etree.SubElement(r_envi_de, f"{{{ns}}}xDE")
+    de_root = _with_schema_location(xml_de)
+    xde.append(de_root)
+    return etree.tostring(
+        r_envi_de,
+        encoding="UTF-8",
+        xml_declaration=True,
+    )
+
+
+def _with_schema_location(xml_de: str):
+    root = etree.fromstring(xml_de.encode("utf-8"))
+    xsi_ns = "http://www.w3.org/2001/XMLSchema-instance"
+    schema_attr = f"{{{xsi_ns}}}schemaLocation"
+    if schema_attr not in root.attrib:
+        root.set(
+            schema_attr,
+            "http://ekuatia.set.gov.py/sifen/xsd siRecepDE_v150.xsd",
+        )
+    return root
 
 
 def _generate_id() -> int:

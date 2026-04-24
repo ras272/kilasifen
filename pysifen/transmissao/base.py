@@ -183,6 +183,11 @@ class TransmissaoBase:
         """Parseia XML string para objeto binding."""
         return self._parser.from_string(xml, clazz)
 
+    def _send_raw_xml(self, servico: str, xml: str | bytes) -> bytes:
+        """Envia XML de request ya serializado al servicio SOAP."""
+        url = get_endpoint(self.ambiente, servico)
+        return self._get_transport().post(url, data=xml)
+
     def cleanup(self):
         """Remove arquivos temporÃ¡rios de certificado."""
         self.close()

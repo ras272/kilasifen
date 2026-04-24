@@ -188,16 +188,13 @@ class TestTransmissaoDE:
         assert t.pkcs12_password == "fake-pass"
 
     @patch(
-        "pysifen.transmissao.base.TransmissaoBase._get_client"
-    )
-    @patch(
         "pysifen.transmissao.base.TransmissaoBase._sign_xml"
     )
     @patch(
         "pysifen.transmissao.base.TransmissaoBase._serialize"
     )
     def test_enviar_de_mock(
-        self, mock_serialize, mock_sign, mock_client
+        self, mock_serialize, mock_sign
     ):
         from pysifen.de.bindings.v150.prot_proces_de_v150 import (
             RProtDe,
@@ -209,8 +206,13 @@ class TestTransmissaoDE:
             RRetEnviDe,
         )
 
-        mock_serialize.return_value = "<rDE>xml</rDE>"
-        mock_sign.return_value = "<rDE>signed</rDE>"
+        mock_serialize.return_value = (
+            '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">xml</rDE>'
+        )
+        mock_sign.return_value = (
+            '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+            "signed</rDE>"
+        )
 
         mock_response = RRetEnviDe(
             rProtDe=RProtDe(
@@ -226,11 +228,8 @@ class TestTransmissaoDE:
                 ],
             )
         )
-        client_mock = MagicMock()
-        client_mock.send.return_value = mock_response
-        mock_client.return_value = client_mock
-
         t = self._make_transmissao()
+        t._send_raw_xml = MagicMock(return_value=mock_response)
 
         rde_mock = MagicMock()
         rde_mock.DE.Id = (
@@ -244,6 +243,10 @@ class TestTransmissaoDE:
         assert result.rProtDe.dProtAut == 123456789
         assert result.rProtDe.gResProc[0].dCodRes == "0260"
         mock_sign.assert_called_once()
+        sent_xml = t._send_raw_xml.call_args.args[1]
+        assert b"<xDE>" in sent_xml
+        assert b"signed" in sent_xml
+        assert b"schemaLocation" in sent_xml
 
     def test_enviar_lote_max_excedido(self):
         t = self._make_transmissao()
@@ -304,7 +307,7 @@ class TestTransmissaoDE:
         """Testa enviar_de com sign=False."""
         t = self._make_transmissao()
 
-        with patch.object(t, "_get_client") as mock_client, \
+        with patch.object(t, "_send_raw_xml") as mock_send_raw, \
              patch.object(t, "_sign_xml") as mock_sign, \
              patch.object(t, "_serialize") as mock_serialize:
             from pysifen.de.bindings.v150.prot_proces_de_v150 import (
@@ -317,9 +320,11 @@ class TestTransmissaoDE:
                 RRetEnviDe,
             )
 
-            mock_serialize.return_value = "<rDE>xml</rDE>"
-            client_mock = MagicMock()
-            client_mock.send.return_value = RRetEnviDe(
+            mock_serialize.return_value = (
+                '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+                "xml</rDE>"
+            )
+            mock_send_raw.return_value = RRetEnviDe(
                 rProtDe=RProtDe(
                     dFecProc="2024-11-29T18:00:00-03:00",
                     gResProc=[
@@ -330,12 +335,12 @@ class TestTransmissaoDE:
                     ],
                 )
             )
-            mock_client.return_value = client_mock
 
             rde_mock = MagicMock()
             result = t.enviar_de(rde_mock, sign=False)
 
             mock_sign.assert_not_called()
+            mock_send_raw.assert_called_once()
             assert isinstance(result, RRetEnviDe)
 
 
