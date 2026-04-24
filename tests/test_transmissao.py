@@ -78,6 +78,22 @@ class TestConfig:
         url = get_endpoint(TEST, "recep_de")
         assert "sifen-test" in url
 
+    def test_consulta_ruc_endpoint_usa_ruta_oficial(self):
+        from pysifen.transmissao.config import TEST, get_endpoint
+
+        assert get_endpoint(TEST, "cons_ruc") == (
+            "https://sifen-test.set.gov.py/"
+            "de/ws/consultas-ruc/consulta-ruc.wsdl"
+        )
+
+    def test_consulta_lote_endpoint_usa_ruta_oficial(self):
+        from pysifen.transmissao.config import TEST, get_endpoint
+
+        assert get_endpoint(TEST, "cons_lote") == (
+            "https://sifen-test.set.gov.py/"
+            "de/ws/consultas-lote/consulta-lote.wsdl"
+        )
+
     def test_get_endpoint_ambiente_invalido(self):
         from pysifen.transmissao.config import get_endpoint
 

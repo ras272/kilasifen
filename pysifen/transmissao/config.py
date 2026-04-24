@@ -16,10 +16,11 @@ ENDPOINTS = {
         ),
         "cons_lote": (
             "https://sifen.set.gov.py/"
-            "de/ws/consultas/consulta-lote.wsdl"
+            "de/ws/consultas-lote/consulta-lote.wsdl"
         ),
         "cons_ruc": (
-            "https://sifen.set.gov.py/consultas/ruc.wsdl"
+            "https://sifen.set.gov.py/"
+            "de/ws/consultas-ruc/consulta-ruc.wsdl"
         ),
         "evento": (
             "https://sifen.set.gov.py/de/ws/eventos/"
@@ -49,10 +50,11 @@ ENDPOINTS = {
         ),
         "cons_lote": (
             "https://sifen-test.set.gov.py/"
-            "de/ws/consultas/consulta-lote.wsdl"
+            "de/ws/consultas-lote/consulta-lote.wsdl"
         ),
         "cons_ruc": (
-            "https://sifen-test.set.gov.py/consultas/ruc.wsdl"
+            "https://sifen-test.set.gov.py/"
+            "de/ws/consultas-ruc/consulta-ruc.wsdl"
         ),
         "evento": (
             "https://sifen-test.set.gov.py/"
