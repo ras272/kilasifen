@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 import re
 
@@ -165,7 +166,7 @@ def build_qr_payload(
     digest_hex = _to_hex(_normalize_digest_value(digest_value))
     id_csc_value = _numeric_field(
         id_csc,
-        size=4,
+        size=3,
         name="id_csc",
         min_value=1,
     )
@@ -374,23 +375,22 @@ def _normalize_receptor(value: str | None) -> str:
 
 def _normalize_qr_numeric(value: int | float | str | None) -> str:
     if value is None:
-        return "0"
-    if isinstance(value, int):
+        return "0.00000000"
+    if isinstance(value, int | float):
         if value < 0:
             raise ValueError("numeric QR values must be >= 0")
-        return str(value)
-    if isinstance(value, float):
-        if value < 0:
-            raise ValueError("numeric QR values must be >= 0")
-        normalized = f"{value:.8f}".rstrip("0").rstrip(".")
-        return normalized or "0"
+        return f"{Decimal(str(value)):.8f}"
 
     raw = str(value).strip()
     if not raw:
-        return "0"
+        return "0.00000000"
     if not re.fullmatch(r"\d+(\.\d+)?", raw):
         raise ValueError("numeric QR values must be digits or decimal string")
-    return raw
+    try:
+        normalized = Decimal(raw)
+    except InvalidOperation as exc:
+        raise ValueError("numeric QR values must be digits or decimal string") from exc
+    return f"{normalized:.8f}"
 
 
 def _normalize_items_count(value: int | str | None) -> str:

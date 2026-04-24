@@ -129,7 +129,7 @@ def test_build_qr_payload_matches_manual_v150_example():
         cdc="01444444017001001001452822017012515873260988",
         d_fe_emi_de="2017-01-25T09:35:17",
         digest_value="yzGYhUx1/XYYzksWB+fPR3Qc50c=",
-        id_csc="0001",
+        id_csc="001",
         csc="ABCD0000000000000000000000000000",
         d_ruc_rec="88899990",
         d_tot_gral_ope="300000",
@@ -139,8 +139,8 @@ def test_build_qr_payload_matches_manual_v150_example():
     )
 
     assert payload["c_hash_qr"] == (
-        "97ddbb3c1e7d65af03a70ffe21f2b348"
-        "46ab1c89e0566c35222086766b7374ed"
+        "c68fa1b0e6b701db141ba1653f17cf68"
+        "154dab109a8ccdd9fe49d2a092453f8b"
     )
     assert payload["url"] == (
         "https://ekuatia.set.gov.py/consultas/qr?"
@@ -148,14 +148,14 @@ def test_build_qr_payload_matches_manual_v150_example():
         "&Id=01444444017001001001452822017012515873260988"
         "&dFeEmiDE=323031372d30312d32355430393a33353a3137"
         "&dRucRec=88899990"
-        "&dTotGralOpe=300000"
-        "&dTotIVA=27272"
+        "&dTotGralOpe=300000.00000000"
+        "&dTotIVA=27272.00000000"
         "&cItems=2"
         "&DigestValue=797a4759685578312f5859597a6b7357422b6650523351633530633d"
-        "&IdCSC=0001"
+        "&IdCSC=001"
         "&cHashQR="
-        "97ddbb3c1e7d65af03a70ffe21f2b348"
-        "46ab1c89e0566c35222086766b7374ed"
+        "c68fa1b0e6b701db141ba1653f17cf68"
+        "154dab109a8ccdd9fe49d2a092453f8b"
     )
 
 
@@ -164,7 +164,7 @@ def test_generate_dcarqr_xml_escaped():
         cdc="01444444017001001001452822017012515873260988",
         d_fe_emi_de="2017-01-25T09:35:17",
         digest_value="yzGYhUx1/XYYzksWB+fPR3Qc50c=",
-        id_csc="0001",
+        id_csc="001",
         csc="ABCD0000000000000000000000000000",
         d_ruc_rec="88899990",
         d_tot_gral_ope="300000",
@@ -191,8 +191,8 @@ def test_build_qr_payload_uses_default_zero_values():
     )
 
     assert "&dRucRec=0" in payload["step1"]
-    assert "&dTotGralOpe=0" in payload["step1"]
-    assert "&dTotIVA=0" in payload["step1"]
+    assert "&dTotGralOpe=0.00000000" in payload["step1"]
+    assert "&dTotIVA=0.00000000" in payload["step1"]
     assert "&cItems=0" in payload["step1"]
     assert payload["url"].startswith(
         "https://ekuatia.set.gov.py/consultas-test/qr?"
@@ -205,7 +205,7 @@ def test_build_qr_payload_rejects_both_receptor_identifiers():
             cdc="01444444017001001001452822017012515873260988",
             d_fe_emi_de="2017-01-25T09:35:17",
             digest_value="yzGYhUx1/XYYzksWB+fPR3Qc50c=",
-            id_csc="0001",
+            id_csc="001",
             csc="ABCD0000000000000000000000000000",
             d_ruc_rec="88899990",
             d_num_id_rec="1234567",

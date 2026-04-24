@@ -20,6 +20,10 @@ from pysifen.transmissao.de import TransmissaoDE
 SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 DS_NS = "http://www.w3.org/2000/09/xmldsig#"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
+TOTAL_OPERACION = "110000.00000000"
+TOTAL_IVA = "10000.00000000"
+BASE_GRAVADA = "100000.00000000"
+TOTAL_CANTIDAD = "1.00000000"
 
 
 def _el(parent, name: str, text=None):
@@ -117,7 +121,7 @@ def build_unsigned_de_base(
     _el(grec, "iTiOpe", "1")
     _el(grec, "cPaisRec", "PRY")
     _el(grec, "dDesPaisRe", "Paraguay")
-    _el(grec, "iTiContRec", "2")
+    _el(grec, "iTiContRec", "1")
     _el(grec, "dRucRec", "80069563")
     _el(grec, "dDVRec", "1")
     _el(grec, "dNomRec", "TIPS S.A")
@@ -141,41 +145,41 @@ def build_unsigned_de_base(
     _el(item, "dDesProSer", "Producto de prueba TEST")
     _el(item, "cUniMed", "77")
     _el(item, "dDesUniMed", "UNI")
-    _el(item, "dCantProSer", "1")
+    _el(item, "dCantProSer", TOTAL_CANTIDAD)
     valor = _el(item, "gValorItem")
-    _el(valor, "dPUniProSer", "110000")
-    _el(valor, "dTotBruOpeItem", "110000")
+    _el(valor, "dPUniProSer", TOTAL_OPERACION)
+    _el(valor, "dTotBruOpeItem", TOTAL_OPERACION)
     resta = _el(valor, "gValorRestaItem")
-    _el(resta, "dDescItem", "0")
-    _el(resta, "dDescGloItem", "0")
-    _el(resta, "dAntPreUniIt", "0")
-    _el(resta, "dAntGloPreUniIt", "0")
-    _el(resta, "dTotOpeItem", "110000")
+    _el(resta, "dDescItem", "0.00000000")
+    _el(resta, "dDescGloItem", "0.00000000")
+    _el(resta, "dAntPreUniIt", "0.00000000")
+    _el(resta, "dAntGloPreUniIt", "0.00000000")
+    _el(resta, "dTotOpeItem", TOTAL_OPERACION)
     iva = _el(item, "gCamIVA")
     _el(iva, "iAfecIVA", "1")
     _el(iva, "dDesAfecIVA", "Gravado IVA")
-    _el(iva, "dPropIVA", "100")
+    _el(iva, "dPropIVA", "100.00000000")
     _el(iva, "dTasaIVA", "10")
-    _el(iva, "dBasGravIVA", "100000")
-    _el(iva, "dLiqIVAItem", "10000")
-    _el(iva, "dBasExe", "0")
+    _el(iva, "dBasGravIVA", BASE_GRAVADA)
+    _el(iva, "dLiqIVAItem", TOTAL_IVA)
+    _el(iva, "dBasExe", "0.00000000")
 
     tot = _el(de, "gTotSub")
-    _el(tot, "dSub10", "110000")
-    _el(tot, "dTotOpe", "110000")
-    _el(tot, "dTotDesc", "0")
-    _el(tot, "dTotDescGlotem", "0")
-    _el(tot, "dTotAntItem", "0")
-    _el(tot, "dTotAnt", "0")
-    _el(tot, "dPorcDescTotal", "0")
-    _el(tot, "dDescTotal", "0")
-    _el(tot, "dAnticipo", "0")
-    _el(tot, "dRedon", "0")
-    _el(tot, "dTotGralOpe", "110000")
-    _el(tot, "dIVA10", "10000")
-    _el(tot, "dTotIVA", "10000")
-    _el(tot, "dBaseGrav10", "100000")
-    _el(tot, "dTBasGraIVA", "100000")
+    _el(tot, "dSub10", TOTAL_OPERACION)
+    _el(tot, "dTotOpe", TOTAL_OPERACION)
+    _el(tot, "dTotDesc", "0.00000000")
+    _el(tot, "dTotDescGlotem", "0.00000000")
+    _el(tot, "dTotAntItem", "0.00000000")
+    _el(tot, "dTotAnt", "0.00000000")
+    _el(tot, "dPorcDescTotal", "0.00000000")
+    _el(tot, "dDescTotal", "0.00000000")
+    _el(tot, "dAnticipo", "0.00000000")
+    _el(tot, "dRedon", "0.00000000")
+    _el(tot, "dTotGralOpe", TOTAL_OPERACION)
+    _el(tot, "dIVA10", TOTAL_IVA)
+    _el(tot, "dTotIVA", TOTAL_IVA)
+    _el(tot, "dBaseGrav10", BASE_GRAVADA)
+    _el(tot, "dTBasGraIVA", BASE_GRAVADA)
 
     return etree.tostring(root, encoding="UTF-8", xml_declaration=True)
 
@@ -199,8 +203,8 @@ def finalize_signed_de_with_qr(
         id_csc=id_csc,
         csc=csc,
         d_ruc_rec="80069563",
-        d_tot_gral_ope="110000",
-        d_tot_iva="10000",
+        d_tot_gral_ope=TOTAL_OPERACION,
+        d_tot_iva=TOTAL_IVA,
         c_items=1,
         environment="test",
     )
