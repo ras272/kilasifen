@@ -83,7 +83,7 @@ class TestConfig:
 
         assert get_endpoint(TEST, "cons_ruc") == (
             "https://sifen-test.set.gov.py/"
-            "de/ws/consultas-ruc/consulta-ruc.wsdl"
+            "de/ws/consultas/consulta-ruc.wsdl"
         )
 
     def test_consulta_lote_endpoint_usa_ruta_oficial(self):
@@ -91,7 +91,7 @@ class TestConfig:
 
         assert get_endpoint(TEST, "cons_lote") == (
             "https://sifen-test.set.gov.py/"
-            "de/ws/consultas-lote/consulta-lote.wsdl"
+            "de/ws/consultas/consulta-lote.wsdl"
         )
 
     def test_get_endpoint_ambiente_invalido(self):
@@ -784,6 +784,46 @@ class TestTransmissaoBase:
             transport.post("https://example.invalid", b"<xml />")
 
         assert len(calls) == 1
+
+    def test_transport_envuelve_request_en_soap_y_extrae_body(
+        self, monkeypatch
+    ):
+        from pysifen.transmissao.base import _create_transport
+
+        transport = _create_transport(
+            "cert.pem",
+            "key.pem",
+            timeout=0.01,
+            max_retries=0,
+            backoff_factor=0.0,
+        )
+        captured = {}
+
+        class Response:
+            content = (
+                b'<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/'
+                b'soap/envelope/"><soap:Body><rRespuesta>ok</rRespuesta>'
+                b"</soap:Body></soap:Envelope>"
+            )
+
+            def raise_for_status(self):
+                return None
+
+        def fake_post(url, data, headers=None, timeout=None):
+            captured["data"] = data
+            return Response()
+
+        monkeypatch.setattr(transport._session, "post", fake_post)
+
+        result = transport.post(
+            "https://example.invalid",
+            b"<rEnviConsRUC><dId>1</dId></rEnviConsRUC>",
+        )
+
+        assert b"<soap:Envelope" in captured["data"]
+        assert b"<soap:Body>" in captured["data"]
+        assert b"<rEnviConsRUC>" in captured["data"]
+        assert result == b"<rRespuesta>ok</rRespuesta>"
 
     def test_get_client_reutiliza_transport_y_cliente(self, monkeypatch):
         from pysifen.de.bindings.v150.ws_si_recep_de_v150 import (

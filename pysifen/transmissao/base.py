@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import tempfile
 import time
+from xml.etree import ElementTree
 
 from xsdata.formats.dataclass.parsers import XmlParser
 from xsdata.formats.dataclass.serializers import XmlSerializer
@@ -269,17 +270,18 @@ class RequestsTransport:
         request_headers = headers or {
             "Content-Type": "text/xml; charset=utf-8"
         }
+        request_data = _wrap_soap_envelope(data)
 
         for attempt in range(self._max_retries + 1):
             try:
                 response = self._session.post(
                     url,
-                    data=data,
+                    data=request_data,
                     headers=request_headers,
                     timeout=self._timeout,
                 )
                 response.raise_for_status()
-                return response.content
+                return _extract_soap_body(response.content)
             except Timeout as exc:
                 if attempt >= self._max_retries:
                     raise SifenTimeoutError(
@@ -342,6 +344,40 @@ def _create_transport(
         max_retries=max_retries,
         backoff_factor=backoff_factor,
     )
+
+
+def _wrap_soap_envelope(data: str | bytes) -> bytes:
+    """Encapsula el XML SIFEN en un SOAP 1.1 Envelope."""
+    payload = data.decode("utf-8") if isinstance(data, bytes) else data
+    payload = payload.strip()
+    if "<soap:Envelope" in payload or "<soapenv:Envelope" in payload:
+        return payload.encode("utf-8")
+
+    envelope = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<soap:Envelope '
+        'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+        "<soap:Header/>"
+        f"<soap:Body>{payload}</soap:Body>"
+        "</soap:Envelope>"
+    )
+    return envelope.encode("utf-8")
+
+
+def _extract_soap_body(data: bytes) -> bytes:
+    """Retorna el primer hijo del SOAP Body, si la respuesta es SOAP."""
+    try:
+        root = ElementTree.fromstring(data)
+    except ElementTree.ParseError:
+        return data
+
+    body = root.find("{http://schemas.xmlsoap.org/soap/envelope/}Body")
+    if body is None:
+        body = root.find("{http://www.w3.org/2003/05/soap-envelope}Body")
+    if body is None or len(body) == 0:
+        return data
+
+    return ElementTree.tostring(body[0], encoding="utf-8")
 
 
 def _get_service_models(servico: str):
