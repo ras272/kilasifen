@@ -343,6 +343,27 @@ class TestTransmissaoDE:
             mock_send_raw.assert_called_once()
             assert isinstance(result, RRetEnviDe)
 
+    def test_enviar_de_xml_envia_xml_assinado(self):
+        from pysifen.de.bindings.v150.prot_proces_de_v150 import RProtDe
+        from pysifen.de.bindings.v150.ws_si_recep_de_v150 import RRetEnviDe
+
+        t = self._make_transmissao()
+        t._send_raw_xml = MagicMock(
+            return_value=RRetEnviDe(
+                rProtDe=RProtDe(dFecProc="2026-04-24T12:00:00-03:00")
+            )
+        )
+
+        result = t.enviar_de_xml(
+            b'<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd" />'
+        )
+
+        assert isinstance(result, RRetEnviDe)
+        assert t._send_raw_xml.call_args.args[0] == "recep_de"
+        sent_xml = t._send_raw_xml.call_args.args[1]
+        assert b"<xDE>" in sent_xml
+        assert b"<rDE" in sent_xml
+
 
 # ── ConsultaSIFEN ─────────────────────────────────────
 
@@ -817,6 +838,40 @@ class TestTransmissaoBase:
             transport.post("https://example.invalid", b"<xml />")
 
         assert len(calls) == 1
+
+    def test_transport_retorna_body_soap_en_http_400(self, monkeypatch):
+        from requests.exceptions import HTTPError
+
+        from pysifen.transmissao.base import _create_transport
+
+        transport = _create_transport(
+            "cert.pem",
+            "key.pem",
+            timeout=0.01,
+            max_retries=0,
+            backoff_factor=0.0,
+        )
+
+        class Response:
+            content = (
+                b'<env:Envelope xmlns:env="http://www.w3.org/2003/05/'
+                b'soap-envelope"><env:Body><rRetEnviDe>rechazado'
+                b"</rRetEnviDe></env:Body></env:Envelope>"
+            )
+            status_code = 400
+
+            def raise_for_status(self):
+                raise HTTPError("400 client error", response=self)
+
+        monkeypatch.setattr(
+            transport._session,
+            "post",
+            lambda *args, **kwargs: Response(),
+        )
+
+        result = transport.post("https://example.invalid", b"<xml />")
+
+        assert result == b"<rRetEnviDe>rechazado</rRetEnviDe>"
 
     def test_transport_envuelve_request_en_soap_y_extrae_body(
         self, monkeypatch

@@ -11,7 +11,12 @@ EXAMPLES_DIR = Path(__file__).resolve().parents[1] / "docs" / "examples"
 
 @pytest.mark.parametrize(
     "filename",
-    ["send_factura_sync.py", "send_lote.py"],
+    [
+        "send_factura_sync.py",
+        "send_lote.py",
+        "smoke_real_sifen.py",
+        "send_ares_factura_test.py",
+    ],
 )
 def test_example_script_importable(filename: str):
     path = EXAMPLES_DIR / filename

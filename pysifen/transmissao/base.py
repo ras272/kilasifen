@@ -297,6 +297,9 @@ class RequestsTransport:
                     ) from exc
                 self._sleep_before_retry(attempt)
             except HTTPError as exc:
+                xml_response = _extract_http_error_xml_body(exc)
+                if xml_response is not None:
+                    return xml_response
                 if self._is_non_retryable_http_error(exc):
                     raise SifenTransportError(
                         "Falha no transporte SOAP"
@@ -387,6 +390,20 @@ def _extract_soap_body(data: bytes) -> bytes:
         return data
 
     return ElementTree.tostring(body[0], encoding="utf-8")
+
+
+def _extract_http_error_xml_body(exc) -> bytes | None:
+    response = getattr(exc, "response", None)
+    content = getattr(response, "content", None)
+    if not content:
+        return None
+    extracted = _extract_soap_body(content)
+    if extracted == content:
+        try:
+            ElementTree.fromstring(content)
+        except ElementTree.ParseError:
+            return None
+    return extracted
 
 
 def _get_service_models(servico: str):

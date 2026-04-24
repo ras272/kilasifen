@@ -52,6 +52,26 @@ class TransmissaoDE(TransmissaoBase):
             RRetEnviDe,
         )
 
+    def enviar_de_xml(self, xml_de: str | bytes) -> RRetEnviDe:
+        """Envia um rDE XML ja assinado e pronto para transmissao."""
+        xml_text = (
+            xml_de.decode("utf-8") if isinstance(xml_de, bytes) else xml_de
+        )
+        request_xml = _build_enviar_de_request_xml(
+            d_id=_generate_id(),
+            xml_de=xml_text,
+        )
+        response = self._send_raw_xml("recep_de", request_xml)
+
+        if isinstance(response, RRetEnviDe):
+            return response
+
+        return self._parse(
+            response if isinstance(response, str)
+            else response.decode(),
+            RRetEnviDe,
+        )
+
     def enviar_lote(
         self,
         lista_rde: list,
