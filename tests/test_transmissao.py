@@ -811,6 +811,7 @@ class TestTransmissaoBase:
 
         def fake_post(url, data, headers=None, timeout=None):
             captured["data"] = data
+            captured["headers"] = headers
             return Response()
 
         monkeypatch.setattr(transport._session, "post", fake_post)
@@ -824,9 +825,15 @@ class TestTransmissaoBase:
         )
 
         assert b"<soap:Envelope" in captured["data"]
+        assert b"http://www.w3.org/2003/05/soap-envelope" in captured["data"]
         assert b"<soap:Body>" in captured["data"]
         assert captured["data"].count(b"<?xml") == 1
         assert b"<rEnviConsRUC>" in captured["data"]
+        assert (
+            captured["headers"]["Content-Type"]
+            == "application/soap+xml; charset=utf-8"
+        )
+        assert "content-type" not in captured["headers"]
         assert result == b"<rRespuesta>ok</rRespuesta>"
 
     def test_get_client_reutiliza_transport_y_cliente(self, monkeypatch):

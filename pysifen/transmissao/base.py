@@ -269,8 +269,10 @@ class RequestsTransport:
         )
 
         request_headers = headers or {
-            "Content-Type": "text/xml; charset=utf-8"
+            "Content-Type": "application/soap+xml; charset=utf-8"
         }
+        request_headers["Content-Type"] = "application/soap+xml; charset=utf-8"
+        request_headers.pop("content-type", None)
         request_data = _wrap_soap_envelope(data)
 
         for attempt in range(self._max_retries + 1):
@@ -358,7 +360,7 @@ def _wrap_soap_envelope(data: str | bytes) -> bytes:
     envelope = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<soap:Envelope '
-        'xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+        'xmlns:soap="http://www.w3.org/2003/05/soap-envelope">'
         "<soap:Header/>"
         f"<soap:Body>{payload}</soap:Body>"
         "</soap:Envelope>"
