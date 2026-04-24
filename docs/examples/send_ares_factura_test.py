@@ -44,6 +44,8 @@ def build_unsigned_de_base(
     timbrado: str,
     fecha_inicio_timbrado: str,
     codigo_seguridad: str,
+    establecimiento: str = "001",
+    punto_expedicion: str = "001",
     codigo_actividad: str = "82999",
     descripcion_actividad: str = "OTRAS ACTIVIDADES DE SERVICIOS DE APOYO A EMPRESAS N.C.P.",
 ) -> bytes:
@@ -51,8 +53,8 @@ def build_unsigned_de_base(
         i_tide=1,
         d_ruc_em="80024135",
         d_dv_emi=5,
-        d_est="001",
-        d_pun_exp="001",
+        d_est=establecimiento,
+        d_pun_exp=punto_expedicion,
         d_num_doc=numero_documento,
         i_tip_cont=2,
         d_fe_emi_de=fecha_emision,
@@ -84,8 +86,8 @@ def build_unsigned_de_base(
     _el(gtimb, "iTiDE", "1")
     _el(gtimb, "dDesTiDE", "Factura electrónica")
     _el(gtimb, "dNumTim", timbrado)
-    _el(gtimb, "dEst", "001")
-    _el(gtimb, "dPunExp", "001")
+    _el(gtimb, "dEst", establecimiento)
+    _el(gtimb, "dPunExp", punto_expedicion)
     _el(gtimb, "dNumDoc", numero_documento.zfill(7))
     _el(gtimb, "dFeIniT", fecha_inicio_timbrado)
 
@@ -224,6 +226,8 @@ def build_signed_ares_de_xml(
     timbrado: str,
     fecha_inicio_timbrado: str,
     codigo_seguridad: str,
+    establecimiento: str,
+    punto_expedicion: str,
     codigo_actividad: str,
     descripcion_actividad: str,
     id_csc: str,
@@ -235,6 +239,8 @@ def build_signed_ares_de_xml(
         timbrado=timbrado,
         fecha_inicio_timbrado=fecha_inicio_timbrado,
         codigo_seguridad=codigo_seguridad,
+        establecimiento=establecimiento,
+        punto_expedicion=punto_expedicion,
         codigo_actividad=codigo_actividad,
         descripcion_actividad=descripcion_actividad,
     )
@@ -267,6 +273,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timbrado", default="80024135")
     parser.add_argument("--fecha-inicio-timbrado", default="2025-07-07")
     parser.add_argument("--codigo-seguridad", default="123456789")
+    parser.add_argument("--establecimiento", default="001")
+    parser.add_argument("--punto-expedicion", default="001")
     parser.add_argument("--codigo-actividad", default="82999")
     parser.add_argument(
         "--descripcion-actividad",
@@ -289,6 +297,8 @@ def main() -> int:
         timbrado=args.timbrado,
         fecha_inicio_timbrado=args.fecha_inicio_timbrado,
         codigo_seguridad=args.codigo_seguridad,
+        establecimiento=args.establecimiento,
+        punto_expedicion=args.punto_expedicion,
         codigo_actividad=args.codigo_actividad,
         descripcion_actividad=args.descripcion_actividad,
         id_csc=args.id_csc,
