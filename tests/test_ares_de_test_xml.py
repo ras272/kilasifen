@@ -32,6 +32,7 @@ def test_build_unsigned_de_base_has_required_v150_fields():
     xml = module.build_unsigned_de_base(
         numero_documento="0000001",
         fecha_emision="2026-04-24T12:00:00",
+        fecha_inicio_timbrado="2025-07-07",
         codigo_seguridad="123456789",
     )
     root = etree.fromstring(xml)

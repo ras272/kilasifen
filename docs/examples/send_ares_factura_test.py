@@ -37,6 +37,7 @@ def build_unsigned_de_base(
     *,
     numero_documento: str,
     fecha_emision: str,
+    fecha_inicio_timbrado: str,
     codigo_seguridad: str,
 ) -> bytes:
     cdc = generate_cdc(
@@ -75,11 +76,11 @@ def build_unsigned_de_base(
     gtimb = _el(de, "gTimb")
     _el(gtimb, "iTiDE", "1")
     _el(gtimb, "dDesTiDE", "Factura electrónica")
-    _el(gtimb, "dNumTim", "12345678")
+    _el(gtimb, "dNumTim", "80024135")
     _el(gtimb, "dEst", "001")
     _el(gtimb, "dPunExp", "001")
     _el(gtimb, "dNumDoc", numero_documento.zfill(7))
-    _el(gtimb, "dFeIniT", "2025-07-07")
+    _el(gtimb, "dFeIniT", fecha_inicio_timbrado)
 
     gdat = _el(de, "gDatGralOpe")
     _el(gdat, "dFeEmiDE", fecha_emision)
@@ -216,6 +217,7 @@ def build_signed_ares_de_xml(
     password: str,
     numero_documento: str,
     fecha_emision: str,
+    fecha_inicio_timbrado: str,
     codigo_seguridad: str,
     id_csc: str,
     csc: str,
@@ -223,6 +225,7 @@ def build_signed_ares_de_xml(
     unsigned = build_unsigned_de_base(
         numero_documento=numero_documento,
         fecha_emision=fecha_emision,
+        fecha_inicio_timbrado=fecha_inicio_timbrado,
         codigo_seguridad=codigo_seguridad,
     )
     root = etree.fromstring(unsigned)
@@ -251,6 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--numero-documento", default="0000001")
     parser.add_argument("--fecha-emision", default="2026-04-24T12:00:00")
+    parser.add_argument("--fecha-inicio-timbrado", default="2025-07-07")
     parser.add_argument("--codigo-seguridad", default="123456789")
     parser.add_argument("--id-csc", default="0001")
     parser.add_argument("--csc", default="ABCD0000000000000000000000000000")
@@ -266,6 +270,7 @@ def main() -> int:
         password=password,
         numero_documento=args.numero_documento,
         fecha_emision=args.fecha_emision,
+        fecha_inicio_timbrado=args.fecha_inicio_timbrado,
         codigo_seguridad=args.codigo_seguridad,
         id_csc=args.id_csc,
         csc=args.csc,
