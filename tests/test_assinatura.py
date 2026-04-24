@@ -128,6 +128,19 @@ class TestSignXml:
 
         assert "http://www.w3.org/2001/10/xml-exc-c14n#" in signed
 
+    def test_sign_xml_uses_default_dsig_namespace(
+        self, cert_data, sample_rde
+    ):
+        from pysifen.assinatura import sign_xml
+
+        xml = sample_rde.to_xml()
+        signed = sign_xml(
+            xml, cert_data, "test1234", sample_rde.DE.Id
+        )
+
+        assert "<Signature xmlns=\"http://www.w3.org/2000/09/xmldsig#\">" in signed
+        assert "<ds:Signature" not in signed
+
     def test_sign_xml_reference_uri(
         self, cert_data, sample_rde
     ):

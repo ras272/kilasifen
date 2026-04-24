@@ -79,6 +79,9 @@ class Pkcs12Signer:
                     "http://www.w3.org/2001/10/xml-exc-c14n#"
                 ),
             )
+            signer.namespaces = {
+                None: "http://www.w3.org/2000/09/xmldsig#"
+            }
             ref_uri = f"#{doc_id}" if doc_id else None
             signed = signer.sign(
                 root,
