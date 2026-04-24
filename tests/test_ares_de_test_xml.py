@@ -35,14 +35,20 @@ def test_build_unsigned_de_base_has_required_v150_fields():
         timbrado="17094237",
         fecha_inicio_timbrado="2025-07-07",
         codigo_seguridad="123456789",
+        codigo_actividad="82999",
+        descripcion_actividad="OTRAS ACTIVIDADES DE SERVICIOS DE APOYO A EMPRESAS N.C.P.",
     )
     root = etree.fromstring(xml)
     ns = {"s": "http://ekuatia.set.gov.py/sifen/xsd"}
 
     assert root.find("s:DE/s:dSisFact", ns).text == "1"
     assert root.find("s:DE/s:gTimb/s:dNumTim", ns).text == "17094237"
+    assert root.find("s:DE/s:gDatGralOpe/s:gEmis/s:gActEco/s:cActEco", ns).text == "82999"
+    assert root.find("s:DE/s:gDtipDE/s:gCamFE/s:dDesIndPres", ns).text == "Operación presencial"
     assert root.find(".//s:gCamIVA/s:dBasExe", ns).text == "0"
-    assert root.find(".//s:gValorItem/s:dTiCamIt", ns).text == "1"
+    assert root.find(".//s:gValorItem/s:dTiCamIt", ns) is None
+    assert root.find(".//s:gValorRestaItem/s:dTotOpeGs", ns) is None
+    assert root.find(".//s:gTotSub/s:dTotalGs", ns) is None
     assert root.find(".//s:gTotSub/s:dTotDescGlotem", ns).text == "0"
     assert root.find("s:gCamFuFD", ns) is None
 

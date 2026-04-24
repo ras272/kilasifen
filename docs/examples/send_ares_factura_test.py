@@ -40,6 +40,8 @@ def build_unsigned_de_base(
     timbrado: str,
     fecha_inicio_timbrado: str,
     codigo_seguridad: str,
+    codigo_actividad: str = "82999",
+    descripcion_actividad: str = "OTRAS ACTIVIDADES DE SERVICIOS DE APOYO A EMPRESAS N.C.P.",
 ) -> bytes:
     cdc = generate_cdc(
         i_tide=1,
@@ -107,8 +109,8 @@ def build_unsigned_de_base(
     _el(gemis, "dTelEmi", "021000000")
     _el(gemis, "dEmailE", "teresa@ares.com.py")
     act = _el(gemis, "gActEco")
-    _el(act, "cActEco", "47111")
-    _el(act, "dDesActEco", "COMERCIO AL POR MENOR")
+    _el(act, "cActEco", codigo_actividad)
+    _el(act, "dDesActEco", descripcion_actividad)
 
     grec = _el(gdat, "gDatRec")
     _el(grec, "iNatRec", "1")
@@ -123,7 +125,7 @@ def build_unsigned_de_base(
     gdtip = _el(de, "gDtipDE")
     gcamfe = _el(gdtip, "gCamFE")
     _el(gcamfe, "iIndPres", "1")
-    _el(gcamfe, "dDesIndPres", "Operacion presencial")
+    _el(gcamfe, "dDesIndPres", "Operación presencial")
     gcond = _el(gdtip, "gCamCond")
     _el(gcond, "iCondOpe", "1")
     _el(gcond, "dDCondOpe", "Contado")
@@ -142,7 +144,6 @@ def build_unsigned_de_base(
     _el(item, "dCantProSer", "1")
     valor = _el(item, "gValorItem")
     _el(valor, "dPUniProSer", "110000")
-    _el(valor, "dTiCamIt", "1")
     _el(valor, "dTotBruOpeItem", "110000")
     resta = _el(valor, "gValorRestaItem")
     _el(resta, "dDescItem", "0")
@@ -150,7 +151,6 @@ def build_unsigned_de_base(
     _el(resta, "dAntPreUniIt", "0")
     _el(resta, "dAntGloPreUniIt", "0")
     _el(resta, "dTotOpeItem", "110000")
-    _el(resta, "dTotOpeGs", "110000")
     iva = _el(item, "gCamIVA")
     _el(iva, "iAfecIVA", "1")
     _el(iva, "dDesAfecIVA", "Gravado IVA")
@@ -176,7 +176,6 @@ def build_unsigned_de_base(
     _el(tot, "dTotIVA", "10000")
     _el(tot, "dBaseGrav10", "100000")
     _el(tot, "dTBasGraIVA", "100000")
-    _el(tot, "dTotalGs", "110000")
 
     return etree.tostring(root, encoding="UTF-8", xml_declaration=True)
 
@@ -221,6 +220,8 @@ def build_signed_ares_de_xml(
     timbrado: str,
     fecha_inicio_timbrado: str,
     codigo_seguridad: str,
+    codigo_actividad: str,
+    descripcion_actividad: str,
     id_csc: str,
     csc: str,
 ) -> bytes:
@@ -230,6 +231,8 @@ def build_signed_ares_de_xml(
         timbrado=timbrado,
         fecha_inicio_timbrado=fecha_inicio_timbrado,
         codigo_seguridad=codigo_seguridad,
+        codigo_actividad=codigo_actividad,
+        descripcion_actividad=descripcion_actividad,
     )
     root = etree.fromstring(unsigned)
     cdc = root.find(f"{{{SIFEN_NS}}}DE").get("Id")
@@ -260,6 +263,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timbrado", default="80024135")
     parser.add_argument("--fecha-inicio-timbrado", default="2025-07-07")
     parser.add_argument("--codigo-seguridad", default="123456789")
+    parser.add_argument("--codigo-actividad", default="82999")
+    parser.add_argument(
+        "--descripcion-actividad",
+        default="OTRAS ACTIVIDADES DE SERVICIOS DE APOYO A EMPRESAS N.C.P.",
+    )
     parser.add_argument("--id-csc", default="0001")
     parser.add_argument("--csc", default="ABCD0000000000000000000000000000")
     parser.add_argument("--send", action="store_true")
@@ -277,6 +285,8 @@ def main() -> int:
         timbrado=args.timbrado,
         fecha_inicio_timbrado=args.fecha_inicio_timbrado,
         codigo_seguridad=args.codigo_seguridad,
+        codigo_actividad=args.codigo_actividad,
+        descripcion_actividad=args.descripcion_actividad,
         id_csc=args.id_csc,
         csc=args.csc,
     )
