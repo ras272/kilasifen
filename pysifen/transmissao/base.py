@@ -118,8 +118,14 @@ class TransmissaoBase:
 
         url = get_endpoint(self.ambiente, servico)
         transport = self._get_transport()
+        input_type, output_type = _get_service_models(servico)
 
-        config = Config.from_service(None, location=url)
+        config = Config.from_service(
+            None,
+            location=url,
+            input=input_type,
+            output=output_type,
+        )
         client = Client(config=config, transport=transport)
         self._clients[servico] = client
         return client
@@ -329,3 +335,56 @@ def _create_transport(
         max_retries=max_retries,
         backoff_factor=backoff_factor,
     )
+
+
+def _get_service_models(servico: str):
+    """Retorna classes de request/response para um serviço SIFEN."""
+    from pysifen.de.bindings.v150.ws_si_cons_de_v141 import (
+        REnviConsDeRequest,
+        REnviConsDeResponse,
+    )
+    from pysifen.de.bindings.v150.ws_si_cons_dte import (
+        RConsDteRequest,
+        RConsDteResponse,
+    )
+    from pysifen.de.bindings.v150.ws_si_cons_dteasync import (
+        REnviConsDteAsyncRequest,
+        REnviConsDteAsyncResponse,
+    )
+    from pysifen.de.bindings.v150.ws_si_cons_lote_v141 import (
+        REnviConsLoteDe,
+        RResEnviConsLoteDe,
+    )
+    from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
+        REnviConsRuc,
+        RResEnviConsRuc,
+    )
+    from pysifen.de.bindings.v150.ws_si_recep_de_v150 import (
+        REnviDe,
+        RRetEnviDe,
+    )
+    from pysifen.de.bindings.v150.ws_si_recep_evento_v150 import (
+        REnviEventoDe,
+        RRetEnviEventoDe,
+    )
+    from pysifen.de.bindings.v150.ws_si_recep_lote_de_v141 import (
+        REnvioLote,
+        RResEnviLoteDe,
+    )
+
+    service_models = {
+        "recep_de": (REnviDe, RRetEnviDe),
+        "recep_lote": (REnvioLote, RResEnviLoteDe),
+        "cons_de": (REnviConsDeRequest, REnviConsDeResponse),
+        "cons_lote": (REnviConsLoteDe, RResEnviConsLoteDe),
+        "cons_ruc": (REnviConsRuc, RResEnviConsRuc),
+        "evento": (REnviEventoDe, RRetEnviEventoDe),
+        "cons_dte": (RConsDteRequest, RConsDteResponse),
+        "cons_dte_async": (
+            REnviConsDteAsyncRequest,
+            REnviConsDteAsyncResponse,
+        ),
+    }
+    if servico not in service_models:
+        raise ValueError(f"Serviço sem mapeo de modelos: {servico}")
+    return service_models[servico]

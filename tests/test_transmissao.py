@@ -770,6 +770,10 @@ class TestTransmissaoBase:
         assert len(calls) == 1
 
     def test_get_client_reutiliza_transport_y_cliente(self, monkeypatch):
+        from pysifen.de.bindings.v150.ws_si_recep_de_v150 import (
+            REnviDe,
+            RRetEnviDe,
+        )
         from pysifen.transmissao.base import TransmissaoBase
         from pysifen.transmissao.config import TEST
 
@@ -819,6 +823,8 @@ class TestTransmissaoBase:
         assert client_1.transport is client_2.transport
         assert len(created) == 1
         assert len(create_transport_calls) == 1
+        assert client_1.config.input is REnviDe
+        assert client_1.config.output is RRetEnviDe
         _, kwargs = create_transport_calls[0]
         assert kwargs["timeout"] == 12
         assert kwargs["max_retries"] == 4
