@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     api_title: str = "Kila SIFEN"
     api_version: str = "v1"
     log_level: str = "INFO"
+    api_keys: list[str] = Field(default_factory=list)
     database_url: str = Field(
         default="postgresql://postgres:postgres@localhost:5432/kilasifen",
     )
