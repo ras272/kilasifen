@@ -1,0 +1,83 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: kila-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - kila-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: kila-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    image: python:3.12-slim
+    container_name: kila-api
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      KILA_SIFEN_DATABASE_URL: ${KILA_SIFEN_DATABASE_URL}
+      KILA_SIFEN_REDIS_URL: ${KILA_SIFEN_REDIS_URL}
+      KILA_SIFEN_API_KEYS: ${KILA_SIFEN_API_KEYS}
+      KILA_SIFEN_ENCRYPTION_KEY: ${KILA_SIFEN_ENCRYPTION_KEY}
+      KILA_SIFEN_SIFEN_ENVIRONMENT: ${KILA_SIFEN_SIFEN_ENVIRONMENT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "pip install -e '.[platform,transmissao]' &&
+             alembic upgrade head &&
+             uvicorn kilasifen.api.app:create_app --factory --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+
+  worker:
+    image: python:3.12-slim
+    container_name: kila-worker
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      KILA_SIFEN_DATABASE_URL: ${KILA_SIFEN_DATABASE_URL}
+      KILA_SIFEN_REDIS_URL: ${KILA_SIFEN_REDIS_URL}
+      KILA_SIFEN_ENCRYPTION_KEY: ${KILA_SIFEN_ENCRYPTION_KEY}
+    depends_on:
+      api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "pip install -e '.[platform,transmissao]' &&
+             rq worker documents webhooks -u ${KILA_SIFEN_REDIS_URL}"
+
+volumes:
+  kila-postgres-data:
+

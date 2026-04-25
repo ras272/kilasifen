@@ -54,3 +54,13 @@ from pysifen import ConsultaSIFEN, TransmissaoDE, TransmissaoEvento
 - No exigir imports desde submódulos para el uso habitual.
 - Mantener `__all__` alineado con los símbolos exportados.
 - Evitar cambios incompatibles en los bindings generados bajo `pysifen.de.bindings`.
+
+## Platform separation
+
+This document is for `pysifen` public API only.
+
+The `kilasifen` platform API and operations are documented in:
+
+- `docs/architecture/kila-api-contract.md`
+- `docs/architecture/kila-platform.md`
+- `docs/operations/deployment-compose.md`

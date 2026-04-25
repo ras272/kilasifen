@@ -375,6 +375,28 @@ ruff check pysifen/ tests/
 - [nfelib (referencia)](https://github.com/akretion/nfelib)
 - [xsdata](https://xsdata.readthedocs.io/)
 
+## Kila SIFEN Platform (API)
+
+This repository now contains two complementary layers:
+
+- `pysifen`: fiscal engine (XML, signature, SOAP transport)
+- `kilasifen`: self-hosted API platform for ERP integration
+
+Platform docs:
+
+- `docs/architecture/kila-platform.md`
+- `docs/operations/deployment-compose.md`
+- `docs/operations/job-lifecycle.md`
+- `docs/examples/kila_api_register_certificate.py`
+- `docs/examples/kila_api_emit_document.py`
+
+Local platform stack:
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
 ## Comunidad y OSS
 
 - [Contributing](CONTRIBUTING.md)
