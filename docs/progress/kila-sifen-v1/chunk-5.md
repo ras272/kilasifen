@@ -20,6 +20,7 @@ This chunk starts turning Kila SIFEN into a fuller fiscal control plane instead 
 ## Closed tasks
 
 - `Task 11` commit `7373379`
+- `Task 12` commit `afdf4a9`
 
 ## Main files
 
@@ -30,3 +31,9 @@ This chunk starts turning Kila SIFEN into a fuller fiscal control plane instead 
 - `kilasifen/domain/documents/models.py`
 - `kilasifen/infrastructure/db/models.py`
 - `alembic/versions/20260424_02_add_document_query_traces.py`
+- `kilasifen/application/events/service.py`
+- `kilasifen/api/routers/events.py`
+- `kilasifen/api/schemas/events.py`
+- `kilasifen/infrastructure/sifen/event.py`
+- `alembic/versions/20260424_03_add_event_transport_traces.py`
+- `tests/api/test_events_api.py`
