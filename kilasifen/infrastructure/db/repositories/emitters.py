@@ -41,6 +41,7 @@ class SqlAlchemyEmitterRepository(EmitterRepository):
             existing.csc = emitter.csc
             existing.csc_id = emitter.csc_id
             existing.updated_at = emitter.updated_at
+        self.session.flush()
         return emitter
 
     def get(self, emitter_id: str) -> Emitter | None:

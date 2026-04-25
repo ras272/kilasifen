@@ -1,0 +1,21 @@
+"""Job repository interface."""
+
+from abc import ABC, abstractmethod
+
+from kilasifen.domain.jobs.models import Job
+
+
+class JobRepository(ABC):
+    """Persistence contract for jobs."""
+
+    @abstractmethod
+    def save(self, job: Job) -> Job:
+        """Persist a job."""
+
+    @abstractmethod
+    def get(self, job_id: str) -> Job | None:
+        """Load a job by id."""
+
+    @abstractmethod
+    def get_for_entity(self, entity_type: str, entity_id: str) -> Job | None:
+        """Load the latest job for a related entity."""

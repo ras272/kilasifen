@@ -5,15 +5,19 @@ from collections.abc import Callable, Generator
 from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 
+from kilasifen.application.documents.service import DocumentService
+from kilasifen.application.jobs.service import JobService
 from kilasifen.application.stampings.service import StampingService
 from kilasifen.application.certificates.service import CertificateService
 from kilasifen.application.emitters.service import EmitterService
 from kilasifen.config import get_settings
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
+from kilasifen.infrastructure.db.repositories.documents import SqlAlchemyDocumentRepository
 from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
 )
 from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
+from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
 from kilasifen.infrastructure.db.repositories.stampings import SqlAlchemyStampingRepository
 from kilasifen.infrastructure.db.session import session_scope
 from kilasifen.security import ApiKeyPrincipal, validate_api_key
@@ -74,4 +78,26 @@ def get_stamping_service(
     return StampingService(
         stamping_repository=stamping_repository,
         emitter_repository=emitter_repository,
+    )
+
+
+def get_job_service(session: Session = Depends(get_db_session)) -> JobService:
+    """Build the job application service for one request."""
+
+    repository = SqlAlchemyJobRepository(session)
+    return JobService(repository)
+
+
+def get_document_service(
+    session: Session = Depends(get_db_session),
+) -> DocumentService:
+    """Build the document application service for one request."""
+
+    emitter_repository = SqlAlchemyEmitterRepository(session)
+    document_repository = SqlAlchemyDocumentRepository(session)
+    job_service = JobService(SqlAlchemyJobRepository(session))
+    return DocumentService(
+        document_repository=document_repository,
+        emitter_repository=emitter_repository,
+        job_service=job_service,
     )

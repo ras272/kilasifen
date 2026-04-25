@@ -38,6 +38,7 @@ class SqlAlchemyStampingRepository(StampingRepository):
             existing.is_active = stamping.is_active
             existing.status = stamping.status
             existing.updated_at = stamping.updated_at
+        self.session.flush()
         return stamping
 
     def list_for_emitter(self, emitter_id: str) -> list[Stamping]:

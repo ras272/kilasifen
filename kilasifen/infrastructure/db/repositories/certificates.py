@@ -48,6 +48,7 @@ class SqlAlchemyCertificateRepository(CertificateRepository):
             existing.is_active = certificate.is_active
             existing.status = certificate.status
             existing.updated_at = certificate.updated_at
+        self.session.flush()
         return certificate
 
     def list_for_emitter(self, emitter_id: str) -> list[Certificate]:

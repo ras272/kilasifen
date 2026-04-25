@@ -5,8 +5,10 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Request
 
 from kilasifen.api.routers.certificates import router as certificates_router
+from kilasifen.api.routers.documents import router as documents_router
 from kilasifen.api.routers.health import router as health_router
 from kilasifen.api.routers.emitters import router as emitters_router
+from kilasifen.api.routers.jobs import router as jobs_router
 from kilasifen.api.routers.stampings import router as stampings_router
 from kilasifen.api.deps import get_api_key_principal
 from kilasifen.api.errors import (
@@ -47,6 +49,8 @@ def create_app() -> FastAPI:
     app.include_router(emitters_router, prefix=f"/{settings.api_version}")
     app.include_router(certificates_router, prefix=f"/{settings.api_version}")
     app.include_router(stampings_router, prefix=f"/{settings.api_version}")
+    app.include_router(documents_router, prefix=f"/{settings.api_version}")
+    app.include_router(jobs_router, prefix=f"/{settings.api_version}")
 
     @app.get(
         f"/{settings.api_version}/auth/check",

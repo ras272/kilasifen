@@ -1,0 +1,67 @@
+from datetime import UTC, datetime
+
+from kilasifen.application.documents.service import DocumentService
+from kilasifen.application.jobs.service import JobService
+from kilasifen.domain.emitters.models import Emitter
+from kilasifen.infrastructure.db.base import Base
+from kilasifen.infrastructure.db.repositories.documents import SqlAlchemyDocumentRepository
+from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
+from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
+from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
+
+
+def test_create_document_is_idempotent_per_emitter_and_key() -> None:
+    engine = build_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    session_factory = build_session_factory(engine)
+
+    emitter = Emitter(
+        id="emitter-1",
+        external_id="erp-ares",
+        ruc="80024135",
+        dv="5",
+        legal_name="ARES PARAGUAY SRL",
+        tax_environment="test",
+        status="active",
+        csc=None,
+        csc_id=None,
+        created_at=_now(),
+        updated_at=_now(),
+    )
+
+    with session_scope(session_factory) as session:
+        emitter_repository = SqlAlchemyEmitterRepository(session)
+        document_repository = SqlAlchemyDocumentRepository(session)
+        job_repository = SqlAlchemyJobRepository(session)
+        emitter_repository.save(emitter)
+
+        job_service = JobService(job_repository)
+        service = DocumentService(
+            document_repository=document_repository,
+            emitter_repository=emitter_repository,
+            job_service=job_service,
+        )
+
+        first_document, first_job, first_replayed = service.create_document(
+            emitter_id=emitter.id,
+            external_id="erp-doc-1",
+            idempotency_key="idem-1",
+            document_type="factura",
+            payload_snapshot={"total": "100000"},
+        )
+        second_document, second_job, second_replayed = service.create_document(
+            emitter_id=emitter.id,
+            external_id="erp-doc-1",
+            idempotency_key="idem-1",
+            document_type="factura",
+            payload_snapshot={"total": "100000"},
+        )
+
+    assert second_document.id == first_document.id
+    assert second_job.id == first_job.id
+    assert first_replayed is False
+    assert second_replayed is True
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
