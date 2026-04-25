@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Request
 
+from kilasifen.api.routers.certificates import router as certificates_router
 from kilasifen.api.routers.health import router as health_router
 from kilasifen.api.routers.emitters import router as emitters_router
 from kilasifen.api.deps import get_api_key_principal
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router, prefix=f"/{settings.api_version}")
     app.include_router(emitters_router, prefix=f"/{settings.api_version}")
+    app.include_router(certificates_router, prefix=f"/{settings.api_version}")
 
     @app.get(
         f"/{settings.api_version}/auth/check",

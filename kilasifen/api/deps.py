@@ -5,7 +5,13 @@ from collections.abc import Callable, Generator
 from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 
+from kilasifen.application.certificates.service import CertificateService
 from kilasifen.application.emitters.service import EmitterService
+from kilasifen.config import get_settings
+from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
+from kilasifen.infrastructure.db.repositories.certificates import (
+    SqlAlchemyCertificateRepository,
+)
 from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
 from kilasifen.infrastructure.db.session import session_scope
 from kilasifen.security import ApiKeyPrincipal, validate_api_key
@@ -35,3 +41,22 @@ def get_emitter_service(session: Session = Depends(get_db_session)) -> EmitterSe
 
     repository = SqlAlchemyEmitterRepository(session)
     return EmitterService(repository)
+
+
+def get_certificate_service(
+    session: Session = Depends(get_db_session),
+) -> CertificateService:
+    """Build the certificate application service for one request."""
+
+    settings = get_settings()
+    if not settings.encryption_key:
+        raise RuntimeError("KILA_SIFEN_ENCRYPTION_KEY is required for certificates.")
+
+    emitter_repository = SqlAlchemyEmitterRepository(session)
+    certificate_repository = SqlAlchemyCertificateRepository(session)
+    certificate_store = EncryptedCertificateStore(settings.encryption_key)
+    return CertificateService(
+        certificate_repository=certificate_repository,
+        emitter_repository=emitter_repository,
+        certificate_store=certificate_store,
+    )

@@ -53,6 +53,7 @@ platform = [
     "fastapi>=0.115,<1",
     "pydantic>=2,<3",
     "pydantic-settings>=2,<3",
+    "python-multipart>=0.0.9,<1",
     "sqlalchemy>=2,<3",
 ]
 test = [
@@ -61,6 +62,7 @@ test = [
     "httpx>=0.28,<1",
     "pydantic>=2,<3",
     "pydantic-settings>=2,<3",
+    "python-multipart>=0.0.9,<1",
     "pytest",
     "pytest-cov",
     "sqlalchemy>=2,<3",

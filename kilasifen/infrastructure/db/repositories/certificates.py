@@ -15,24 +15,39 @@ class SqlAlchemyCertificateRepository(CertificateRepository):
         self.session = session
 
     def save(self, certificate: Certificate) -> Certificate:
-        model = CertificateModel(
-            id=certificate.id,
-            emitter_id=certificate.emitter_id,
-            logical_name=certificate.logical_name,
-            encrypted_p12=certificate.encrypted_p12,
-            encrypted_password=certificate.encrypted_password,
-            fingerprint=certificate.fingerprint,
-            serial_number=certificate.serial_number,
-            subject_summary=certificate.subject_summary,
-            detected_ruc=certificate.detected_ruc,
-            valid_from=certificate.valid_from,
-            valid_until=certificate.valid_until,
-            is_active=certificate.is_active,
-            status=certificate.status,
-            created_at=certificate.created_at,
-            updated_at=certificate.updated_at,
-        )
-        self.session.merge(model)
+        existing = self.session.get(CertificateModel, certificate.id)
+        if existing is None:
+            model = CertificateModel(
+                id=certificate.id,
+                emitter_id=certificate.emitter_id,
+                logical_name=certificate.logical_name,
+                encrypted_p12=certificate.encrypted_p12,
+                encrypted_password=certificate.encrypted_password,
+                fingerprint=certificate.fingerprint,
+                serial_number=certificate.serial_number,
+                subject_summary=certificate.subject_summary,
+                detected_ruc=certificate.detected_ruc,
+                valid_from=certificate.valid_from,
+                valid_until=certificate.valid_until,
+                is_active=certificate.is_active,
+                status=certificate.status,
+                created_at=certificate.created_at,
+                updated_at=certificate.updated_at,
+            )
+            self.session.add(model)
+        else:
+            existing.logical_name = certificate.logical_name
+            existing.encrypted_p12 = certificate.encrypted_p12
+            existing.encrypted_password = certificate.encrypted_password
+            existing.fingerprint = certificate.fingerprint
+            existing.serial_number = certificate.serial_number
+            existing.subject_summary = certificate.subject_summary
+            existing.detected_ruc = certificate.detected_ruc
+            existing.valid_from = certificate.valid_from
+            existing.valid_until = certificate.valid_until
+            existing.is_active = certificate.is_active
+            existing.status = certificate.status
+            existing.updated_at = certificate.updated_at
         return certificate
 
     def list_for_emitter(self, emitter_id: str) -> list[Certificate]:
@@ -43,6 +58,12 @@ class SqlAlchemyCertificateRepository(CertificateRepository):
     def get_active_for_emitter(self, emitter_id: str) -> Certificate | None:
         certificates = self.list_for_emitter(emitter_id)
         return ensure_single_active_certificate(certificates, emitter_id)
+
+    def get(self, certificate_id: str) -> Certificate | None:
+        model = self.session.get(CertificateModel, certificate_id)
+        if model is None:
+            return None
+        return _to_domain(model)
 
 
 def _to_domain(model: CertificateModel) -> Certificate:

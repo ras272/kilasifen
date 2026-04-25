@@ -19,3 +19,7 @@ class CertificateRepository(ABC):
     @abstractmethod
     def get_active_for_emitter(self, emitter_id: str) -> Certificate | None:
         """Return the active certificate for one emitter."""
+
+    @abstractmethod
+    def get(self, certificate_id: str) -> Certificate | None:
+        """Load a certificate by id."""
