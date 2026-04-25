@@ -1,5 +1,6 @@
 """Document application service layer."""
 
+from typing import Protocol
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -11,6 +12,13 @@ from kilasifen.repositories.documents import DocumentRepository
 from kilasifen.repositories.emitters import EmitterRepository
 
 
+class DocumentJobQueue(Protocol):
+    """Queue contract for document emission jobs."""
+
+    def enqueue_document_emit(self, job: Job, *, database_url: str, encryption_key: str):
+        """Enqueue one document emission job."""
+
+
 class DocumentService:
     """Use cases for documents."""
 
@@ -20,10 +28,16 @@ class DocumentService:
         document_repository: DocumentRepository,
         emitter_repository: EmitterRepository,
         job_service: JobService,
+        queue: DocumentJobQueue | None = None,
+        database_url: str | None = None,
+        encryption_key: str | None = None,
     ):
         self.document_repository = document_repository
         self.emitter_repository = emitter_repository
         self.job_service = job_service
+        self.queue = queue
+        self.database_url = database_url
+        self.encryption_key = encryption_key
 
     def create_document(
         self,
@@ -86,6 +100,7 @@ class DocumentService:
             related_entity_id=saved_document.id,
             job_type="document.emit",
         )
+        self._enqueue_if_configured(job)
         return saved_document, job, False
 
     def get_document(self, document_id: str) -> Document:
@@ -93,6 +108,18 @@ class DocumentService:
         if document is None:
             raise NotFoundError("documents.not_found")
         return document
+
+    def _enqueue_if_configured(self, job: Job) -> None:
+        if self.queue is None:
+            return
+        if not self.database_url or not self.encryption_key:
+            return
+
+        self.queue.enqueue_document_emit(
+            job,
+            database_url=self.database_url,
+            encryption_key=self.encryption_key,
+        )
 
 
 def _now() -> datetime:

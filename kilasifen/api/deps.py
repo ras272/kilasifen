@@ -105,13 +105,24 @@ def get_document_service(
 ) -> DocumentService:
     """Build the document application service for one request."""
 
+    settings = get_settings()
     emitter_repository = SqlAlchemyEmitterRepository(session)
     document_repository = SqlAlchemyDocumentRepository(session)
     job_service = JobService(SqlAlchemyJobRepository(session))
+    queue_adapter = None
+    if settings.document_auto_enqueue and settings.encryption_key:
+        queue = Queue(
+            "documents",
+            connection=Redis.from_url(settings.redis_url),
+        )
+        queue_adapter = RqJobQueue(queue)
     return DocumentService(
         document_repository=document_repository,
         emitter_repository=emitter_repository,
         job_service=job_service,
+        queue=queue_adapter,
+        database_url=settings.database_url,
+        encryption_key=settings.encryption_key,
     )
 
 

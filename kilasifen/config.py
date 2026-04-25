@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0")
     encryption_key: str | None = None
     sifen_environment: Literal["test", "production"] = "test"
+    document_auto_enqueue: bool = False
 
 
 @lru_cache(maxsize=1)

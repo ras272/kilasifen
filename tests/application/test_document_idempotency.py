@@ -63,5 +63,62 @@ def test_create_document_is_idempotent_per_emitter_and_key() -> None:
     assert second_replayed is True
 
 
+def test_create_document_enqueues_job_when_queue_is_configured() -> None:
+    engine = build_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    session_factory = build_session_factory(engine)
+    queue = _FakeDocumentQueue()
+
+    emitter = Emitter(
+        id="emitter-1",
+        external_id="erp-ares",
+        ruc="80024135",
+        dv="5",
+        legal_name="ARES PARAGUAY SRL",
+        tax_environment="test",
+        status="active",
+        csc=None,
+        csc_id=None,
+        created_at=_now(),
+        updated_at=_now(),
+    )
+
+    with session_scope(session_factory) as session:
+        emitter_repository = SqlAlchemyEmitterRepository(session)
+        document_repository = SqlAlchemyDocumentRepository(session)
+        job_repository = SqlAlchemyJobRepository(session)
+        emitter_repository.save(emitter)
+
+        service = DocumentService(
+            document_repository=document_repository,
+            emitter_repository=emitter_repository,
+            job_service=JobService(job_repository),
+            queue=queue,
+            database_url="sqlite://",
+            encryption_key="dummy-key",
+        )
+        _document, job, replayed = service.create_document(
+            emitter_id=emitter.id,
+            external_id="erp-doc-auto-queue",
+            idempotency_key="idem-auto-queue",
+            document_type="factura",
+            payload_snapshot={"total": "100000"},
+        )
+
+    assert replayed is False
+    assert queue.job_ids == [job.id]
+
+
+class _FakeDocumentQueue:
+    def __init__(self) -> None:
+        self.job_ids: list[str] = []
+
+    def enqueue_document_emit(self, job, *, database_url: str, encryption_key: str):
+        assert database_url
+        assert encryption_key
+        self.job_ids.append(job.id)
+        return {"job_id": job.id}
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
