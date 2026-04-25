@@ -5,6 +5,7 @@ from collections.abc import Callable, Generator
 from fastapi import Depends, Header, Request
 from sqlalchemy.orm import Session
 
+from kilasifen.application.stampings.service import StampingService
 from kilasifen.application.certificates.service import CertificateService
 from kilasifen.application.emitters.service import EmitterService
 from kilasifen.config import get_settings
@@ -13,6 +14,7 @@ from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
 )
 from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
+from kilasifen.infrastructure.db.repositories.stampings import SqlAlchemyStampingRepository
 from kilasifen.infrastructure.db.session import session_scope
 from kilasifen.security import ApiKeyPrincipal, validate_api_key
 
@@ -59,4 +61,17 @@ def get_certificate_service(
         certificate_repository=certificate_repository,
         emitter_repository=emitter_repository,
         certificate_store=certificate_store,
+    )
+
+
+def get_stamping_service(
+    session: Session = Depends(get_db_session),
+) -> StampingService:
+    """Build the stamping application service for one request."""
+
+    emitter_repository = SqlAlchemyEmitterRepository(session)
+    stamping_repository = SqlAlchemyStampingRepository(session)
+    return StampingService(
+        stamping_repository=stamping_repository,
+        emitter_repository=emitter_repository,
     )

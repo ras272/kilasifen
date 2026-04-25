@@ -17,18 +17,27 @@ class SqlAlchemyStampingRepository(StampingRepository):
         self.session = session
 
     def save(self, stamping: Stamping) -> Stamping:
-        model = StampingModel(
-            id=stamping.id,
-            emitter_id=stamping.emitter_id,
-            number=stamping.number,
-            start_date=stamping.start_date,
-            end_date=stamping.end_date,
-            is_active=stamping.is_active,
-            status=stamping.status,
-            created_at=stamping.created_at,
-            updated_at=stamping.updated_at,
-        )
-        self.session.merge(model)
+        existing = self.session.get(StampingModel, stamping.id)
+        if existing is None:
+            model = StampingModel(
+                id=stamping.id,
+                emitter_id=stamping.emitter_id,
+                number=stamping.number,
+                start_date=stamping.start_date,
+                end_date=stamping.end_date,
+                is_active=stamping.is_active,
+                status=stamping.status,
+                created_at=stamping.created_at,
+                updated_at=stamping.updated_at,
+            )
+            self.session.add(model)
+        else:
+            existing.number = stamping.number
+            existing.start_date = stamping.start_date
+            existing.end_date = stamping.end_date
+            existing.is_active = stamping.is_active
+            existing.status = stamping.status
+            existing.updated_at = stamping.updated_at
         return stamping
 
     def list_for_emitter(self, emitter_id: str) -> list[Stamping]:
@@ -39,6 +48,12 @@ class SqlAlchemyStampingRepository(StampingRepository):
     def get_active_for_emitter(self, emitter_id: str, on_date: date) -> Stamping | None:
         stampings = self.list_for_emitter(emitter_id)
         return select_active_stamping(stampings, emitter_id, on_date)
+
+    def get(self, stamping_id: str) -> Stamping | None:
+        model = self.session.get(StampingModel, stamping_id)
+        if model is None:
+            return None
+        return _to_domain(model)
 
 
 def _to_domain(model: StampingModel) -> Stamping:
