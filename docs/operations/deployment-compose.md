@@ -55,6 +55,17 @@ docker compose logs -f api
 docker compose logs -f worker
 ```
 
+## Windows local worker note
+
+RQ's default worker timeout signals are Unix-oriented.
+For local Windows runs, use the cross-platform worker class:
+
+```bash
+python -m rq.cli worker documents webhooks \
+  -u redis://127.0.0.1:6379/0 \
+  --worker-class kilasifen.infrastructure.jobs.worker_classes.CrossPlatformSimpleWorker
+```
+
 ## Stop
 
 ```bash
@@ -72,4 +83,3 @@ docker compose down -v
 - API and worker both install project dependencies on startup in this development compose.
 - For production, build fixed images and pin dependency versions.
 - Keep `KILA_SIFEN_ENCRYPTION_KEY` stable; rotating it requires re-encryption strategy for stored certificate material.
-

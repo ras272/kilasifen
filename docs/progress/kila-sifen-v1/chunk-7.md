@@ -18,6 +18,7 @@ Chunk 7 turns implementation into a reproducible developer product with deployme
 - `Task 15` commit `b714360`
 - `Task 16` commit `e653705`
 - `Task 17` commit `bbc460f`
+- `Task 18` commit `b5fd977`
 
 ## Main files
 
@@ -31,3 +32,5 @@ Chunk 7 turns implementation into a reproducible developer product with deployme
 - `.github/workflows/tests.yml`
 - `alembic/env.py`
 - `docs/examples/smoke_kila_api_e2e.py`
+- `kilasifen/application/documents/service.py`
+- `kilasifen/infrastructure/jobs/worker_classes.py`
