@@ -5,7 +5,6 @@ import base64
 from lxml import etree
 
 from pysifen.de.bindings.v150.ws_si_recep_de_v150 import (
-    REnviDe,
     RRetEnviDe,
 )
 from pysifen.de.bindings.v150.ws_si_recep_lote_de_v141 import (
