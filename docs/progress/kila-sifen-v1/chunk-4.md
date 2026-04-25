@@ -20,6 +20,7 @@ This is the first chunk that models the real async fiscal workflow. Before talki
 ## Closed tasks
 
 - `Task 8` commit `5accd84`
+- `Task 9` commit `7232dee`
 
 ## Main files
 
@@ -33,3 +34,5 @@ This is the first chunk that models the real async fiscal workflow. Before talki
 - `kilasifen/application/jobs/service.py`
 - `kilasifen/api/routers/documents.py`
 - `kilasifen/api/routers/jobs.py`
+- `kilasifen/infrastructure/jobs/queue.py`
+- `kilasifen/infrastructure/jobs/workers.py`
