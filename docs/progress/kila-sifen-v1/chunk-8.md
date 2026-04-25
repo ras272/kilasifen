@@ -17,7 +17,7 @@ notifications on real document state transitions without manual intervention.
 
 - `Task 19` commit `f365807`
 - `Task 20` commit `2b02e16`
-- `Task 21` commit registered in `chunk-8-task-21.md`
+- `Task 21` commit `11b8f2e`
 
 ## Main files
 

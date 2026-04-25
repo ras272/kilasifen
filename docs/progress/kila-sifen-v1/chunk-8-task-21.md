@@ -7,7 +7,7 @@ so ERP integrations can emit typed documents without sending XML manually.
 
 ## Commit
 
-- recorded after merge in main history (`git log -- docs/progress/kila-sifen-v1/chunk-8-task-21.md`)
+- `11b8f2e` `feat: build factura and nota credito xml from typed contracts`
 
 ## What was changed
 
