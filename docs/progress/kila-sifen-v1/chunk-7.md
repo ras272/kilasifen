@@ -17,6 +17,7 @@ Chunk 7 turns implementation into a reproducible developer product with deployme
 
 - `Task 15` commit `b714360`
 - `Task 16` commit `e653705`
+- `Task 17` commit `bbc460f`
 
 ## Main files
 
@@ -29,4 +30,4 @@ Chunk 7 turns implementation into a reproducible developer product with deployme
 - `docs/examples/kila_api_emit_document.py`
 - `.github/workflows/tests.yml`
 - `alembic/env.py`
-
+- `docs/examples/smoke_kila_api_e2e.py`
