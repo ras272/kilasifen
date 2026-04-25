@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Webhook Failures | Kila SIFEN Admin{% endblock %}
+{% block content %}
+<h1>Webhook Delivery Failures</h1>
+<p class="muted">Emitter filter: {{ emitter_id or "all" }} | Limit: {{ limit }}</p>
+<table>
+  <thead>
+    <tr>
+      <th>Delivery</th>
+      <th>Emitter</th>
+      <th>Endpoint</th>
+      <th>Event</th>
+      <th>Status</th>
+      <th>Response</th>
+      <th>Job</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>{{ row.delivery.id }}</td>
+      <td>
+        {% if row.emitter %}
+          <a href="/admin/emitters/{{ row.emitter.id }}">{{ row.emitter.legal_name }}</a>
+        {% elif row.endpoint.emitter_id %}
+          {{ row.endpoint.emitter_id }}
+        {% else %}
+          -
+        {% endif %}
+      </td>
+      <td>{{ row.endpoint.url }}</td>
+      <td>{{ row.delivery.event_type }}</td>
+      <td class="status-bad">{{ row.delivery.final_status }}</td>
+      <td>{{ row.delivery.response_code or "-" }}</td>
+      <td>{{ row.job.id if row.job else "-" }}</td>
+      <td>
+        {% if row.job and row.job.status in ["failed", "retry_scheduled"] %}
+        <form class="inline" method="post" action="/admin/jobs/{{ row.job.id }}/retry">
+          <input type="hidden" name="next_url" value="/admin/webhooks">
+          <button type="submit">Retry</button>
+        </form>
+        {% else %}
+        <span class="muted">-</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8" class="muted">No failed webhook deliveries.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+

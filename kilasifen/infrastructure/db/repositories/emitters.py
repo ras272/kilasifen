@@ -67,6 +67,10 @@ class SqlAlchemyEmitterRepository(EmitterRepository):
             return None
         return _to_domain(model)
 
+    def list_all(self) -> list[Emitter]:
+        statement = select(EmitterModel).order_by(EmitterModel.created_at.desc())
+        return [_to_domain(model) for model in self.session.scalars(statement)]
+
 
 def _to_domain(model: EmitterModel) -> Emitter:
     return Emitter(

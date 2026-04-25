@@ -87,6 +87,18 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             return None
         return _to_domain(model)
 
+    def list_recent(
+        self,
+        *,
+        limit: int = 50,
+        emitter_id: str | None = None,
+    ) -> list[Document]:
+        statement = select(DocumentModel)
+        if emitter_id:
+            statement = statement.where(DocumentModel.emitter_id == emitter_id)
+        statement = statement.order_by(DocumentModel.created_at.desc()).limit(limit)
+        return [_to_domain(model) for model in self.session.scalars(statement)]
+
 
 def _to_domain(model: DocumentModel) -> Document:
     return Document(

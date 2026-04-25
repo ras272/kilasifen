@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Emitters | Kila SIFEN Admin{% endblock %}
+{% block content %}
+<h1>Emitters</h1>
+<p class="muted">Configured fiscal emitters and current operational status.</p>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Tax ID</th>
+      <th>Legal name</th>
+      <th>Environment</th>
+      <th>Status</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for emitter in emitters %}
+    <tr>
+      <td><a href="/admin/emitters/{{ emitter.id }}">{{ emitter.id }}</a></td>
+      <td>{{ emitter.ruc }}-{{ emitter.dv }}</td>
+      <td>{{ emitter.legal_name }}</td>
+      <td>{{ emitter.tax_environment }}</td>
+      <td>
+        {% if emitter.status == "active" %}
+          <span class="status-ok">{{ emitter.status }}</span>
+        {% else %}
+          <span class="status-bad">{{ emitter.status }}</span>
+        {% endif %}
+      </td>
+      <td>{{ emitter.updated_at }}</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="6" class="muted">No emitters configured yet.</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+

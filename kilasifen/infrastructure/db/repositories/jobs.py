@@ -69,6 +69,21 @@ class SqlAlchemyJobRepository(JobRepository):
             return None
         return _to_domain(model)
 
+    def list_recent(
+        self,
+        *,
+        limit: int = 50,
+        emitter_id: str | None = None,
+        status: str | None = None,
+    ) -> list[Job]:
+        statement = select(JobModel)
+        if emitter_id:
+            statement = statement.where(JobModel.emitter_id == emitter_id)
+        if status:
+            statement = statement.where(JobModel.status == status)
+        statement = statement.order_by(JobModel.created_at.desc()).limit(limit)
+        return [_to_domain(model) for model in self.session.scalars(statement)]
+
 
 def _to_domain(model: JobModel) -> Job:
     return Job(

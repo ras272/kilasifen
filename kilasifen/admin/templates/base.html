@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Kila SIFEN Admin{% endblock %}</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Segoe UI", sans-serif;
+    }
+    body {
+      margin: 0;
+      background: #f7f8fb;
+      color: #222;
+    }
+    header {
+      background: #0f2f4f;
+      color: #fff;
+      padding: 16px 24px;
+    }
+    nav a {
+      color: #d8e8ff;
+      margin-right: 16px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    main {
+      padding: 20px 24px;
+    }
+    h1, h2, h3 {
+      margin-top: 0;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid #d4dbe6;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: #fff;
+      border: 1px solid #d4dbe6;
+    }
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid #e6ebf3;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #eff3fa;
+      font-size: 13px;
+      color: #394861;
+    }
+    .muted {
+      color: #69768d;
+      font-size: 13px;
+    }
+    .status-ok {
+      color: #0e7a35;
+      font-weight: 600;
+    }
+    .status-warn {
+      color: #a15a00;
+      font-weight: 600;
+    }
+    .status-bad {
+      color: #b3261e;
+      font-weight: 600;
+    }
+    form.inline {
+      display: inline;
+      margin: 0;
+    }
+    button {
+      border: 1px solid #1f4c7a;
+      background: #1f4c7a;
+      color: #fff;
+      border-radius: 6px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    button.secondary {
+      background: #fff;
+      color: #1f4c7a;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Kila SIFEN Admin Console</strong>
+    <div class="muted">Operational read model + low-risk actions</div>
+    <nav>
+      <a href="/admin/emitters">Emitters</a>
+      <a href="/admin/documents">Documents</a>
+      <a href="/admin/jobs">Jobs</a>
+      <a href="/admin/webhooks">Webhook failures</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
+

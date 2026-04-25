@@ -23,3 +23,12 @@ class DocumentRepository(ABC):
     @abstractmethod
     def get_by_external_id(self, emitter_id: str, external_id: str) -> Document | None:
         """Load a document by emitter and external id."""
+
+    @abstractmethod
+    def list_recent(
+        self,
+        *,
+        limit: int = 50,
+        emitter_id: str | None = None,
+    ) -> list[Document]:
+        """List recent documents, optionally scoped by emitter."""

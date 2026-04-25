@@ -23,3 +23,7 @@ class EmitterRepository(ABC):
     @abstractmethod
     def get_by_tax_id(self, ruc: str, dv: str) -> Emitter | None:
         """Load an emitter by tax id."""
+
+    @abstractmethod
+    def list_all(self) -> list[Emitter]:
+        """List all emitters."""

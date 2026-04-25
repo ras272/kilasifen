@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Request
 
+from kilasifen.admin.router import router as admin_router
 from kilasifen.api.routers.certificates import router as certificates_router
 from kilasifen.api.routers.documents import router as documents_router
 from kilasifen.api.routers.events import router as events_router
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(queries_router, prefix=f"/{settings.api_version}")
     app.include_router(events_router, prefix=f"/{settings.api_version}")
     app.include_router(webhooks_router, prefix=f"/{settings.api_version}")
+    app.include_router(admin_router)
 
     @app.get(
         f"/{settings.api_version}/auth/check",

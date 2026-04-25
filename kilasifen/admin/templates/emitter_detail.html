@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Emitter {{ detail.emitter.id }} | Kila SIFEN Admin{% endblock %}
+{% block content %}
+<h1>Emitter {{ detail.emitter.id }}</h1>
+<div class="card">
+  <strong>{{ detail.emitter.legal_name }}</strong><br>
+  <span class="muted">RUC/DV: {{ detail.emitter.ruc }}-{{ detail.emitter.dv }}</span><br>
+  <span class="muted">Environment: {{ detail.emitter.tax_environment }} | Status: {{ detail.emitter.status }}</span>
+</div>
+
+<h2>Certificates</h2>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Logical name</th>
+      <th>Detected RUC</th>
+      <th>Validity</th>
+      <th>Active</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for certificate in detail.certificates %}
+    <tr>
+      <td>{{ certificate.id }}</td>
+      <td>{{ certificate.logical_name }}</td>
+      <td>{{ certificate.detected_ruc or "-" }}</td>
+      <td>{{ certificate.valid_from }} .. {{ certificate.valid_until }}</td>
+      <td>
+        {% if certificate.is_active %}
+          <span class="status-ok">active</span>
+        {% else %}
+          <span class="status-warn">inactive</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if not certificate.is_active %}
+        <form class="inline" method="post" action="/admin/certificates/{{ certificate.id }}/activate">
+          <input type="hidden" name="next_url" value="/admin/emitters/{{ detail.emitter.id }}">
+          <button type="submit" class="secondary">Activate</button>
+        </form>
+        {% else %}
+        <span class="muted">Current</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">No certificates loaded.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Stampings</h2>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Number</th>
+      <th>Window</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for stamping in detail.stampings %}
+    <tr>
+      <td>{{ stamping.id }}</td>
+      <td>{{ stamping.number }}</td>
+      <td>{{ stamping.start_date }} .. {{ stamping.end_date or "open" }}</td>
+      <td>
+        {% if stamping.is_active %}
+          <span class="status-ok">active</span>
+        {% else %}
+          <span class="status-warn">{{ stamping.status }}</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">No stampings configured.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Recent documents ({{ limit }})</h2>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Type</th>
+      <th>External ID</th>
+      <th>Status</th>
+      <th>Result</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for document in detail.documents %}
+    <tr>
+      <td>{{ document.id }}</td>
+      <td>{{ document.document_type }}</td>
+      <td>{{ document.external_id or "-" }}</td>
+      <td>{{ document.internal_status }}</td>
+      <td>{{ document.sifen_result_code or "-" }} {{ document.sifen_result_message or "" }}</td>
+      <td>{{ document.updated_at }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">No documents registered.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Recent jobs ({{ limit }})</h2>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Type</th>
+      <th>Status</th>
+      <th>Attempts</th>
+      <th>Entity</th>
+      <th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for job in detail.jobs %}
+    <tr>
+      <td>{{ job.id }}</td>
+      <td>{{ job.job_type }}</td>
+      <td>{{ job.status }}</td>
+      <td>{{ job.attempts }}</td>
+      <td>{{ job.related_entity_type }} / {{ job.related_entity_id }}</td>
+      <td>
+        {% if job.status in ["failed", "retry_scheduled"] and job.job_type in ["document.emit", "webhook.deliver"] %}
+        <form class="inline" method="post" action="/admin/jobs/{{ job.id }}/retry">
+          <input type="hidden" name="next_url" value="/admin/emitters/{{ detail.emitter.id }}">
+          <button type="submit">Retry</button>
+        </form>
+        {% else %}
+        <span class="muted">-</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">No jobs found.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Webhook endpoints</h2>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>URL</th>
+      <th>Subscriptions</th>
+      <th>Status</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for endpoint in detail.webhook_endpoints %}
+    <tr>
+      <td>{{ endpoint.id }}</td>
+      <td>{{ endpoint.url }}</td>
+      <td>{{ endpoint.event_subscriptions or "-" }}</td>
+      <td>{{ "active" if endpoint.is_active else "inactive" }}</td>
+      <td>{{ endpoint.updated_at }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">No webhook endpoints configured.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>Failed webhook deliveries</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Delivery</th>
+      <th>Endpoint</th>
+      <th>Event</th>
+      <th>Status</th>
+      <th>Response</th>
+      <th>Retry job</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in detail.failed_webhook_deliveries %}
+    <tr>
+      <td>{{ row.delivery.id }}</td>
+      <td>{{ row.endpoint.url }}</td>
+      <td>{{ row.delivery.event_type }}</td>
+      <td class="status-bad">{{ row.delivery.final_status }}</td>
+      <td>{{ row.delivery.response_code or "-" }}</td>
+      <td>
+        {% if row.job and row.job.status in ["failed", "retry_scheduled"] %}
+        <form class="inline" method="post" action="/admin/jobs/{{ row.job.id }}/retry">
+          <input type="hidden" name="next_url" value="/admin/emitters/{{ detail.emitter.id }}">
+          <button type="submit">Retry</button>
+        </form>
+        {% else %}
+        <span class="muted">-</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">No failed webhook deliveries for this emitter.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+

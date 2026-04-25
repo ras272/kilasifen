@@ -1,0 +1,2 @@
+"""Admin console application services."""
+

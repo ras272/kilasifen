@@ -31,7 +31,13 @@ class RqJobQueue:
     def __init__(self, queue: Queue):
         self.queue = queue
 
-    def enqueue_document_emit(self, job: Job, *, database_url: str = "sqlite:///./kilasifen.db") -> RqJob:
+    def enqueue_document_emit(
+        self,
+        job: Job,
+        *,
+        database_url: str,
+        encryption_key: str,
+    ) -> RqJob:
         """Enqueue document emission work."""
 
         return self.queue.enqueue_call(
@@ -39,6 +45,7 @@ class RqJobQueue:
             kwargs={
                 "job_id": job.id,
                 "database_url": database_url,
+                "encryption_key": encryption_key,
             },
             job_id=job.id,
         )

@@ -7,6 +7,7 @@ from redis import Redis
 from rq import Queue
 from sqlalchemy.orm import Session
 
+from kilasifen.application.admin.service import AdminConsoleService
 from kilasifen.application.documents.service import DocumentService
 from kilasifen.application.events.service import EventService
 from kilasifen.application.jobs.service import JobService
@@ -173,6 +174,47 @@ def get_webhook_service(
         secret_store=EncryptedCertificateStore(settings.encryption_key),
         queue=RqJobQueue(queue),
         deliverer=WebhookDeliverer(),
+        database_url=settings.database_url,
+        encryption_key=settings.encryption_key,
+    )
+
+
+def get_admin_service(
+    session: Session = Depends(get_db_session),
+) -> AdminConsoleService:
+    """Build the admin-console service for one request."""
+
+    settings = get_settings()
+    if not settings.encryption_key:
+        raise RuntimeError("KILA_SIFEN_ENCRYPTION_KEY is required for admin.")
+
+    redis_connection = Redis.from_url(settings.redis_url)
+    document_queue = Queue("documents", connection=redis_connection)
+    webhook_queue = Queue("webhooks", connection=redis_connection)
+
+    emitter_repository = SqlAlchemyEmitterRepository(session)
+    certificate_repository = SqlAlchemyCertificateRepository(session)
+    stamping_repository = SqlAlchemyStampingRepository(session)
+    document_repository = SqlAlchemyDocumentRepository(session)
+    job_repository = SqlAlchemyJobRepository(session)
+    webhook_repository = SqlAlchemyWebhookRepository(session)
+    certificate_store = EncryptedCertificateStore(settings.encryption_key)
+    certificate_service = CertificateService(
+        certificate_repository=certificate_repository,
+        emitter_repository=emitter_repository,
+        certificate_store=certificate_store,
+    )
+
+    return AdminConsoleService(
+        emitter_repository=emitter_repository,
+        certificate_repository=certificate_repository,
+        stamping_repository=stamping_repository,
+        document_repository=document_repository,
+        job_repository=job_repository,
+        webhook_repository=webhook_repository,
+        certificate_service=certificate_service,
+        document_queue=RqJobQueue(document_queue),
+        webhook_queue=RqJobQueue(webhook_queue),
         database_url=settings.database_url,
         encryption_key=settings.encryption_key,
     )

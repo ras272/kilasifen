@@ -27,3 +27,13 @@ class WebhookRepository(ABC):
     @abstractmethod
     def get_delivery(self, delivery_id: str) -> WebhookDelivery | None:
         """Load one webhook delivery by id."""
+
+    @abstractmethod
+    def list_recent_deliveries(
+        self,
+        *,
+        limit: int = 50,
+        endpoint_id: str | None = None,
+        statuses: list[str] | None = None,
+    ) -> list[WebhookDelivery]:
+        """List recent webhook deliveries with optional filters."""

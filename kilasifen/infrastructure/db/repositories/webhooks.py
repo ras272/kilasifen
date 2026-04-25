@@ -88,6 +88,23 @@ class SqlAlchemyWebhookRepository(WebhookRepository):
             return None
         return _delivery_to_domain(model)
 
+    def list_recent_deliveries(
+        self,
+        *,
+        limit: int = 50,
+        endpoint_id: str | None = None,
+        statuses: list[str] | None = None,
+    ) -> list[WebhookDelivery]:
+        statement = select(WebhookDeliveryModel)
+        if endpoint_id:
+            statement = statement.where(
+                WebhookDeliveryModel.webhook_endpoint_id == endpoint_id,
+            )
+        if statuses:
+            statement = statement.where(WebhookDeliveryModel.final_status.in_(statuses))
+        statement = statement.order_by(WebhookDeliveryModel.created_at.desc()).limit(limit)
+        return [_delivery_to_domain(model) for model in self.session.scalars(statement)]
+
 
 def _endpoint_to_domain(model: WebhookEndpointModel) -> WebhookEndpoint:
     return WebhookEndpoint(

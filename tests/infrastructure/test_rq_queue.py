@@ -43,10 +43,15 @@ def test_rq_queue_enqueues_document_job_with_expected_payload() -> None:
         updated_at=_now(),
     )
 
-    enqueued = adapter.enqueue_document_emit(job)
+    enqueued = adapter.enqueue_document_emit(
+        job,
+        database_url="sqlite:///./kilasifen.db",
+        encryption_key=_fernet_key(),
+    )
 
     assert enqueued.func_name == "kilasifen.infrastructure.jobs.workers.process_document_job"
     assert enqueued.kwargs["job_id"] == "job-1"
+    assert enqueued.kwargs["encryption_key"] == _fernet_key()
 
 
 def test_process_document_job_hydrates_job_and_document_context(tmp_path) -> None:

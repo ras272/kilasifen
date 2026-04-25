@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Documents | Kila SIFEN Admin{% endblock %}
+{% block content %}
+<h1>Recent Documents</h1>
+<p class="muted">Emitter filter: {{ emitter_id or "all" }} | Limit: {{ limit }}</p>
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Emitter</th>
+      <th>Type</th>
+      <th>External ID</th>
+      <th>Status</th>
+      <th>SIFEN result</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for document in documents %}
+    <tr>
+      <td>{{ document.id }}</td>
+      <td>
+        <a href="/admin/emitters/{{ document.emitter_id }}">{{ document.emitter_id }}</a>
+      </td>
+      <td>{{ document.document_type }}</td>
+      <td>{{ document.external_id or "-" }}</td>
+      <td>{{ document.internal_status }}</td>
+      <td>{{ document.sifen_result_code or "-" }} {{ document.sifen_result_message or "" }}</td>
+      <td>{{ document.updated_at }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="muted">No documents to show.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+

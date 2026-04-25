@@ -19,3 +19,13 @@ class JobRepository(ABC):
     @abstractmethod
     def get_for_entity(self, entity_type: str, entity_id: str) -> Job | None:
         """Load the latest job for a related entity."""
+
+    @abstractmethod
+    def list_recent(
+        self,
+        *,
+        limit: int = 50,
+        emitter_id: str | None = None,
+        status: str | None = None,
+    ) -> list[Job]:
+        """List recent jobs with optional filters."""
