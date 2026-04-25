@@ -3,6 +3,8 @@
 from collections.abc import Callable, Generator
 
 from fastapi import Depends, Header, Request
+from redis import Redis
+from rq import Queue
 from sqlalchemy.orm import Session
 
 from kilasifen.application.documents.service import DocumentService
@@ -10,6 +12,7 @@ from kilasifen.application.events.service import EventService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.queries.service import QueryService
 from kilasifen.application.stampings.service import StampingService
+from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.application.certificates.service import CertificateService
 from kilasifen.application.emitters.service import EmitterService
 from kilasifen.config import get_settings
@@ -22,9 +25,12 @@ from kilasifen.infrastructure.db.repositories.certificates import (
 from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
 from kilasifen.infrastructure.db.repositories.stampings import SqlAlchemyStampingRepository
+from kilasifen.infrastructure.db.repositories.webhooks import SqlAlchemyWebhookRepository
 from kilasifen.infrastructure.db.session import session_scope
+from kilasifen.infrastructure.jobs.queue import RqJobQueue
 from kilasifen.infrastructure.sifen.event import PysifenEventGateway
 from kilasifen.infrastructure.sifen.query import PysifenQueryGateway
+from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.security import ApiKeyPrincipal, validate_api_key
 
 
@@ -143,4 +149,30 @@ def get_event_service(
         job_repository=SqlAlchemyJobRepository(session),
         certificate_store=EncryptedCertificateStore(settings.encryption_key),
         submission_gateway=PysifenEventGateway(),
+    )
+
+
+def get_webhook_service(
+    session: Session = Depends(get_db_session),
+) -> WebhookService:
+    """Build the webhook application service for one request."""
+
+    settings = get_settings()
+    if not settings.encryption_key:
+        raise RuntimeError("KILA_SIFEN_ENCRYPTION_KEY is required for webhooks.")
+
+    queue = Queue(
+        "webhooks",
+        connection=Redis.from_url(settings.redis_url),
+    )
+
+    return WebhookService(
+        webhook_repository=SqlAlchemyWebhookRepository(session),
+        emitter_repository=SqlAlchemyEmitterRepository(session),
+        job_repository=SqlAlchemyJobRepository(session),
+        secret_store=EncryptedCertificateStore(settings.encryption_key),
+        queue=RqJobQueue(queue),
+        deliverer=WebhookDeliverer(),
+        database_url=settings.database_url,
+        encryption_key=settings.encryption_key,
     )

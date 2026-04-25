@@ -1,0 +1,29 @@
+"""Webhook repository interface."""
+
+from abc import ABC, abstractmethod
+
+from kilasifen.domain.webhooks.models import WebhookDelivery, WebhookEndpoint
+
+
+class WebhookRepository(ABC):
+    """Persistence contract for webhook endpoints and deliveries."""
+
+    @abstractmethod
+    def save_endpoint(self, endpoint: WebhookEndpoint) -> WebhookEndpoint:
+        """Persist a webhook endpoint."""
+
+    @abstractmethod
+    def get_endpoint(self, endpoint_id: str) -> WebhookEndpoint | None:
+        """Load one webhook endpoint by id."""
+
+    @abstractmethod
+    def list_endpoints_for_emitter(self, emitter_id: str) -> list[WebhookEndpoint]:
+        """List webhook endpoints for one emitter."""
+
+    @abstractmethod
+    def save_delivery(self, delivery: WebhookDelivery) -> WebhookDelivery:
+        """Persist one webhook delivery."""
+
+    @abstractmethod
+    def get_delivery(self, delivery_id: str) -> WebhookDelivery | None:
+        """Load one webhook delivery by id."""

@@ -12,13 +12,16 @@ from pysifen.sdk.errors import (
 
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.repositories.certificates import SqlAlchemyCertificateRepository
+from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.infrastructure.db.repositories.documents import SqlAlchemyDocumentRepository
 from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
 from kilasifen.infrastructure.db.repositories.stampings import SqlAlchemyStampingRepository
+from kilasifen.infrastructure.db.repositories.webhooks import SqlAlchemyWebhookRepository
 from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
 from kilasifen.infrastructure.sifen.engine import DocumentEmissionEngine, PysifenEmissionEngine
+from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 
 
 def process_document_job(
@@ -131,3 +134,35 @@ def process_document_job(
             "job_status": updated_job.status,
             "document_status": updated_document.internal_status,
         }
+
+
+def process_webhook_delivery_job(
+    *,
+    job_id: str,
+    database_url: str,
+    encryption_key: str,
+    deliverer: WebhookDeliverer | None = None,
+) -> dict[str, str]:
+    """Process a webhook-delivery job."""
+
+    engine = build_engine(database_url)
+    session_factory = build_session_factory(engine)
+    deliverer = deliverer or WebhookDeliverer()
+    secret_store = EncryptedCertificateStore(encryption_key)
+
+    with session_scope(session_factory) as session:
+        service = WebhookService(
+            webhook_repository=SqlAlchemyWebhookRepository(session),
+            emitter_repository=SqlAlchemyEmitterRepository(session),
+            job_repository=SqlAlchemyJobRepository(session),
+            secret_store=secret_store,
+            queue=_NoopWebhookQueue(),
+            deliverer=deliverer,
+        )
+        return service.process_delivery_attempt(job_id=job_id)
+
+
+class _NoopWebhookQueue:
+    def enqueue_webhook_delivery(self, *args, **kwargs):
+        del args, kwargs
+        return None

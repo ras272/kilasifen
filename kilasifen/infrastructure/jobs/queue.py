@@ -1,10 +1,28 @@
 """RQ queue adapter for background jobs."""
 
+from typing import Protocol
+
 from rq import Queue
 from rq.job import Job as RqJob
 
 from kilasifen.domain.jobs.models import Job
-from kilasifen.infrastructure.jobs.workers import process_document_job
+from kilasifen.infrastructure.jobs.workers import (
+    process_document_job,
+    process_webhook_delivery_job,
+)
+
+
+class WebhookJobQueue(Protocol):
+    """Queue contract for webhook delivery jobs."""
+
+    def enqueue_webhook_delivery(
+        self,
+        job: Job,
+        *,
+        database_url: str,
+        encryption_key: str,
+    ):
+        """Enqueue a webhook delivery job."""
 
 
 class RqJobQueue:
@@ -21,6 +39,25 @@ class RqJobQueue:
             kwargs={
                 "job_id": job.id,
                 "database_url": database_url,
+            },
+            job_id=job.id,
+        )
+
+    def enqueue_webhook_delivery(
+        self,
+        job: Job,
+        *,
+        database_url: str,
+        encryption_key: str,
+    ) -> RqJob:
+        """Enqueue webhook delivery work."""
+
+        return self.queue.enqueue_call(
+            func=process_webhook_delivery_job,
+            kwargs={
+                "job_id": job.id,
+                "database_url": database_url,
+                "encryption_key": encryption_key,
             },
             job_id=job.id,
         )
