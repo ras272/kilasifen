@@ -49,17 +49,21 @@ transmissao = [
     "lxml",
 ]
 platform = [
+    "alembic>=1.14,<2",
     "fastapi>=0.115,<1",
     "pydantic>=2,<3",
     "pydantic-settings>=2,<3",
+    "sqlalchemy>=2,<3",
 ]
 test = [
+    "alembic>=1.14,<2",
     "fastapi>=0.115,<1",
     "httpx>=0.28,<1",
     "pydantic>=2,<3",
     "pydantic-settings>=2,<3",
     "pytest",
     "pytest-cov",
+    "sqlalchemy>=2,<3",
     "xmldiff",
     "lxml",
 ]
