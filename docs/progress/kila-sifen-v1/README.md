@@ -39,4 +39,5 @@ Current coverage:
 - `chunk-5-task-12.md`
 - `chunk-6.md`
 - `chunk-6-task-13.md`
+- `chunk-6-task-14.md`
 - `chunk-6-followup-sifen-async-state-machine.md`
