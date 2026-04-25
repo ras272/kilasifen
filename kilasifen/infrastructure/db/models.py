@@ -162,6 +162,8 @@ class EventModel(TimestampMixin, Base):
     input_payload: Mapped[dict | None] = mapped_column(JSON)
     generated_xml: Mapped[str | None] = mapped_column(Text)
     signed_xml: Mapped[str | None] = mapped_column(Text)
+    sifen_request_xml: Mapped[str | None] = mapped_column(Text)
+    sifen_response_raw: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
     sifen_result_code: Mapped[str | None] = mapped_column(String(16))
     sifen_result_message: Mapped[str | None] = mapped_column(Text)

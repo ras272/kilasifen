@@ -6,6 +6,7 @@ from fastapi import Depends, FastAPI, Request
 
 from kilasifen.api.routers.certificates import router as certificates_router
 from kilasifen.api.routers.documents import router as documents_router
+from kilasifen.api.routers.events import router as events_router
 from kilasifen.api.routers.health import router as health_router
 from kilasifen.api.routers.emitters import router as emitters_router
 from kilasifen.api.routers.jobs import router as jobs_router
@@ -53,6 +54,7 @@ def create_app() -> FastAPI:
     app.include_router(documents_router, prefix=f"/{settings.api_version}")
     app.include_router(jobs_router, prefix=f"/{settings.api_version}")
     app.include_router(queries_router, prefix=f"/{settings.api_version}")
+    app.include_router(events_router, prefix=f"/{settings.api_version}")
 
     @app.get(
         f"/{settings.api_version}/auth/check",
