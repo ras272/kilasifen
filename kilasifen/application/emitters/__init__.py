@@ -1,0 +1,1 @@
+"""Emitter application services."""

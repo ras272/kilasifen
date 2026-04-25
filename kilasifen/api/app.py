@@ -5,10 +5,18 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Request
 
 from kilasifen.api.routers.health import router as health_router
+from kilasifen.api.routers.emitters import router as emitters_router
 from kilasifen.api.deps import get_api_key_principal
-from kilasifen.api.errors import ApiError, api_error_handler
+from kilasifen.api.errors import (
+    ApiError,
+    api_error_handler,
+    conflict_error_handler,
+    not_found_error_handler,
+)
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.config import get_settings
+from kilasifen.domain.common.errors import ConflictError, NotFoundError
+from kilasifen.infrastructure.db.session import build_engine, build_session_factory
 from kilasifen.logging import configure_logging
 
 
@@ -19,7 +27,12 @@ def create_app() -> FastAPI:
     configure_logging(settings.log_level)
 
     app = FastAPI(title=settings.api_title)
+    engine = build_engine(settings.database_url)
+    app.state.engine = engine
+    app.state.session_factory = build_session_factory(engine)
     app.add_exception_handler(ApiError, api_error_handler)
+    app.add_exception_handler(NotFoundError, not_found_error_handler)
+    app.add_exception_handler(ConflictError, conflict_error_handler)
 
     @app.middleware("http")
     async def add_correlation_id(request: Request, call_next):
@@ -29,6 +42,7 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(health_router, prefix=f"/{settings.api_version}")
+    app.include_router(emitters_router, prefix=f"/{settings.api_version}")
 
     @app.get(
         f"/{settings.api_version}/auth/check",

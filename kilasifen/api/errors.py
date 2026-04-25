@@ -4,6 +4,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from kilasifen.api.schemas.common import ErrorEnvelope, ErrorPayload
+from kilasifen.domain.common.errors import ConflictError, NotFoundError
 
 
 class ApiError(Exception):
@@ -30,3 +31,37 @@ async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
         )
     )
     return JSONResponse(status_code=exc.status_code, content=payload.model_dump())
+
+
+async def not_found_error_handler(
+    request: Request,
+    exc: NotFoundError,
+) -> JSONResponse:
+    """Serialize structured not-found errors."""
+
+    return await api_error_handler(
+        request,
+        ApiError(
+            status_code=404,
+            code=str(exc),
+            message="Resource was not found.",
+            category="not_found",
+        ),
+    )
+
+
+async def conflict_error_handler(
+    request: Request,
+    exc: ConflictError,
+) -> JSONResponse:
+    """Serialize structured conflict errors."""
+
+    return await api_error_handler(
+        request,
+        ApiError(
+            status_code=409,
+            code=str(exc),
+            message="Resource conflict.",
+            category="conflict",
+        ),
+    )

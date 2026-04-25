@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_keys: list[str] = Field(default_factory=list)
     database_url: str = Field(
-        default="postgresql://postgres:postgres@localhost:5432/kilasifen",
+        default="sqlite:///./kilasifen.db",
     )
     redis_url: str = Field(default="redis://localhost:6379/0")
     encryption_key: str | None = None
