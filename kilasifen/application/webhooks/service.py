@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from kilasifen.application.jobs.service import JobService
 from kilasifen.domain.common.errors import ConflictError, NotFoundError
+from kilasifen.domain.documents.models import Document
 from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.webhooks.models import WebhookDelivery, WebhookEndpoint
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
@@ -104,43 +105,60 @@ class WebhookService:
         if not endpoint.is_active:
             raise ConflictError("webhooks.endpoint_inactive")
 
-        timestamp = _now()
-        delivery_id = str(uuid4())
-        envelope = {
-            "type": event_type,
-            "delivery_id": delivery_id,
-            "occurred_at": timestamp.isoformat(),
-            "data": payload or {},
-        }
-        delivery = WebhookDelivery(
-            id=delivery_id,
-            webhook_endpoint_id=endpoint.id,
+        saved_delivery, job = self._create_delivery_job(
+            endpoint=endpoint,
             event_type=event_type,
-            payload_snapshot=envelope,
-            attempt_number=1,
-            request_at=None,
-            response_code=None,
-            response_body_snapshot=None,
-            final_status="pending",
-            created_at=timestamp,
-            updated_at=timestamp,
+            payload=payload,
         )
-        saved_delivery = self.webhook_repository.save_delivery(delivery)
-        job = self.job_service.create_job(
-            emitter_id=endpoint.emitter_id,
-            related_entity_type="webhook_delivery",
-            related_entity_id=saved_delivery.id,
-            job_type="webhook.deliver",
-        )
-
-        if self.database_url and self.encryption_key:
-            self.queue.enqueue_webhook_delivery(
-                job,
-                database_url=self.database_url,
-                encryption_key=self.encryption_key,
-            )
-
+        self._enqueue_if_configured(job)
         return saved_delivery, job
+
+    def publish_document_status(self, *, document: Document) -> list[tuple[WebhookDelivery, Job]]:
+        """Publish one normalized document-status event to subscribed endpoints."""
+
+        event_type = _document_event_type(document.internal_status)
+        payload = {
+            "document_id": document.id,
+            "external_id": document.external_id,
+            "document_type": document.document_type,
+            "internal_status": document.internal_status,
+            "sifen_status": document.sifen_status,
+            "sifen_result_code": document.sifen_result_code,
+            "sifen_result_message": document.sifen_result_message,
+        }
+        return self.publish_event(
+            emitter_id=document.emitter_id,
+            event_type=event_type,
+            payload=payload,
+        )
+
+    def publish_event(
+        self,
+        *,
+        emitter_id: str,
+        event_type: str,
+        payload: dict | None,
+    ) -> list[tuple[WebhookDelivery, Job]]:
+        """Fan out one event to active endpoints subscribed to the event type."""
+
+        if self.emitter_repository.get(emitter_id) is None:
+            raise NotFoundError("emitters.not_found")
+
+        results: list[tuple[WebhookDelivery, Job]] = []
+        endpoints = self.webhook_repository.list_endpoints_for_emitter(emitter_id)
+        for endpoint in endpoints:
+            if not endpoint.is_active:
+                continue
+            if not _supports_event(endpoint=endpoint, event_type=event_type):
+                continue
+            saved_delivery, job = self._create_delivery_job(
+                endpoint=endpoint,
+                event_type=event_type,
+                payload=payload,
+            )
+            self._enqueue_if_configured(job)
+            results.append((saved_delivery, job))
+        return results
 
     def get_delivery(self, delivery_id: str) -> tuple[WebhookDelivery, Job | None]:
         delivery = self.webhook_repository.get_delivery(delivery_id)
@@ -214,6 +232,51 @@ class WebhookService:
             "delivery_status": updated_delivery.final_status,
         }
 
+    def _create_delivery_job(
+        self,
+        *,
+        endpoint: WebhookEndpoint,
+        event_type: str,
+        payload: dict | None,
+    ) -> tuple[WebhookDelivery, Job]:
+        timestamp = _now()
+        delivery_id = str(uuid4())
+        envelope = {
+            "type": event_type,
+            "delivery_id": delivery_id,
+            "occurred_at": timestamp.isoformat(),
+            "data": payload or {},
+        }
+        delivery = WebhookDelivery(
+            id=delivery_id,
+            webhook_endpoint_id=endpoint.id,
+            event_type=event_type,
+            payload_snapshot=envelope,
+            attempt_number=1,
+            request_at=None,
+            response_code=None,
+            response_body_snapshot=None,
+            final_status="pending",
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        saved_delivery = self.webhook_repository.save_delivery(delivery)
+        job = self.job_service.create_job(
+            emitter_id=endpoint.emitter_id,
+            related_entity_type="webhook_delivery",
+            related_entity_id=saved_delivery.id,
+            job_type="webhook.deliver",
+        )
+        return saved_delivery, job
+
+    def _enqueue_if_configured(self, job: Job) -> None:
+        if self.database_url and self.encryption_key:
+            self.queue.enqueue_webhook_delivery(
+                job,
+                database_url=self.database_url,
+                encryption_key=self.encryption_key,
+            )
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
@@ -223,3 +286,35 @@ def _secret_preview(secret: str) -> str:
     if len(secret) <= 4:
         return "***"
     return f"{secret[:2]}***{secret[-2:]}"
+
+
+def _supports_event(*, endpoint: WebhookEndpoint, event_type: str) -> bool:
+    subscriptions = [
+        item.strip()
+        for item in (endpoint.event_subscriptions or [])
+        if item and item.strip()
+    ]
+    if not subscriptions:
+        return True
+    if "*" in subscriptions or event_type in subscriptions:
+        return True
+    for subscription in subscriptions:
+        if subscription.endswith(".*"):
+            prefix = subscription[: -len("*")]
+            if event_type.startswith(prefix):
+                return True
+    return False
+
+
+def _document_event_type(internal_status: str | None) -> str:
+    normalized = (internal_status or "").strip().lower()
+    if normalized in {
+        "approved",
+        "submitted",
+        "rejected",
+        "failed",
+        "retry_pending",
+        "queued",
+    }:
+        return f"document.{normalized}"
+    return "document.updated"

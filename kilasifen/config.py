@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     encryption_key: str | None = None
     sifen_environment: Literal["test", "production"] = "test"
     document_auto_enqueue: bool = False
+    document_publish_webhooks: bool = False
 
 
 @lru_cache(maxsize=1)

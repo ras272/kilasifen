@@ -24,6 +24,10 @@ Jobs are the operational ledger for retries, observability, and support.
    - approved/accepted => `job.succeeded`
    - transport timeout/network => `job.retry_scheduled`
    - fiscal validation/rejection => `job.failed`
+5. Optional webhook fanout:
+   - if `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS=true`, document transitions publish
+     events like `document.approved`, `document.rejected`, `document.retry_pending`
+     to active subscribed webhook endpoints.
 
 ## Webhook delivery flow
 
@@ -56,4 +60,3 @@ Retries re-queue job payload with current DB/crypto settings.
 
 - `docs/normativa/sifen-async-notas-tecnicas.md`
 - `kilasifen/domain/common/sifen_async.py`
-

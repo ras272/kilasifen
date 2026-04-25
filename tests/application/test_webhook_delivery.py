@@ -1,8 +1,9 @@
 import hashlib
 import hmac
-import json
 from datetime import UTC, datetime
 
+from kilasifen.application.webhooks.service import WebhookService
+from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.webhooks.models import WebhookDelivery, WebhookEndpoint
@@ -66,6 +67,62 @@ def test_process_webhook_delivery_job_marks_retry_pending_on_retryable_failure(t
 
     assert payload["job_status"] == "retry_scheduled"
     assert payload["delivery_status"] == "retry_pending"
+
+
+def test_publish_document_status_matches_subscriptions_and_wildcards(tmp_path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'webhook-publish.db'}"
+    encryption_key = _fernet_key()
+    _seed_webhook_publish_context(database_url=database_url, encryption_key=encryption_key)
+
+    engine = build_engine(database_url)
+    session_factory = build_session_factory(engine)
+    fake_queue = _FakeQueue()
+
+    with session_scope(session_factory) as session:
+        service = WebhookService(
+            webhook_repository=SqlAlchemyWebhookRepository(session),
+            emitter_repository=SqlAlchemyEmitterRepository(session),
+            job_repository=SqlAlchemyJobRepository(session),
+            secret_store=EncryptedCertificateStore(encryption_key),
+            queue=fake_queue,
+            deliverer=WebhookDeliverer(),
+            database_url=database_url,
+            encryption_key=encryption_key,
+        )
+        created = service.publish_document_status(
+            document=Document(
+                id="doc-42",
+                emitter_id="emitter-1",
+                external_id="erp-doc-42",
+                idempotency_key="idem-42",
+                document_type="factura",
+                payload_snapshot=None,
+                generated_xml=None,
+                signed_xml=None,
+                sifen_request_xml=None,
+                sifen_response_raw=None,
+                last_query_request_xml=None,
+                last_query_response_raw=None,
+                last_query_at=None,
+                cdc="01800123450001001001001012026042411234567891",
+                internal_status="approved",
+                sifen_status="approved",
+                sifen_result_code="0260",
+                sifen_result_message="ok",
+                created_at=_now(),
+                updated_at=_now(),
+            )
+        )
+
+        deliveries = SqlAlchemyWebhookRepository(session).list_recent_deliveries(limit=20)
+        jobs = SqlAlchemyJobRepository(session).list_recent(limit=20)
+
+    assert len(created) == 3
+    assert len(deliveries) == 3
+    assert all(delivery.event_type == "document.approved" for delivery in deliveries)
+    webhook_jobs = [job for job in jobs if job.job_type == "webhook.deliver"]
+    assert len(webhook_jobs) == 3
+    assert len(fake_queue.enqueued_job_ids) == 3
 
 
 def _seed_webhook_job_context(*, database_url: str, encryption_key: str) -> None:
@@ -138,6 +195,89 @@ def _seed_webhook_job_context(*, database_url: str, encryption_key: str) -> None
         webhook_repository.save_endpoint(endpoint)
         webhook_repository.save_delivery(delivery)
         SqlAlchemyJobRepository(session).save(job)
+
+
+def _seed_webhook_publish_context(*, database_url: str, encryption_key: str) -> None:
+    engine = build_engine(database_url)
+    Base.metadata.create_all(engine)
+    session_factory = build_session_factory(engine)
+    store = EncryptedCertificateStore(encryption_key)
+
+    emitter = Emitter(
+        id="emitter-1",
+        external_id="erp-ares",
+        ruc="80024135",
+        dv="5",
+        legal_name="ARES PARAGUAY SRL",
+        tax_environment="test",
+        status="active",
+        csc="ABCD0000000000000000000000000000",
+        csc_id="0001",
+        created_at=_now(),
+        updated_at=_now(),
+    )
+    endpoints = [
+        WebhookEndpoint(
+            id="endpoint-exact",
+            emitter_id="emitter-1",
+            url="https://erp.example.com/hooks/exact",
+            secret_encrypted=store.encrypt_text("secret-1"),
+            event_subscriptions=["document.approved"],
+            is_active=True,
+            retry_policy=None,
+            created_at=_now(),
+            updated_at=_now(),
+        ),
+        WebhookEndpoint(
+            id="endpoint-wildcard",
+            emitter_id="emitter-1",
+            url="https://erp.example.com/hooks/wildcard",
+            secret_encrypted=store.encrypt_text("secret-2"),
+            event_subscriptions=["document.*"],
+            is_active=True,
+            retry_policy=None,
+            created_at=_now(),
+            updated_at=_now(),
+        ),
+        WebhookEndpoint(
+            id="endpoint-all",
+            emitter_id="emitter-1",
+            url="https://erp.example.com/hooks/all",
+            secret_encrypted=store.encrypt_text("secret-3"),
+            event_subscriptions=None,
+            is_active=True,
+            retry_policy=None,
+            created_at=_now(),
+            updated_at=_now(),
+        ),
+        WebhookEndpoint(
+            id="endpoint-non-match",
+            emitter_id="emitter-1",
+            url="https://erp.example.com/hooks/non-match",
+            secret_encrypted=store.encrypt_text("secret-4"),
+            event_subscriptions=["event.approved"],
+            is_active=True,
+            retry_policy=None,
+            created_at=_now(),
+            updated_at=_now(),
+        ),
+    ]
+
+    with session_scope(session_factory) as session:
+        SqlAlchemyEmitterRepository(session).save(emitter)
+        repository = SqlAlchemyWebhookRepository(session)
+        for endpoint in endpoints:
+            repository.save_endpoint(endpoint)
+
+
+class _FakeQueue:
+    def __init__(self) -> None:
+        self.enqueued_job_ids: list[str] = []
+
+    def enqueue_webhook_delivery(self, job, *, database_url: str, encryption_key: str):
+        del database_url, encryption_key
+        self.enqueued_job_ids.append(job.id)
+        return {"job_id": job.id}
 
 
 def _now() -> datetime:

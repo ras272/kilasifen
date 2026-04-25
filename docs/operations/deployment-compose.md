@@ -15,6 +15,8 @@ Run a full local stack for API + workers with PostgreSQL and Redis.
 2. Set:
    - `KILA_SIFEN_ENCRYPTION_KEY`
    - `KILA_SIFEN_API_KEYS`
+   - `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE=true`
+   - `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS=true`
 3. Start stack:
 
 ```bash
@@ -33,6 +35,8 @@ docker compose ps
 - `redis`: queue transport
 - `api`: runs migrations and exposes HTTP API on `:8000`
 - `worker`: processes `documents` and `webhooks` queues
+- with document webhook publish enabled, successful/failed document transitions fan out
+  to subscribed webhook endpoints automatically
 
 ## Health checks
 

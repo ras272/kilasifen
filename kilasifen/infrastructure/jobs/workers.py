@@ -1,8 +1,11 @@
 """Worker entrypoints for background jobs."""
 
+import logging
 from dataclasses import replace
 from datetime import date
 
+from redis import Redis
+from rq import Queue
 from pysifen.sdk.errors import (
     SifenRejectionError,
     SifenTimeoutError,
@@ -10,6 +13,7 @@ from pysifen.sdk.errors import (
     SifenValidationError,
 )
 
+from kilasifen.config import get_settings
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.repositories.certificates import SqlAlchemyCertificateRepository
 from kilasifen.application.webhooks.service import WebhookService
@@ -23,6 +27,8 @@ from kilasifen.infrastructure.db.session import build_engine, build_session_fact
 from kilasifen.infrastructure.sifen.engine import DocumentEmissionEngine, PysifenEmissionEngine
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 
+logger = logging.getLogger(__name__)
+
 
 def process_document_job(
     *,
@@ -31,6 +37,7 @@ def process_document_job(
     encryption_key: str,
     emission_engine: DocumentEmissionEngine | None = None,
     current_date: date | None = None,
+    webhook_queue=None,
 ) -> dict[str, str]:
     """Process a document-emission job using the configured engine."""
 
@@ -125,6 +132,13 @@ def process_document_job(
 
         document_repository.save(updated_document)
         job_repository.save(updated_job)
+        _publish_document_status_webhooks(
+            document=updated_document,
+            session=session,
+            database_url=database_url,
+            encryption_key=encryption_key,
+            webhook_queue=webhook_queue,
+        )
 
         return {
             "job_id": updated_job.id,
@@ -166,3 +180,60 @@ class _NoopWebhookQueue:
     def enqueue_webhook_delivery(self, *args, **kwargs):
         del args, kwargs
         return None
+
+
+def _publish_document_status_webhooks(
+    *,
+    document,
+    session,
+    database_url: str,
+    encryption_key: str,
+    webhook_queue,
+) -> None:
+    settings = get_settings()
+    if not settings.document_publish_webhooks:
+        return
+
+    queue_adapter = webhook_queue or _build_webhook_queue(settings.redis_url)
+    service = WebhookService(
+        webhook_repository=SqlAlchemyWebhookRepository(session),
+        emitter_repository=SqlAlchemyEmitterRepository(session),
+        job_repository=SqlAlchemyJobRepository(session),
+        secret_store=EncryptedCertificateStore(encryption_key),
+        queue=queue_adapter,
+        deliverer=WebhookDeliverer(),
+        database_url=database_url,
+        encryption_key=encryption_key,
+    )
+    try:
+        service.publish_document_status(document=document)
+    except Exception:
+        logger.exception(
+            "document_webhook_publish_failed",
+            extra={
+                "document_id": document.id,
+                "emitter_id": document.emitter_id,
+                "internal_status": document.internal_status,
+            },
+        )
+
+
+def _build_webhook_queue(redis_url: str):
+    queue = Queue("webhooks", connection=Redis.from_url(redis_url))
+    return _WebhookRqQueue(queue)
+
+
+class _WebhookRqQueue:
+    def __init__(self, queue: Queue):
+        self.queue = queue
+
+    def enqueue_webhook_delivery(self, job, *, database_url: str, encryption_key: str):
+        return self.queue.enqueue_call(
+            func=process_webhook_delivery_job,
+            kwargs={
+                "job_id": job.id,
+                "database_url": database_url,
+                "encryption_key": encryption_key,
+            },
+            job_id=job.id,
+        )
