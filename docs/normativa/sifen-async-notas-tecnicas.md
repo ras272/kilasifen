@@ -90,3 +90,27 @@
 
 - En caso de corte de comunicacion al enviar lote (sin `dProtConsLote` en respuesta), recuperar estado usando CDC de DE enviados en ese intento.
 - Esta recuperacion debe ejecutarse antes de cualquier reenvio para evitar duplicados y bloqueos por RUC.
+
+## Implementacion actual en Kila SIFEN
+
+- Modulo implementado: `kilasifen/domain/common/sifen_async.py`
+- Commit de referencia: `54d601c` (`feat: add sifen async state machine rules`)
+- Tests de referencia: `tests/application/test_sifen_async_state_machine.py`
+
+### API interna del modulo
+
+- `decide_async(operation, code)`:
+  - Mapea codigo SIFEN en decision normalizada (`state`, `action`, `should_retry`, `terminal`).
+- `transition_async(current_state, operation, code)`:
+  - Valida transicion de estado y evita saltos invalidos.
+- `map_lot_detail_status(raw_status)`:
+  - Traduce `dEstRes` de `gResProcLote` a estado interno.
+- `can_resend_same_cdc(state)`:
+  - Aplica la regla anti-duplicado: solo permite reenvio con estado definitivo.
+
+### Uso recomendado en worker async
+
+1. Aplicar `transition_async` para cada respuesta de `recibe-lote` y `consulta-lote`.
+2. Persistir `state`, `action`, `code`, `timestamp` y artefactos SOAP.
+3. Si `should_retry=True`, agendar siguiente polling respetando `min_retry_delay_minutes`.
+4. Antes de reenviar un CDC, validar `can_resend_same_cdc` y bloquear reenvios prematuros.

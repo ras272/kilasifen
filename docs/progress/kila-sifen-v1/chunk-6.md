@@ -15,6 +15,7 @@ This chunk introduces delivery mechanics, retries, signatures, and traceability 
 ## Closed tasks
 
 - `Task 13` commit `7f1107e`
+- `Follow-up` commit `54d601c` (SIFEN async state machine)
 
 ## Main files
 
@@ -25,3 +26,4 @@ This chunk introduces delivery mechanics, retries, signatures, and traceability 
 - `kilasifen/infrastructure/db/repositories/webhooks.py`
 - `kilasifen/infrastructure/jobs/queue.py`
 - `kilasifen/infrastructure/jobs/workers.py`
+- `kilasifen/domain/common/sifen_async.py`
