@@ -7,7 +7,7 @@ state, so ERP consumers receive push updates without manual replay.
 
 ## Commit
 
-- recorded after merge in main history (`git log -- docs/progress/kila-sifen-v1/chunk-8-task-19.md`)
+- `f365807` `feat: auto-publish document status webhooks`
 
 ## What was changed
 

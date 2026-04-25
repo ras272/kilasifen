@@ -15,7 +15,7 @@ notifications on real document state transitions without manual intervention.
 
 ## Closed tasks
 
-- `Task 19` commit registered in `chunk-8-task-19.md`
+- `Task 19` commit `f365807`
 
 ## Main files
 
