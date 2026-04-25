@@ -7,7 +7,7 @@ document endpoint for advanced compatibility.
 
 ## Commit
 
-- recorded after merge in main history (`git log -- docs/progress/kila-sifen-v1/chunk-8-task-20.md`)
+- `2b02e16` `feat: add typed document contracts for factura nota credito and recibo`
 
 ## What was changed
 
