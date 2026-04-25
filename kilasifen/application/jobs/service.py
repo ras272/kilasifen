@@ -3,8 +3,10 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from kilasifen.domain.documents.models import Document
 from kilasifen.domain.common.errors import NotFoundError
 from kilasifen.domain.jobs.models import Job
+from kilasifen.repositories.documents import DocumentRepository
 from kilasifen.repositories.jobs import JobRepository
 
 
@@ -49,6 +51,24 @@ class JobService:
 
     def get_for_entity(self, entity_type: str, entity_id: str) -> Job | None:
         return self.repository.get_for_entity(entity_type, entity_id)
+
+    def get_document_job_context(
+        self,
+        *,
+        job_id: str,
+        document_repository: DocumentRepository,
+    ) -> tuple[Job, Document]:
+        """Hydrate a document-emission job and its related document."""
+
+        job = self.get_job(job_id)
+        if job.related_entity_type != "document" or not job.related_entity_id:
+            raise NotFoundError("jobs.document_context_not_found")
+
+        document = document_repository.get(job.related_entity_id)
+        if document is None:
+            raise NotFoundError("documents.not_found")
+
+        return job, document
 
 
 def _now() -> datetime:

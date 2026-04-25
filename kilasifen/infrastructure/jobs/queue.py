@@ -1,0 +1,26 @@
+"""RQ queue adapter for background jobs."""
+
+from rq import Queue
+from rq.job import Job as RqJob
+
+from kilasifen.domain.jobs.models import Job
+from kilasifen.infrastructure.jobs.workers import process_document_job
+
+
+class RqJobQueue:
+    """Thin adapter around an RQ queue."""
+
+    def __init__(self, queue: Queue):
+        self.queue = queue
+
+    def enqueue_document_emit(self, job: Job, *, database_url: str = "sqlite:///./kilasifen.db") -> RqJob:
+        """Enqueue document emission work."""
+
+        return self.queue.enqueue_call(
+            func=process_document_job,
+            kwargs={
+                "job_id": job.id,
+                "database_url": database_url,
+            },
+            job_id=job.id,
+        )
