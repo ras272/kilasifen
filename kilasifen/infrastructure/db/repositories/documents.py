@@ -28,6 +28,9 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
                 signed_xml=document.signed_xml,
                 sifen_request_xml=document.sifen_request_xml,
                 sifen_response_raw=document.sifen_response_raw,
+                last_query_request_xml=document.last_query_request_xml,
+                last_query_response_raw=document.last_query_response_raw,
+                last_query_at=document.last_query_at,
                 cdc=document.cdc,
                 internal_status=document.internal_status,
                 sifen_status=document.sifen_status,
@@ -46,6 +49,9 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             existing.signed_xml = document.signed_xml
             existing.sifen_request_xml = document.sifen_request_xml
             existing.sifen_response_raw = document.sifen_response_raw
+            existing.last_query_request_xml = document.last_query_request_xml
+            existing.last_query_response_raw = document.last_query_response_raw
+            existing.last_query_at = document.last_query_at
             existing.cdc = document.cdc
             existing.internal_status = document.internal_status
             existing.sifen_status = document.sifen_status
@@ -94,6 +100,9 @@ def _to_domain(model: DocumentModel) -> Document:
         signed_xml=model.signed_xml,
         sifen_request_xml=model.sifen_request_xml,
         sifen_response_raw=model.sifen_response_raw,
+        last_query_request_xml=model.last_query_request_xml,
+        last_query_response_raw=model.last_query_response_raw,
+        last_query_at=model.last_query_at,
         cdc=model.cdc,
         internal_status=model.internal_status,
         sifen_status=model.sifen_status,

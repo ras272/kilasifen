@@ -30,6 +30,9 @@ class DocumentResponse(BaseModel):
     signed_xml: str | None
     sifen_request_xml: str | None
     sifen_response_raw: str | None
+    last_query_request_xml: str | None
+    last_query_response_raw: str | None
+    last_query_at: datetime | None
     cdc: str | None
     internal_status: str
     sifen_status: str | None

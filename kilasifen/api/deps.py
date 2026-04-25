@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from kilasifen.application.documents.service import DocumentService
 from kilasifen.application.jobs.service import JobService
+from kilasifen.application.queries.service import QueryService
 from kilasifen.application.stampings.service import StampingService
 from kilasifen.application.certificates.service import CertificateService
 from kilasifen.application.emitters.service import EmitterService
@@ -20,6 +21,7 @@ from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterR
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
 from kilasifen.infrastructure.db.repositories.stampings import SqlAlchemyStampingRepository
 from kilasifen.infrastructure.db.session import session_scope
+from kilasifen.infrastructure.sifen.query import PysifenQueryGateway
 from kilasifen.security import ApiKeyPrincipal, validate_api_key
 
 
@@ -100,4 +102,22 @@ def get_document_service(
         document_repository=document_repository,
         emitter_repository=emitter_repository,
         job_service=job_service,
+    )
+
+
+def get_query_service(
+    session: Session = Depends(get_db_session),
+) -> QueryService:
+    """Build the query application service for one request."""
+
+    settings = get_settings()
+    if not settings.encryption_key:
+        raise RuntimeError("KILA_SIFEN_ENCRYPTION_KEY is required for queries.")
+
+    return QueryService(
+        emitter_repository=SqlAlchemyEmitterRepository(session),
+        certificate_repository=SqlAlchemyCertificateRepository(session),
+        document_repository=SqlAlchemyDocumentRepository(session),
+        certificate_store=EncryptedCertificateStore(settings.encryption_key),
+        query_gateway=PysifenQueryGateway(),
     )
