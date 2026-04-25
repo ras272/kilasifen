@@ -66,6 +66,8 @@ class DocumentService:
             payload_snapshot=payload_snapshot,
             generated_xml=None,
             signed_xml=None,
+            sifen_request_xml=None,
+            sifen_response_raw=None,
             cdc=None,
             internal_status="queued",
             sifen_status=None,

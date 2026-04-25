@@ -75,6 +75,7 @@ class CertificateService:
 
         certificates = self.certificate_repository.list_for_emitter(target.emitter_id)
         activated: Certificate | None = None
+        self.certificate_repository.deactivate_others(target.emitter_id, certificate_id)
         for certificate in certificates:
             updated = replace(
                 certificate,

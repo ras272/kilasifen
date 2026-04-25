@@ -104,6 +104,8 @@ def upgrade() -> None:
         sa.Column("payload_snapshot", sa.JSON(), nullable=True),
         sa.Column("generated_xml", sa.Text(), nullable=True),
         sa.Column("signed_xml", sa.Text(), nullable=True),
+        sa.Column("sifen_request_xml", sa.Text(), nullable=True),
+        sa.Column("sifen_response_raw", sa.Text(), nullable=True),
         sa.Column("cdc", sa.String(length=64), nullable=True),
         sa.Column("internal_status", sa.String(length=32), nullable=False),
         sa.Column("sifen_status", sa.String(length=32), nullable=True),

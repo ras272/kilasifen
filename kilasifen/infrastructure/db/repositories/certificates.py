@@ -66,6 +66,17 @@ class SqlAlchemyCertificateRepository(CertificateRepository):
             return None
         return _to_domain(model)
 
+    def deactivate_others(self, emitter_id: str, active_certificate_id: str) -> None:
+        statement = select(CertificateModel).where(
+            CertificateModel.emitter_id == emitter_id,
+            CertificateModel.id != active_certificate_id,
+            CertificateModel.is_active.is_(True),
+        )
+        for model in self.session.scalars(statement):
+            model.is_active = False
+            model.updated_at = model.updated_at
+        self.session.flush()
+
 
 def _to_domain(model: CertificateModel) -> Certificate:
     return Certificate(

@@ -50,6 +50,9 @@ class SifenClient:
     def enviar_de(self, rde, sign: bool = True):
         return self._de.enviar_de(rde, sign=sign)
 
+    def enviar_de_xml(self, xml_de: str | bytes):
+        return self._de.enviar_de_xml(xml_de)
+
     def enviar_lote(
         self,
         lista_rde: list,

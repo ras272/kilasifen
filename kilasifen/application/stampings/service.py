@@ -60,6 +60,7 @@ class StampingService:
 
         stampings = self.stamping_repository.list_for_emitter(target.emitter_id)
         activated: Stamping | None = None
+        self.stamping_repository.deactivate_others(target.emitter_id, stamping_id)
         for stamping in stampings:
             updated = replace(
                 stamping,

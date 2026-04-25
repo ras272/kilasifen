@@ -28,6 +28,8 @@ class DocumentResponse(BaseModel):
     payload_snapshot: dict[str, Any] | None
     generated_xml: str | None
     signed_xml: str | None
+    sifen_request_xml: str | None
+    sifen_response_raw: str | None
     cdc: str | None
     internal_status: str
     sifen_status: str | None

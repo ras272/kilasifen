@@ -24,3 +24,7 @@ class StampingRepository(ABC):
     @abstractmethod
     def get(self, stamping_id: str) -> Stamping | None:
         """Load a stamping by id."""
+
+    @abstractmethod
+    def deactivate_others(self, emitter_id: str, active_stamping_id: str) -> None:
+        """Deactivate all other stampings for the emitter."""

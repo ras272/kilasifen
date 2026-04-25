@@ -1,0 +1,1 @@
+"""SIFEN integration adapters."""

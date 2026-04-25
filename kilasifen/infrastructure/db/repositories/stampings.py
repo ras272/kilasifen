@@ -56,6 +56,17 @@ class SqlAlchemyStampingRepository(StampingRepository):
             return None
         return _to_domain(model)
 
+    def deactivate_others(self, emitter_id: str, active_stamping_id: str) -> None:
+        statement = select(StampingModel).where(
+            StampingModel.emitter_id == emitter_id,
+            StampingModel.id != active_stamping_id,
+            StampingModel.is_active.is_(True),
+        )
+        for model in self.session.scalars(statement):
+            model.is_active = False
+            model.status = "inactive"
+        self.session.flush()
+
 
 def _to_domain(model: StampingModel) -> Stamping:
     return Stamping(

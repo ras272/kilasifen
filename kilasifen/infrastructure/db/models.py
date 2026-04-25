@@ -113,6 +113,8 @@ class DocumentModel(TimestampMixin, Base):
     payload_snapshot: Mapped[dict | None] = mapped_column(JSON)
     generated_xml: Mapped[str | None] = mapped_column(Text)
     signed_xml: Mapped[str | None] = mapped_column(Text)
+    sifen_request_xml: Mapped[str | None] = mapped_column(Text)
+    sifen_response_raw: Mapped[str | None] = mapped_column(Text)
     cdc: Mapped[str | None] = mapped_column(String(64))
     internal_status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
     sifen_status: Mapped[str | None] = mapped_column(String(32))

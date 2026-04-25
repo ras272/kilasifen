@@ -23,3 +23,7 @@ class CertificateRepository(ABC):
     @abstractmethod
     def get(self, certificate_id: str) -> Certificate | None:
         """Load a certificate by id."""
+
+    @abstractmethod
+    def deactivate_others(self, emitter_id: str, active_certificate_id: str) -> None:
+        """Deactivate all other certificates for the emitter."""

@@ -23,3 +23,12 @@ class SifenTransportClosedError(SifenTransportError):
 
 class SifenTimeoutError(SifenTransportError):
     """Error de tiempo de espera durante el transporte."""
+
+
+class SifenRejectionError(SifenError):
+    """Error de rechazo funcional devuelto por SIFEN."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
