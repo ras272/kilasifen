@@ -7,28 +7,17 @@ import os
 import requests
 
 
-DEFAULT_XML = (
-    "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'>"
-    "<DE Id='01800123450001001000000012026010112345678901'/>"
-    "</rDE>"
-)
-
-
 def main() -> None:
     api_url = os.environ.get("KILA_API_URL", "http://localhost:8000")
     api_key = os.environ["KILA_API_KEY"]
     emitter_id = os.environ["KILA_EMITTER_ID"]
     external_id = os.environ.get("KILA_DOC_EXTERNAL_ID", "erp-factura-typed-1001")
     idempotency_key = os.environ.get("KILA_DOC_IDEMPOTENCY_KEY", external_id)
-    generated_xml = os.environ.get("KILA_GENERATED_XML", DEFAULT_XML)
-    doc_id = os.environ.get("KILA_DOC_ID", "01800123450001001000000012026010112345678901")
 
     payload = {
         "external_id": external_id,
         "idempotency_key": idempotency_key,
         "factura": {
-            "generated_xml": generated_xml,
-            "doc_id": doc_id,
             "establecimiento": 1,
             "punto": "001",
             "numero": 1001,

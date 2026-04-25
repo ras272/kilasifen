@@ -22,11 +22,8 @@ class DocumentTransportPayload(BaseModel):
     signed_xml: str | None = None
     doc_id: str | None = Field(default=None, min_length=1, max_length=64)
 
-    @model_validator(mode="after")
-    def validate_transport_payload(self) -> "DocumentTransportPayload":
-        if not self.generated_xml and not self.signed_xml:
-            raise ValueError("generated_xml or signed_xml is required")
-        return self
+    def has_xml_payload(self) -> bool:
+        return bool(self.generated_xml or self.signed_xml)
 
 
 class FacturaContractPayload(DocumentTransportPayload):
@@ -42,6 +39,18 @@ class FacturaContractPayload(DocumentTransportPayload):
     items: list[dict[str, Any]] | None = None
     factura: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_factura_payload(self) -> "FacturaContractPayload":
+        if self.has_xml_payload():
+            return self
+        if self.numero is None:
+            raise ValueError("numero is required when generated_xml/signed_xml is missing")
+        if not isinstance(self.cliente, dict) or not self.cliente.get("ruc"):
+            raise ValueError("cliente.ruc is required when generated_xml/signed_xml is missing")
+        if not isinstance(self.items, list) or not self.items:
+            raise ValueError("items is required when generated_xml/signed_xml is missing")
+        return self
 
 
 class NotaCreditoContractPayload(DocumentTransportPayload):
@@ -59,6 +68,25 @@ class NotaCreditoContractPayload(DocumentTransportPayload):
     nota_credito: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
 
+    @model_validator(mode="after")
+    def validate_nota_credito_payload(self) -> "NotaCreditoContractPayload":
+        if self.has_xml_payload():
+            return self
+        if self.numero is None:
+            raise ValueError("numero is required when generated_xml/signed_xml is missing")
+        if not isinstance(self.cliente, dict) or not self.cliente.get("ruc"):
+            raise ValueError("cliente.ruc is required when generated_xml/signed_xml is missing")
+        if not isinstance(self.items, list) or not self.items:
+            raise ValueError("items is required when generated_xml/signed_xml is missing")
+        if (
+            not isinstance(self.documento_asociado, dict)
+            or not self.documento_asociado.get("cdc")
+        ):
+            raise ValueError(
+                "documento_asociado.cdc is required when generated_xml/signed_xml is missing"
+            )
+        return self
+
 
 class ReciboContractPayload(DocumentTransportPayload):
     """Business payload for Recibo endpoint."""
@@ -74,6 +102,14 @@ class ReciboContractPayload(DocumentTransportPayload):
     usuario: dict[str, Any] | None = None
     documento_asociado: list[dict[str, Any]] | None = None
     metadata: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def validate_recibo_payload(self) -> "ReciboContractPayload":
+        if self.has_xml_payload():
+            return self
+        if self.numero is None:
+            raise ValueError("numero is required when generated_xml/signed_xml is missing")
+        return self
 
 
 class FacturaCreateRequest(BaseModel):

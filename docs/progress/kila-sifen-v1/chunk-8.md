@@ -17,6 +17,7 @@ notifications on real document state transitions without manual intervention.
 
 - `Task 19` commit `f365807`
 - `Task 20` commit `2b02e16`
+- `Task 21` commit registered in `chunk-8-task-21.md`
 
 ## Main files
 
@@ -25,7 +26,10 @@ notifications on real document state transitions without manual intervention.
 - `kilasifen/config.py`
 - `kilasifen/api/schemas/documents.py`
 - `kilasifen/api/routers/documents.py`
+- `kilasifen/infrastructure/sifen/typed_xml_builder.py`
+- `kilasifen/infrastructure/sifen/mapper.py`
 - `tests/application/test_emission_flow.py`
 - `tests/application/test_webhook_delivery.py`
 - `tests/api/test_documents_api.py`
+- `tests/infrastructure/test_typed_xml_builder.py`
 - `docs/operations/job-lifecycle.md`

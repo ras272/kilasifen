@@ -68,8 +68,12 @@ class PysifenEmissionEngine:
         certificate_password: str,
         stamping: Stamping,
     ) -> EmissionOutcome:
-        del certificate, stamping
-        emission_input = self.mapper.map_document(document)
+        del certificate
+        emission_input = self.mapper.map_document(
+            document,
+            emitter=emitter,
+            stamping=stamping,
+        )
         if emission_input.signed_xml:
             signed_xml = emission_input.signed_xml
             generated_xml = emission_input.generated_xml or emission_input.signed_xml

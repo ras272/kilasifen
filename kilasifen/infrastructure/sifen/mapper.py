@@ -6,6 +6,9 @@ from xml.etree import ElementTree as ET
 from pysifen.sdk.errors import SifenValidationError
 
 from kilasifen.domain.documents.models import Document
+from kilasifen.domain.emitters.models import Emitter
+from kilasifen.domain.stampings.models import Stamping
+from kilasifen.infrastructure.sifen.typed_xml_builder import build_typed_document_xml
 
 
 @dataclass(slots=True)
@@ -20,11 +23,31 @@ class PysifenEmissionInput:
 class PysifenPayloadMapper:
     """Map persisted document payloads into pysifen-compatible inputs."""
 
-    def map_document(self, document: Document) -> PysifenEmissionInput:
+    def map_document(
+        self,
+        document: Document,
+        *,
+        emitter: Emitter | None = None,
+        stamping: Stamping | None = None,
+    ) -> PysifenEmissionInput:
         payload = document.payload_snapshot or {}
         generated_xml = payload.get("generated_xml")
         signed_xml = payload.get("signed_xml")
         doc_id = payload.get("doc_id")
+
+        if not generated_xml and not signed_xml:
+            if emitter is None or stamping is None:
+                raise SifenValidationError(
+                    "emitter and stamping are required to build typed XML payloads"
+                )
+            typed_xml = build_typed_document_xml(
+                document=document,
+                emitter=emitter,
+                stamping=stamping,
+            )
+            if typed_xml is not None:
+                generated_xml = typed_xml.generated_xml
+                doc_id = typed_xml.doc_id
 
         if signed_xml and not doc_id:
             doc_id = _extract_doc_id(signed_xml)
