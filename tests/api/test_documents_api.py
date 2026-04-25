@@ -105,3 +105,101 @@ def test_create_document_is_idempotent_for_same_key(client: TestClient, emitter_
         second_response.json()["data"]["job"]["id"]
         == first_response.json()["data"]["job"]["id"]
     )
+
+
+def test_create_factura_typed_endpoint_returns_document_and_job(
+    client: TestClient,
+    emitter_id: str,
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-factura-1",
+            "idempotency_key": "idem-factura-1",
+            "factura": {
+                "generated_xml": "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'><DE Id='01800123450001001000000012026010112345678901'/></rDE>",
+                "doc_id": "01800123450001001000000012026010112345678901",
+                "establecimiento": 1,
+                "punto": "001",
+                "numero": 10,
+                "fecha": "2026-04-25T10:00:00",
+                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "items": [{"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}],
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()["data"]
+    assert body["document"]["document_type"] == "factura"
+    assert body["job"]["job_type"] == "document.emit"
+
+
+def test_create_nota_credito_typed_endpoint_returns_document_and_job(
+    client: TestClient,
+    emitter_id: str,
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/notas-credito",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-nc-1",
+            "idempotency_key": "idem-nc-1",
+            "nota_credito": {
+                "generated_xml": "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'><DE Id='01800123450001001000000512026010112345678901'/></rDE>",
+                "doc_id": "01800123450001001000000512026010112345678901",
+                "documento_asociado": {"cdc": "01800123450001001000000012026010112345678901"},
+                "items": [{"descripcion": "Descuento", "cantidad": 1, "precioUnitario": 500}],
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()["data"]
+    assert body["document"]["document_type"] == "nota_credito"
+    assert body["job"]["job_type"] == "document.emit"
+
+
+def test_create_recibo_typed_endpoint_returns_document_and_job(
+    client: TestClient,
+    emitter_id: str,
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/recibos",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-recibo-1",
+            "idempotency_key": "idem-recibo-1",
+            "recibo": {
+                "generated_xml": "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'><DE Id='55800123450001001000000112026010112345678901'/></rDE>",
+                "doc_id": "55800123450001001000000112026010112345678901",
+                "concepto": "Pago de cuota",
+                "total": 150000,
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()["data"]
+    assert body["document"]["document_type"] == "recibo"
+    assert body["job"]["job_type"] == "document.emit"
+
+
+def test_create_typed_document_requires_xml_or_signed_xml(
+    client: TestClient,
+    emitter_id: str,
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-factura-2",
+            "idempotency_key": "idem-factura-2",
+            "factura": {
+                "doc_id": "01800123450001001000000012026010112345678901",
+            },
+        },
+    )
+
+    assert response.status_code == 422
