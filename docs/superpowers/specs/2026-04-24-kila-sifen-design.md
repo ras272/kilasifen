@@ -1,5 +1,8 @@
 # Kila SIFEN Design
 
+> Historical planning note: this file captures an earlier design direction.
+> The current source of truth is `docs/architecture/current-scope.md`.
+
 **Date:** 2026-04-24
 
 ## Goal

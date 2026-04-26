@@ -5,7 +5,17 @@
 `pysifen` is the fiscal engine.
 `kilasifen` is the platform layer for API, persistence, jobs, and operations.
 
-This separation keeps XML/signature transport logic reusable while giving ERP integrations a stable HTTP contract.
+This separation keeps XML/signature transport logic reusable while giving the
+author's ERP one stable HTTP contract.
+
+Current deployment/integration stance:
+
+- one API integrator today: the author's ERP
+- multiple emitters / RUCs under that ERP
+- strict cross-emitter isolation is required
+
+For the current MVP scope, treat `docs/architecture/current-scope.md` as the
+source of truth.
 
 ## Runtime components
 
@@ -56,6 +66,7 @@ This makes operations auditable and replayable without parsing raw SOAP at runti
 - `.p12` and passwords encrypted at rest with Fernet key
 - webhook signing with HMAC (`X-Kila-Signature`)
 - secrets and endpoints configured through env variables
+- emitter data must never leak across tenant/emitter boundaries
 
 ## Async strategy
 

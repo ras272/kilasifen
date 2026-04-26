@@ -380,15 +380,24 @@ ruff check pysifen/ tests/
 This repository now contains two complementary layers:
 
 - `pysifen`: fiscal engine (XML, signature, SOAP transport)
-- `kilasifen`: self-hosted API platform for ERP integration
+- `kilasifen`: internal multi-emitter API platform consumed by the author's ERP
 
 Platform docs:
 
+- `docs/architecture/current-scope.md`
 - `docs/architecture/kila-platform.md`
 - `docs/operations/deployment-compose.md`
 - `docs/operations/job-lifecycle.md`
 - `docs/examples/kila_api_register_certificate.py`
 - `docs/examples/kila_api_emit_document.py`
+
+Current platform scope in one line:
+
+- one ERP integration surface
+- multiple SIFEN emitters underneath
+- strict emitter isolation
+- PDF + JSON KuDE support
+- typed FE/NC builders and typed cancel/inutilization events
 
 Local platform stack:
 

@@ -1,5 +1,8 @@
 # Kila SIFEN V1 Foundation Implementation Plan
 
+> Historical implementation plan: keep for build history only.
+> The current source of truth is `docs/architecture/current-scope.md`.
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents are available in the current session) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the first production-shaped version of `Kila SIFEN` as a self-hosted, multi-emitter, async-first fiscal platform on top of the existing `pysifen` engine, with HTTP API as the official contract and enough operational surface to power the author's ERP.

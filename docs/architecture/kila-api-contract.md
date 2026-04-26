@@ -1,5 +1,8 @@
 # Kila SIFEN API Contract
 
+This document describes the internal HTTP contract used by the author's ERP.
+For current product/deployment scope, see `docs/architecture/current-scope.md`.
+
 ## Versioning
 
 The platform API is exposed under an explicit version prefix:
