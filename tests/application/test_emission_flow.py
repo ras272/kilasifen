@@ -26,54 +26,58 @@ from pysifen.sdk.errors import (
     SifenTimeoutError,
     SifenValidationError,
 )
+from kilasifen.testing.database import managed_test_database_url
 
 
 def test_process_document_job_persists_emission_artifacts(tmp_path) -> None:
-    database_url = f"sqlite:///{tmp_path / 'emission-success.db'}"
-    store = EncryptedCertificateStore(_fernet_key())
-    _seed_emission_context(database_url, store)
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="emission_success",
+    ) as database_url:
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
 
-    fake_engine = FakeEmissionEngine(
-        outcome=EmissionOutcome(
-            generated_xml="<rDE/>",
-            signed_xml="<rDE><Signature/></rDE>",
-            request_xml="<soap>request</soap>",
-            response_raw="<soap>response</soap>",
-            sifen_status="approved",
-            result_code="0260",
-            result_message="Autorizacion satisfactoria",
+        fake_engine = FakeEmissionEngine(
+            outcome=EmissionOutcome(
+                generated_xml="<rDE/>",
+                signed_xml="<rDE><Signature/></rDE>",
+                request_xml="<soap>request</soap>",
+                response_raw="<soap>response</soap>",
+                sifen_status="approved",
+                result_code="0260",
+                result_message="Autorizacion satisfactoria",
+            )
         )
-    )
 
-    payload = process_document_job(
-        job_id="job-1",
-        database_url=database_url,
-        encryption_key=_fernet_key(),
-        emission_engine=fake_engine,
-        current_date=date(2024, 4, 24),
-    )
+        payload = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            emission_engine=fake_engine,
+            current_date=date(2024, 4, 24),
+        )
 
-    assert payload["job_id"] == "job-1"
-    assert payload["document_id"] == "document-1"
-    assert payload["job_status"] == "succeeded"
-    assert payload["document_status"] == "approved"
+        assert payload["job_id"] == "job-1"
+        assert payload["document_id"] == "document-1"
+        assert payload["job_status"] == "succeeded"
+        assert payload["document_status"] == "approved"
 
-    engine = build_engine(database_url)
-    session_factory = build_session_factory(engine)
-    with session_scope(session_factory) as session:
-        document = SqlAlchemyDocumentRepository(session).get("document-1")
-        job = SqlAlchemyJobRepository(session).get("job-1")
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            document = SqlAlchemyDocumentRepository(session).get("document-1")
+            job = SqlAlchemyJobRepository(session).get("job-1")
 
-    assert document is not None
-    assert document.generated_xml == "<rDE/>"
-    assert document.signed_xml == "<rDE><Signature/></rDE>"
-    assert document.sifen_request_xml == "<soap>request</soap>"
-    assert document.sifen_response_raw == "<soap>response</soap>"
-    assert document.internal_status == "approved"
-    assert document.sifen_result_code == "0260"
-    assert job is not None
-    assert job.status == "succeeded"
-    assert job.error_snapshot is None
+        assert document is not None
+        assert document.generated_xml == "<rDE/>"
+        assert document.signed_xml == "<rDE><Signature/></rDE>"
+        assert document.sifen_request_xml == "<soap>request</soap>"
+        assert document.sifen_response_raw == "<soap>response</soap>"
+        assert document.internal_status == "approved"
+        assert document.sifen_result_code == "0260"
+        assert job is not None
+        assert job.status == "succeeded"
+        assert job.error_snapshot is None
 
 
 @pytest.mark.parametrize(
@@ -106,82 +110,88 @@ def test_process_document_job_categorizes_failures(
     expected_document_status,
     expected_category,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'emission-failure.db'}"
-    store = EncryptedCertificateStore(_fernet_key())
-    _seed_emission_context(database_url, store)
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="emission_failure",
+    ) as database_url:
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
 
-    payload = process_document_job(
-        job_id="job-1",
-        database_url=database_url,
-        encryption_key=_fernet_key(),
-        emission_engine=FakeEmissionEngine(error=error),
-        current_date=date(2024, 4, 24),
-    )
+        payload = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            emission_engine=FakeEmissionEngine(error=error),
+            current_date=date(2024, 4, 24),
+        )
 
-    assert payload["job_status"] == expected_job_status
-    assert payload["document_status"] == expected_document_status
+        assert payload["job_status"] == expected_job_status
+        assert payload["document_status"] == expected_document_status
 
-    engine = build_engine(database_url)
-    session_factory = build_session_factory(engine)
-    with session_scope(session_factory) as session:
-        document = SqlAlchemyDocumentRepository(session).get("document-1")
-        job = SqlAlchemyJobRepository(session).get("job-1")
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            document = SqlAlchemyDocumentRepository(session).get("document-1")
+            job = SqlAlchemyJobRepository(session).get("job-1")
 
-    assert document is not None
-    assert document.internal_status == expected_document_status
-    assert job is not None
-    assert job.status == expected_job_status
-    assert job.error_snapshot is not None
-    assert job.error_snapshot["category"] == expected_category
+        assert document is not None
+        assert document.internal_status == expected_document_status
+        assert job is not None
+        assert job.status == expected_job_status
+        assert job.error_snapshot is not None
+        assert job.error_snapshot["category"] == expected_category
 
 
 def test_process_document_job_publishes_webhook_events_when_enabled(
     tmp_path,
     monkeypatch,
 ) -> None:
-    database_url = f"sqlite:///{tmp_path / 'emission-webhooks.db'}"
-    store = EncryptedCertificateStore(_fernet_key())
-    _seed_emission_context(database_url, store)
-    _seed_webhook_endpoint(database_url=database_url, store=store)
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="emission_webhooks",
+    ) as database_url:
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
+        _seed_webhook_endpoint(database_url=database_url, store=store)
 
-    monkeypatch.setenv("KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS", "true")
-    get_settings.cache_clear()
+        monkeypatch.setenv("KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS", "true")
+        get_settings.cache_clear()
 
-    fake_queue = FakeWebhookQueue()
-    payload = process_document_job(
-        job_id="job-1",
-        database_url=database_url,
-        encryption_key=_fernet_key(),
-        emission_engine=FakeEmissionEngine(
-            outcome=EmissionOutcome(
-                generated_xml="<rDE/>",
-                signed_xml="<rDE><Signature/></rDE>",
-                request_xml="<soap>request</soap>",
-                response_raw="<soap>response</soap>",
-                sifen_status="approved",
-                result_code="0260",
-                result_message="Autorizacion satisfactoria",
-            )
-        ),
-        current_date=date(2024, 4, 24),
-        webhook_queue=fake_queue,
-    )
-    get_settings.cache_clear()
+        fake_queue = FakeWebhookQueue()
+        payload = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            emission_engine=FakeEmissionEngine(
+                outcome=EmissionOutcome(
+                    generated_xml="<rDE/>",
+                    signed_xml="<rDE><Signature/></rDE>",
+                    request_xml="<soap>request</soap>",
+                    response_raw="<soap>response</soap>",
+                    sifen_status="approved",
+                    result_code="0260",
+                    result_message="Autorizacion satisfactoria",
+                )
+            ),
+            current_date=date(2024, 4, 24),
+            webhook_queue=fake_queue,
+        )
+        get_settings.cache_clear()
 
-    assert payload["job_status"] == "succeeded"
-    assert fake_queue.enqueued_job_ids
+        assert payload["job_status"] == "succeeded"
+        assert fake_queue.enqueued_job_ids
 
-    engine = build_engine(database_url)
-    session_factory = build_session_factory(engine)
-    with session_scope(session_factory) as session:
-        deliveries = SqlAlchemyWebhookRepository(session).list_recent_deliveries(limit=10)
-        delivery_jobs = SqlAlchemyJobRepository(session).list_recent(limit=10)
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            deliveries = SqlAlchemyWebhookRepository(session).list_recent_deliveries(limit=10)
+            delivery_jobs = SqlAlchemyJobRepository(session).list_recent(limit=10)
 
-    assert len(deliveries) == 1
-    assert deliveries[0].event_type == "document.approved"
-    webhook_jobs = [job for job in delivery_jobs if job.job_type == "webhook.deliver"]
-    assert len(webhook_jobs) == 1
-    assert webhook_jobs[0].status == "queued"
+        assert len(deliveries) == 1
+        assert deliveries[0].event_type == "document.approved"
+        webhook_jobs = [job for job in delivery_jobs if job.job_type == "webhook.deliver"]
+        assert len(webhook_jobs) == 1
+        assert webhook_jobs[0].status == "queued"
 
 
 @dataclass

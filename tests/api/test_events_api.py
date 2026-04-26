@@ -24,6 +24,7 @@ from kilasifen.infrastructure.db.repositories.events import SqlAlchemyEventRepos
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
 from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
 from kilasifen.infrastructure.sifen.event import EventSubmissionOutcome
+from kilasifen.testing.database import managed_test_database_url
 
 
 API_KEY = "secret-key"
@@ -37,37 +38,38 @@ def clear_settings_cache() -> Iterator[None]:
 
 
 @pytest.fixture
-def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
-    database_url = f"sqlite:///{tmp_path / 'events.db'}"
-    encryption_key = Fernet.generate_key().decode()
-    monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
-    monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
-    monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", encryption_key)
+def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
+    with managed_test_database_url(tmp_path=tmp_path, name="events") as database_url:
+        encryption_key = Fernet.generate_key().decode()
+        monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
+        monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
+        monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", encryption_key)
 
-    engine = build_engine(database_url)
-    Base.metadata.create_all(engine)
-    session_factory = build_session_factory(engine)
-    _seed_event_context(
-        session_factory=session_factory,
-        certificate_store=EncryptedCertificateStore(encryption_key),
-    )
+        engine = build_engine(database_url)
+        Base.metadata.create_all(engine)
+        session_factory = build_session_factory(engine)
+        _seed_event_context(
+            session_factory=session_factory,
+            certificate_store=EncryptedCertificateStore(encryption_key),
+        )
 
-    app = create_app()
+        app = create_app()
 
-    def _get_fake_event_service():
-        with session_scope(session_factory) as session:
-            yield EventService(
-                event_repository=SqlAlchemyEventRepository(session),
-                emitter_repository=SqlAlchemyEmitterRepository(session),
-                document_repository=SqlAlchemyDocumentRepository(session),
-                certificate_repository=SqlAlchemyCertificateRepository(session),
-                job_repository=SqlAlchemyJobRepository(session),
-                certificate_store=EncryptedCertificateStore(encryption_key),
-                submission_gateway=FakeEventGateway(),
-            )
+        def _get_fake_event_service():
+            with session_scope(session_factory) as session:
+                yield EventService(
+                    event_repository=SqlAlchemyEventRepository(session),
+                    emitter_repository=SqlAlchemyEmitterRepository(session),
+                    document_repository=SqlAlchemyDocumentRepository(session),
+                    certificate_repository=SqlAlchemyCertificateRepository(session),
+                    job_repository=SqlAlchemyJobRepository(session),
+                    certificate_store=EncryptedCertificateStore(encryption_key),
+                    submission_gateway=FakeEventGateway(),
+                )
 
-    app.dependency_overrides[get_event_service] = _get_fake_event_service
-    return TestClient(app)
+        app.dependency_overrides[get_event_service] = _get_fake_event_service
+        with TestClient(app) as test_client:
+            yield test_client
 
 
 def test_create_event_over_document_returns_event_and_job(client: TestClient) -> None:

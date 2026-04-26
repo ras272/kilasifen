@@ -8,6 +8,7 @@ from kilasifen.api.app import create_app
 from kilasifen.config import get_settings
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
+from kilasifen.testing.database import managed_test_database_url
 
 
 API_KEY = "secret-key"
@@ -21,15 +22,16 @@ def clear_settings_cache() -> Iterator[None]:
 
 
 @pytest.fixture
-def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
-    database_url = f"sqlite:///{tmp_path / 'emitters.db'}"
-    monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
-    monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
+def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
+    with managed_test_database_url(tmp_path=tmp_path, name="emitters") as database_url:
+        monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
+        monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
 
-    engine = build_engine(database_url)
-    Base.metadata.create_all(engine)
+        engine = build_engine(database_url)
+        Base.metadata.create_all(engine)
 
-    return TestClient(create_app())
+        with TestClient(create_app()) as test_client:
+            yield test_client
 
 
 def test_create_get_update_and_deactivate_emitter(client: TestClient) -> None:

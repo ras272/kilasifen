@@ -19,6 +19,7 @@ from kilasifen.infrastructure.db.repositories.webhooks import SqlAlchemyWebhookR
 from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.infrastructure.jobs.queue import WebhookJobQueue
+from kilasifen.testing.database import managed_test_database_url
 
 
 API_KEY = "secret-key"
@@ -32,43 +33,44 @@ def clear_settings_cache() -> Iterator[None]:
 
 
 @pytest.fixture
-def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
-    database_url = f"sqlite:///{tmp_path / 'webhooks.db'}"
-    encryption_key = Fernet.generate_key().decode()
-    monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
-    monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
-    monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", encryption_key)
+def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
+    with managed_test_database_url(tmp_path=tmp_path, name="webhooks") as database_url:
+        encryption_key = Fernet.generate_key().decode()
+        monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
+        monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
+        monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", encryption_key)
 
-    engine = build_engine(database_url)
-    Base.metadata.create_all(engine)
-    session_factory = build_session_factory(engine)
-    _seed_emitter(session_factory)
+        engine = build_engine(database_url)
+        Base.metadata.create_all(engine)
+        session_factory = build_session_factory(engine)
+        _seed_emitter(session_factory)
 
-    app = create_app()
+        app = create_app()
 
-    class FakeWebhookQueue(WebhookJobQueue):
-        def __init__(self):
-            self.enqueued_job_ids: list[str] = []
+        class FakeWebhookQueue(WebhookJobQueue):
+            def __init__(self):
+                self.enqueued_job_ids: list[str] = []
 
-        def enqueue_webhook_delivery(self, job, *, database_url: str, encryption_key: str):
-            self.enqueued_job_ids.append(job.id)
-            return {"job_id": job.id}
+            def enqueue_webhook_delivery(self, job, *, database_url: str, encryption_key: str):
+                self.enqueued_job_ids.append(job.id)
+                return {"job_id": job.id}
 
-    fake_queue = FakeWebhookQueue()
+        fake_queue = FakeWebhookQueue()
 
-    def _get_fake_webhook_service():
-        with session_scope(session_factory) as session:
-            yield WebhookService(
-                webhook_repository=SqlAlchemyWebhookRepository(session),
-                emitter_repository=SqlAlchemyEmitterRepository(session),
-                job_repository=SqlAlchemyJobRepository(session),
-                secret_store=EncryptedCertificateStore(encryption_key),
-                queue=fake_queue,
-                deliverer=WebhookDeliverer(sender=lambda *_args, **_kwargs: None),
-            )
+        def _get_fake_webhook_service():
+            with session_scope(session_factory) as session:
+                yield WebhookService(
+                    webhook_repository=SqlAlchemyWebhookRepository(session),
+                    emitter_repository=SqlAlchemyEmitterRepository(session),
+                    job_repository=SqlAlchemyJobRepository(session),
+                    secret_store=EncryptedCertificateStore(encryption_key),
+                    queue=fake_queue,
+                    deliverer=WebhookDeliverer(sender=lambda *_args, **_kwargs: None),
+                )
 
-    app.dependency_overrides[get_webhook_service] = _get_fake_webhook_service
-    return TestClient(app)
+        app.dependency_overrides[get_webhook_service] = _get_fake_webhook_service
+        with TestClient(app) as test_client:
+            yield test_client
 
 
 def test_register_webhook_endpoint_returns_redacted_data(client: TestClient) -> None:

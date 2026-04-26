@@ -23,6 +23,7 @@ from kilasifen.infrastructure.db.repositories.documents import SqlAlchemyDocumen
 from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
 from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
 from kilasifen.infrastructure.sifen.query import DocumentQueryOutcome, RucQueryOutcome
+from kilasifen.testing.database import managed_test_database_url
 
 
 API_KEY = "secret-key"
@@ -36,35 +37,36 @@ def clear_settings_cache() -> Iterator[None]:
 
 
 @pytest.fixture
-def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
-    database_url = f"sqlite:///{tmp_path / 'queries.db'}"
-    encryption_key = Fernet.generate_key().decode()
-    monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
-    monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
-    monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", encryption_key)
+def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
+    with managed_test_database_url(tmp_path=tmp_path, name="queries") as database_url:
+        encryption_key = Fernet.generate_key().decode()
+        monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
+        monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
+        monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", encryption_key)
 
-    engine = build_engine(database_url)
-    Base.metadata.create_all(engine)
-    session_factory = build_session_factory(engine)
-    _seed_query_context(
-        session_factory=session_factory,
-        certificate_store=EncryptedCertificateStore(encryption_key),
-    )
+        engine = build_engine(database_url)
+        Base.metadata.create_all(engine)
+        session_factory = build_session_factory(engine)
+        _seed_query_context(
+            session_factory=session_factory,
+            certificate_store=EncryptedCertificateStore(encryption_key),
+        )
 
-    app = create_app()
+        app = create_app()
 
-    def _get_fake_query_service() -> QueryService:
-        with session_scope(session_factory) as session:
-            yield QueryService(
-                emitter_repository=SqlAlchemyEmitterRepository(session),
-                certificate_repository=SqlAlchemyCertificateRepository(session),
-                document_repository=SqlAlchemyDocumentRepository(session),
-                certificate_store=EncryptedCertificateStore(encryption_key),
-                query_gateway=FakeQueryGateway(),
-            )
+        def _get_fake_query_service() -> QueryService:
+            with session_scope(session_factory) as session:
+                yield QueryService(
+                    emitter_repository=SqlAlchemyEmitterRepository(session),
+                    certificate_repository=SqlAlchemyCertificateRepository(session),
+                    document_repository=SqlAlchemyDocumentRepository(session),
+                    certificate_store=EncryptedCertificateStore(encryption_key),
+                    query_gateway=FakeQueryGateway(),
+                )
 
-    app.dependency_overrides[get_query_service] = _get_fake_query_service
-    return TestClient(app)
+        app.dependency_overrides[get_query_service] = _get_fake_query_service
+        with TestClient(app) as test_client:
+            yield test_client
 
 
 def test_query_ruc_returns_normalized_business_payload(client: TestClient) -> None:

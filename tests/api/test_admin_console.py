@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -23,6 +23,7 @@ from kilasifen.infrastructure.db.repositories.stampings import SqlAlchemyStampin
 from kilasifen.infrastructure.db.repositories.webhooks import SqlAlchemyWebhookRepository
 from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
+from kilasifen.testing.database import managed_test_database_url
 
 
 API_KEY = "secret-key"
@@ -37,49 +38,49 @@ def clear_settings_cache() -> Iterator[None]:
 
 
 @pytest.fixture
-def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> TestClient:
-    database_url = f"sqlite:///{tmp_path / 'admin.db'}"
-    encryption_key = Fernet.generate_key().decode()
-    monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
-    monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
-    monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", encryption_key)
+def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
+    with managed_test_database_url(tmp_path=tmp_path, name="admin") as database_url:
+        encryption_key = Fernet.generate_key().decode()
+        monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
+        monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
+        monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", encryption_key)
 
-    engine = build_engine(database_url)
-    Base.metadata.create_all(engine)
-    session_factory = build_session_factory(engine)
-    fake_queue = _FakeAdminQueue()
+        engine = build_engine(database_url)
+        Base.metadata.create_all(engine)
+        session_factory = build_session_factory(engine)
+        fake_queue = _FakeAdminQueue()
 
-    app = create_app()
+        app = create_app()
 
-    def _get_fake_admin_service():
-        with session_scope(session_factory) as session:
-            settings = get_settings()
-            certificate_repository = SqlAlchemyCertificateRepository(session)
-            emitter_repository = SqlAlchemyEmitterRepository(session)
-            certificate_service = CertificateService(
-                certificate_repository=certificate_repository,
-                emitter_repository=emitter_repository,
-                certificate_store=EncryptedCertificateStore(settings.encryption_key),
-            )
-            yield AdminConsoleService(
-                emitter_repository=emitter_repository,
-                certificate_repository=certificate_repository,
-                stamping_repository=SqlAlchemyStampingRepository(session),
-                document_repository=SqlAlchemyDocumentRepository(session),
-                job_repository=SqlAlchemyJobRepository(session),
-                webhook_repository=SqlAlchemyWebhookRepository(session),
-                certificate_service=certificate_service,
-                document_queue=fake_queue,
-                webhook_queue=fake_queue,
-                database_url=settings.database_url,
-                encryption_key=settings.encryption_key,
-            )
+        def _get_fake_admin_service():
+            with session_scope(session_factory) as session:
+                settings = get_settings()
+                certificate_repository = SqlAlchemyCertificateRepository(session)
+                emitter_repository = SqlAlchemyEmitterRepository(session)
+                certificate_service = CertificateService(
+                    certificate_repository=certificate_repository,
+                    emitter_repository=emitter_repository,
+                    certificate_store=EncryptedCertificateStore(settings.encryption_key),
+                )
+                yield AdminConsoleService(
+                    emitter_repository=emitter_repository,
+                    certificate_repository=certificate_repository,
+                    stamping_repository=SqlAlchemyStampingRepository(session),
+                    document_repository=SqlAlchemyDocumentRepository(session),
+                    job_repository=SqlAlchemyJobRepository(session),
+                    webhook_repository=SqlAlchemyWebhookRepository(session),
+                    certificate_service=certificate_service,
+                    document_queue=fake_queue,
+                    webhook_queue=fake_queue,
+                    database_url=settings.database_url,
+                    encryption_key=settings.encryption_key,
+                )
 
-    app.dependency_overrides[get_admin_service] = _get_fake_admin_service
-    test_client = TestClient(app)
-    test_client.app.state.session_factory = session_factory
-    test_client.app.state.fake_admin_queue = fake_queue
-    return test_client
+        app.dependency_overrides[get_admin_service] = _get_fake_admin_service
+        with TestClient(app) as test_client:
+            test_client.app.state.session_factory = session_factory
+            test_client.app.state.fake_admin_queue = fake_queue
+            yield test_client
 
 
 @pytest.fixture
