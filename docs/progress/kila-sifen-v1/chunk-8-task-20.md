@@ -1,5 +1,9 @@
 # Chunk 8 - Task 20
 
+> Historical intermediate step: this task originally included `recibo`, but
+> that document type was later removed in `1859e7b` because it is not a valid
+> SIFEN DE type.
+
 ## Goal
 
 Expose typed document endpoints for ERP integrations while keeping the raw

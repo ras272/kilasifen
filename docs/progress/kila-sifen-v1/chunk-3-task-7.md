@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add stamping management through the public API.
+Add stamping management through the internal HTTP API consumed by the ERP.
 
 ## Commit
 

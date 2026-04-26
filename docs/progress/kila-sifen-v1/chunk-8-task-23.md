@@ -17,8 +17,8 @@ route and service flow.
   - `get_document_xml_for_emitter(emitter_id, document_id)`
   - cross-emitter access returns `404` via existing not-found semantics.
 - Added explicit test for cross-emitter isolation on XML download.
-- Added TODO markers and coverage tests documenting current single-tenant
-  behavior for:
+- Added TODO markers and coverage tests documenting current system-wide
+  operator behavior for:
   - `GET /v1/jobs` without `emitter_id`
   - `GET /v1/webhook-deliveries` without `emitter_id`
 
