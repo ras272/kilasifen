@@ -7,7 +7,7 @@ snapshot, XML retrieval endpoint, and emitter-scoped isolation checks.
 
 ## Commit
 
-- `TBD` `feat: add operational list filters emitter health and xml retrieval`
+- `10e7c1a` `feat: add operational list filters emitter health and xml retrieval`
 
 ## What was changed
 

@@ -18,7 +18,7 @@ notifications on real document state transitions without manual intervention.
 - `Task 19` commit `f365807`
 - `Task 20` commit `2b02e16`
 - `Task 21` commit `11b8f2e`
-- `Task 22` commit `TBD`
+- `Task 22` commit `10e7c1a`
 
 ## Main files
 
