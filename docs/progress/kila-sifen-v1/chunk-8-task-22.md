@@ -16,7 +16,7 @@ snapshot, XML retrieval endpoint, and emitter-scoped isolation checks.
   - `GET /v1/jobs`
   - `GET /v1/webhook-deliveries`
 - Added document XML retrieval endpoint:
-  - `GET /v1/documents/{document_id}/xml`
+  - `GET /v1/documents/{document_id}/xml` (superseded in Task 23)
   - returns signed XML when available, otherwise generated XML from persisted payload.
 - Added emitter operational health endpoint:
   - `GET /v1/emitters/{emitter_id}/health`
