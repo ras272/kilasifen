@@ -14,13 +14,13 @@ document endpoint for advanced compatibility.
 - Added typed API contracts:
   - `FacturaCreateRequest`
   - `NotaCreditoCreateRequest`
-  - `ReciboCreateRequest`
+  - `ReciboCreateRequest` (removed later because recibo is not a SIFEN DE type)
 - Added strict transport validation:
   - requires `generated_xml` or `signed_xml` in typed payloads.
 - Added new endpoints:
   - `POST /v1/emitters/{emitter_id}/documents/facturas`
   - `POST /v1/emitters/{emitter_id}/documents/notas-credito`
-  - `POST /v1/emitters/{emitter_id}/documents/recibos`
+  - `POST /v1/emitters/{emitter_id}/documents/recibos` (removed later)
 - Preserved existing raw endpoint:
   - `POST /v1/emitters/{emitter_id}/documents`
 - Typed endpoints store normalized contract metadata in payload snapshot for

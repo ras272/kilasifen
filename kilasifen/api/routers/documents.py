@@ -11,7 +11,6 @@ from kilasifen.api.schemas.documents import (
     DocumentResponse,
     FacturaCreateRequest,
     NotaCreditoCreateRequest,
-    ReciboCreateRequest,
 )
 from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.application.documents.service import DocumentService
@@ -88,30 +87,6 @@ def create_nota_credito_document(
         idempotency_key=payload.idempotency_key,
         document_type="nota_credito",
         payload_snapshot=_build_typed_payload("nota_credito_v1", nota_credito_payload),
-    )
-
-
-@router.post(
-    "/emitters/{emitter_id}/documents/recibos",
-    response_model=SuccessEnvelope,
-    status_code=status.HTTP_201_CREATED,
-)
-def create_recibo_document(
-    emitter_id: str,
-    payload: ReciboCreateRequest,
-    request: Request,
-    _principal=Depends(get_api_key_principal),
-    service: DocumentService = Depends(get_document_service),
-) -> JSONResponse:
-    recibo_payload = payload.recibo.model_dump(mode="json")
-    return _create_document_response(
-        request=request,
-        service=service,
-        emitter_id=emitter_id,
-        external_id=payload.external_id,
-        idempotency_key=payload.idempotency_key,
-        document_type="recibo",
-        payload_snapshot=_build_typed_payload("recibo_v1", recibo_payload),
     )
 
 

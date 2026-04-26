@@ -3,7 +3,7 @@
 ## Goal
 
 Implement always-on server-side atomic numbering for typed document builders
-(`factura`, `nota_credito`, `recibo`) with PostgreSQL-safe concurrency behavior.
+(`factura`, `nota_credito`) with PostgreSQL-safe concurrency behavior.
 
 ## Commit
 

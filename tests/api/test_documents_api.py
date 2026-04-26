@@ -183,31 +183,6 @@ def test_create_nota_credito_typed_endpoint_returns_document_and_job(
     assert body["job"]["job_type"] == "document.emit"
 
 
-def test_create_recibo_typed_endpoint_returns_document_and_job(
-    client: TestClient,
-    emitter_id: str,
-) -> None:
-    response = client.post(
-        f"/v1/emitters/{emitter_id}/documents/recibos",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "external_id": "erp-recibo-1",
-            "idempotency_key": "idem-recibo-1",
-            "recibo": {
-                "generated_xml": "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'><DE Id='55800123450001001000000112026010112345678901'/></rDE>",
-                "doc_id": "55800123450001001000000112026010112345678901",
-                "concepto": "Pago de cuota",
-                "total": 150000,
-            },
-        },
-    )
-
-    assert response.status_code == 201
-    body = response.json()["data"]
-    assert body["document"]["document_type"] == "recibo"
-    assert body["job"]["job_type"] == "document.emit"
-
-
 def test_create_typed_document_requires_xml_or_signed_xml(
     client: TestClient,
     emitter_id: str,

@@ -18,7 +18,6 @@ logger = logging.getLogger(__name__)
 _NUMBERED_TYPED_CONTRACTS = {
     "factura": "factura_v1",
     "nota_credito": "nota_credito_v1",
-    "recibo": "recibo_v1",
 }
 
 

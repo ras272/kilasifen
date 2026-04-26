@@ -84,28 +84,6 @@ class NotaCreditoContractPayload(DocumentTransportPayload):
         return self
 
 
-class ReciboContractPayload(DocumentTransportPayload):
-    """Business payload for Recibo endpoint."""
-
-    establecimiento: int | str | None = None
-    punto: int | str | None = None
-    numero: int | str | None = None
-    fecha: str | None = None
-    concepto: str | None = None
-    total: str | int | float | None = None
-    cliente: dict[str, Any] | None = None
-    condicion: dict[str, Any] | None = None
-    usuario: dict[str, Any] | None = None
-    documento_asociado: list[dict[str, Any]] | None = None
-    metadata: dict[str, Any] | None = None
-
-    @model_validator(mode="after")
-    def validate_recibo_payload(self) -> "ReciboContractPayload":
-        if self.has_xml_payload():
-            return self
-        return self
-
-
 class FacturaCreateRequest(BaseModel):
     """Typed API contract for factura emission."""
 
@@ -120,14 +98,6 @@ class NotaCreditoCreateRequest(BaseModel):
     external_id: str | None = Field(default=None, max_length=128)
     idempotency_key: str | None = Field(default=None, max_length=128)
     nota_credito: NotaCreditoContractPayload
-
-
-class ReciboCreateRequest(BaseModel):
-    """Typed API contract for recibo emission."""
-
-    external_id: str | None = Field(default=None, max_length=128)
-    idempotency_key: str | None = Field(default=None, max_length=128)
-    recibo: ReciboContractPayload
 
 
 class DocumentResponse(BaseModel):

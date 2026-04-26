@@ -35,5 +35,5 @@ so ERP integrations can emit typed documents without sending XML manually.
 ## Notes
 
 - This is an incremental builder focused on high-value typed paths.
-- `recibo` remains typed-contract-ready but still requires XML transport payload
+- `recibo` support was later removed because it is not a valid SIFEN DE type
   until its dedicated builder is implemented.
