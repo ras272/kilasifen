@@ -153,6 +153,42 @@ class DocumentService:
             return payload["generated_xml"]
         raise ConflictError("documents.xml_not_available")
 
+    def get_document_kude(self, *, emitter_id: str, document_id: str) -> bytes:
+        from kilasifen.infrastructure.kude.pdf_renderer import render_kude_pdf
+
+        document, emitter = self._resolve_kude_inputs(
+            emitter_id=emitter_id, document_id=document_id
+        )
+        return render_kude_pdf(document=document, emitter=emitter)
+
+    def get_document_kude_data(self, *, emitter_id: str, document_id: str) -> dict:
+        from kilasifen.infrastructure.kude.data_extractor import extract_kude_data
+
+        document, emitter = self._resolve_kude_inputs(
+            emitter_id=emitter_id, document_id=document_id
+        )
+        return extract_kude_data(document=document, emitter=emitter)
+
+    def _resolve_kude_inputs(self, *, emitter_id: str, document_id: str):
+        document = self.get_document_for_emitter(
+            emitter_id=emitter_id, document_id=document_id
+        )
+        emitter = self.emitter_repository.get(emitter_id)
+        if emitter is None:
+            raise NotFoundError("emitters.not_found")
+        if not emitter.csc or not emitter.csc_id:
+            raise ConflictError("emitters.csc_required")
+        signed_xml = document.signed_xml
+        if not signed_xml:
+            payload = document.payload_snapshot or {}
+            if isinstance(payload.get("signed_xml"), str):
+                signed_xml = payload["signed_xml"]
+        if not signed_xml:
+            raise ConflictError("documents.signed_xml_not_available")
+        if not document.signed_xml:
+            document.signed_xml = signed_xml
+        return document, emitter
+
     def list_documents(
         self,
         *,

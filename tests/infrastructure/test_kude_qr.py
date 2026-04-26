@@ -10,7 +10,6 @@ from kilasifen.infrastructure.kude.qr_generator import (
     render_qr_image,
 )
 
-
 # Values from Manual Tecnico v150 section 13.8.4 example.
 # Note: the manual table on line ~9812 shows nVersion=142 due to a typo;
 # the rest of the manual (and the project decision) uses 150.

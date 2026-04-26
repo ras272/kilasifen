@@ -170,6 +170,47 @@ def get_document_xml(
     return Response(content=xml_content, media_type="application/xml")
 
 
+@router.get("/emitters/{emitter_id}/documents/{document_id}/kude")
+def get_document_kude(
+    emitter_id: str,
+    document_id: str,
+    _principal=Depends(get_api_key_principal),
+    service: DocumentService = Depends(get_document_service),
+) -> Response:
+    pdf_bytes = service.get_document_kude(
+        emitter_id=emitter_id,
+        document_id=document_id,
+    )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="kude-{document_id}.pdf"',
+        },
+    )
+
+
+@router.get(
+    "/emitters/{emitter_id}/documents/{document_id}/kude/data",
+    response_model=SuccessEnvelope,
+)
+def get_document_kude_data(
+    emitter_id: str,
+    document_id: str,
+    request: Request,
+    _principal=Depends(get_api_key_principal),
+    service: DocumentService = Depends(get_document_service),
+) -> SuccessEnvelope:
+    data = service.get_document_kude_data(
+        emitter_id=emitter_id,
+        document_id=document_id,
+    )
+    return SuccessEnvelope(
+        data=data,
+        correlation_id=request.state.correlation_id,
+    )
+
+
 def _build_typed_payload(contract: str, typed_payload: dict) -> dict:
     payload = {
         "generated_xml": typed_payload.get("generated_xml"),

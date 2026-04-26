@@ -9,10 +9,9 @@ from __future__ import annotations
 
 from xml.etree import ElementTree as ET
 
-from pysifen.sdk.errors import SifenValidationError
-
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
+from pysifen.sdk.errors import SifenValidationError
 
 _NS = "http://ekuatia.set.gov.py/sifen/xsd"
 
@@ -259,9 +258,9 @@ def _build_items(g_dtip: ET.Element) -> list[dict]:
         anticipo = "0"
         valor_total = ""
         if valor is not None:
-            valor_total = _text(valor, "dTotOpeItem") or ""
             restas = valor.find(_t("gValorRestaItem"))
             if restas is not None:
+                valor_total = _text(restas, "dTotOpeItem") or ""
                 descuento = _text(restas, "dDescItem") or "0"
                 anticipo = _text(restas, "dAntPreUniIt") or "0"
 
