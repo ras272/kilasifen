@@ -115,8 +115,8 @@ class DocumentService:
             raise NotFoundError("documents.not_found")
         return document
 
-    def get_document_xml(self, *, document_id: str) -> str:
-        document = self.get_document(document_id)
+    def get_document_xml_for_emitter(self, *, emitter_id: str, document_id: str) -> str:
+        document = self.get_document_for_emitter(emitter_id=emitter_id, document_id=document_id)
         if document.signed_xml:
             return document.signed_xml
         if document.generated_xml:

@@ -181,13 +181,17 @@ def list_documents(
     )
 
 
-@router.get("/documents/{document_id}/xml")
+@router.get("/emitters/{emitter_id}/documents/{document_id}/xml")
 def get_document_xml(
+    emitter_id: str,
     document_id: str,
     _principal=Depends(get_api_key_principal),
     service: DocumentService = Depends(get_document_service),
 ) -> Response:
-    xml_content = service.get_document_xml(document_id=document_id)
+    xml_content = service.get_document_xml_for_emitter(
+        emitter_id=emitter_id,
+        document_id=document_id,
+    )
     return Response(content=xml_content, media_type="application/xml")
 
 

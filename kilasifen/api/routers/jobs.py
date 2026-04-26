@@ -29,6 +29,7 @@ def list_jobs(
     request: Request,
     limit: int = 50,
     offset: int = 0,
+    # TODO(multi-tenant): require emitter scoping by principal when opening API to multiple tenants.
     emitter_id: str | None = None,
     status: str | None = None,
     job_type: str | None = None,

@@ -152,3 +152,61 @@ def test_list_jobs_can_filter_by_emitter(client: TestClient) -> None:
     jobs = response.json()["data"]["jobs"]
     assert len(jobs) == 1
     assert jobs[0]["emitter_id"] == emitter_a
+
+
+def test_list_jobs_without_emitter_filter_returns_system_wide_jobs(client: TestClient) -> None:
+    emitter_a = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-a-global",
+            "ruc": "80024135",
+            "dv": "5",
+            "legal_name": "ARES PARAGUAY SRL",
+            "tax_environment": "test",
+            "csc": None,
+            "csc_id": None,
+        },
+    ).json()["data"]["emitter"]["id"]
+    emitter_b = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-b-global",
+            "ruc": "80111111",
+            "dv": "9",
+            "legal_name": "OTRO EMISOR SA",
+            "tax_environment": "test",
+            "csc": None,
+            "csc_id": None,
+        },
+    ).json()["data"]["emitter"]["id"]
+
+    client.post(
+        f"/v1/emitters/{emitter_a}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "doc-a-global",
+            "idempotency_key": "idem-a-global",
+            "document_type": "factura",
+            "payload": {"generated_xml": "<rDE><DE Id='A-GLOBAL'/></rDE>", "doc_id": "A-GLOBAL"},
+        },
+    )
+    client.post(
+        f"/v1/emitters/{emitter_b}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "doc-b-global",
+            "idempotency_key": "idem-b-global",
+            "document_type": "factura",
+            "payload": {"generated_xml": "<rDE><DE Id='B-GLOBAL'/></rDE>", "doc_id": "B-GLOBAL"},
+        },
+    )
+
+    response = client.get("/v1/jobs?limit=20&offset=0", headers={"X-API-Key": API_KEY})
+
+    assert response.status_code == 200
+    jobs = response.json()["data"]["jobs"]
+    emitters = {job["emitter_id"] for job in jobs}
+    assert emitter_a in emitters
+    assert emitter_b in emitters

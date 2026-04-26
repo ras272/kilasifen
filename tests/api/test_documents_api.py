@@ -316,10 +316,38 @@ def test_get_document_xml_returns_signed_or_generated_xml(
     document_id = created.json()["data"]["document"]["id"]
 
     response = client.get(
-        f"/v1/documents/{document_id}/xml",
+        f"/v1/emitters/{emitter_id}/documents/{document_id}/xml",
         headers={"X-API-Key": API_KEY},
     )
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/xml")
     assert "<rDE" in response.text
+
+
+def test_get_document_xml_returns_not_found_for_other_emitter_document(
+    client: TestClient,
+    emitter_id: str,
+    second_emitter_id: str,
+) -> None:
+    created = client.post(
+        f"/v1/emitters/{second_emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-doc-xml-b",
+            "idempotency_key": "idem-xml-b",
+            "document_type": "factura",
+            "payload": {
+                "generated_xml": "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'><DE Id='XMLB'/></rDE>",
+                "doc_id": "XMLB",
+            },
+        },
+    )
+    document_id = created.json()["data"]["document"]["id"]
+
+    response = client.get(
+        f"/v1/emitters/{emitter_id}/documents/{document_id}/xml",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 404
