@@ -516,14 +516,15 @@ class EventService:
             raise ConflictError("events.cancel.already_cancelled")
 
         deadline_hours = _cancel_deadline_hours(document.document_type)
-        deadline = document.updated_at + timedelta(hours=deadline_hours)
+        approved_at = _ensure_utc_datetime(document.updated_at)
+        deadline = approved_at + timedelta(hours=deadline_hours)
         now = _now()
         if now > deadline:
             raise ConflictError(
                 "events.cancel.deadline_exceeded",
                 details={
                     "deadline_hours": deadline_hours,
-                    "approved_at": document.updated_at.isoformat(),
+                    "approved_at": approved_at.isoformat(),
                 },
             )
 
@@ -563,12 +564,13 @@ class EventService:
             return
         if numero_hasta > current.last_number:
             return
-        if _now() - current.updated_at > timedelta(days=45):
+        sequence_updated_at = _ensure_utc_datetime(current.updated_at)
+        if _now() - sequence_updated_at > timedelta(days=45):
             raise ConflictError(
                 "events.inutilize.deadline_exceeded",
                 details={
                     "sequence_last_number": current.last_number,
-                    "sequence_updated_at": current.updated_at.isoformat(),
+                    "sequence_updated_at": sequence_updated_at.isoformat(),
                 },
             )
 
@@ -599,6 +601,12 @@ class EventService:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _ensure_utc_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _normalize_three_digits(value: str) -> str:

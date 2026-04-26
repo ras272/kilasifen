@@ -44,24 +44,42 @@ def upgrade() -> None:
         ),
     )
 
-    op.add_column("documents", sa.Column("establishment", sa.String(length=3), nullable=True))
-    op.add_column("documents", sa.Column("point", sa.String(length=3), nullable=True))
-    op.add_column("documents", sa.Column("document_number", sa.Integer(), nullable=True))
-    op.create_unique_constraint(
-        "uq_documents_emitter_document_number",
-        "documents",
-        ["emitter_id", "document_type", "establishment", "point", "document_number"],
-    )
+    dialect = op.get_bind().dialect.name
+    if dialect == "sqlite":
+        with op.batch_alter_table("documents", recreate="always") as batch_op:
+            batch_op.add_column(sa.Column("establishment", sa.String(length=3), nullable=True))
+            batch_op.add_column(sa.Column("point", sa.String(length=3), nullable=True))
+            batch_op.add_column(sa.Column("document_number", sa.Integer(), nullable=True))
+            batch_op.create_unique_constraint(
+                "uq_documents_emitter_document_number",
+                ["emitter_id", "document_type", "establishment", "point", "document_number"],
+            )
+    else:
+        op.add_column("documents", sa.Column("establishment", sa.String(length=3), nullable=True))
+        op.add_column("documents", sa.Column("point", sa.String(length=3), nullable=True))
+        op.add_column("documents", sa.Column("document_number", sa.Integer(), nullable=True))
+        op.create_unique_constraint(
+            "uq_documents_emitter_document_number",
+            "documents",
+            ["emitter_id", "document_type", "establishment", "point", "document_number"],
+        )
 
 
 def downgrade() -> None:
-    op.drop_constraint(
-        "uq_documents_emitter_document_number",
-        "documents",
-        type_="unique",
-    )
-    op.drop_column("documents", "document_number")
-    op.drop_column("documents", "point")
-    op.drop_column("documents", "establishment")
+    dialect = op.get_bind().dialect.name
+    if dialect == "sqlite":
+        with op.batch_alter_table("documents", recreate="always") as batch_op:
+            batch_op.drop_constraint("uq_documents_emitter_document_number", type_="unique")
+            batch_op.drop_column("document_number")
+            batch_op.drop_column("point")
+            batch_op.drop_column("establishment")
+    else:
+        op.drop_constraint(
+            "uq_documents_emitter_document_number",
+            "documents",
+            type_="unique",
+        )
+        op.drop_column("documents", "document_number")
+        op.drop_column("documents", "point")
+        op.drop_column("documents", "establishment")
     op.drop_table("document_numbering_sequences")
-

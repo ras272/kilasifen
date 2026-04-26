@@ -63,7 +63,9 @@ def test_alembic_upgrade_creates_core_tables(
         command.upgrade(alembic_config, "head")
 
         parsed_url = make_url(database_url)
-        options = str(parsed_url.query.get("options", ""))
-        schema = options.split("search_path=")[-1].split()[0]
+        options = str(parsed_url.query.get("options", "")).strip()
+        schema = None
+        if "search_path=" in options:
+            schema = options.split("search_path=")[-1].split()[0]
         inspector = inspect(build_engine(database_url))
         assert EXPECTED_TABLES.issubset(set(inspector.get_table_names(schema=schema)))
