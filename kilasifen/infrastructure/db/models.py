@@ -5,7 +5,19 @@ from __future__ import annotations
 from datetime import date, datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from kilasifen.infrastructure.db.base import Base
@@ -52,6 +64,9 @@ class EmitterModel(TimestampMixin, Base):
     )
     jobs: Mapped[list["JobModel"]] = relationship(back_populates="emitter")
     events: Mapped[list["EventModel"]] = relationship(back_populates="emitter")
+    inutilized_number_ranges: Mapped[list["InutilizedNumberRangeModel"]] = relationship(
+        back_populates="emitter"
+    )
     webhook_endpoints: Mapped[list["WebhookEndpointModel"]] = relationship(back_populates="emitter")
     api_keys: Mapped[list["ApiKeyModel"]] = relationship(back_populates="emitter")
 
@@ -213,6 +228,37 @@ class EventModel(TimestampMixin, Base):
 
     emitter: Mapped[EmitterModel] = relationship(back_populates="events")
     document: Mapped[DocumentModel | None] = relationship(back_populates="events")
+    inutilized_ranges: Mapped[list["InutilizedNumberRangeModel"]] = relationship(
+        back_populates="event"
+    )
+
+
+class InutilizedNumberRangeModel(TimestampMixin, Base):
+    __tablename__ = "inutilized_number_ranges"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    emitter_id: Mapped[str] = mapped_column(ForeignKey("emitters.id"), nullable=False)
+    document_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    establishment: Mapped[str] = mapped_column(String(3), nullable=False)
+    point: Mapped[str] = mapped_column(String(3), nullable=False)
+    numero_desde: Mapped[int] = mapped_column(Integer, nullable=False)
+    numero_hasta: Mapped[int] = mapped_column(Integer, nullable=False)
+    timbrado: Mapped[str] = mapped_column(String(8), nullable=False)
+    event_id: Mapped[str] = mapped_column(ForeignKey("events.id"), nullable=False)
+    sifen_protocol: Mapped[str | None] = mapped_column(String(64))
+
+    emitter: Mapped[EmitterModel] = relationship(back_populates="inutilized_number_ranges")
+    event: Mapped[EventModel] = relationship(back_populates="inutilized_ranges")
+
+    __table_args__ = (
+        Index(
+            "ix_inutilized_ranges_emitter_tuple",
+            "emitter_id",
+            "document_type",
+            "establishment",
+            "point",
+        ),
+    )
 
 
 class WebhookEndpointModel(TimestampMixin, Base):

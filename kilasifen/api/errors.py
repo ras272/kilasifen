@@ -4,18 +4,32 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from kilasifen.api.schemas.common import ErrorEnvelope, ErrorPayload
-from kilasifen.domain.common.errors import ConflictError, NotFoundError, ServiceUnavailableError
+from kilasifen.domain.common.errors import (
+    ConflictError,
+    NotFoundError,
+    ServiceUnavailableError,
+    UnprocessableEntityError,
+)
 
 
 class ApiError(Exception):
     """Raised when the API should return a structured error response."""
 
-    def __init__(self, *, status_code: int, code: str, message: str, category: str):
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        code: str,
+        message: str,
+        category: str,
+        details: dict | None = None,
+    ):
         super().__init__(message)
         self.status_code = status_code
         self.code = code
         self.message = message
         self.category = category
+        self.details = details
 
 
 async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
@@ -28,6 +42,7 @@ async def api_error_handler(request: Request, exc: ApiError) -> JSONResponse:
             message=exc.message,
             category=exc.category,
             correlation_id=correlation_id,
+            details=exc.details,
         )
     )
     return JSONResponse(status_code=exc.status_code, content=payload.model_dump())
@@ -63,6 +78,7 @@ async def conflict_error_handler(
             code=str(exc),
             message="Resource conflict.",
             category="conflict",
+            details=getattr(exc, "details", None),
         ),
     )
 
@@ -80,5 +96,23 @@ async def service_unavailable_error_handler(
             code=str(exc),
             message="Service temporarily unavailable. Retry later.",
             category="service_unavailable",
+        ),
+    )
+
+
+async def unprocessable_entity_error_handler(
+    request: Request,
+    exc: UnprocessableEntityError,
+) -> JSONResponse:
+    """Serialize structured unprocessable-entity errors."""
+
+    return await api_error_handler(
+        request,
+        ApiError(
+            status_code=422,
+            code=str(exc),
+            message="Request validation failed.",
+            category="validation",
+            details=getattr(exc, "details", None),
         ),
     )

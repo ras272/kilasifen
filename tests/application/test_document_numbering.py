@@ -3,16 +3,23 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 
 from kilasifen.application.documents.numbering_service import DocumentNumberingService
 from kilasifen.domain.emitters.models import Emitter
+from kilasifen.domain.events.inutilized_ranges import InutilizedNumberRange
+from kilasifen.domain.events.models import Event
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.repositories.document_numbering_sequences import (
     SqlAlchemyDocumentNumberingSequenceRepository,
 )
 from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
+from kilasifen.infrastructure.db.repositories.events import SqlAlchemyEventRepository
+from kilasifen.infrastructure.db.repositories.inutilized_number_ranges import (
+    SqlAlchemyInutilizedNumberRangeRepository,
+)
 from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
 from kilasifen.testing.database import managed_test_database_url
 
@@ -149,6 +156,41 @@ def test_reserve_next_number_concurrency_is_deterministic(postgres_database_url:
         assert numbers == list(range(1, 21))
 
 
+def test_reserve_next_number_skips_approved_inutilized_ranges(postgres_database_url: str) -> None:
+    session_factory = _build_session_factory(postgres_database_url)
+    _seed_emitter(session_factory, emitter_id="emitter-a", external_id="erp-a", ruc="80024135", dv="5")
+
+    for run_index in range(5):
+        point = f"{90 + run_index:03d}"
+        for _ in range(9):
+            _reserve_number(
+                session_factory,
+                emitter_id="emitter-a",
+                establishment="001",
+                point=point,
+                document_type="factura",
+            )
+
+        _seed_approved_inutilization_range(
+            session_factory,
+            emitter_id="emitter-a",
+            document_type="factura",
+            establishment="001",
+            point=point,
+            numero_desde=10,
+            numero_hasta=15,
+        )
+
+        next_number = _reserve_number(
+            session_factory,
+            emitter_id="emitter-a",
+            establishment="001",
+            point=point,
+            document_type="factura",
+        )
+        assert next_number == 16
+
+
 def _build_session_factory(database_url: str):
     engine = build_engine(database_url)
     Base.metadata.create_all(engine)
@@ -198,6 +240,51 @@ def _reserve_number(
         )
 
 
+def _seed_approved_inutilization_range(
+    session_factory,
+    *,
+    emitter_id: str,
+    document_type: str,
+    establishment: str,
+    point: str,
+    numero_desde: int,
+    numero_hasta: int,
+) -> None:
+    timestamp = _now()
+    event = Event(
+        id=str(uuid4()),
+        emitter_id=emitter_id,
+        document_id=None,
+        event_type="inutilize_numbers",
+        input_payload=None,
+        generated_xml="<gGroupGesEve/>",
+        signed_xml="<gGroupGesEve/>",
+        sifen_request_xml="<event-request/>",
+        sifen_response_raw="<event-response/>",
+        status="approved",
+        sifen_result_code="0300",
+        sifen_result_message="Evento procesado",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+    range_item = InutilizedNumberRange(
+        id=str(uuid4()),
+        emitter_id=emitter_id,
+        document_type=document_type,
+        establishment=establishment,
+        point=point,
+        numero_desde=numero_desde,
+        numero_hasta=numero_hasta,
+        timbrado="80024135",
+        event_id=event.id,
+        sifen_protocol="90001234",
+        created_at=timestamp,
+        updated_at=timestamp,
+    )
+    with session_scope(session_factory) as session:
+        SqlAlchemyEventRepository(session).save(event)
+        SqlAlchemyInutilizedNumberRangeRepository(session).save(range_item)
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
-

@@ -93,6 +93,58 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             return None
         return _to_domain(model)
 
+    def get_by_cdc(self, emitter_id: str, cdc: str) -> Document | None:
+        statement = select(DocumentModel).where(
+            DocumentModel.emitter_id == emitter_id,
+            DocumentModel.cdc == cdc,
+        )
+        model = self.session.scalar(statement)
+        if model is None:
+            return None
+        return _to_domain(model)
+
+    def list_by_associated_cdc(self, *, emitter_id: str, associated_cdc: str) -> list[Document]:
+        statement = select(DocumentModel).where(DocumentModel.emitter_id == emitter_id)
+        models = list(self.session.scalars(statement))
+        matched: list[Document] = []
+        for model in models:
+            snapshot = model.payload_snapshot if isinstance(model.payload_snapshot, dict) else None
+            if not snapshot:
+                continue
+            typed_contract = snapshot.get("typed_contract")
+            if not isinstance(typed_contract, dict):
+                continue
+            payload = typed_contract.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            asociado = payload.get("documento_asociado")
+            if not isinstance(asociado, dict):
+                continue
+            if str(asociado.get("cdc") or "").strip() == associated_cdc:
+                matched.append(_to_domain(model))
+        return matched
+
+    def list_numbers_in_range(
+        self,
+        *,
+        emitter_id: str,
+        document_type: str,
+        establishment: str,
+        point: str,
+        number_from: int,
+        number_to: int,
+    ) -> list[int]:
+        statement = select(DocumentModel.document_number).where(
+            DocumentModel.emitter_id == emitter_id,
+            DocumentModel.document_type == document_type,
+            DocumentModel.establishment == establishment,
+            DocumentModel.point == point,
+            DocumentModel.document_number.is_not(None),
+            DocumentModel.document_number >= number_from,
+            DocumentModel.document_number <= number_to,
+        )
+        return sorted(int(number) for number in self.session.scalars(statement) if number is not None)
+
     def list_recent(
         self,
         *,

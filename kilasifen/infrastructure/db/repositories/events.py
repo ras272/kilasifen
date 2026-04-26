@@ -1,5 +1,6 @@
 """SQLAlchemy implementation of the event repository."""
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from kilasifen.domain.events.models import Event
@@ -54,6 +55,21 @@ class SqlAlchemyEventRepository(EventRepository):
         if model is None:
             return None
         return _to_domain(model)
+
+    def list_for_document(
+        self,
+        *,
+        document_id: str,
+        event_type: str | None = None,
+        status: str | None = None,
+    ) -> list[Event]:
+        statement = select(EventModel).where(EventModel.document_id == document_id)
+        if event_type:
+            statement = statement.where(EventModel.event_type == event_type)
+        if status:
+            statement = statement.where(EventModel.status == status)
+        statement = statement.order_by(EventModel.created_at.desc())
+        return [_to_domain(model) for model in self.session.scalars(statement)]
 
 
 def _to_domain(model: EventModel) -> Event:

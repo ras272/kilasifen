@@ -19,6 +19,7 @@ class ErrorPayload(BaseModel):
     message: str
     category: str
     correlation_id: str
+    details: dict[str, Any] | None = None
 
 
 class ErrorEnvelope(BaseModel):

@@ -21,10 +21,16 @@ from kilasifen.api.errors import (
     conflict_error_handler,
     not_found_error_handler,
     service_unavailable_error_handler,
+    unprocessable_entity_error_handler,
 )
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.config import get_settings
-from kilasifen.domain.common.errors import ConflictError, NotFoundError, ServiceUnavailableError
+from kilasifen.domain.common.errors import (
+    ConflictError,
+    NotFoundError,
+    ServiceUnavailableError,
+    UnprocessableEntityError,
+)
 from kilasifen.infrastructure.db.session import build_engine, build_session_factory
 from kilasifen.logging import configure_logging
 
@@ -42,6 +48,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(NotFoundError, not_found_error_handler)
     app.add_exception_handler(ConflictError, conflict_error_handler)
+    app.add_exception_handler(UnprocessableEntityError, unprocessable_entity_error_handler)
     app.add_exception_handler(ServiceUnavailableError, service_unavailable_error_handler)
 
     @app.middleware("http")

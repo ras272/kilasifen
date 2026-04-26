@@ -31,6 +31,7 @@ class EventSubmissionOutcome:
     status: str
     result_code: str | None
     result_message: str | None
+    protocol: str | None
 
 
 class EventSubmissionGateway(Protocol):
@@ -83,7 +84,7 @@ class PysifenEventGateway:
             response = client.enviar_evento(group)
 
         response_raw = self.serializer.render(response)
-        result_code, result_message, status = _normalize_response(response)
+        result_code, result_message, status, protocol = _normalize_response(response)
         if status == "rejected":
             raise SifenRejectionError(
                 result_code or "unknown",
@@ -98,6 +99,7 @@ class PysifenEventGateway:
             status=status,
             result_code=result_code,
             result_message=result_message,
+            protocol=protocol,
         )
 
 
@@ -110,15 +112,17 @@ def _extract_event_xml(input_payload: dict | None) -> str:
     return event_xml
 
 
-def _normalize_response(response) -> tuple[str | None, str | None, str]:
+def _normalize_response(response) -> tuple[str | None, str | None, str, str | None]:
     result_code = None
     result_message = None
     status = "submitted"
+    protocol = None
 
     g_res_proc = []
     if getattr(response, "gResProcEVe", None):
         first_group = response.gResProcEVe[0]
         g_res_proc = getattr(first_group, "gResProc", [])
+        protocol = str(getattr(first_group, "dProtAut", "") or "").strip() or None
         if getattr(first_group, "dEstRes", None):
             raw_status = str(first_group.dEstRes).strip().lower()
             status = "approved" if "aprob" in raw_status else "rejected"
@@ -132,4 +136,4 @@ def _normalize_response(response) -> tuple[str | None, str | None, str]:
     elif result_code is not None and status != "approved":
         status = "rejected"
 
-    return result_code, result_message, status
+    return result_code, result_message, status, protocol

@@ -25,6 +25,27 @@ class DocumentRepository(ABC):
         """Load a document by emitter and external id."""
 
     @abstractmethod
+    def get_by_cdc(self, emitter_id: str, cdc: str) -> Document | None:
+        """Load a document by emitter and CDC."""
+
+    @abstractmethod
+    def list_by_associated_cdc(self, *, emitter_id: str, associated_cdc: str) -> list[Document]:
+        """List documents that reference the given CDC in typed payloads."""
+
+    @abstractmethod
+    def list_numbers_in_range(
+        self,
+        *,
+        emitter_id: str,
+        document_type: str,
+        establishment: str,
+        point: str,
+        number_from: int,
+        number_to: int,
+    ) -> list[int]:
+        """List persisted document numbers inside one numbering range."""
+
+    @abstractmethod
     def list_recent(
         self,
         *,

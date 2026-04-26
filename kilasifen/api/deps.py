@@ -25,6 +25,9 @@ from kilasifen.infrastructure.db.repositories.document_numbering_sequences impor
     SqlAlchemyDocumentNumberingSequenceRepository,
 )
 from kilasifen.infrastructure.db.repositories.events import SqlAlchemyEventRepository
+from kilasifen.infrastructure.db.repositories.inutilized_number_ranges import (
+    SqlAlchemyInutilizedNumberRangeRepository,
+)
 from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
 )
@@ -174,6 +177,21 @@ def get_event_service(
     if not settings.encryption_key:
         raise RuntimeError("KILA_SIFEN_ENCRYPTION_KEY is required for events.")
 
+    webhook_queue = Queue(
+        "webhooks",
+        connection=Redis.from_url(settings.redis_url),
+    )
+    webhook_service = WebhookService(
+        webhook_repository=SqlAlchemyWebhookRepository(session),
+        emitter_repository=SqlAlchemyEmitterRepository(session),
+        job_repository=SqlAlchemyJobRepository(session),
+        secret_store=EncryptedCertificateStore(settings.encryption_key),
+        queue=RqJobQueue(webhook_queue),
+        deliverer=WebhookDeliverer(),
+        database_url=settings.database_url,
+        encryption_key=settings.encryption_key,
+    )
+
     return EventService(
         event_repository=SqlAlchemyEventRepository(session),
         emitter_repository=SqlAlchemyEmitterRepository(session),
@@ -182,6 +200,9 @@ def get_event_service(
         job_repository=SqlAlchemyJobRepository(session),
         certificate_store=EncryptedCertificateStore(settings.encryption_key),
         submission_gateway=PysifenEventGateway(),
+        numbering_repository=SqlAlchemyDocumentNumberingSequenceRepository(session),
+        inutilized_range_repository=SqlAlchemyInutilizedNumberRangeRepository(session),
+        webhook_publisher=webhook_service,
     )
 
 
