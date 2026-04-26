@@ -49,6 +49,12 @@ class JobService:
             raise NotFoundError("jobs.not_found")
         return job
 
+    def get_job_for_emitter(self, *, emitter_id: str, job_id: str) -> Job:
+        job = self.get_job(job_id)
+        if job.emitter_id != emitter_id:
+            raise NotFoundError("jobs.not_found")
+        return job
+
     def get_for_entity(self, entity_type: str, entity_id: str) -> Job | None:
         return self.repository.get_for_entity(entity_type, entity_id)
 

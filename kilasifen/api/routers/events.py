@@ -103,14 +103,15 @@ def inutilize_numbers(
     )
 
 
-@router.get("/events/{event_id}", response_model=SuccessEnvelope)
+@router.get("/emitters/{emitter_id}/events/{event_id}", response_model=SuccessEnvelope)
 def get_event(
+    emitter_id: str,
     event_id: str,
     request: Request,
     _principal=Depends(get_api_key_principal),
     service: EventService = Depends(get_event_service),
 ) -> SuccessEnvelope:
-    event, job = service.get_event(event_id)
+    event, job = service.get_event_for_emitter(emitter_id=emitter_id, event_id=event_id)
     return SuccessEnvelope(
         data={
             "event": EventResponse.model_validate(event).model_dump(mode="json"),

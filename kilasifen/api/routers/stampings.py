@@ -50,16 +50,20 @@ def list_stampings(
 
 
 @router.post(
-    "/stampings/{stamping_id}/activate",
+    "/emitters/{emitter_id}/stampings/{stamping_id}/activate",
     response_model=SuccessEnvelope,
 )
 def activate_stamping(
+    emitter_id: str,
     stamping_id: str,
     request: Request,
     _principal=Depends(get_api_key_principal),
     service: StampingService = Depends(get_stamping_service),
 ) -> SuccessEnvelope:
-    stamping = service.activate_stamping(stamping_id)
+    stamping = service.activate_stamping_for_emitter(
+        emitter_id=emitter_id,
+        stamping_id=stamping_id,
+    )
     return _stamping_envelope(request, stamping)
 
 

@@ -62,16 +62,20 @@ def list_certificates(
 
 
 @router.post(
-    "/certificates/{certificate_id}/activate",
+    "/emitters/{emitter_id}/certificates/{certificate_id}/activate",
     response_model=SuccessEnvelope,
 )
 def activate_certificate(
+    emitter_id: str,
     certificate_id: str,
     request: Request,
     _principal=Depends(get_api_key_principal),
     service: CertificateService = Depends(get_certificate_service),
 ) -> SuccessEnvelope:
-    certificate = service.activate_certificate(certificate_id)
+    certificate = service.activate_certificate_for_emitter(
+        emitter_id=emitter_id,
+        certificate_id=certificate_id,
+    )
     return _certificate_envelope(request, certificate)
 
 

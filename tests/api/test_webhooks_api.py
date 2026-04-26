@@ -108,7 +108,7 @@ def test_replay_creates_delivery_and_job(client: TestClient) -> None:
     endpoint_id = create_response.json()["data"]["webhook_endpoint"]["id"]
 
     replay_response = client.post(
-        f"/v1/webhooks/{endpoint_id}/deliveries/replay",
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
         headers={"X-API-Key": API_KEY},
         json={
             "event_type": "document.approved",
@@ -125,6 +125,180 @@ def test_replay_creates_delivery_and_job(client: TestClient) -> None:
     assert data["job"]["status"] == "queued"
 
 
+def test_get_webhook_delivery_returns_delivery_and_job(client: TestClient) -> None:
+    create_response = client.post(
+        "/v1/emitters/emitter-1/webhooks",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": "https://erp.example.com/hooks/kila",
+            "secret": "top-secret",
+            "event_subscriptions": ["document.approved"],
+            "retry_policy": {"max_attempts": 3},
+        },
+    )
+    endpoint_id = create_response.json()["data"]["webhook_endpoint"]["id"]
+    replay_response = client.post(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "event_type": "document.approved",
+            "payload": {"document_id": "doc-detail"},
+        },
+    )
+    delivery_id = replay_response.json()["data"]["delivery"]["id"]
+
+    response = client.get(
+        f"/v1/emitters/emitter-1/webhook-deliveries/{delivery_id}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["delivery"]["id"] == delivery_id
+    assert data["job"]["related_entity_id"] == delivery_id
+    assert data["job"]["job_type"] == "webhook.deliver"
+
+
+def test_replay_webhook_delivery_returns_not_found_for_other_emitter(client: TestClient) -> None:
+    second_emitter = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-c",
+            "ruc": "80222222",
+            "dv": "1",
+            "legal_name": "EMITTER C SA",
+            "tax_environment": "test",
+            "csc": None,
+            "csc_id": None,
+        },
+    ).json()["data"]["emitter"]["id"]
+    create_response = client.post(
+        f"/v1/emitters/{second_emitter}/webhooks",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": "https://erp.example.com/hooks/foreign",
+            "secret": "top-secret",
+            "event_subscriptions": ["document.approved"],
+            "retry_policy": {"max_attempts": 3},
+        },
+    )
+    endpoint_id = create_response.json()["data"]["webhook_endpoint"]["id"]
+
+    response = client.post(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "event_type": "document.approved",
+            "payload": {"document_id": "doc-other"},
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "webhooks.endpoint_not_found"
+
+
+def test_replay_webhook_delivery_requires_valid_api_key(client: TestClient) -> None:
+    create_response = client.post(
+        "/v1/emitters/emitter-1/webhooks",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": "https://erp.example.com/hooks/auth",
+            "secret": "top-secret",
+            "event_subscriptions": ["document.approved"],
+            "retry_policy": {"max_attempts": 3},
+        },
+    )
+    endpoint_id = create_response.json()["data"]["webhook_endpoint"]["id"]
+
+    response = client.post(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
+        headers={"X-API-Key": "wrong-key"},
+        json={
+            "event_type": "document.approved",
+            "payload": {"document_id": "doc-auth"},
+        },
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "auth.invalid_api_key"
+
+
+def test_get_webhook_delivery_returns_not_found_for_other_emitter(client: TestClient) -> None:
+    second_emitter = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-d",
+            "ruc": "80333333",
+            "dv": "2",
+            "legal_name": "EMITTER D SA",
+            "tax_environment": "test",
+            "csc": None,
+            "csc_id": None,
+        },
+    ).json()["data"]["emitter"]["id"]
+    create_response = client.post(
+        f"/v1/emitters/{second_emitter}/webhooks",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": "https://erp.example.com/hooks/foreign-detail",
+            "secret": "top-secret",
+            "event_subscriptions": ["document.approved"],
+            "retry_policy": {"max_attempts": 3},
+        },
+    )
+    endpoint_id = create_response.json()["data"]["webhook_endpoint"]["id"]
+    replay_response = client.post(
+        f"/v1/emitters/{second_emitter}/webhooks/{endpoint_id}/deliveries/replay",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "event_type": "document.approved",
+            "payload": {"document_id": "doc-foreign-detail"},
+        },
+    )
+    delivery_id = replay_response.json()["data"]["delivery"]["id"]
+
+    response = client.get(
+        f"/v1/emitters/emitter-1/webhook-deliveries/{delivery_id}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "webhooks.delivery_not_found"
+
+
+def test_get_webhook_delivery_requires_valid_api_key(client: TestClient) -> None:
+    create_response = client.post(
+        "/v1/emitters/emitter-1/webhooks",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": "https://erp.example.com/hooks/auth-detail",
+            "secret": "top-secret",
+            "event_subscriptions": ["document.approved"],
+            "retry_policy": {"max_attempts": 3},
+        },
+    )
+    endpoint_id = create_response.json()["data"]["webhook_endpoint"]["id"]
+    replay_response = client.post(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "event_type": "document.approved",
+            "payload": {"document_id": "doc-auth-detail"},
+        },
+    )
+    delivery_id = replay_response.json()["data"]["delivery"]["id"]
+
+    response = client.get(
+        f"/v1/emitters/emitter-1/webhook-deliveries/{delivery_id}",
+        headers={"X-API-Key": "wrong-key"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "auth.invalid_api_key"
+
+
 def test_list_webhook_deliveries_can_filter_by_emitter(client: TestClient) -> None:
     create_a = client.post(
         "/v1/emitters/emitter-1/webhooks",
@@ -138,7 +312,7 @@ def test_list_webhook_deliveries_can_filter_by_emitter(client: TestClient) -> No
     )
     endpoint_a = create_a.json()["data"]["webhook_endpoint"]["id"]
     client.post(
-        f"/v1/webhooks/{endpoint_a}/deliveries/replay",
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_a}/deliveries/replay",
         headers={"X-API-Key": API_KEY},
         json={
             "event_type": "document.approved",
@@ -171,7 +345,7 @@ def test_list_webhook_deliveries_can_filter_by_emitter(client: TestClient) -> No
     )
     endpoint_b = create_b.json()["data"]["webhook_endpoint"]["id"]
     client.post(
-        f"/v1/webhooks/{endpoint_b}/deliveries/replay",
+        f"/v1/emitters/{second_emitter}/webhooks/{endpoint_b}/deliveries/replay",
         headers={"X-API-Key": API_KEY},
         json={
             "event_type": "document.approved",
@@ -205,7 +379,7 @@ def test_list_webhook_deliveries_without_emitter_filter_returns_system_wide_data
     )
     endpoint_a = create_a.json()["data"]["webhook_endpoint"]["id"]
     client.post(
-        f"/v1/webhooks/{endpoint_a}/deliveries/replay",
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_a}/deliveries/replay",
         headers={"X-API-Key": API_KEY},
         json={
             "event_type": "document.approved",
@@ -238,7 +412,7 @@ def test_list_webhook_deliveries_without_emitter_filter_returns_system_wide_data
     )
     endpoint_b = create_b.json()["data"]["webhook_endpoint"]["id"]
     client.post(
-        f"/v1/webhooks/{endpoint_b}/deliveries/replay",
+        f"/v1/emitters/{second_emitter}/webhooks/{endpoint_b}/deliveries/replay",
         headers={"X-API-Key": API_KEY},
         json={
             "event_type": "document.approved",

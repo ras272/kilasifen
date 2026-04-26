@@ -348,6 +348,12 @@ class EventService:
         job = self.job_service.get_for_entity("event", event.id)
         return event, job
 
+    def get_event_for_emitter(self, *, emitter_id: str, event_id: str) -> tuple[Event, Job | None]:
+        event, job = self.get_event(event_id)
+        if event.emitter_id != emitter_id:
+            raise NotFoundError("events.not_found")
+        return event, job
+
     def _create_and_submit_event(
         self,
         *,

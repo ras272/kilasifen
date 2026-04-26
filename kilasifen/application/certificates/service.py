@@ -90,6 +90,17 @@ class CertificateService:
             raise ConflictError("certificates.activation_failed")
         return activated
 
+    def activate_certificate_for_emitter(
+        self,
+        *,
+        emitter_id: str,
+        certificate_id: str,
+    ) -> Certificate:
+        target = self.certificate_repository.get(certificate_id)
+        if target is None or target.emitter_id != emitter_id:
+            raise NotFoundError("certificates.not_found")
+        return self.activate_certificate(certificate_id)
+
     def _extract_metadata(self, p12_bytes: bytes, password: str) -> dict[str, object]:
         _private_key, certificate, _extra = pkcs12.load_key_and_certificates(
             p12_bytes,

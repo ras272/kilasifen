@@ -274,6 +274,85 @@ def test_list_documents_returns_only_requested_emitter_documents(
     assert body["documents"][0]["document"]["emitter_id"] == emitter_id
 
 
+def test_get_document_returns_document_and_associated_job(
+    client: TestClient,
+    emitter_id: str,
+) -> None:
+    created = client.post(
+        f"/v1/emitters/{emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-doc-detail",
+            "idempotency_key": "idem-detail",
+            "document_type": "factura",
+            "payload": {"generated_xml": "<rDE><DE Id='DETAIL'/></rDE>", "doc_id": "DETAIL"},
+        },
+    )
+    document_id = created.json()["data"]["document"]["id"]
+
+    response = client.get(
+        f"/v1/emitters/{emitter_id}/documents/{document_id}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 200
+    body = response.json()["data"]
+    assert body["document"]["id"] == document_id
+    assert body["job"]["related_entity_id"] == document_id
+    assert body["job"]["job_type"] == "document.emit"
+
+
+def test_get_document_returns_not_found_for_other_emitter_document(
+    client: TestClient,
+    emitter_id: str,
+    second_emitter_id: str,
+) -> None:
+    created = client.post(
+        f"/v1/emitters/{second_emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-doc-detail-b",
+            "idempotency_key": "idem-detail-b",
+            "document_type": "factura",
+            "payload": {"generated_xml": "<rDE><DE Id='DETAILB'/></rDE>", "doc_id": "DETAILB"},
+        },
+    )
+    document_id = created.json()["data"]["document"]["id"]
+
+    response = client.get(
+        f"/v1/emitters/{emitter_id}/documents/{document_id}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "documents.not_found"
+
+
+def test_get_document_requires_valid_api_key(
+    client: TestClient,
+    emitter_id: str,
+) -> None:
+    created = client.post(
+        f"/v1/emitters/{emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-doc-auth",
+            "idempotency_key": "idem-auth",
+            "document_type": "factura",
+            "payload": {"generated_xml": "<rDE><DE Id='AUTH'/></rDE>", "doc_id": "AUTH"},
+        },
+    )
+    document_id = created.json()["data"]["document"]["id"]
+
+    response = client.get(
+        f"/v1/emitters/{emitter_id}/documents/{document_id}",
+        headers={"X-API-Key": "wrong-key"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "auth.invalid_api_key"
+
+
 def test_get_document_xml_returns_signed_or_generated_xml(
     client: TestClient,
     emitter_id: str,

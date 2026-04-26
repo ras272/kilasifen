@@ -59,6 +59,25 @@ def emitter_id(client: TestClient) -> str:
     return response.json()["data"]["emitter"]["id"]
 
 
+@pytest.fixture
+def second_emitter_id(client: TestClient) -> str:
+    response = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-otro",
+            "ruc": "80111111",
+            "dv": "9",
+            "legal_name": "OTRO EMISOR SA",
+            "tax_environment": "test",
+            "csc": None,
+            "csc_id": None,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["data"]["emitter"]["id"]
+
+
 def test_upload_list_and_activate_certificate(
     client: TestClient,
     emitter_id: str,
@@ -99,7 +118,7 @@ def test_upload_list_and_activate_certificate(
     assert "encrypted_password" not in listed[0]
 
     activate_response = client.post(
-        f"/v1/certificates/{certificate_id}/activate",
+        f"/v1/emitters/{emitter_id}/certificates/{certificate_id}/activate",
         headers={"X-API-Key": API_KEY},
     )
 
@@ -107,3 +126,56 @@ def test_upload_list_and_activate_certificate(
     activated = activate_response.json()["data"]["certificate"]
     assert activated["id"] == certificate_id
     assert activated["is_active"] is True
+
+
+def test_activate_certificate_returns_not_found_for_other_emitter(
+    client: TestClient,
+    emitter_id: str,
+    second_emitter_id: str,
+) -> None:
+    cert_path = Path(__file__).resolve().parents[1] / "test_cert.pfx"
+    with cert_path.open("rb") as certificate_file:
+        upload_response = client.post(
+            f"/v1/emitters/{second_emitter_id}/certificates",
+            headers={"X-API-Key": API_KEY},
+            data={
+                "logical_name": "secondary",
+                "password": CERT_PASSWORD,
+            },
+            files={"file": ("test_cert.pfx", certificate_file, "application/x-pkcs12")},
+        )
+
+    certificate_id = upload_response.json()["data"]["certificate"]["id"]
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/certificates/{certificate_id}/activate",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "certificates.not_found"
+
+
+def test_activate_certificate_requires_valid_api_key(
+    client: TestClient,
+    emitter_id: str,
+) -> None:
+    cert_path = Path(__file__).resolve().parents[1] / "test_cert.pfx"
+    with cert_path.open("rb") as certificate_file:
+        upload_response = client.post(
+            f"/v1/emitters/{emitter_id}/certificates",
+            headers={"X-API-Key": API_KEY},
+            data={
+                "logical_name": "auth-test",
+                "password": CERT_PASSWORD,
+            },
+            files={"file": ("test_cert.pfx", certificate_file, "application/x-pkcs12")},
+        )
+
+    certificate_id = upload_response.json()["data"]["certificate"]["id"]
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/certificates/{certificate_id}/activate",
+        headers={"X-API-Key": "wrong-key"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "auth.invalid_api_key"

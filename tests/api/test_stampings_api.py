@@ -58,6 +58,25 @@ def emitter_id(client: TestClient) -> str:
     return response.json()["data"]["emitter"]["id"]
 
 
+@pytest.fixture
+def second_emitter_id(client: TestClient) -> str:
+    response = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-otro",
+            "ruc": "80111111",
+            "dv": "9",
+            "legal_name": "OTRO EMISOR SA",
+            "tax_environment": "test",
+            "csc": None,
+            "csc_id": None,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["data"]["emitter"]["id"]
+
+
 def test_create_activate_and_list_stampings(client: TestClient, emitter_id: str) -> None:
     create_response = client.post(
         f"/v1/emitters/{emitter_id}/stampings",
@@ -77,7 +96,7 @@ def test_create_activate_and_list_stampings(client: TestClient, emitter_id: str)
     stamping_id = created["id"]
 
     activate_response = client.post(
-        f"/v1/stampings/{stamping_id}/activate",
+        f"/v1/emitters/{emitter_id}/stampings/{stamping_id}/activate",
         headers={"X-API-Key": API_KEY},
     )
 
@@ -95,6 +114,55 @@ def test_create_activate_and_list_stampings(client: TestClient, emitter_id: str)
     stampings = list_response.json()["data"]["stampings"]
     assert len(stampings) == 1
     assert stampings[0]["id"] == stamping_id
+
+
+def test_activate_stamping_returns_not_found_for_other_emitter(
+    client: TestClient,
+    emitter_id: str,
+    second_emitter_id: str,
+) -> None:
+    create_response = client.post(
+        f"/v1/emitters/{second_emitter_id}/stampings",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "number": "90000001",
+            "start_date": "2024-03-11",
+            "end_date": None,
+        },
+    )
+    stamping_id = create_response.json()["data"]["stamping"]["id"]
+
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/stampings/{stamping_id}/activate",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "stampings.not_found"
+
+
+def test_activate_stamping_requires_valid_api_key(
+    client: TestClient,
+    emitter_id: str,
+) -> None:
+    create_response = client.post(
+        f"/v1/emitters/{emitter_id}/stampings",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "number": "80024135",
+            "start_date": "2024-03-11",
+            "end_date": None,
+        },
+    )
+    stamping_id = create_response.json()["data"]["stamping"]["id"]
+
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/stampings/{stamping_id}/activate",
+        headers={"X-API-Key": "wrong-key"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "auth.invalid_api_key"
 
 
 def test_create_stamping_rejects_invalid_date_window(

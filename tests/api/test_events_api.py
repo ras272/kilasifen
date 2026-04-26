@@ -137,7 +137,7 @@ def test_get_event_returns_event_and_job(client: TestClient) -> None:
     event_id = create_response.json()["data"]["event"]["id"]
 
     response = client.get(
-        f"/v1/events/{event_id}",
+        f"/v1/emitters/emitter-1/events/{event_id}",
         headers={"X-API-Key": API_KEY},
     )
 
@@ -146,6 +146,52 @@ def test_get_event_returns_event_and_job(client: TestClient) -> None:
     assert body["event"]["id"] == event_id
     assert body["job"]["related_entity_id"] == event_id
     assert body["job"]["job_type"] == "event.submit"
+
+
+def test_get_event_returns_not_found_for_other_emitter(client: TestClient) -> None:
+    create_response = client.post(
+        "/v1/emitters/emitter-2/events",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "document_id": "doc-emitter-2",
+            "event_type": "cancelacion",
+            "payload": {
+                "event_xml": "<gGroupGesEve xmlns='http://ekuatia.set.gov.py/sifen/xsd' />"
+            },
+        },
+    )
+    event_id = create_response.json()["data"]["event"]["id"]
+
+    response = client.get(
+        f"/v1/emitters/emitter-1/events/{event_id}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "events.not_found"
+
+
+def test_get_event_requires_valid_api_key(client: TestClient) -> None:
+    create_response = client.post(
+        "/v1/emitters/emitter-1/events",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "document_id": "doc-fe-recent",
+            "event_type": "cancelacion",
+            "payload": {
+                "event_xml": "<gGroupGesEve xmlns='http://ekuatia.set.gov.py/sifen/xsd' />"
+            },
+        },
+    )
+    event_id = create_response.json()["data"]["event"]["id"]
+
+    response = client.get(
+        f"/v1/emitters/emitter-1/events/{event_id}",
+        headers={"X-API-Key": "wrong-key"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "auth.invalid_api_key"
 
 
 def test_cancel_factura_within_48h_succeeds_and_publishes_webhook(

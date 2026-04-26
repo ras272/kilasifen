@@ -113,6 +113,28 @@ class WebhookService:
         self._enqueue_if_configured(job)
         return saved_delivery, job
 
+    def replay_delivery_for_emitter(
+        self,
+        *,
+        emitter_id: str,
+        endpoint_id: str,
+        event_type: str,
+        payload: dict | None,
+    ) -> tuple[WebhookDelivery, Job]:
+        endpoint = self.webhook_repository.get_endpoint(endpoint_id)
+        if endpoint is None or endpoint.emitter_id != emitter_id:
+            raise NotFoundError("webhooks.endpoint_not_found")
+        if not endpoint.is_active:
+            raise ConflictError("webhooks.endpoint_inactive")
+
+        saved_delivery, job = self._create_delivery_job(
+            endpoint=endpoint,
+            event_type=event_type,
+            payload=payload,
+        )
+        self._enqueue_if_configured(job)
+        return saved_delivery, job
+
     def publish_document_status(self, *, document: Document) -> list[tuple[WebhookDelivery, Job]]:
         """Publish one normalized document-status event to subscribed endpoints."""
 
@@ -165,6 +187,18 @@ class WebhookService:
         if delivery is None:
             raise NotFoundError("webhooks.delivery_not_found")
         job = self.job_service.get_for_entity("webhook_delivery", delivery.id)
+        return delivery, job
+
+    def get_delivery_for_emitter(
+        self,
+        *,
+        emitter_id: str,
+        delivery_id: str,
+    ) -> tuple[WebhookDelivery, Job | None]:
+        delivery, job = self.get_delivery(delivery_id)
+        endpoint = self.webhook_repository.get_endpoint(delivery.webhook_endpoint_id)
+        if endpoint is None or endpoint.emitter_id != emitter_id:
+            raise NotFoundError("webhooks.delivery_not_found")
         return delivery, job
 
     def list_deliveries(

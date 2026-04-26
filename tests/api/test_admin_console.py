@@ -120,7 +120,7 @@ def seeded_ids(client: TestClient) -> dict[str, str]:
         )
     backup_certificate_id = upload_backup.json()["data"]["certificate"]["id"]
 
-    client.post(f"/v1/certificates/{certificate_id}/activate", headers=headers)
+    client.post(f"/v1/emitters/{emitter_id}/certificates/{certificate_id}/activate", headers=headers)
 
     stamping_response = client.post(
         f"/v1/emitters/{emitter_id}/stampings",
@@ -132,7 +132,7 @@ def seeded_ids(client: TestClient) -> dict[str, str]:
         },
     )
     stamping_id = stamping_response.json()["data"]["stamping"]["id"]
-    client.post(f"/v1/stampings/{stamping_id}/activate", headers=headers)
+    client.post(f"/v1/emitters/{emitter_id}/stampings/{stamping_id}/activate", headers=headers)
 
     document_response = client.post(
         f"/v1/emitters/{emitter_id}/documents",
@@ -255,7 +255,10 @@ def test_admin_retry_job_requeues_document_job(
     assert response.status_code == 303
     assert response.headers["location"] == "/admin/jobs"
 
-    job_response = client.get(f"/v1/jobs/{document_job_id}", headers=headers)
+    job_response = client.get(
+        f"/v1/emitters/{seeded_ids['emitter_id']}/jobs/{document_job_id}",
+        headers=headers,
+    )
     assert job_response.status_code == 200
     assert job_response.json()["data"]["job"]["status"] == "queued"
 
@@ -280,7 +283,8 @@ def _seed_webhook_failure(client: TestClient, emitter_id: str) -> tuple[str, str
             event_subscriptions=["document.approved"],
             retry_policy={"max_attempts": 3},
         )
-        delivery, job = service.replay_delivery(
+        delivery, job = service.replay_delivery_for_emitter(
+            emitter_id=emitter_id,
             endpoint_id=endpoint.id,
             event_type="document.approved",
             payload={"document_id": "doc-admin-1"},

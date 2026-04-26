@@ -76,6 +76,17 @@ class StampingService:
             raise ConflictError("stampings.activation_failed")
         return activated
 
+    def activate_stamping_for_emitter(
+        self,
+        *,
+        emitter_id: str,
+        stamping_id: str,
+    ) -> Stamping:
+        target = self.stamping_repository.get(stamping_id)
+        if target is None or target.emitter_id != emitter_id:
+            raise NotFoundError("stampings.not_found")
+        return self.activate_stamping(stamping_id)
+
 
 def _now() -> datetime:
     return datetime.now(UTC)

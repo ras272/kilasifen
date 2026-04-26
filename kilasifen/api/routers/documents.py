@@ -90,15 +90,16 @@ def create_nota_credito_document(
     )
 
 
-@router.get("/documents/{document_id}", response_model=SuccessEnvelope)
+@router.get("/emitters/{emitter_id}/documents/{document_id}", response_model=SuccessEnvelope)
 def get_document(
+    emitter_id: str,
     document_id: str,
     request: Request,
     _principal=Depends(get_api_key_principal),
     service: DocumentService = Depends(get_document_service),
     job_service: JobService = Depends(get_job_service),
 ) -> SuccessEnvelope:
-    document = service.get_document(document_id)
+    document = service.get_document_for_emitter(emitter_id=emitter_id, document_id=document_id)
     job = job_service.get_for_entity("document", document.id)
     return SuccessEnvelope(
         data={

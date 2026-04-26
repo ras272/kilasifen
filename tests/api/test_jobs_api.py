@@ -40,7 +40,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClie
 
 
 @pytest.fixture
-def created_job_id(client: TestClient) -> str:
+def emitter_id(client: TestClient) -> str:
     emitter_response = client.post(
         "/v1/emitters",
         headers={"X-API-Key": API_KEY},
@@ -54,8 +54,29 @@ def created_job_id(client: TestClient) -> str:
             "csc_id": None,
         },
     )
-    emitter_id = emitter_response.json()["data"]["emitter"]["id"]
+    return emitter_response.json()["data"]["emitter"]["id"]
 
+
+@pytest.fixture
+def second_emitter_id(client: TestClient) -> str:
+    emitter_response = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-otro",
+            "ruc": "80111111",
+            "dv": "9",
+            "legal_name": "OTRO EMISOR SA",
+            "tax_environment": "test",
+            "csc": None,
+            "csc_id": None,
+        },
+    )
+    return emitter_response.json()["data"]["emitter"]["id"]
+
+
+@pytest.fixture
+def created_job_id(client: TestClient, emitter_id: str) -> str:
     document_response = client.post(
         f"/v1/emitters/{emitter_id}/documents",
         headers={"X-API-Key": API_KEY},
@@ -69,9 +90,13 @@ def created_job_id(client: TestClient) -> str:
     return document_response.json()["data"]["job"]["id"]
 
 
-def test_get_job_returns_detail(client: TestClient, created_job_id: str) -> None:
+def test_get_job_returns_detail(
+    client: TestClient,
+    emitter_id: str,
+    created_job_id: str,
+) -> None:
     response = client.get(
-        f"/v1/jobs/{created_job_id}",
+        f"/v1/emitters/{emitter_id}/jobs/{created_job_id}",
         headers={"X-API-Key": API_KEY},
     )
 
@@ -80,6 +105,46 @@ def test_get_job_returns_detail(client: TestClient, created_job_id: str) -> None
     assert job["id"] == created_job_id
     assert job["job_type"] == "document.emit"
     assert job["status"] == "queued"
+
+
+def test_get_job_returns_not_found_for_other_emitter(
+    client: TestClient,
+    emitter_id: str,
+    second_emitter_id: str,
+) -> None:
+    created = client.post(
+        f"/v1/emitters/{second_emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-doc-foreign",
+            "idempotency_key": "idem-foreign",
+            "document_type": "factura",
+            "payload": {"generated_xml": "<rDE><DE Id='FOREIGN'/></rDE>", "doc_id": "FOREIGN"},
+        },
+    )
+    foreign_job_id = created.json()["data"]["job"]["id"]
+
+    response = client.get(
+        f"/v1/emitters/{emitter_id}/jobs/{foreign_job_id}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "jobs.not_found"
+
+
+def test_get_job_requires_valid_api_key(
+    client: TestClient,
+    emitter_id: str,
+    created_job_id: str,
+) -> None:
+    response = client.get(
+        f"/v1/emitters/{emitter_id}/jobs/{created_job_id}",
+        headers={"X-API-Key": "wrong-key"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "auth.invalid_api_key"
 
 
 def test_list_jobs_returns_recent_jobs(client: TestClient, created_job_id: str) -> None:

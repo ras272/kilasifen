@@ -70,18 +70,20 @@ def list_webhook_endpoints(
 
 
 @router.post(
-    "/webhooks/{endpoint_id}/deliveries/replay",
+    "/emitters/{emitter_id}/webhooks/{endpoint_id}/deliveries/replay",
     response_model=SuccessEnvelope,
     status_code=status.HTTP_201_CREATED,
 )
 def replay_webhook_delivery(
+    emitter_id: str,
     endpoint_id: str,
     payload: WebhookReplayRequest,
     request: Request,
     _principal=Depends(get_api_key_principal),
     service: WebhookService = Depends(get_webhook_service),
 ) -> SuccessEnvelope:
-    delivery, job = service.replay_delivery(
+    delivery, job = service.replay_delivery_for_emitter(
+        emitter_id=emitter_id,
         endpoint_id=endpoint_id,
         event_type=payload.event_type,
         payload=payload.payload,
@@ -95,14 +97,18 @@ def replay_webhook_delivery(
     )
 
 
-@router.get("/webhook-deliveries/{delivery_id}", response_model=SuccessEnvelope)
+@router.get("/emitters/{emitter_id}/webhook-deliveries/{delivery_id}", response_model=SuccessEnvelope)
 def get_webhook_delivery(
+    emitter_id: str,
     delivery_id: str,
     request: Request,
     _principal=Depends(get_api_key_principal),
     service: WebhookService = Depends(get_webhook_service),
 ) -> SuccessEnvelope:
-    delivery, job = service.get_delivery(delivery_id)
+    delivery, job = service.get_delivery_for_emitter(
+        emitter_id=emitter_id,
+        delivery_id=delivery_id,
+    )
     return SuccessEnvelope(
         data={
             "delivery": WebhookDeliveryResponse.model_validate(delivery).model_dump(mode="json"),

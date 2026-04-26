@@ -10,14 +10,15 @@ from kilasifen.application.jobs.service import JobService
 router = APIRouter(tags=["jobs"])
 
 
-@router.get("/jobs/{job_id}", response_model=SuccessEnvelope)
+@router.get("/emitters/{emitter_id}/jobs/{job_id}", response_model=SuccessEnvelope)
 def get_job(
+    emitter_id: str,
     job_id: str,
     request: Request,
     _principal=Depends(get_api_key_principal),
     service: JobService = Depends(get_job_service),
 ) -> SuccessEnvelope:
-    job = service.get_job(job_id)
+    job = service.get_job_for_emitter(emitter_id=emitter_id, job_id=job_id)
     return SuccessEnvelope(
         data={"job": JobResponse.model_validate(job).model_dump(mode="json")},
         correlation_id=request.state.correlation_id,
