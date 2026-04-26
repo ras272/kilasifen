@@ -95,10 +95,15 @@ class Pkcs12Signer:
                 signature = signed.find(
                     ".//{http://www.w3.org/2000/09/xmldsig#}Signature"
                 )
+                if signature is None:
+                    signature = signed.find(".//Signature")
                 if element is not None and signature is not None:
                     parent = element.getparent()
                     if parent is not None:
-                        parent.append(signature)
+                        signature_parent = signature.getparent()
+                        if signature_parent is not None:
+                            signature_parent.remove(signature)
+                        parent.insert(parent.index(element) + 1, signature)
 
             return etree.tostring(signed, encoding="unicode")
         except Exception as exc:

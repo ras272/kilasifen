@@ -34,9 +34,21 @@ class FacturaContractPayload(DocumentTransportPayload):
     punto: int | str | None = None
     numero: int | str | None = None
     fecha: str | None = None
+    fecha_emision: str | None = None
+    moneda: str = "PYG"
+    tipo_cambio: str | float | int | None = None
+    condicion_tipo_cambio: int | str | None = None
+    tipo_transaccion: int | str | None = None
+    tipo_impuesto: int | str | None = None
+    indicador_presencia: int | str | None = None
+    tipo_contribuyente: int | str | None = None
+    codigo_seguridad: int | str | None = None
+    emisor: dict[str, Any] | None = None
     cliente: dict[str, Any] | None = None
+    condicion_operacion: dict[str, Any] | None = None
     condicion: dict[str, Any] | None = None
     items: list[dict[str, Any]] | None = None
+    documento_asociado: dict[str, Any] | None = None
     factura: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
 
@@ -44,8 +56,8 @@ class FacturaContractPayload(DocumentTransportPayload):
     def validate_factura_payload(self) -> "FacturaContractPayload":
         if self.has_xml_payload():
             return self
-        if not isinstance(self.cliente, dict) or not self.cliente.get("ruc"):
-            raise ValueError("cliente.ruc is required when generated_xml/signed_xml is missing")
+        if not isinstance(self.cliente, dict):
+            raise ValueError("cliente is required when generated_xml/signed_xml is missing")
         if not isinstance(self.items, list) or not self.items:
             raise ValueError("items is required when generated_xml/signed_xml is missing")
         return self
@@ -59,9 +71,20 @@ class NotaCreditoContractPayload(DocumentTransportPayload):
     punto: int | str | None = None
     numero: int | str | None = None
     fecha: str | None = None
+    fecha_emision: str | None = None
+    moneda: str = "PYG"
+    tipo_cambio: str | float | int | None = None
+    condicion_tipo_cambio: int | str | None = None
+    tipo_transaccion: int | str | None = None
+    tipo_impuesto: int | str | None = None
+    tipo_contribuyente: int | str | None = None
+    codigo_seguridad: int | str | None = None
+    emisor: dict[str, Any] | None = None
     cliente: dict[str, Any] | None = None
+    condicion_operacion: dict[str, Any] | None = None
     condicion: dict[str, Any] | None = None
     items: list[dict[str, Any]] | None = None
+    motivo_emision: int | str | None = None
     documento_asociado: dict[str, Any] | None = None
     nota_credito: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
@@ -70,16 +93,19 @@ class NotaCreditoContractPayload(DocumentTransportPayload):
     def validate_nota_credito_payload(self) -> "NotaCreditoContractPayload":
         if self.has_xml_payload():
             return self
-        if not isinstance(self.cliente, dict) or not self.cliente.get("ruc"):
-            raise ValueError("cliente.ruc is required when generated_xml/signed_xml is missing")
+        if not isinstance(self.cliente, dict):
+            raise ValueError("cliente is required when generated_xml/signed_xml is missing")
         if not isinstance(self.items, list) or not self.items:
             raise ValueError("items is required when generated_xml/signed_xml is missing")
-        if (
-            not isinstance(self.documento_asociado, dict)
-            or not self.documento_asociado.get("cdc")
-        ):
+        if not isinstance(self.documento_asociado, dict):
             raise ValueError(
-                "documento_asociado.cdc is required when generated_xml/signed_xml is missing"
+                "documento_asociado is required when generated_xml/signed_xml is missing"
+            )
+        tipo_documento_asociado = self.documento_asociado.get("tipo")
+        has_cdc = bool(self.documento_asociado.get("cdc"))
+        if tipo_documento_asociado in {None, 1, "1"} and not has_cdc:
+            raise ValueError(
+                "documento_asociado.cdc is required when tipo is 1/electronico"
             )
         return self
 

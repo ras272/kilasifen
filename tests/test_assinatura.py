@@ -226,3 +226,23 @@ class TestSignXml:
             xml, cert_data, "test1234", sample_rde.DE.Id
         )
         assert "SignatureValue" in signed
+
+    def test_sign_xml_keeps_signature_before_gcamfufd(self, cert_data):
+        """Mantiene Signature antes de gCamFuFD para cumplir DE_v150.xsd."""
+        from lxml import etree
+
+        from pysifen.assinatura import sign_xml
+
+        ns = "http://ekuatia.set.gov.py/sifen/xsd"
+        doc_id = "01800241355001001000000122026042411234567899"
+        xml = (
+            f'<rDE xmlns="{ns}"><dVerFor>150</dVerFor>'
+            f'<DE Id="{doc_id}"><gTimb><iTiDE>1</iTiDE></gTimb></DE>'
+            "<gCamFuFD><dCarQR>https://example.test/qr</dCarQR></gCamFuFD>"
+            "</rDE>"
+        )
+
+        signed = sign_xml(xml, cert_data, "test1234", doc_id)
+        root = etree.fromstring(signed.encode())
+        child_names = [etree.QName(child).localname for child in root]
+        assert child_names == ["dVerFor", "DE", "Signature", "gCamFuFD"]
