@@ -8,6 +8,7 @@ from rq import Queue
 from sqlalchemy.orm import Session
 
 from kilasifen.application.admin.service import AdminConsoleService
+from kilasifen.application.documents.numbering_service import DocumentNumberingService
 from kilasifen.application.documents.service import DocumentService
 from kilasifen.application.emitters.health import EmitterHealthService
 from kilasifen.application.events.service import EventService
@@ -20,6 +21,9 @@ from kilasifen.application.emitters.service import EmitterService
 from kilasifen.config import get_settings
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.repositories.documents import SqlAlchemyDocumentRepository
+from kilasifen.infrastructure.db.repositories.document_numbering_sequences import (
+    SqlAlchemyDocumentNumberingSequenceRepository,
+)
 from kilasifen.infrastructure.db.repositories.events import SqlAlchemyEventRepository
 from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
@@ -123,6 +127,7 @@ def get_document_service(
     settings = get_settings()
     emitter_repository = SqlAlchemyEmitterRepository(session)
     document_repository = SqlAlchemyDocumentRepository(session)
+    numbering_repository = SqlAlchemyDocumentNumberingSequenceRepository(session)
     job_service = JobService(SqlAlchemyJobRepository(session))
     queue_adapter = None
     if settings.document_auto_enqueue and settings.encryption_key:
@@ -135,6 +140,7 @@ def get_document_service(
         document_repository=document_repository,
         emitter_repository=emitter_repository,
         job_service=job_service,
+        numbering_service=DocumentNumberingService(numbering_repository),
         queue=queue_adapter,
         database_url=settings.database_url,
         encryption_key=settings.encryption_key,

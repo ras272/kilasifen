@@ -15,3 +15,7 @@ class NotFoundError(DomainError):
 
 class ConflictError(DomainError):
     """Raised when a uniqueness or state conflict occurs."""
+
+
+class ServiceUnavailableError(DomainError):
+    """Raised when a transient infrastructure dependency is unavailable."""

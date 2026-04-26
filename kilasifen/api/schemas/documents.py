@@ -44,8 +44,6 @@ class FacturaContractPayload(DocumentTransportPayload):
     def validate_factura_payload(self) -> "FacturaContractPayload":
         if self.has_xml_payload():
             return self
-        if self.numero is None:
-            raise ValueError("numero is required when generated_xml/signed_xml is missing")
         if not isinstance(self.cliente, dict) or not self.cliente.get("ruc"):
             raise ValueError("cliente.ruc is required when generated_xml/signed_xml is missing")
         if not isinstance(self.items, list) or not self.items:
@@ -72,8 +70,6 @@ class NotaCreditoContractPayload(DocumentTransportPayload):
     def validate_nota_credito_payload(self) -> "NotaCreditoContractPayload":
         if self.has_xml_payload():
             return self
-        if self.numero is None:
-            raise ValueError("numero is required when generated_xml/signed_xml is missing")
         if not isinstance(self.cliente, dict) or not self.cliente.get("ruc"):
             raise ValueError("cliente.ruc is required when generated_xml/signed_xml is missing")
         if not isinstance(self.items, list) or not self.items:
@@ -107,8 +103,6 @@ class ReciboContractPayload(DocumentTransportPayload):
     def validate_recibo_payload(self) -> "ReciboContractPayload":
         if self.has_xml_payload():
             return self
-        if self.numero is None:
-            raise ValueError("numero is required when generated_xml/signed_xml is missing")
         return self
 
 
@@ -159,5 +153,8 @@ class DocumentResponse(BaseModel):
     sifen_status: str | None
     sifen_result_code: str | None
     sifen_result_message: str | None
+    establishment: str | None
+    point: str | None
+    document_number: int | None
     created_at: datetime
     updated_at: datetime

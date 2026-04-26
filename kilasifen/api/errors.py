@@ -4,7 +4,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from kilasifen.api.schemas.common import ErrorEnvelope, ErrorPayload
-from kilasifen.domain.common.errors import ConflictError, NotFoundError
+from kilasifen.domain.common.errors import ConflictError, NotFoundError, ServiceUnavailableError
 
 
 class ApiError(Exception):
@@ -63,5 +63,22 @@ async def conflict_error_handler(
             code=str(exc),
             message="Resource conflict.",
             category="conflict",
+        ),
+    )
+
+
+async def service_unavailable_error_handler(
+    request: Request,
+    exc: ServiceUnavailableError,
+) -> JSONResponse:
+    """Serialize structured service-unavailable errors."""
+
+    return await api_error_handler(
+        request,
+        ApiError(
+            status_code=503,
+            code=str(exc),
+            message="Service temporarily unavailable. Retry later.",
+            category="service_unavailable",
         ),
     )

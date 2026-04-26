@@ -103,3 +103,6 @@ select = ["E", "F", "I", "W"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "requires_postgres: marks tests that require a PostgreSQL backend",
+]

@@ -1,15 +1,25 @@
 """Document application service layer."""
 
+import logging
 from typing import Protocol
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from kilasifen.application.documents.numbering_service import DocumentNumberingService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.domain.common.errors import ConflictError, NotFoundError
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.jobs.models import Job
 from kilasifen.repositories.documents import DocumentRepository
 from kilasifen.repositories.emitters import EmitterRepository
+
+logger = logging.getLogger(__name__)
+
+_NUMBERED_TYPED_CONTRACTS = {
+    "factura": "factura_v1",
+    "nota_credito": "nota_credito_v1",
+    "recibo": "recibo_v1",
+}
 
 
 class DocumentJobQueue(Protocol):
@@ -28,6 +38,7 @@ class DocumentService:
         document_repository: DocumentRepository,
         emitter_repository: EmitterRepository,
         job_service: JobService,
+        numbering_service: DocumentNumberingService | None = None,
         queue: DocumentJobQueue | None = None,
         database_url: str | None = None,
         encryption_key: str | None = None,
@@ -35,6 +46,7 @@ class DocumentService:
         self.document_repository = document_repository
         self.emitter_repository = emitter_repository
         self.job_service = job_service
+        self.numbering_service = numbering_service
         self.queue = queue
         self.database_url = database_url
         self.encryption_key = encryption_key
@@ -70,6 +82,17 @@ class DocumentService:
             if existing_external is not None:
                 raise ConflictError("documents.external_id_conflict")
 
+        (
+            normalized_payload_snapshot,
+            establishment,
+            point,
+            document_number,
+        ) = self._prepare_numbered_payload(
+            emitter_id=emitter_id,
+            document_type=document_type,
+            payload_snapshot=payload_snapshot,
+        )
+
         timestamp = _now()
         document = Document(
             id=str(uuid4()),
@@ -77,7 +100,7 @@ class DocumentService:
             external_id=external_id,
             idempotency_key=idempotency_key,
             document_type=document_type,
-            payload_snapshot=payload_snapshot,
+            payload_snapshot=normalized_payload_snapshot,
             generated_xml=None,
             signed_xml=None,
             sifen_request_xml=None,
@@ -92,6 +115,9 @@ class DocumentService:
             sifen_result_message=None,
             created_at=timestamp,
             updated_at=timestamp,
+            establishment=establishment,
+            point=point,
+            document_number=document_number,
         )
         saved_document = self.document_repository.save(document)
         job = self.job_service.create_job(
@@ -163,6 +189,74 @@ class DocumentService:
             encryption_key=self.encryption_key,
         )
 
+    def _prepare_numbered_payload(
+        self,
+        *,
+        emitter_id: str,
+        document_type: str,
+        payload_snapshot: dict | None,
+    ) -> tuple[dict | None, str | None, str | None, int | None]:
+        if not isinstance(payload_snapshot, dict):
+            return payload_snapshot, None, None, None
+        if self.numbering_service is None:
+            return payload_snapshot, None, None, None
+
+        typed_contract = payload_snapshot.get("typed_contract")
+        if not isinstance(typed_contract, dict):
+            return payload_snapshot, None, None, None
+
+        expected_contract = _NUMBERED_TYPED_CONTRACTS.get(document_type)
+        contract = str(typed_contract.get("contract") or "").strip()
+        if expected_contract is None or contract != expected_contract:
+            return payload_snapshot, None, None, None
+
+        typed_payload = typed_contract.get("payload")
+        if not isinstance(typed_payload, dict):
+            return payload_snapshot, None, None, None
+
+        establishment = _normalize_three_digits(typed_payload.get("establecimiento"), default="001")
+        point = _normalize_three_digits(typed_payload.get("punto"), default="001")
+
+        if typed_payload.get("numero") is not None:
+            logger.warning(
+                "documents.numbering.client_number_ignored",
+                extra={
+                    "emitter_id": emitter_id,
+                    "document_type": document_type,
+                    "establishment": establishment,
+                    "point": point,
+                    "client_number": typed_payload.get("numero"),
+                },
+            )
+
+        next_number = self.numbering_service.reserve_next_number(
+            emitter_id=emitter_id,
+            establishment=establishment,
+            point=point,
+            document_type=document_type,
+        )
+
+        updated_typed_payload = dict(typed_payload)
+        updated_typed_payload["establecimiento"] = establishment
+        updated_typed_payload["punto"] = point
+        updated_typed_payload["numero"] = next_number
+
+        updated_typed_contract = dict(typed_contract)
+        updated_typed_contract["payload"] = updated_typed_payload
+
+        normalized_payload = dict(payload_snapshot)
+        normalized_payload["typed_contract"] = updated_typed_contract
+        normalized_payload["generated_xml"] = updated_typed_payload.get("generated_xml")
+        normalized_payload["signed_xml"] = updated_typed_payload.get("signed_xml")
+        normalized_payload["doc_id"] = updated_typed_payload.get("doc_id")
+        return normalized_payload, establishment, point, next_number
+
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _normalize_three_digits(value, *, default: str) -> str:
+    if value is None:
+        value = default
+    return f"{int(str(value)):03d}"

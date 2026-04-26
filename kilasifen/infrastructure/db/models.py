@@ -47,6 +47,9 @@ class EmitterModel(TimestampMixin, Base):
     certificates: Mapped[list["CertificateModel"]] = relationship(back_populates="emitter")
     stampings: Mapped[list["StampingModel"]] = relationship(back_populates="emitter")
     documents: Mapped[list["DocumentModel"]] = relationship(back_populates="emitter")
+    numbering_sequences: Mapped[list["DocumentNumberingSequenceModel"]] = relationship(
+        back_populates="emitter"
+    )
     jobs: Mapped[list["JobModel"]] = relationship(back_populates="emitter")
     events: Mapped[list["EventModel"]] = relationship(back_populates="emitter")
     webhook_endpoints: Mapped[list["WebhookEndpointModel"]] = relationship(back_populates="emitter")
@@ -123,6 +126,9 @@ class DocumentModel(TimestampMixin, Base):
     sifen_status: Mapped[str | None] = mapped_column(String(32))
     sifen_result_code: Mapped[str | None] = mapped_column(String(16))
     sifen_result_message: Mapped[str | None] = mapped_column(Text)
+    establishment: Mapped[str | None] = mapped_column(String(3))
+    point: Mapped[str | None] = mapped_column(String(3))
+    document_number: Mapped[int | None] = mapped_column(Integer)
 
     emitter: Mapped[EmitterModel] = relationship(back_populates="documents")
     events: Mapped[list["EventModel"]] = relationship(back_populates="document")
@@ -130,6 +136,43 @@ class DocumentModel(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("emitter_id", "external_id", name="uq_documents_emitter_external_id"),
         UniqueConstraint("emitter_id", "idempotency_key", name="uq_documents_emitter_idempotency_key"),
+        UniqueConstraint(
+            "emitter_id",
+            "document_type",
+            "establishment",
+            "point",
+            "document_number",
+            name="uq_documents_emitter_document_number",
+        ),
+    )
+
+
+class DocumentNumberingSequenceModel(Base):
+    __tablename__ = "document_numbering_sequences"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    emitter_id: Mapped[str] = mapped_column(ForeignKey("emitters.id"), nullable=False)
+    establishment: Mapped[str] = mapped_column(String(3), nullable=False)
+    point: Mapped[str] = mapped_column(String(3), nullable=False)
+    document_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    last_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    emitter: Mapped[EmitterModel] = relationship(back_populates="numbering_sequences")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "emitter_id",
+            "establishment",
+            "point",
+            "document_type",
+            name="uq_document_numbering_sequences_tuple",
+        ),
     )
 
 

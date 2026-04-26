@@ -36,6 +36,9 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
                 sifen_status=document.sifen_status,
                 sifen_result_code=document.sifen_result_code,
                 sifen_result_message=document.sifen_result_message,
+                establishment=document.establishment,
+                point=document.point,
+                document_number=document.document_number,
                 created_at=document.created_at,
                 updated_at=document.updated_at,
             )
@@ -57,6 +60,9 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             existing.sifen_status = document.sifen_status
             existing.sifen_result_code = document.sifen_result_code
             existing.sifen_result_message = document.sifen_result_message
+            existing.establishment = document.establishment
+            existing.point = document.point
+            existing.document_number = document.document_number
             existing.updated_at = document.updated_at
         self.session.flush()
         return document
@@ -139,4 +145,7 @@ def _to_domain(model: DocumentModel) -> Document:
         sifen_result_message=model.sifen_result_message,
         created_at=model.created_at,
         updated_at=model.updated_at,
+        establishment=model.establishment,
+        point=model.point,
+        document_number=model.document_number,
     )

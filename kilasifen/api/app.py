@@ -20,10 +20,11 @@ from kilasifen.api.errors import (
     api_error_handler,
     conflict_error_handler,
     not_found_error_handler,
+    service_unavailable_error_handler,
 )
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.config import get_settings
-from kilasifen.domain.common.errors import ConflictError, NotFoundError
+from kilasifen.domain.common.errors import ConflictError, NotFoundError, ServiceUnavailableError
 from kilasifen.infrastructure.db.session import build_engine, build_session_factory
 from kilasifen.logging import configure_logging
 
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(NotFoundError, not_found_error_handler)
     app.add_exception_handler(ConflictError, conflict_error_handler)
+    app.add_exception_handler(ServiceUnavailableError, service_unavailable_error_handler)
 
     @app.middleware("http")
     async def add_correlation_id(request: Request, call_next):

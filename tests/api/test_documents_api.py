@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+import logging
 from pathlib import Path
 
 import pytest
@@ -353,3 +354,34 @@ def test_get_document_xml_returns_not_found_for_other_emitter_document(
     )
 
     assert response.status_code == 404
+
+
+def test_create_typed_document_ignores_client_number_and_logs_warning(
+    client: TestClient,
+    emitter_id: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="kilasifen.application.documents.service")
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-factura-numbering-warning",
+            "idempotency_key": "idem-factura-numbering-warning",
+            "factura": {
+                "numero": 999,
+                "fecha": "2026-04-25T10:00:00",
+                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "items": [{"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}],
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    document = response.json()["data"]["document"]
+    assert document["document_number"] == 1
+    assert document["payload_snapshot"]["typed_contract"]["payload"]["numero"] == 1
+    assert any(
+        record.message == "documents.numbering.client_number_ignored"
+        for record in caplog.records
+    )

@@ -6,6 +6,7 @@ from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.models import (
     ApiKeyModel,
     CertificateModel,
+    DocumentNumberingSequenceModel,
     DocumentModel,
     EmitterModel,
     EventModel,
@@ -23,6 +24,7 @@ EXPECTED_TABLES = {
     ApiKeyModel.__tablename__,
     CertificateModel.__tablename__,
     DocumentModel.__tablename__,
+    DocumentNumberingSequenceModel.__tablename__,
     EmitterModel.__tablename__,
     EventModel.__tablename__,
     JobModel.__tablename__,

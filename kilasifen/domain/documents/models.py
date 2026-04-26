@@ -28,3 +28,6 @@ class Document:
     sifen_result_message: str | None
     created_at: datetime
     updated_at: datetime
+    establishment: str | None = None
+    point: str | None = None
+    document_number: int | None = None
