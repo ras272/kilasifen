@@ -54,3 +54,6 @@ Current coverage:
 - `chunk-8-task-23.md`
 - `chunk-9.md`
 - `chunk-9-task-24.md`
+- `chunk-9-task-25.md`
+- `chunk-10.md`
+- `chunk-10-task-26.md`
