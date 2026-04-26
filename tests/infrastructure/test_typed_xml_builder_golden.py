@@ -10,6 +10,7 @@ from pysifen.sdk.validation import validate_xml
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
+from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
 from kilasifen.infrastructure.sifen.typed_xml_builder import build_typed_document_xml
 from kilasifen.testing.typed_contract_scenarios import (
     TypedContractScenario,
@@ -38,9 +39,10 @@ def test_signed_typed_xml_matches_golden(
     scenario: TypedContractScenario,
     cert_data: bytes,
 ) -> None:
+    emitter = _build_emitter()
     typed = build_typed_document_xml(
         document=_build_document(scenario),
-        emitter=_build_emitter(),
+        emitter=emitter,
         stamping=_build_stamping(),
     )
     assert typed is not None
@@ -51,6 +53,7 @@ def test_signed_typed_xml_matches_golden(
         _CERT_PASSWORD,
         typed.doc_id,
     )
+    signed_xml = apply_real_qr_to_signed_xml(signed_xml, emitter=emitter)
     assert "ds:" not in signed_xml
     assert "<!--" not in signed_xml
     schema_errors = [

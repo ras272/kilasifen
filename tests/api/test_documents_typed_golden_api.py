@@ -16,6 +16,7 @@ from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
+from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
 from kilasifen.infrastructure.sifen.mapper import PysifenPayloadMapper
 from kilasifen.testing.database import managed_test_database_url
 from kilasifen.testing.typed_contract_scenarios import (
@@ -169,32 +170,34 @@ def _build_signed_xml_from_api_document(*, api_document: dict, emitter: dict, ce
         point=api_document.get("point"),
         document_number=api_document.get("document_number"),
     )
+    emitter_obj = Emitter(
+        id=emitter["id"],
+        external_id=emitter["external_id"],
+        ruc=emitter["ruc"],
+        dv=emitter["dv"],
+        legal_name=emitter["legal_name"],
+        tax_environment=emitter["tax_environment"],
+        status=emitter["status"],
+        csc=emitter.get("csc"),
+        csc_id=emitter.get("csc_id"),
+        created_at=_parse_datetime(emitter["created_at"]),
+        updated_at=_parse_datetime(emitter["updated_at"]),
+    )
     mapper = PysifenPayloadMapper()
     emission_input = mapper.map_document(
         document,
-        emitter=Emitter(
-            id=emitter["id"],
-            external_id=emitter["external_id"],
-            ruc=emitter["ruc"],
-            dv=emitter["dv"],
-            legal_name=emitter["legal_name"],
-            tax_environment=emitter["tax_environment"],
-            status=emitter["status"],
-            csc=emitter.get("csc"),
-            csc_id=emitter.get("csc_id"),
-            created_at=_parse_datetime(emitter["created_at"]),
-            updated_at=_parse_datetime(emitter["updated_at"]),
-        ),
+        emitter=emitter_obj,
         stamping=_build_stamping(emitter["id"]),
     )
     assert emission_input.generated_xml is not None
     assert emission_input.doc_id is not None
-    return sign_xml(
+    signed_xml = sign_xml(
         emission_input.generated_xml,
         cert_data,
         _CERT_PASSWORD,
         emission_input.doc_id,
     )
+    return apply_real_qr_to_signed_xml(signed_xml, emitter=emitter_obj)
 
 
 def _build_stamping(emitter_id: str) -> Stamping:

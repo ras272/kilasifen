@@ -17,6 +17,7 @@ from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
+from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
 from kilasifen.infrastructure.sifen.mapper import PysifenPayloadMapper
 
 
@@ -89,6 +90,7 @@ class PysifenEmissionEngine:
                 certificate_password,
                 emission_input.doc_id,
             )
+            signed_xml = apply_real_qr_to_signed_xml(signed_xml, emitter=emitter)
 
         ambiente = TEST if emitter.tax_environment == "test" else PRODUCCION
         request_xml = _build_enviar_de_request_xml(1, signed_xml).decode("utf-8")
