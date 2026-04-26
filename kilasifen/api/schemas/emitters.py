@@ -1,6 +1,6 @@
 """Pydantic schemas for emitter APIs."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -43,3 +43,23 @@ class EmitterResponse(BaseModel):
     csc_id: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class EmitterHealthResponse(BaseModel):
+    """Emitter operational health payload."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    emitter_id: str
+    emitter_status: str
+    has_active_certificate: bool
+    certificate_valid_until: datetime | None
+    has_active_stamping: bool
+    stamping_number: str | None
+    stamping_valid_on: date
+    queue_queued_count: int
+    queue_retry_count: int
+    queue_failed_count: int
+    last_document_id: str | None
+    last_document_status: str | None
+    checked_at: datetime

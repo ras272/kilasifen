@@ -91,12 +91,29 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
         self,
         *,
         limit: int = 50,
+        offset: int = 0,
         emitter_id: str | None = None,
+        internal_status: str | None = None,
+        document_type: str | None = None,
+        external_id: str | None = None,
+        cdc: str | None = None,
     ) -> list[Document]:
         statement = select(DocumentModel)
         if emitter_id:
             statement = statement.where(DocumentModel.emitter_id == emitter_id)
-        statement = statement.order_by(DocumentModel.created_at.desc()).limit(limit)
+        if internal_status:
+            statement = statement.where(DocumentModel.internal_status == internal_status)
+        if document_type:
+            statement = statement.where(DocumentModel.document_type == document_type)
+        if external_id:
+            statement = statement.where(DocumentModel.external_id == external_id)
+        if cdc:
+            statement = statement.where(DocumentModel.cdc == cdc)
+        statement = (
+            statement.order_by(DocumentModel.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
         return [_to_domain(model) for model in self.session.scalars(statement)]
 
 

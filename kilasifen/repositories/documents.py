@@ -29,6 +29,11 @@ class DocumentRepository(ABC):
         self,
         *,
         limit: int = 50,
+        offset: int = 0,
         emitter_id: str | None = None,
+        internal_status: str | None = None,
+        document_type: str | None = None,
+        external_id: str | None = None,
+        cdc: str | None = None,
     ) -> list[Document]:
-        """List recent documents, optionally scoped by emitter."""
+        """List recent documents with optional filters."""

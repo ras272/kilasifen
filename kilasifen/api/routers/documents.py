@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 
 from kilasifen.api.deps import get_api_key_principal, get_document_service, get_job_service
 from kilasifen.api.schemas.common import SuccessEnvelope
@@ -131,6 +132,63 @@ def get_document(
         },
         correlation_id=request.state.correlation_id,
     )
+
+
+@router.get("/emitters/{emitter_id}/documents", response_model=SuccessEnvelope)
+def list_documents(
+    emitter_id: str,
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    internal_status: str | None = None,
+    document_type: str | None = None,
+    external_id: str | None = None,
+    cdc: str | None = None,
+    _principal=Depends(get_api_key_principal),
+    service: DocumentService = Depends(get_document_service),
+    job_service: JobService = Depends(get_job_service),
+) -> SuccessEnvelope:
+    documents = service.list_documents(
+        emitter_id=emitter_id,
+        limit=limit,
+        offset=offset,
+        internal_status=internal_status,
+        document_type=document_type,
+        external_id=external_id,
+        cdc=cdc,
+    )
+    jobs_by_document_id = {
+        document.id: job_service.get_for_entity("document", document.id) for document in documents
+    }
+    return SuccessEnvelope(
+        data={
+            "documents": [
+                {
+                    "document": DocumentResponse.model_validate(document).model_dump(mode="json"),
+                    "job": (
+                        JobResponse.model_validate(jobs_by_document_id[document.id]).model_dump(
+                            mode="json"
+                        )
+                        if jobs_by_document_id[document.id]
+                        else None
+                    ),
+                }
+                for document in documents
+            ],
+            "pagination": {"limit": limit, "offset": offset, "count": len(documents)},
+        },
+        correlation_id=request.state.correlation_id,
+    )
+
+
+@router.get("/documents/{document_id}/xml")
+def get_document_xml(
+    document_id: str,
+    _principal=Depends(get_api_key_principal),
+    service: DocumentService = Depends(get_document_service),
+) -> Response:
+    xml_content = service.get_document_xml(document_id=document_id)
+    return Response(content=xml_content, media_type="application/xml")
 
 
 def _build_typed_payload(contract: str, typed_payload: dict) -> dict:

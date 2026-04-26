@@ -109,6 +109,48 @@ class DocumentService:
             raise NotFoundError("documents.not_found")
         return document
 
+    def get_document_for_emitter(self, *, emitter_id: str, document_id: str) -> Document:
+        document = self.get_document(document_id)
+        if document.emitter_id != emitter_id:
+            raise NotFoundError("documents.not_found")
+        return document
+
+    def get_document_xml(self, *, document_id: str) -> str:
+        document = self.get_document(document_id)
+        if document.signed_xml:
+            return document.signed_xml
+        if document.generated_xml:
+            return document.generated_xml
+        payload = document.payload_snapshot or {}
+        if isinstance(payload.get("signed_xml"), str):
+            return payload["signed_xml"]
+        if isinstance(payload.get("generated_xml"), str):
+            return payload["generated_xml"]
+        raise ConflictError("documents.xml_not_available")
+
+    def list_documents(
+        self,
+        *,
+        emitter_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        internal_status: str | None = None,
+        document_type: str | None = None,
+        external_id: str | None = None,
+        cdc: str | None = None,
+    ) -> list[Document]:
+        if self.emitter_repository.get(emitter_id) is None:
+            raise NotFoundError("emitters.not_found")
+        return self.document_repository.list_recent(
+            limit=limit,
+            offset=offset,
+            emitter_id=emitter_id,
+            internal_status=internal_status,
+            document_type=document_type,
+            external_id=external_id,
+            cdc=cdc,
+        )
+
     def _enqueue_if_configured(self, job: Job) -> None:
         if self.queue is None:
             return

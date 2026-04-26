@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from kilasifen.application.admin.service import AdminConsoleService
 from kilasifen.application.documents.service import DocumentService
+from kilasifen.application.emitters.health import EmitterHealthService
 from kilasifen.application.events.service import EventService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.queries.service import QueryService
@@ -59,6 +60,20 @@ def get_emitter_service(session: Session = Depends(get_db_session)) -> EmitterSe
 
     repository = SqlAlchemyEmitterRepository(session)
     return EmitterService(repository)
+
+
+def get_emitter_health_service(
+    session: Session = Depends(get_db_session),
+) -> EmitterHealthService:
+    """Build the emitter-health service for one request."""
+
+    return EmitterHealthService(
+        emitter_repository=SqlAlchemyEmitterRepository(session),
+        certificate_repository=SqlAlchemyCertificateRepository(session),
+        stamping_repository=SqlAlchemyStampingRepository(session),
+        document_repository=SqlAlchemyDocumentRepository(session),
+        job_repository=SqlAlchemyJobRepository(session),
+    )
 
 
 def get_certificate_service(

@@ -118,3 +118,43 @@ def test_create_emitter_rejects_duplicate_external_id(client: TestClient) -> Non
 
     assert second_response.status_code == 409
     assert second_response.json()["error"]["code"] == "emitters.external_id_conflict"
+
+
+def test_get_emitter_health_returns_operational_snapshot(client: TestClient) -> None:
+    create_response = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-health",
+            "ruc": "81234123",
+            "dv": "1",
+            "legal_name": "EMITTER HEALTH SA",
+            "tax_environment": "test",
+            "csc": None,
+            "csc_id": None,
+        },
+    )
+    emitter_id = create_response.json()["data"]["emitter"]["id"]
+    client.post(
+        f"/v1/emitters/{emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-health-doc-1",
+            "idempotency_key": "idem-health-doc-1",
+            "document_type": "factura",
+            "payload": {"generated_xml": "<rDE><DE Id='H1'/></rDE>", "doc_id": "H1"},
+        },
+    )
+
+    response = client.get(
+        f"/v1/emitters/{emitter_id}/health",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 200
+    health = response.json()["data"]["health"]
+    assert health["emitter_id"] == emitter_id
+    assert health["emitter_status"] == "active"
+    assert health["has_active_certificate"] is False
+    assert health["has_active_stamping"] is False
+    assert health["last_document_id"] is not None

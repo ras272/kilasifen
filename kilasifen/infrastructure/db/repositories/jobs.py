@@ -73,15 +73,22 @@ class SqlAlchemyJobRepository(JobRepository):
         self,
         *,
         limit: int = 50,
+        offset: int = 0,
         emitter_id: str | None = None,
         status: str | None = None,
+        job_type: str | None = None,
+        related_entity_type: str | None = None,
     ) -> list[Job]:
         statement = select(JobModel)
         if emitter_id:
             statement = statement.where(JobModel.emitter_id == emitter_id)
         if status:
             statement = statement.where(JobModel.status == status)
-        statement = statement.order_by(JobModel.created_at.desc()).limit(limit)
+        if job_type:
+            statement = statement.where(JobModel.job_type == job_type)
+        if related_entity_type:
+            statement = statement.where(JobModel.related_entity_type == related_entity_type)
+        statement = statement.order_by(JobModel.created_at.desc()).offset(offset).limit(limit)
         return [_to_domain(model) for model in self.session.scalars(statement)]
 
 

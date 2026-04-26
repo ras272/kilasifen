@@ -56,6 +56,25 @@ def emitter_id(client: TestClient) -> str:
     return response.json()["data"]["emitter"]["id"]
 
 
+@pytest.fixture
+def second_emitter_id(client: TestClient) -> str:
+    response = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-ares-2",
+            "ruc": "80111111",
+            "dv": "9",
+            "legal_name": "OTRO EMISOR SA",
+            "tax_environment": "test",
+            "csc": None,
+            "csc_id": None,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["data"]["emitter"]["id"]
+
+
 def test_create_document_returns_document_and_job(client: TestClient, emitter_id: str) -> None:
     response = client.post(
         f"/v1/emitters/{emitter_id}/documents",
@@ -235,3 +254,72 @@ def test_create_factura_typed_endpoint_without_xml_is_accepted(
     body = response.json()["data"]
     assert body["document"]["document_type"] == "factura"
     assert body["document"]["payload_snapshot"]["generated_xml"] is None
+
+
+def test_list_documents_returns_only_requested_emitter_documents(
+    client: TestClient,
+    emitter_id: str,
+    second_emitter_id: str,
+) -> None:
+    response_a = client.post(
+        f"/v1/emitters/{emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-doc-a-1",
+            "idempotency_key": "idem-a-1",
+            "document_type": "factura",
+            "payload": {"generated_xml": "<rDE><DE Id='A1'/></rDE>", "doc_id": "A1"},
+        },
+    )
+    assert response_a.status_code == 201
+    response_b = client.post(
+        f"/v1/emitters/{second_emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-doc-b-1",
+            "idempotency_key": "idem-b-1",
+            "document_type": "factura",
+            "payload": {"generated_xml": "<rDE><DE Id='B1'/></rDE>", "doc_id": "B1"},
+        },
+    )
+    assert response_b.status_code == 201
+
+    listed = client.get(
+        f"/v1/emitters/{emitter_id}/documents?limit=10&offset=0",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert listed.status_code == 200
+    body = listed.json()["data"]
+    assert body["pagination"]["count"] == 1
+    assert body["documents"][0]["document"]["external_id"] == "erp-doc-a-1"
+    assert body["documents"][0]["document"]["emitter_id"] == emitter_id
+
+
+def test_get_document_xml_returns_signed_or_generated_xml(
+    client: TestClient,
+    emitter_id: str,
+) -> None:
+    created = client.post(
+        f"/v1/emitters/{emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-doc-xml",
+            "idempotency_key": "idem-xml",
+            "document_type": "factura",
+            "payload": {
+                "generated_xml": "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'><DE Id='XML1'/></rDE>",
+                "doc_id": "XML1",
+            },
+        },
+    )
+    document_id = created.json()["data"]["document"]["id"]
+
+    response = client.get(
+        f"/v1/documents/{document_id}/xml",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/xml")
+    assert "<rDE" in response.text

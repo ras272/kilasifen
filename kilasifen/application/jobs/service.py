@@ -52,6 +52,25 @@ class JobService:
     def get_for_entity(self, entity_type: str, entity_id: str) -> Job | None:
         return self.repository.get_for_entity(entity_type, entity_id)
 
+    def list_jobs(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        emitter_id: str | None = None,
+        status: str | None = None,
+        job_type: str | None = None,
+        related_entity_type: str | None = None,
+    ) -> list[Job]:
+        return self.repository.list_recent(
+            limit=limit,
+            offset=offset,
+            emitter_id=emitter_id,
+            status=status,
+            job_type=job_type,
+            related_entity_type=related_entity_type,
+        )
+
     def get_document_job_context(
         self,
         *,

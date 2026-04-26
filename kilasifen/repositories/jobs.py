@@ -25,7 +25,10 @@ class JobRepository(ABC):
         self,
         *,
         limit: int = 50,
+        offset: int = 0,
         emitter_id: str | None = None,
         status: str | None = None,
+        job_type: str | None = None,
+        related_entity_type: str | None = None,
     ) -> list[Job]:
         """List recent jobs with optional filters."""

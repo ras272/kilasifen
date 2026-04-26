@@ -33,7 +33,9 @@ class WebhookRepository(ABC):
         self,
         *,
         limit: int = 50,
+        offset: int = 0,
         endpoint_id: str | None = None,
+        emitter_id: str | None = None,
         statuses: list[str] | None = None,
     ) -> list[WebhookDelivery]:
         """List recent webhook deliveries with optional filters."""

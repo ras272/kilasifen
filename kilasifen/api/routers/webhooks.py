@@ -112,6 +112,37 @@ def get_webhook_delivery(
     )
 
 
+@router.get("/webhook-deliveries", response_model=SuccessEnvelope)
+def list_webhook_deliveries(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    emitter_id: str | None = None,
+    endpoint_id: str | None = None,
+    status: str | None = None,
+    _principal=Depends(get_api_key_principal),
+    service: WebhookService = Depends(get_webhook_service),
+) -> SuccessEnvelope:
+    statuses = [status] if status else None
+    deliveries = service.list_deliveries(
+        limit=limit,
+        offset=offset,
+        emitter_id=emitter_id,
+        endpoint_id=endpoint_id,
+        statuses=statuses,
+    )
+    return SuccessEnvelope(
+        data={
+            "deliveries": [
+                WebhookDeliveryResponse.model_validate(delivery).model_dump(mode="json")
+                for delivery in deliveries
+            ],
+            "pagination": {"limit": limit, "offset": offset, "count": len(deliveries)},
+        },
+        correlation_id=request.state.correlation_id,
+    )
+
+
 def _endpoint_response(
     endpoint: WebhookEndpoint,
     *,

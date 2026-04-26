@@ -123,6 +123,71 @@ def test_replay_creates_delivery_and_job(client: TestClient) -> None:
     assert data["job"]["status"] == "queued"
 
 
+def test_list_webhook_deliveries_can_filter_by_emitter(client: TestClient) -> None:
+    create_a = client.post(
+        "/v1/emitters/emitter-1/webhooks",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": "https://erp.example.com/hooks/a",
+            "secret": "top-secret",
+            "event_subscriptions": ["document.approved"],
+            "retry_policy": {"max_attempts": 3},
+        },
+    )
+    endpoint_a = create_a.json()["data"]["webhook_endpoint"]["id"]
+    client.post(
+        f"/v1/webhooks/{endpoint_a}/deliveries/replay",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "event_type": "document.approved",
+            "payload": {"document_id": "doc-a"},
+        },
+    )
+
+    second_emitter = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-b",
+            "ruc": "80111111",
+            "dv": "9",
+            "legal_name": "EMITTER B SA",
+            "tax_environment": "test",
+            "csc": None,
+            "csc_id": None,
+        },
+    ).json()["data"]["emitter"]["id"]
+    create_b = client.post(
+        f"/v1/emitters/{second_emitter}/webhooks",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": "https://erp.example.com/hooks/b",
+            "secret": "top-secret",
+            "event_subscriptions": ["document.approved"],
+            "retry_policy": {"max_attempts": 3},
+        },
+    )
+    endpoint_b = create_b.json()["data"]["webhook_endpoint"]["id"]
+    client.post(
+        f"/v1/webhooks/{endpoint_b}/deliveries/replay",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "event_type": "document.approved",
+            "payload": {"document_id": "doc-b"},
+        },
+    )
+
+    listed = client.get(
+        "/v1/webhook-deliveries?emitter_id=emitter-1&limit=20",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert listed.status_code == 200
+    deliveries = listed.json()["data"]["deliveries"]
+    assert len(deliveries) == 1
+    assert deliveries[0]["payload_snapshot"]["data"]["document_id"] == "doc-a"
+
+
 def _seed_emitter(session_factory) -> None:
     emitter = Emitter(
         id="emitter-1",

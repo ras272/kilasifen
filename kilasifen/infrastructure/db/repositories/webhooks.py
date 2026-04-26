@@ -92,7 +92,9 @@ class SqlAlchemyWebhookRepository(WebhookRepository):
         self,
         *,
         limit: int = 50,
+        offset: int = 0,
         endpoint_id: str | None = None,
+        emitter_id: str | None = None,
         statuses: list[str] | None = None,
     ) -> list[WebhookDelivery]:
         statement = select(WebhookDeliveryModel)
@@ -100,9 +102,18 @@ class SqlAlchemyWebhookRepository(WebhookRepository):
             statement = statement.where(
                 WebhookDeliveryModel.webhook_endpoint_id == endpoint_id,
             )
+        if emitter_id:
+            statement = statement.join(
+                WebhookEndpointModel,
+                WebhookEndpointModel.id == WebhookDeliveryModel.webhook_endpoint_id,
+            ).where(WebhookEndpointModel.emitter_id == emitter_id)
         if statuses:
             statement = statement.where(WebhookDeliveryModel.final_status.in_(statuses))
-        statement = statement.order_by(WebhookDeliveryModel.created_at.desc()).limit(limit)
+        statement = (
+            statement.order_by(WebhookDeliveryModel.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
         return [_delivery_to_domain(model) for model in self.session.scalars(statement)]
 
 

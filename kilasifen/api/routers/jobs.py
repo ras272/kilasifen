@@ -22,3 +22,32 @@ def get_job(
         data={"job": JobResponse.model_validate(job).model_dump(mode="json")},
         correlation_id=request.state.correlation_id,
     )
+
+
+@router.get("/jobs", response_model=SuccessEnvelope)
+def list_jobs(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    emitter_id: str | None = None,
+    status: str | None = None,
+    job_type: str | None = None,
+    related_entity_type: str | None = None,
+    _principal=Depends(get_api_key_principal),
+    service: JobService = Depends(get_job_service),
+) -> SuccessEnvelope:
+    jobs = service.list_jobs(
+        limit=limit,
+        offset=offset,
+        emitter_id=emitter_id,
+        status=status,
+        job_type=job_type,
+        related_entity_type=related_entity_type,
+    )
+    return SuccessEnvelope(
+        data={
+            "jobs": [JobResponse.model_validate(job).model_dump(mode="json") for job in jobs],
+            "pagination": {"limit": limit, "offset": offset, "count": len(jobs)},
+        },
+        correlation_id=request.state.correlation_id,
+    )

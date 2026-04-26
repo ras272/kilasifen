@@ -167,6 +167,25 @@ class WebhookService:
         job = self.job_service.get_for_entity("webhook_delivery", delivery.id)
         return delivery, job
 
+    def list_deliveries(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        emitter_id: str | None = None,
+        endpoint_id: str | None = None,
+        statuses: list[str] | None = None,
+    ) -> list[WebhookDelivery]:
+        if emitter_id and self.emitter_repository.get(emitter_id) is None:
+            raise NotFoundError("emitters.not_found")
+        return self.webhook_repository.list_recent_deliveries(
+            limit=limit,
+            offset=offset,
+            endpoint_id=endpoint_id,
+            emitter_id=emitter_id,
+            statuses=statuses,
+        )
+
     def process_delivery_attempt(self, *, job_id: str) -> dict[str, str]:
         job = self.job_service.get_job(job_id)
         if job.related_entity_type != "webhook_delivery" or not job.related_entity_id:

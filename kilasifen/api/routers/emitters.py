@@ -2,13 +2,19 @@
 
 from fastapi import APIRouter, Depends, Request, status
 
-from kilasifen.api.deps import get_api_key_principal, get_emitter_service
+from kilasifen.api.deps import (
+    get_api_key_principal,
+    get_emitter_health_service,
+    get_emitter_service,
+)
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.emitters import (
     EmitterCreateRequest,
+    EmitterHealthResponse,
     EmitterResponse,
     EmitterUpdateRequest,
 )
+from kilasifen.application.emitters.health import EmitterHealthService
 from kilasifen.application.emitters.service import EmitterService
 from kilasifen.domain.emitters.models import Emitter
 
@@ -58,6 +64,20 @@ def deactivate_emitter(
 ) -> SuccessEnvelope:
     emitter = service.deactivate_emitter(emitter_id)
     return _envelope(request, emitter)
+
+
+@router.get("/{emitter_id}/health", response_model=SuccessEnvelope)
+def get_emitter_health(
+    emitter_id: str,
+    request: Request,
+    _principal=Depends(get_api_key_principal),
+    service: EmitterHealthService = Depends(get_emitter_health_service),
+) -> SuccessEnvelope:
+    health = service.get_health(emitter_id=emitter_id)
+    return SuccessEnvelope(
+        data={"health": EmitterHealthResponse.model_validate(health).model_dump(mode="json")},
+        correlation_id=request.state.correlation_id,
+    )
 
 
 def _envelope(request: Request, emitter: Emitter) -> SuccessEnvelope:
