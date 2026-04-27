@@ -84,6 +84,8 @@ def test_mapper_builds_nota_credito_xml_from_typed_payload() -> None:
     assert emission_input.generated_xml is not None
     assert "<iTiDE>5</iTiDE>" in emission_input.generated_xml
     assert "<dNumDoc>0000077</dNumDoc>" in emission_input.generated_xml
+    assert "<iTipTra>" not in emission_input.generated_xml
+    assert "<dDesTipTra>" not in emission_input.generated_xml
     assert "<gCamDEAsoc>" in emission_input.generated_xml
     assert "01800123450001001000000012026010112345678901" in emission_input.generated_xml
     assert emission_input.doc_id is not None

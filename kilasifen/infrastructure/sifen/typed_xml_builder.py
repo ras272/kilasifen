@@ -372,6 +372,7 @@ def _build_factura_xml(
         typed_payload=typed_payload,
         cliente=cliente,
         tipo_transaccion=tipo_transaccion,
+        include_tipo_transaccion=True,
         tipo_impuesto=tipo_impuesto,
         moneda=moneda,
         moneda_descripcion=moneda_descripcion,
@@ -496,6 +497,7 @@ def _build_nota_credito_xml(
         typed_payload=typed_payload,
         cliente=cliente,
         tipo_transaccion=tipo_transaccion,
+        include_tipo_transaccion=False,
         tipo_impuesto=tipo_impuesto,
         moneda=moneda,
         moneda_descripcion=moneda_descripcion,
@@ -557,6 +559,7 @@ def _build_base_document_root(
     typed_payload: dict,
     cliente: dict,
     tipo_transaccion: int,
+    include_tipo_transaccion: bool,
     tipo_impuesto: int,
     moneda: str,
     moneda_descripcion: str,
@@ -588,8 +591,9 @@ def _build_base_document_root(
     gdat = _sub(de, "gDatGralOpe")
     _sub(gdat, "dFeEmiDE", fecha_emision)
     ope = _sub(gdat, "gOpeCom")
-    _sub(ope, "iTipTra", str(tipo_transaccion))
-    _sub(ope, "dDesTipTra", _transaction_description(tipo_transaccion))
+    if include_tipo_transaccion:
+        _sub(ope, "iTipTra", str(tipo_transaccion))
+        _sub(ope, "dDesTipTra", _transaction_description(tipo_transaccion))
     _sub(ope, "iTImp", str(tipo_impuesto))
     _sub(ope, "dDesTImp", _tax_description(tipo_impuesto))
     _sub(ope, "cMoneOpe", moneda)
