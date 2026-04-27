@@ -2,7 +2,7 @@
 
 ## Commit
 
-- `PENDING`
+- `31b9cc3`
 
 ## What changed
 
