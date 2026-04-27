@@ -38,3 +38,11 @@ htmlcov/
 # Misc
 *.log
 .env
+.env.local
+
+# Local lab / scratch artifacts (not part of the project)
+tmp/
+tmp_*.xml
+tmp_*.txt
+_external/
+.claude/
