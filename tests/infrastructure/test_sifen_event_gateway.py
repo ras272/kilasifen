@@ -27,6 +27,27 @@ def test_normalize_response_accepts_event_shape_payload() -> None:
     assert protocol == "123456789"
 
 
+def test_normalize_response_treats_0600_as_approved() -> None:
+    response_raw = """
+<rRetEnviEventoDe xmlns="http://ekuatia.set.gov.py/sifen/xsd">
+  <dFecProc>2026-04-27T00:00:00-03:00</dFecProc>
+  <gResProcEVe>
+    <gResProc>
+      <dCodRes>0600</dCodRes>
+      <dMsgRes>Evento registrado correctamente</dMsgRes>
+    </gResProc>
+  </gResProcEVe>
+</rRetEnviEventoDe>
+""".strip()
+
+    result_code, result_message, status, protocol = _normalize_response(response_raw)
+
+    assert result_code == "0600"
+    assert result_message == "Evento registrado correctamente"
+    assert status == "approved"
+    assert protocol is None
+
+
 def test_normalize_response_accepts_de_style_payload() -> None:
     response_raw = """
 <rRetEnviEventoDe xmlns="http://ekuatia.set.gov.py/sifen/xsd">

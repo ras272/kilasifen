@@ -130,7 +130,7 @@ def _normalize_response(response) -> tuple[str | None, str | None, str, str | No
         result_code = getattr(g_res_proc[0], "dCodRes", None)
         result_message = getattr(g_res_proc[0], "dMsgRes", None)
 
-    if result_code in {"0260", "0300"}:
+    if result_code in {"0260", "0300", "0600"}:
         status = "approved"
     elif result_code is not None and status != "approved":
         status = "rejected"
@@ -260,7 +260,7 @@ def _normalize_response_raw_xml(
     elif "rechaz" in status_text:
         status = "rejected"
 
-    if result_code in {"0260", "0300"}:
+    if result_code in {"0260", "0300", "0600"}:
         status = "approved"
     elif result_code is not None and status != "approved":
         status = "rejected"
