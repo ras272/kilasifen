@@ -9,7 +9,6 @@ from typing import Protocol
 from uuid import uuid4
 
 from pysifen.sdk.errors import (
-    SifenRejectionError,
     SifenTimeoutError,
     SifenTransportError,
     SifenValidationError,
@@ -436,7 +435,19 @@ class EventService:
                 sifen_result_message=outcome.result_message,
                 updated_at=_now(),
             )
-            updated_job = replace(job, status="succeeded", error_snapshot=None, updated_at=_now())
+            if outcome.status == "rejected":
+                updated_job = replace(
+                    job,
+                    status="failed",
+                    error_snapshot={
+                        "category": "sifen_rejection",
+                        "code": outcome.result_code,
+                        "message": outcome.result_message or "event rejected by sifen",
+                    },
+                    updated_at=_now(),
+                )
+            else:
+                updated_job = replace(job, status="succeeded", error_snapshot=None, updated_at=_now())
         except SifenValidationError as exc:
             updated_event = replace(
                 saved_event,
@@ -461,24 +472,6 @@ class EventService:
                 job,
                 status="retry_scheduled",
                 error_snapshot={"category": "transport", "message": str(exc)},
-                updated_at=_now(),
-            )
-        except SifenRejectionError as exc:
-            updated_event = replace(
-                saved_event,
-                status="rejected",
-                sifen_result_code=exc.code,
-                sifen_result_message=exc.message,
-                updated_at=_now(),
-            )
-            updated_job = replace(
-                job,
-                status="failed",
-                error_snapshot={
-                    "category": "sifen_rejection",
-                    "code": exc.code,
-                    "message": exc.message,
-                },
                 updated_at=_now(),
             )
         return updated_event, updated_job, protocol

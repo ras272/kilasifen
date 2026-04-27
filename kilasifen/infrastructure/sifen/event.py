@@ -11,7 +11,7 @@ from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
 from pysifen import PRODUCCION, TEST
-from pysifen.sdk.errors import SifenRejectionError, SifenValidationError
+from pysifen.sdk.errors import SifenValidationError
 from pysifen.transmissao.evento import TransmissaoEvento
 from pysifen.transmissao.evento import _generate_id
 
@@ -83,11 +83,6 @@ class PysifenEventGateway:
         response = response_raw
 
         result_code, result_message, status, protocol = _normalize_response(response)
-        if status == "rejected":
-            raise SifenRejectionError(
-                result_code or "unknown",
-                result_message or "event rejected by sifen",
-            )
 
         return EventSubmissionOutcome(
             generated_xml=event_xml,
