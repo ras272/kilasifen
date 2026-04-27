@@ -6,18 +6,17 @@ from dataclasses import dataclass
 from typing import Protocol
 from xml.etree import ElementTree as ET
 
-from lxml import etree
+from cryptography.hazmat.primitives.serialization import Encoding, pkcs12
+from signxml import InvalidSignature, XMLVerifier
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
-
-from pysifen import PRODUCCION, TEST
-from pysifen.sdk.errors import SifenValidationError
-from pysifen.transmissao.evento import TransmissaoEvento
-from pysifen.transmissao.evento import _generate_id
 
 from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.events.models import Event
+from pysifen import PRODUCCION, TEST
+from pysifen.sdk.errors import SifenValidationError
+from pysifen.transmissao.evento import TransmissaoEvento, _generate_id
 
 
 @dataclass(slots=True)
@@ -66,11 +65,15 @@ class PysifenEventGateway:
         certificate_bytes: bytes,
         certificate_password: str,
     ) -> EventSubmissionOutcome:
-        del certificate
         event_xml = _extract_event_xml(event.input_payload)
         request_xml = _build_enviar_evento_request_xml(
             d_id=_generate_id(),
             event_group_xml=event_xml,
+        )
+        _verify_event_signature_locally(
+            request_xml=request_xml,
+            certificate_bytes=certificate_bytes,
+            certificate_password=certificate_password,
         )
 
         ambiente = TEST if emitter.tax_environment == "test" else PRODUCCION
@@ -152,24 +155,15 @@ def _submit_event_raw(
 
 
 def _build_enviar_evento_request_xml(*, d_id: int, event_group_xml: str) -> str:
-    ns = "http://ekuatia.set.gov.py/sifen/xsd"
-    parser = etree.XMLParser(remove_blank_text=True)
-
-    request_root = etree.Element(f"{{{ns}}}rEnviEventoDe", nsmap={None: ns})
-    d_id_el = etree.SubElement(request_root, f"{{{ns}}}dId")
-    d_id_el.text = str(d_id)
-    d_ev_reg = etree.SubElement(request_root, f"{{{ns}}}dEvReg")
-
     normalized_group_xml = _strip_xml_declaration(event_group_xml)
-    group_root = etree.fromstring(normalized_group_xml.encode("utf-8"), parser=parser)
-    d_ev_reg.append(group_root)
-
-    return etree.tostring(
-        request_root,
-        encoding="UTF-8",
-        xml_declaration=True,
-        pretty_print=False,
-    ).decode("utf-8")
+    group_with_schema = _inject_event_schema_location(normalized_group_xml)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<rEnviEventoDe xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+        f"<dId>{d_id}</dId>"
+        f"<dEvReg>{group_with_schema}</dEvReg>"
+        "</rEnviEventoDe>"
+    )
 
 
 def _strip_xml_declaration(value: str) -> str:
@@ -179,6 +173,72 @@ def _strip_xml_declaration(value: str) -> str:
         if closing != -1:
             text = text[closing + 2 :].lstrip()
     return text
+
+
+def _inject_event_schema_location(event_group_xml: str) -> str:
+    root_tag = '<gGroupGesEve xmlns="http://ekuatia.set.gov.py/sifen/xsd"'
+    replacement = (
+        '<gGroupGesEve xmlns="http://ekuatia.set.gov.py/sifen/xsd" '
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+        'xsi:schemaLocation="http://ekuatia.set.gov.py/sifen/xsd '
+        'siRecepEvento_v150.xsd"'
+    )
+    if "xsi:schemaLocation=" in event_group_xml:
+        return event_group_xml
+    if root_tag not in event_group_xml:
+        raise SifenValidationError("events.xml.invalid_root")
+    return event_group_xml.replace(root_tag, replacement, 1)
+
+
+def _verify_event_signature_locally(
+    *,
+    request_xml: str,
+    certificate_bytes: bytes,
+    certificate_password: str,
+) -> None:
+    event_group_xml = _extract_wrapped_event_group_xml(request_xml)
+    cert_pem = _extract_public_certificate_pem(
+        certificate_bytes=certificate_bytes,
+        certificate_password=certificate_password,
+    )
+    try:
+        XMLVerifier().verify(
+            event_group_xml.encode("utf-8"),
+            x509_cert=cert_pem,
+            id_attribute="Id",
+        )
+    except InvalidSignature as exc:
+        raise SifenValidationError(
+            "events.signature.local_verification_failed"
+        ) from exc
+    except Exception as exc:  # pragma: no cover - defensive verifier fallback
+        raise SifenValidationError(
+            "events.signature.local_verification_failed"
+        ) from exc
+
+
+def _extract_public_certificate_pem(
+    *,
+    certificate_bytes: bytes,
+    certificate_password: str,
+) -> bytes:
+    _, certificate, _ = pkcs12.load_key_and_certificates(
+        certificate_bytes,
+        certificate_password.encode("utf-8"),
+    )
+    if certificate is None:
+        raise SifenValidationError("events.signature.local_verification_failed")
+    return certificate.public_bytes(Encoding.PEM)
+
+
+def _extract_wrapped_event_group_xml(request_xml: str) -> str:
+    start_tag = "<gGroupGesEve"
+    end_tag = "</gGroupGesEve>"
+    start = request_xml.find(start_tag)
+    end = request_xml.find(end_tag)
+    if start == -1 or end == -1:
+        raise SifenValidationError("events.xml.invalid_root")
+    return request_xml[start : end + len(end_tag)]
 
 
 def _normalize_response_raw_xml(

@@ -75,5 +75,41 @@ def test_build_enviar_evento_request_xml_keeps_unprefixed_signature() -> None:
     assert "<rEnviEventoDe" in request_xml
     assert "<dId>123</dId>" in request_xml
     assert "<gGroupGesEve" in request_xml
-    assert "<Signature xmlns=\"http://www.w3.org/2000/09/xmldsig#\">" in request_xml
+    assert (
+        'xsi:schemaLocation="http://ekuatia.set.gov.py/sifen/xsd '
+        'siRecepEvento_v150.xsd"'
+        in request_xml
+    )
+    assert '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">' in request_xml
     assert ":Signature" not in request_xml
+
+
+def test_event_xml_survives_envelope_wrap() -> None:
+    group_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<gGroupGesEve xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+        '<rGesEve><rEve Id="1234567890"><dFecFirma>2026-04-27T00:00:00</dFecFirma>'
+        "<dVerFor>150</dVerFor><gGroupTiEvt><rGeVeCan>"
+        "<Id>01800241355001001000000012026042711234567893</Id>"
+        "<mOtEve>Prueba cancelacion</mOtEve>"
+        "</rGeVeCan></gGroupTiEvt></rEve>"
+        '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo/></Signature>'
+        "</rGesEve></gGroupGesEve>"
+    )
+
+    request_xml = _build_enviar_evento_request_xml(d_id=123, event_group_xml=group_xml)
+    expected_group_xml = (
+        '<gGroupGesEve xmlns="http://ekuatia.set.gov.py/sifen/xsd" '
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+        'xsi:schemaLocation="http://ekuatia.set.gov.py/sifen/xsd '
+        'siRecepEvento_v150.xsd">'
+        '<rGesEve><rEve Id="1234567890"><dFecFirma>2026-04-27T00:00:00</dFecFirma>'
+        "<dVerFor>150</dVerFor><gGroupTiEvt><rGeVeCan>"
+        "<Id>01800241355001001000000012026042711234567893</Id>"
+        "<mOtEve>Prueba cancelacion</mOtEve>"
+        "</rGeVeCan></gGroupTiEvt></rEve>"
+        '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#"><SignedInfo/></Signature>'
+        "</rGesEve></gGroupGesEve>"
+    )
+
+    assert expected_group_xml in request_xml

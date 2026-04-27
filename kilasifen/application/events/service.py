@@ -2,20 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-import logging
 from typing import Protocol
 from uuid import uuid4
-
-from pysifen.sdk.errors import (
-    SifenTimeoutError,
-    SifenTransportError,
-    SifenValidationError,
-)
+from zoneinfo import ZoneInfo
 
 from kilasifen.application.jobs.service import JobService
-from kilasifen.domain.common.errors import ConflictError, NotFoundError, UnprocessableEntityError
+from kilasifen.domain.common.errors import (
+    ConflictError,
+    NotFoundError,
+    UnprocessableEntityError,
+)
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.events.inutilized_ranges import InutilizedNumberRange
 from kilasifen.domain.events.models import Event
@@ -26,13 +25,22 @@ from kilasifen.infrastructure.sifen.typed_event_builder import (
     build_signed_cancel_event_group_xml,
     build_signed_inutilization_event_group_xml,
 )
-from kilasifen.repositories.document_numbering_sequences import DocumentNumberingSequenceRepository
 from kilasifen.repositories.certificates import CertificateRepository
+from kilasifen.repositories.document_numbering_sequences import (
+    DocumentNumberingSequenceRepository,
+)
 from kilasifen.repositories.documents import DocumentRepository
 from kilasifen.repositories.emitters import EmitterRepository
 from kilasifen.repositories.events import EventRepository
-from kilasifen.repositories.inutilized_number_ranges import InutilizedNumberRangeRepository
+from kilasifen.repositories.inutilized_number_ranges import (
+    InutilizedNumberRangeRepository,
+)
 from kilasifen.repositories.jobs import JobRepository
+from pysifen.sdk.errors import (
+    SifenTimeoutError,
+    SifenTransportError,
+    SifenValidationError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -140,13 +148,15 @@ class EventService:
         emitter, certificate, certificate_bytes, certificate_password = (
             self._resolve_emitter_and_active_certificate(emitter_id)
         )
-        document = self._get_document_for_emitter(emitter_id=emitter_id, document_id=document_id)
+        document = self._get_document_for_emitter(
+            emitter_id=emitter_id, document_id=document_id
+        )
         self._validate_cancelation(document=document)
 
         event_xml = build_signed_cancel_event_group_xml(
             cdc=document.cdc or "",
             motivo=motivo,
-            signed_at=_now(),
+            signed_at=_now_asuncion(),
             event_id=_generate_short_numeric_event_id(),
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
@@ -274,7 +284,7 @@ class EventService:
             numero_desde=numero_desde,
             numero_hasta=numero_hasta,
             motivo=motivo,
-            signed_at=_now(),
+            signed_at=_now_asuncion(),
             event_id=_generate_short_numeric_event_id(),
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
@@ -347,7 +357,9 @@ class EventService:
         job = self.job_service.get_for_entity("event", event.id)
         return event, job
 
-    def get_event_for_emitter(self, *, emitter_id: str, event_id: str) -> tuple[Event, Job | None]:
+    def get_event_for_emitter(
+        self, *, emitter_id: str, event_id: str
+    ) -> tuple[Event, Job | None]:
         event, job = self.get_event(event_id)
         if event.emitter_id != emitter_id:
             raise NotFoundError("events.not_found")
@@ -447,7 +459,9 @@ class EventService:
                     updated_at=_now(),
                 )
             else:
-                updated_job = replace(job, status="succeeded", error_snapshot=None, updated_at=_now())
+                updated_job = replace(
+                    job, status="succeeded", error_snapshot=None, updated_at=_now()
+                )
         except SifenValidationError as exc:
             updated_event = replace(
                 saved_event,
@@ -485,11 +499,17 @@ class EventService:
         if certificate is None:
             raise ConflictError("certificates.active_required")
 
-        certificate_bytes = self.certificate_store.decrypt_bytes(certificate.encrypted_p12)
-        certificate_password = self.certificate_store.decrypt_text(certificate.encrypted_password)
+        certificate_bytes = self.certificate_store.decrypt_bytes(
+            certificate.encrypted_p12
+        )
+        certificate_password = self.certificate_store.decrypt_text(
+            certificate.encrypted_password
+        )
         return emitter, certificate, certificate_bytes, certificate_password
 
-    def _get_document_for_emitter(self, *, emitter_id: str, document_id: str) -> Document:
+    def _get_document_for_emitter(
+        self, *, emitter_id: str, document_id: str
+    ) -> Document:
         document = self.document_repository.get(document_id)
         if document is None or document.emitter_id != emitter_id:
             raise NotFoundError("documents.not_found")
@@ -502,7 +522,9 @@ class EventService:
         if not document.cdc:
             raise ConflictError("events.cancel.document_not_approved")
 
-        document_status = _normalize_status(document.sifen_status or document.internal_status)
+        document_status = _normalize_status(
+            document.sifen_status or document.internal_status
+        )
         if document_status not in _APPROVED_DOCUMENT_STATUSES:
             raise ConflictError("events.cancel.document_not_approved")
 
@@ -602,6 +624,10 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
+def _now_asuncion() -> datetime:
+    return datetime.now(ZoneInfo("America/Asuncion"))
+
+
 def _ensure_utc_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
@@ -611,7 +637,9 @@ def _ensure_utc_datetime(value: datetime) -> datetime:
 def _normalize_three_digits(value: str) -> str:
     parsed = int(str(value).strip())
     if parsed < 0 or parsed > 999:
-        raise UnprocessableEntityError("events.inutilize.invalid_point_or_establishment")
+        raise UnprocessableEntityError(
+            "events.inutilize.invalid_point_or_establishment"
+        )
     return f"{parsed:03d}"
 
 
@@ -624,7 +652,9 @@ def _normalize_status(status: str | None) -> str:
 
 
 def _is_cancelled_document(document: Document) -> bool:
-    document_status = _normalize_status(document.sifen_status or document.internal_status)
+    document_status = _normalize_status(
+        document.sifen_status or document.internal_status
+    )
     return document_status in _CANCELLED_DOCUMENT_STATUSES
 
 
