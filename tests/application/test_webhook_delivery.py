@@ -9,22 +9,35 @@ from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.webhooks.models import WebhookDelivery, WebhookEndpoint
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
-from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
+from kilasifen.infrastructure.db.repositories.emitters import (
+    SqlAlchemyEmitterRepository,
+)
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
-from kilasifen.infrastructure.db.repositories.webhooks import SqlAlchemyWebhookRepository
-from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
+from kilasifen.infrastructure.db.repositories.webhooks import (
+    SqlAlchemyWebhookRepository,
+)
+from kilasifen.infrastructure.db.session import (
+    build_engine,
+    build_session_factory,
+    session_scope,
+)
 from kilasifen.infrastructure.jobs.workers import process_webhook_delivery_job
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.testing.database import managed_test_database_url
 
 
-def test_process_webhook_delivery_job_signs_payload_and_marks_delivered(tmp_path) -> None:
+def test_process_webhook_delivery_job_signs_payload_and_marks_delivered(
+    tmp_path,
+) -> None:
     with managed_test_database_url(
         tmp_path=tmp_path,
         name="webhook_delivery_success",
     ) as database_url:
         encryption_key = _fernet_key()
-        _seed_webhook_job_context(database_url=database_url, encryption_key=encryption_key)
+        _seed_webhook_job_context(
+            database_url=database_url,
+            encryption_key=encryption_key,
+        )
 
         captured = {}
 
@@ -53,13 +66,18 @@ def test_process_webhook_delivery_job_signs_payload_and_marks_delivered(tmp_path
         assert captured["headers"]["X-Kila-Signature"] == f"sha256={expected_signature}"
 
 
-def test_process_webhook_delivery_job_marks_retry_pending_on_retryable_failure(tmp_path) -> None:
+def test_process_webhook_delivery_job_marks_retry_pending_on_retryable_failure(
+    tmp_path,
+) -> None:
     with managed_test_database_url(
         tmp_path=tmp_path,
         name="webhook_delivery_retry_pending",
     ) as database_url:
         encryption_key = _fernet_key()
-        _seed_webhook_job_context(database_url=database_url, encryption_key=encryption_key)
+        _seed_webhook_job_context(
+            database_url=database_url,
+            encryption_key=encryption_key,
+        )
 
         def sender(*, url: str, body: str, headers: dict[str, str], timeout: float):
             del url, body, headers, timeout
@@ -82,7 +100,10 @@ def test_publish_document_status_matches_subscriptions_and_wildcards(tmp_path) -
         name="webhook_delivery_publish",
     ) as database_url:
         encryption_key = _fernet_key()
-        _seed_webhook_publish_context(database_url=database_url, encryption_key=encryption_key)
+        _seed_webhook_publish_context(
+            database_url=database_url,
+            encryption_key=encryption_key,
+        )
 
         engine = build_engine(database_url)
         session_factory = build_session_factory(engine)
@@ -124,15 +145,63 @@ def test_publish_document_status_matches_subscriptions_and_wildcards(tmp_path) -
                 )
             )
 
-            deliveries = SqlAlchemyWebhookRepository(session).list_recent_deliveries(limit=20)
+            deliveries = SqlAlchemyWebhookRepository(session).list_recent_deliveries(
+                limit=20
+            )
             jobs = SqlAlchemyJobRepository(session).list_recent(limit=20)
 
         assert len(created) == 3
         assert len(deliveries) == 3
-        assert all(delivery.event_type == "document.approved" for delivery in deliveries)
+        assert all(
+            delivery.event_type == "document.approved" for delivery in deliveries
+        )
         webhook_jobs = [job for job in jobs if job.job_type == "webhook.deliver"]
         assert len(webhook_jobs) == 3
         assert len(fake_queue.enqueued_job_ids) == 3
+
+
+def test_process_webhook_delivery_job_propagates_worker_correlation_id(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="webhook_delivery_worker_correlation",
+    ) as database_url:
+        encryption_key = _fernet_key()
+        _seed_webhook_job_context(
+            database_url=database_url,
+            encryption_key=encryption_key,
+        )
+
+        class _FakeCurrentJob:
+            meta = {"correlation_id": "corr-webhook-worker-1"}
+
+        monkeypatch.setattr(
+            "kilasifen.infrastructure.jobs.workers.get_current_job",
+            lambda: _FakeCurrentJob(),
+        )
+
+        def sender(*, url: str, body: str, headers: dict[str, str], timeout: float):
+            del url, body, headers, timeout
+            return 200, "ok"
+
+        payload = process_webhook_delivery_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=encryption_key,
+            deliverer=WebhookDeliverer(sender=sender),
+        )
+
+        assert payload["job_status"] == "succeeded"
+
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            job = SqlAlchemyJobRepository(session).get("job-1")
+
+        assert job is not None
+        assert job.worker_correlation_id == "corr-webhook-worker-1"
 
 
 def _seed_webhook_job_context(*, database_url: str, encryption_key: str) -> None:

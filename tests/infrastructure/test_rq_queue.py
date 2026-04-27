@@ -1,5 +1,5 @@
-from datetime import UTC, datetime
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import fakeredis
 from rq import Queue
@@ -11,15 +11,28 @@ from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
-from kilasifen.infrastructure.db.repositories.certificates import SqlAlchemyCertificateRepository
-from kilasifen.infrastructure.db.repositories.documents import SqlAlchemyDocumentRepository
-from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
+from kilasifen.infrastructure.db.repositories.certificates import (
+    SqlAlchemyCertificateRepository,
+)
+from kilasifen.infrastructure.db.repositories.documents import (
+    SqlAlchemyDocumentRepository,
+)
+from kilasifen.infrastructure.db.repositories.emitters import (
+    SqlAlchemyEmitterRepository,
+)
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
-from kilasifen.infrastructure.db.repositories.stampings import SqlAlchemyStampingRepository
-from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
+from kilasifen.infrastructure.db.repositories.stampings import (
+    SqlAlchemyStampingRepository,
+)
+from kilasifen.infrastructure.db.session import (
+    build_engine,
+    build_session_factory,
+    session_scope,
+)
 from kilasifen.infrastructure.jobs.queue import RqJobQueue
 from kilasifen.infrastructure.jobs.workers import process_document_job
 from kilasifen.infrastructure.sifen.engine import EmissionOutcome
+from kilasifen.logging import reset_correlation_id, set_correlation_id
 from kilasifen.testing.database import managed_test_database_url
 
 
@@ -44,15 +57,23 @@ def test_rq_queue_enqueues_document_job_with_expected_payload() -> None:
         updated_at=_now(),
     )
 
-    enqueued = adapter.enqueue_document_emit(
-        job,
-        database_url="postgresql+psycopg://postgres:postgres@localhost:5432/kilasifen",
-        encryption_key=_fernet_key(),
-    )
+    token = set_correlation_id("corr-123")
+    try:
+        enqueued = adapter.enqueue_document_emit(
+            job,
+            database_url="postgresql+psycopg://postgres:postgres@localhost:5432/kilasifen",
+            encryption_key=_fernet_key(),
+        )
+    finally:
+        reset_correlation_id(token)
 
-    assert enqueued.func_name == "kilasifen.infrastructure.jobs.workers.process_document_job"
+    assert (
+        enqueued.func_name
+        == "kilasifen.infrastructure.jobs.workers.process_document_job"
+    )
     assert enqueued.kwargs["job_id"] == "job-1"
     assert enqueued.kwargs["encryption_key"] == _fernet_key()
+    assert enqueued.meta["correlation_id"] == "corr-123"
 
 
 def test_process_document_job_hydrates_job_and_document_context(tmp_path) -> None:
@@ -173,6 +194,43 @@ def test_process_document_job_hydrates_job_and_document_context(tmp_path) -> Non
         assert payload["job_type"] == "document.emit"
         assert payload["job_status"] == "succeeded"
         assert payload["document_status"] == "approved"
+
+
+def test_rq_queue_enqueues_webhook_delivery_with_correlation_id() -> None:
+    queue = Queue("webhooks", connection=fakeredis.FakeRedis())
+    adapter = RqJobQueue(queue)
+    job = Job(
+        id="job-webhook-1",
+        emitter_id="emitter-1",
+        related_entity_type="webhook_delivery",
+        related_entity_id="delivery-1",
+        job_type="webhook.deliver",
+        status="queued",
+        attempts=0,
+        error_snapshot=None,
+        scheduled_at=_now(),
+        started_at=None,
+        finished_at=None,
+        worker_correlation_id=None,
+        created_at=_now(),
+        updated_at=_now(),
+    )
+
+    token = set_correlation_id("corr-webhook-1")
+    try:
+        enqueued = adapter.enqueue_webhook_delivery(
+            job,
+            database_url="postgresql+psycopg://postgres:postgres@localhost:5432/kilasifen",
+            encryption_key=_fernet_key(),
+        )
+    finally:
+        reset_correlation_id(token)
+
+    assert (
+        enqueued.func_name
+        == "kilasifen.infrastructure.jobs.workers.process_webhook_delivery_job"
+    )
+    assert enqueued.meta["correlation_id"] == "corr-webhook-1"
 
 
 @dataclass

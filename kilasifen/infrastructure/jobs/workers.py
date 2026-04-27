@@ -5,27 +5,49 @@ from dataclasses import replace
 from datetime import date
 
 from redis import Redis
-from rq import Queue
+from rq import Queue, get_current_job
+
+from kilasifen.application.jobs.service import JobService
+from kilasifen.application.webhooks.service import WebhookService
+from kilasifen.config import get_settings
+from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
+from kilasifen.infrastructure.db.repositories.certificates import (
+    SqlAlchemyCertificateRepository,
+)
+from kilasifen.infrastructure.db.repositories.documents import (
+    SqlAlchemyDocumentRepository,
+)
+from kilasifen.infrastructure.db.repositories.emitters import (
+    SqlAlchemyEmitterRepository,
+)
+from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
+from kilasifen.infrastructure.db.repositories.stampings import (
+    SqlAlchemyStampingRepository,
+)
+from kilasifen.infrastructure.db.repositories.webhooks import (
+    SqlAlchemyWebhookRepository,
+)
+from kilasifen.infrastructure.db.session import (
+    build_engine,
+    build_session_factory,
+    session_scope,
+)
+from kilasifen.infrastructure.sifen.engine import (
+    DocumentEmissionEngine,
+    PysifenEmissionEngine,
+)
+from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
+from kilasifen.logging import (
+    get_correlation_id,
+    reset_correlation_id,
+    set_correlation_id,
+)
 from pysifen.sdk.errors import (
     SifenRejectionError,
     SifenTimeoutError,
     SifenTransportError,
     SifenValidationError,
 )
-
-from kilasifen.config import get_settings
-from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
-from kilasifen.infrastructure.db.repositories.certificates import SqlAlchemyCertificateRepository
-from kilasifen.application.webhooks.service import WebhookService
-from kilasifen.application.jobs.service import JobService
-from kilasifen.infrastructure.db.repositories.documents import SqlAlchemyDocumentRepository
-from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
-from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
-from kilasifen.infrastructure.db.repositories.stampings import SqlAlchemyStampingRepository
-from kilasifen.infrastructure.db.repositories.webhooks import SqlAlchemyWebhookRepository
-from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
-from kilasifen.infrastructure.sifen.engine import DocumentEmissionEngine, PysifenEmissionEngine
-from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 
 logger = logging.getLogger(__name__)
 
@@ -41,113 +63,152 @@ def process_document_job(
 ) -> dict[str, str]:
     """Process a document-emission job using the configured engine."""
 
+    correlation_token, worker_correlation_id = _bind_worker_correlation_id()
     engine = build_engine(database_url)
     session_factory = build_session_factory(engine)
     emission_engine = emission_engine or PysifenEmissionEngine()
     certificate_store = EncryptedCertificateStore(encryption_key)
 
-    with session_scope(session_factory) as session:
-        job_repository = SqlAlchemyJobRepository(session)
-        job_service = JobService(job_repository)
-        document_repository = SqlAlchemyDocumentRepository(session)
-        emitter_repository = SqlAlchemyEmitterRepository(session)
-        certificate_repository = SqlAlchemyCertificateRepository(session)
-        stamping_repository = SqlAlchemyStampingRepository(session)
-        job, document = job_service.get_document_job_context(
-            job_id=job_id,
-            document_repository=document_repository,
-        )
-        emitter = emitter_repository.get(document.emitter_id)
-        if emitter is None:
-            raise RuntimeError("Emitter not found for document job")
-        certificate = certificate_repository.get_active_for_emitter(document.emitter_id)
-        if certificate is None:
-            raise RuntimeError("Active certificate not configured")
-        stamping = stamping_repository.get_active_for_emitter(
-            document.emitter_id,
-            on_date=current_date or date.today(),
-        )
-        if stamping is None:
-            raise RuntimeError("Active stamping not configured")
+    try:
+        with session_scope(session_factory) as session:
+            job_repository = SqlAlchemyJobRepository(session)
+            job_service = JobService(job_repository)
+            document_repository = SqlAlchemyDocumentRepository(session)
+            emitter_repository = SqlAlchemyEmitterRepository(session)
+            certificate_repository = SqlAlchemyCertificateRepository(session)
+            stamping_repository = SqlAlchemyStampingRepository(session)
+            job, document = job_service.get_document_job_context(
+                job_id=job_id,
+                document_repository=document_repository,
+            )
+            emitter = emitter_repository.get(document.emitter_id)
+            if emitter is None:
+                raise RuntimeError("Emitter not found for document job")
+            certificate = certificate_repository.get_active_for_emitter(
+                document.emitter_id
+            )
+            if certificate is None:
+                raise RuntimeError("Active certificate not configured")
+            stamping = stamping_repository.get_active_for_emitter(
+                document.emitter_id,
+                on_date=current_date or date.today(),
+            )
+            if stamping is None:
+                raise RuntimeError("Active stamping not configured")
 
-        certificate_bytes = certificate_store.decrypt_bytes(certificate.encrypted_p12)
-        certificate_password = certificate_store.decrypt_text(certificate.encrypted_password)
-
-        try:
-            outcome = emission_engine.emit_document(
-                document=document,
-                emitter=emitter,
-                certificate=certificate,
-                certificate_bytes=certificate_bytes,
-                certificate_password=certificate_password,
-                stamping=stamping,
-            )
-            updated_document = replace(
-                document,
-                generated_xml=outcome.generated_xml,
-                signed_xml=outcome.signed_xml,
-                sifen_request_xml=outcome.request_xml,
-                sifen_response_raw=outcome.response_raw,
-                internal_status=outcome.sifen_status,
-                sifen_status=outcome.sifen_status,
-                sifen_result_code=outcome.result_code,
-                sifen_result_message=outcome.result_message,
-            )
-            updated_job = replace(
-                job,
-                status="succeeded",
-                error_snapshot=None,
-            )
-        except SifenValidationError as exc:
-            updated_document = replace(document, internal_status="failed")
-            updated_job = replace(
-                job,
-                status="failed",
-                error_snapshot={"category": "fiscal_validation", "message": str(exc)},
-            )
-        except (SifenTimeoutError, SifenTransportError) as exc:
-            updated_document = replace(document, internal_status="retry_pending")
-            updated_job = replace(
-                job,
-                status="retry_scheduled",
-                error_snapshot={"category": "transport", "message": str(exc)},
-            )
-        except SifenRejectionError as exc:
-            updated_document = replace(
-                document,
-                internal_status="rejected",
-                sifen_status="rejected",
-                sifen_result_code=exc.code,
-                sifen_result_message=exc.message,
-            )
-            updated_job = replace(
-                job,
-                status="failed",
-                error_snapshot={
-                    "category": "sifen_rejection",
-                    "code": exc.code,
-                    "message": exc.message,
+            logger.info(
+                "worker.document_job.started",
+                extra={
+                    "job_id": job.id,
+                    "document_id": document.id,
+                    "document_type": document.document_type,
+                    "emitter_id": document.emitter_id,
                 },
             )
 
-        document_repository.save(updated_document)
-        job_repository.save(updated_job)
-        _publish_document_status_webhooks(
-            document=updated_document,
-            session=session,
-            database_url=database_url,
-            encryption_key=encryption_key,
-            webhook_queue=webhook_queue,
-        )
+            certificate_bytes = certificate_store.decrypt_bytes(
+                certificate.encrypted_p12
+            )
+            certificate_password = certificate_store.decrypt_text(
+                certificate.encrypted_password
+            )
 
-        return {
-            "job_id": updated_job.id,
-            "job_type": updated_job.job_type,
-            "document_id": updated_document.id,
-            "document_type": updated_document.document_type,
-            "job_status": updated_job.status,
-            "document_status": updated_document.internal_status,
-        }
+            try:
+                outcome = emission_engine.emit_document(
+                    document=document,
+                    emitter=emitter,
+                    certificate=certificate,
+                    certificate_bytes=certificate_bytes,
+                    certificate_password=certificate_password,
+                    stamping=stamping,
+                )
+                updated_document = replace(
+                    document,
+                    generated_xml=outcome.generated_xml,
+                    signed_xml=outcome.signed_xml,
+                    sifen_request_xml=outcome.request_xml,
+                    sifen_response_raw=outcome.response_raw,
+                    internal_status=outcome.sifen_status,
+                    sifen_status=outcome.sifen_status,
+                    sifen_result_code=outcome.result_code,
+                    sifen_result_message=outcome.result_message,
+                )
+                updated_job = replace(
+                    job,
+                    status="succeeded",
+                    error_snapshot=None,
+                    worker_correlation_id=worker_correlation_id,
+                )
+            except SifenValidationError as exc:
+                updated_document = replace(document, internal_status="failed")
+                updated_job = replace(
+                    job,
+                    status="failed",
+                    error_snapshot={
+                        "category": "fiscal_validation",
+                        "message": str(exc),
+                    },
+                    worker_correlation_id=worker_correlation_id,
+                )
+            except (SifenTimeoutError, SifenTransportError) as exc:
+                updated_document = replace(document, internal_status="retry_pending")
+                updated_job = replace(
+                    job,
+                    status="retry_scheduled",
+                    error_snapshot={"category": "transport", "message": str(exc)},
+                    worker_correlation_id=worker_correlation_id,
+                )
+            except SifenRejectionError as exc:
+                updated_document = replace(
+                    document,
+                    internal_status="rejected",
+                    sifen_status="rejected",
+                    sifen_result_code=exc.code,
+                    sifen_result_message=exc.message,
+                )
+                updated_job = replace(
+                    job,
+                    status="failed",
+                    error_snapshot={
+                        "category": "sifen_rejection",
+                        "code": exc.code,
+                        "message": exc.message,
+                    },
+                    worker_correlation_id=worker_correlation_id,
+                )
+
+            document_repository.save(updated_document)
+            job_repository.save(updated_job)
+            _publish_document_status_webhooks(
+                document=updated_document,
+                session=session,
+                database_url=database_url,
+                encryption_key=encryption_key,
+                webhook_queue=webhook_queue,
+            )
+            logger.info(
+                "worker.document_job.finished",
+                extra={
+                    "job_id": updated_job.id,
+                    "document_id": updated_document.id,
+                    "document_type": updated_document.document_type,
+                    "emitter_id": updated_document.emitter_id,
+                    "job_status": updated_job.status,
+                    "document_status": updated_document.internal_status,
+                },
+            )
+
+            return {
+                "job_id": updated_job.id,
+                "job_type": updated_job.job_type,
+                "document_id": updated_document.id,
+                "document_type": updated_document.document_type,
+                "job_status": updated_job.status,
+                "document_status": updated_document.internal_status,
+            }
+    finally:
+        if correlation_token is not None:
+            reset_correlation_id(correlation_token)
 
 
 def process_webhook_delivery_job(
@@ -159,21 +220,50 @@ def process_webhook_delivery_job(
 ) -> dict[str, str]:
     """Process a webhook-delivery job."""
 
+    correlation_token, worker_correlation_id = _bind_worker_correlation_id()
     engine = build_engine(database_url)
     session_factory = build_session_factory(engine)
     deliverer = deliverer or WebhookDeliverer()
     secret_store = EncryptedCertificateStore(encryption_key)
 
-    with session_scope(session_factory) as session:
-        service = WebhookService(
-            webhook_repository=SqlAlchemyWebhookRepository(session),
-            emitter_repository=SqlAlchemyEmitterRepository(session),
-            job_repository=SqlAlchemyJobRepository(session),
-            secret_store=secret_store,
-            queue=_NoopWebhookQueue(),
-            deliverer=deliverer,
-        )
-        return service.process_delivery_attempt(job_id=job_id)
+    try:
+        with session_scope(session_factory) as session:
+            job = SqlAlchemyJobRepository(session).get(job_id)
+            if job is not None:
+                logger.info(
+                    "worker.webhook_delivery_job.started",
+                    extra={
+                        "job_id": job.id,
+                        "delivery_id": job.related_entity_id,
+                        "emitter_id": job.emitter_id,
+                    },
+                )
+                SqlAlchemyJobRepository(session).save(
+                    replace(job, worker_correlation_id=worker_correlation_id)
+                )
+
+            service = WebhookService(
+                webhook_repository=SqlAlchemyWebhookRepository(session),
+                emitter_repository=SqlAlchemyEmitterRepository(session),
+                job_repository=SqlAlchemyJobRepository(session),
+                secret_store=secret_store,
+                queue=_NoopWebhookQueue(),
+                deliverer=deliverer,
+            )
+            payload = service.process_delivery_attempt(job_id=job_id)
+            logger.info(
+                "worker.webhook_delivery_job.finished",
+                extra={
+                    "job_id": payload["job_id"],
+                    "delivery_id": payload["delivery_id"],
+                    "job_status": payload["job_status"],
+                    "delivery_status": payload["delivery_status"],
+                },
+            )
+            return payload
+    finally:
+        if correlation_token is not None:
+            reset_correlation_id(correlation_token)
 
 
 class _NoopWebhookQueue:
@@ -236,4 +326,15 @@ class _WebhookRqQueue:
                 "encryption_key": encryption_key,
             },
             job_id=job.id,
+            meta={"correlation_id": get_correlation_id()},
         )
+
+
+def _bind_worker_correlation_id() -> tuple[object | None, str | None]:
+    correlation_id = get_correlation_id()
+    rq_job = get_current_job()
+    if rq_job is not None:
+        correlation_id = rq_job.meta.get("correlation_id") or correlation_id
+    if correlation_id is None:
+        return None, None
+    return set_correlation_id(correlation_id), correlation_id

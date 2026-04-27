@@ -10,6 +10,7 @@ from kilasifen.infrastructure.jobs.workers import (
     process_document_job,
     process_webhook_delivery_job,
 )
+from kilasifen.logging import get_correlation_id
 
 
 class WebhookJobQueue(Protocol):
@@ -48,6 +49,7 @@ class RqJobQueue:
                 "encryption_key": encryption_key,
             },
             job_id=job.id,
+            meta={"correlation_id": get_correlation_id()},
         )
 
     def enqueue_webhook_delivery(
@@ -67,4 +69,5 @@ class RqJobQueue:
                 "encryption_key": encryption_key,
             },
             job_id=job.id,
+            meta={"correlation_id": get_correlation_id()},
         )

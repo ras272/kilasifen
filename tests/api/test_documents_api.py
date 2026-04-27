@@ -436,6 +436,6 @@ def test_create_typed_document_ignores_client_number_and_logs_warning(
     assert document["document_number"] == 1
     assert document["payload_snapshot"]["typed_contract"]["payload"]["numero"] == 1
     assert any(
-        record.message == "documents.numbering.client_number_ignored"
+        record.getMessage() == "documents.numbering.client_number_ignored"
         for record in caplog.records
     )
