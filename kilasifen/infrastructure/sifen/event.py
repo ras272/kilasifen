@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Protocol
+from xml.etree import ElementTree as ET
 
+from lxml import etree
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
 from pysifen import PRODUCCION, TEST
-from pysifen.de.bindings.v150.evento_v150 import TgGroupGesEve
-from pysifen.de.bindings.v150.ws_si_recep_evento_v150 import REnviEventoDe
-from pysifen.sdk.client import SifenClient
 from pysifen.sdk.errors import SifenRejectionError, SifenValidationError
+from pysifen.transmissao.evento import TransmissaoEvento
 from pysifen.transmissao.evento import _generate_id
 
 from kilasifen.domain.certificates.models import Certificate
@@ -68,22 +68,20 @@ class PysifenEventGateway:
     ) -> EventSubmissionOutcome:
         del certificate
         event_xml = _extract_event_xml(event.input_payload)
-        group = TgGroupGesEve.from_xml(event_xml)
-        request = REnviEventoDe(
-            dId=_generate_id(),
-            dEvReg=REnviEventoDe.DEvReg(gGroupGesEve=group),
+        request_xml = _build_enviar_evento_request_xml(
+            d_id=_generate_id(),
+            event_group_xml=event_xml,
         )
-        request_xml = self.serializer.render(request)
 
         ambiente = TEST if emitter.tax_environment == "test" else PRODUCCION
-        with SifenClient(
+        response_raw = _submit_event_raw(
             ambiente=ambiente,
-            pkcs12_data=certificate_bytes,
-            pkcs12_password=certificate_password,
-        ) as client:
-            response = client.enviar_evento(group)
+            certificate_bytes=certificate_bytes,
+            certificate_password=certificate_password,
+            request_xml=request_xml,
+        )
+        response = response_raw
 
-        response_raw = self.serializer.render(response)
         result_code, result_message, status, protocol = _normalize_response(response)
         if status == "rejected":
             raise SifenRejectionError(
@@ -113,6 +111,9 @@ def _extract_event_xml(input_payload: dict | None) -> str:
 
 
 def _normalize_response(response) -> tuple[str | None, str | None, str, str | None]:
+    if isinstance(response, str):
+        return _normalize_response_raw_xml(response)
+
     result_code = None
     result_message = None
     status = "submitted"
@@ -137,3 +138,86 @@ def _normalize_response(response) -> tuple[str | None, str | None, str, str | No
         status = "rejected"
 
     return result_code, result_message, status, protocol
+
+
+def _submit_event_raw(
+    *,
+    ambiente: int,
+    certificate_bytes: bytes,
+    certificate_password: str,
+    request_xml: str,
+) -> str:
+    with TransmissaoEvento(
+        ambiente=ambiente,
+        pkcs12_data=certificate_bytes,
+        pkcs12_password=certificate_password,
+    ) as transmissao:
+        response_raw = transmissao._send_raw_xml("evento", request_xml)
+    return response_raw.decode("utf-8")
+
+
+def _build_enviar_evento_request_xml(*, d_id: int, event_group_xml: str) -> str:
+    ns = "http://ekuatia.set.gov.py/sifen/xsd"
+    parser = etree.XMLParser(remove_blank_text=True)
+
+    request_root = etree.Element(f"{{{ns}}}rEnviEventoDe", nsmap={None: ns})
+    d_id_el = etree.SubElement(request_root, f"{{{ns}}}dId")
+    d_id_el.text = str(d_id)
+    d_ev_reg = etree.SubElement(request_root, f"{{{ns}}}dEvReg")
+
+    normalized_group_xml = _strip_xml_declaration(event_group_xml)
+    group_root = etree.fromstring(normalized_group_xml.encode("utf-8"), parser=parser)
+    d_ev_reg.append(group_root)
+
+    return etree.tostring(
+        request_root,
+        encoding="UTF-8",
+        xml_declaration=True,
+        pretty_print=False,
+    ).decode("utf-8")
+
+
+def _strip_xml_declaration(value: str) -> str:
+    text = str(value).strip()
+    if text.startswith("<?xml"):
+        closing = text.find("?>")
+        if closing != -1:
+            text = text[closing + 2 :].lstrip()
+    return text
+
+
+def _normalize_response_raw_xml(
+    response_raw: str,
+) -> tuple[str | None, str | None, str, str | None]:
+    try:
+        root = ET.fromstring(response_raw.encode("utf-8"))
+    except ET.ParseError as exc:
+        raise SifenValidationError("events.response.invalid_xml") from exc
+
+    result_code = _find_text(root, "dCodRes")
+    result_message = _find_text(root, "dMsgRes")
+    protocol = _find_text(root, "dProtAut")
+    status_text = (_find_text(root, "dEstRes") or "").strip().lower()
+
+    status = "submitted"
+    if "aprob" in status_text:
+        status = "approved"
+    elif "rechaz" in status_text:
+        status = "rejected"
+
+    if result_code in {"0260", "0300"}:
+        status = "approved"
+    elif result_code is not None and status != "approved":
+        status = "rejected"
+
+    return result_code, result_message, status, protocol
+
+
+def _find_text(root: ET.Element, local_name: str) -> str | None:
+    for element in root.iter():
+        if element.tag.rsplit("}", 1)[-1] != local_name:
+            continue
+        value = (element.text or "").strip()
+        if value:
+            return value
+    return None
