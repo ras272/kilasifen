@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     redis_url: str = Field(default="redis://localhost:6379/0")
     encryption_key: str | None = None
     sifen_environment: Literal["test", "production"] = "test"
+    sentry_dsn: str | None = None
+    sentry_environment: str = "development"
+    sentry_release: str | None = None
+    sentry_traces_sample_rate: float = 0.0
     document_auto_enqueue: bool = False
     document_publish_webhooks: bool = False
 

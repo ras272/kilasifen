@@ -230,6 +230,11 @@ def test_process_document_job_propagates_worker_correlation_id(
             "kilasifen.infrastructure.jobs.workers.get_current_job",
             lambda: _FakeCurrentJob(),
         )
+        observability_calls = []
+        monkeypatch.setattr(
+            "kilasifen.infrastructure.jobs.workers.ensure_worker_observability",
+            lambda: observability_calls.append("called"),
+        )
 
         payload = process_document_job(
             job_id="job-1",
@@ -250,6 +255,7 @@ def test_process_document_job_propagates_worker_correlation_id(
         )
 
         assert payload["job_status"] == "succeeded"
+        assert observability_calls == ["called"]
 
         engine = build_engine(database_url)
         session_factory = build_session_factory(engine)

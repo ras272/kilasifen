@@ -39,6 +39,7 @@ from kilasifen.logging import (
     reset_correlation_id,
     set_correlation_id,
 )
+from kilasifen.observability import initialize_sentry
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ def create_app() -> FastAPI:
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    initialize_sentry(settings=settings, component="api")
 
     app = FastAPI(title=settings.api_title)
     engine = build_engine(settings.database_url)

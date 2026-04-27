@@ -42,6 +42,7 @@ from kilasifen.logging import (
     reset_correlation_id,
     set_correlation_id,
 )
+from kilasifen.observability import ensure_worker_observability
 from pysifen.sdk.errors import (
     SifenRejectionError,
     SifenTimeoutError,
@@ -63,6 +64,7 @@ def process_document_job(
 ) -> dict[str, str]:
     """Process a document-emission job using the configured engine."""
 
+    ensure_worker_observability()
     correlation_token, worker_correlation_id = _bind_worker_correlation_id()
     engine = build_engine(database_url)
     session_factory = build_session_factory(engine)
@@ -220,6 +222,7 @@ def process_webhook_delivery_job(
 ) -> dict[str, str]:
     """Process a webhook-delivery job."""
 
+    ensure_worker_observability()
     correlation_token, worker_correlation_id = _bind_worker_correlation_id()
     engine = build_engine(database_url)
     session_factory = build_session_factory(engine)
