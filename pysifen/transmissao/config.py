@@ -23,8 +23,7 @@ ENDPOINTS = {
             "de/ws/consultas/consulta-ruc.wsdl"
         ),
         "evento": (
-            "https://sifen.set.gov.py/de/ws/eventos/"
-            "recibe-evento.wsdl"
+            "https://sifen.set.gov.py/de/ws/eventos/evento.wsdl"
         ),
         "cons_dte": (
             "https://sifen.set.gov.py/"
@@ -57,8 +56,7 @@ ENDPOINTS = {
             "de/ws/consultas/consulta-ruc.wsdl"
         ),
         "evento": (
-            "https://sifen-test.set.gov.py/"
-            "de/ws/eventos/recibe-evento.wsdl"
+            "https://sifen-test.set.gov.py/de/ws/eventos/evento.wsdl"
         ),
         "cons_dte": (
             "https://sifen-test.set.gov.py/"
