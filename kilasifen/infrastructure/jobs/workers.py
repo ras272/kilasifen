@@ -3,6 +3,7 @@
 import logging
 from dataclasses import replace
 from datetime import date
+from xml.etree import ElementTree as ET
 
 from redis import Redis
 from rq import Queue, get_current_job
@@ -134,13 +135,30 @@ def process_document_job(
                     sifen_status=outcome.sifen_status,
                     sifen_result_code=outcome.result_code,
                     sifen_result_message=outcome.result_message,
+                    cdc=outcome.cdc
+                    or _extract_cdc(
+                        outcome.signed_xml,
+                        outcome.generated_xml,
+                    ),
                 )
-                updated_job = replace(
-                    job,
-                    status="succeeded",
-                    error_snapshot=None,
-                    worker_correlation_id=worker_correlation_id,
-                )
+                if outcome.sifen_status == "rejected":
+                    updated_job = replace(
+                        job,
+                        status="failed",
+                        error_snapshot={
+                            "category": "sifen_rejection",
+                            "code": outcome.result_code,
+                            "message": outcome.result_message,
+                        },
+                        worker_correlation_id=worker_correlation_id,
+                    )
+                else:
+                    updated_job = replace(
+                        job,
+                        status="succeeded",
+                        error_snapshot=None,
+                        worker_correlation_id=worker_correlation_id,
+                    )
             except SifenValidationError as exc:
                 updated_document = replace(document, internal_status="failed")
                 updated_job = replace(
@@ -341,3 +359,17 @@ def _bind_worker_correlation_id() -> tuple[object | None, str | None]:
     if correlation_id is None:
         return None, None
     return set_correlation_id(correlation_id), correlation_id
+
+
+def _extract_cdc(*xml_candidates: str | None) -> str | None:
+    for xml_text in xml_candidates:
+        if not xml_text:
+            continue
+        try:
+            root = ET.fromstring(xml_text.encode("utf-8"))
+        except ET.ParseError:
+            continue
+        for element in root.iter():
+            if element.tag.endswith("DE"):
+                return element.attrib.get("Id")
+    return None

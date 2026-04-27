@@ -8,17 +8,16 @@ from typing import Protocol
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
-from pysifen import PRODUCCION, TEST, sign_xml
-from pysifen.sdk.client import SifenClient
-from pysifen.sdk.errors import SifenRejectionError, SifenValidationError
-from pysifen.transmissao.de import _build_enviar_de_request_xml
-
 from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
 from kilasifen.infrastructure.sifen.mapper import PysifenPayloadMapper
+from pysifen import PRODUCCION, TEST, sign_xml
+from pysifen.sdk.client import SifenClient
+from pysifen.sdk.errors import SifenValidationError
+from pysifen.transmissao.de import _build_enviar_de_request_xml
 
 
 @dataclass(slots=True)
@@ -32,6 +31,7 @@ class EmissionOutcome:
     sifen_status: str
     result_code: str | None
     result_message: str | None
+    cdc: str | None = None
 
 
 class DocumentEmissionEngine(Protocol):
@@ -104,9 +104,6 @@ class PysifenEmissionEngine:
 
         result_code, result_message, status = _normalize_response(response)
         response_raw = self.serializer.render(response)
-        if status == "rejected":
-            raise SifenRejectionError(result_code or "unknown", result_message or "rejected")
-
         return EmissionOutcome(
             generated_xml=generated_xml,
             signed_xml=signed_xml,
@@ -115,6 +112,7 @@ class PysifenEmissionEngine:
             sifen_status=status,
             result_code=result_code,
             result_message=result_message,
+            cdc=emission_input.doc_id,
         )
 
 
@@ -123,21 +121,34 @@ def _normalize_response(response) -> tuple[str | None, str | None, str]:
     result_message = None
     status = "submitted"
 
-    prot = getattr(response, "gRespProc", None) or response
+    prot = (
+        getattr(response, "rProtDe", None)
+        or getattr(response, "gRespProc", None)
+        or response
+    )
+    result_node = _first_result_node(prot)
     for attr in ("dCodRes", "dCodResLot", "dCodResC"):
-        value = getattr(prot, attr, None)
+        value = getattr(result_node, attr, None) or getattr(prot, attr, None)
         if value:
             result_code = str(value)
             break
     for attr in ("dMsgRes", "dMsgResLot", "dMsgResC"):
-        value = getattr(prot, attr, None)
+        value = getattr(result_node, attr, None) or getattr(prot, attr, None)
         if value:
             result_message = str(value)
             break
 
-    if result_code == "0260":
+    status_text = str(getattr(prot, "dEstRes", "") or "").strip().lower()
+    if result_code == "0260" or status_text == "aprobado":
         status = "approved"
-    elif result_code:
+    elif result_code or status_text == "rechazado":
         status = "rejected"
 
     return result_code, result_message, status
+
+
+def _first_result_node(prot):
+    result = getattr(prot, "gResProc", None)
+    if isinstance(result, list):
+        return result[0] if result else prot
+    return result or prot

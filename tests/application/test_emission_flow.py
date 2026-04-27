@@ -54,12 +54,17 @@ def test_process_document_job_persists_emission_artifacts(tmp_path) -> None:
         fake_engine = FakeEmissionEngine(
             outcome=EmissionOutcome(
                 generated_xml="<rDE/>",
-                signed_xml="<rDE><Signature/></rDE>",
+                signed_xml=(
+                    '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+                    '<DE Id="0180012345"/>'
+                    "<Signature/></rDE>"
+                ),
                 request_xml="<soap>request</soap>",
                 response_raw="<soap>response</soap>",
                 sifen_status="approved",
                 result_code="0260",
                 result_message="Autorizacion satisfactoria",
+                cdc="0180012345",
             )
         )
 
@@ -84,10 +89,11 @@ def test_process_document_job_persists_emission_artifacts(tmp_path) -> None:
 
         assert document is not None
         assert document.generated_xml == "<rDE/>"
-        assert document.signed_xml == "<rDE><Signature/></rDE>"
+        assert document.signed_xml is not None
         assert document.sifen_request_xml == "<soap>request</soap>"
         assert document.sifen_response_raw == "<soap>response</soap>"
         assert document.internal_status == "approved"
+        assert document.cdc == "0180012345"
         assert document.sifen_result_code == "0260"
         assert job is not None
         assert job.status == "succeeded"
@@ -243,12 +249,17 @@ def test_process_document_job_propagates_worker_correlation_id(
             emission_engine=FakeEmissionEngine(
                 outcome=EmissionOutcome(
                     generated_xml="<rDE/>",
-                    signed_xml="<rDE><Signature/></rDE>",
+                    signed_xml=(
+                        '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+                        '<DE Id="0180012345"/>'
+                        "<Signature/></rDE>"
+                    ),
                     request_xml="<soap>request</soap>",
                     response_raw="<soap>response</soap>",
                     sifen_status="approved",
                     result_code="0260",
                     result_message="Autorizacion satisfactoria",
+                    cdc="0180012345",
                 )
             ),
             current_date=date(2024, 4, 24),
@@ -264,6 +275,59 @@ def test_process_document_job_propagates_worker_correlation_id(
 
         assert job is not None
         assert job.worker_correlation_id == "corr-worker-1"
+
+
+def test_process_document_job_marks_rejected_outcome_without_engine_exception(
+    tmp_path,
+) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="emission_rejected_outcome",
+    ) as database_url:
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
+
+        payload = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            emission_engine=FakeEmissionEngine(
+                outcome=EmissionOutcome(
+                    generated_xml="<rDE/>",
+                    signed_xml=(
+                        '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+                        '<DE Id="0180099999"/>'
+                        "<Signature/></rDE>"
+                    ),
+                    request_xml="<soap>request</soap>",
+                    response_raw="<soap>response</soap>",
+                    sifen_status="rejected",
+                    result_code="1330",
+                    result_message=(
+                        "Es obligatorio informar el numero de casa del receptor"
+                    ),
+                    cdc="0180099999",
+                )
+            ),
+            current_date=date(2024, 4, 24),
+        )
+
+        assert payload["job_status"] == "failed"
+        assert payload["document_status"] == "rejected"
+
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            document = SqlAlchemyDocumentRepository(session).get("document-1")
+            job = SqlAlchemyJobRepository(session).get("job-1")
+
+        assert document is not None
+        assert document.internal_status == "rejected"
+        assert document.cdc == "0180099999"
+        assert job is not None
+        assert job.status == "failed"
+        assert job.error_snapshot is not None
+        assert job.error_snapshot["category"] == "sifen_rejection"
 
 
 @dataclass

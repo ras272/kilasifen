@@ -1,12 +1,12 @@
 from datetime import UTC, date, datetime
 
 import pytest
-from pysifen.sdk.errors import SifenValidationError
 
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.infrastructure.sifen.mapper import PysifenPayloadMapper
+from pysifen.sdk.errors import SifenValidationError
 
 
 def test_mapper_builds_factura_xml_from_typed_payload() -> None:
@@ -42,6 +42,8 @@ def test_mapper_builds_factura_xml_from_typed_payload() -> None:
     assert emission_input.generated_xml is not None
     assert "<iTiDE>1</iTiDE>" in emission_input.generated_xml
     assert "<dNumDoc>0001001</dNumDoc>" in emission_input.generated_xml
+    assert "<dTotOpeGs>" not in emission_input.generated_xml
+    assert "<dTotalGs>" not in emission_input.generated_xml
     assert emission_input.doc_id is not None
     assert f'Id="{emission_input.doc_id}"' in emission_input.generated_xml
 
@@ -99,6 +101,47 @@ def test_mapper_rejects_typed_payload_without_required_fields() -> None:
     )
 
     with pytest.raises(SifenValidationError):
+        mapper.map_document(
+            document,
+            emitter=_build_emitter(),
+            stamping=_build_stamping(),
+        )
+
+
+def test_mapper_rejects_receiver_address_without_house_number() -> None:
+    mapper = PysifenPayloadMapper()
+    document = _build_document(
+        payload_snapshot={
+            "typed_contract": {
+                "contract": "factura_v1",
+                "payload": {
+                    "numero": 1001,
+                    "fecha": "2026-04-25T10:00:00",
+                    "cliente": {
+                        "naturaleza": 1,
+                        "tipo_operacion": 1,
+                        "ruc": "80069563-1",
+                        "razon_social": "TIPS S.A",
+                        "direccion": "ASUNCION",
+                    },
+                    "items": [
+                        {
+                            "codigo": "A-001",
+                            "descripcion": "Producto",
+                            "cantidad": 1,
+                            "precioUnitario": 100000,
+                            "iva": 10,
+                        }
+                    ],
+                },
+            }
+        }
+    )
+
+    with pytest.raises(
+        SifenValidationError,
+        match="documents.cliente.numero_casa_required",
+    ):
         mapper.map_document(
             document,
             emitter=_build_emitter(),

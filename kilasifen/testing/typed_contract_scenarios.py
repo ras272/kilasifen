@@ -39,6 +39,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "ruc": "80069563-1",
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
+                    "numero_casa": "123",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -76,6 +77,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "numero_documento_identidad": "0",
                     "nombre": "CONSUMIDOR FINAL",
                     "direccion": "ASUNCION",
+                    "numero_casa": "123",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -128,6 +130,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "ruc": "80069563-1",
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
+                    "numero_casa": "123",
                 },
                 "items": [
                     {
@@ -169,6 +172,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "ruc": "80069563-1",
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
+                    "numero_casa": "123",
                 },
                 "items": [
                     {
@@ -201,6 +205,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "ruc": "80069563-1",
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
+                    "numero_casa": "123",
                 },
                 "condicion_operacion": {
                     "tipo": "credito",
@@ -243,6 +248,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "ruc": "80069563-1",
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
+                    "numero_casa": "123",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -292,6 +298,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "ruc": "80069563-1",
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
+                    "numero_casa": "123",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -337,6 +344,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "ruc": "80069563-1",
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
+                    "numero_casa": "123",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -371,6 +379,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "ruc": "80069563-1",
                     "razon_social": "MINISTERIO TEST",
                     "direccion": "ASUNCION",
+                    "numero_casa": "123",
                     "compras_publicas": {
                         "modalidad": "1",
                         "entidad": "12345",
@@ -409,6 +418,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "ruc": "80069563-1",
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
+                    "numero_casa": "123",
                 },
                 "documento_asociado": {"tipo": 1, "cdc": "01800123450001001000000012026010112345678901"},
                 "items": [
@@ -441,6 +451,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "ruc": "80069563-1",
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
+                    "numero_casa": "123",
                 },
                 "documento_asociado": {"tipo": 1, "cdc": "01800123450001001000000012026010112345678901"},
                 "items": [
@@ -482,6 +493,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "ruc": "80069563-1",
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
+                    "numero_casa": "123",
                 },
                 "documento_asociado": {"tipo": 1, "cdc": "01800123450001001000000012026010112345678901"},
                 "items": [

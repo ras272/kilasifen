@@ -3,17 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, time
-from decimal import Decimal, ROUND_HALF_UP
+from datetime import date, datetime, time
+from decimal import ROUND_HALF_UP, Decimal
 from xml.etree import ElementTree as ET
-
-from pysifen.sdk.errors import SifenValidationError
-from pysifen.sdk.fiscal import calculate_mod11_dv, generate_cdc
-from pysifen.sdk.validation import validate_xml
+from zoneinfo import ZoneInfo
 
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
+from pysifen.sdk.errors import SifenValidationError
+from pysifen.sdk.fiscal import calculate_mod11_dv, generate_cdc
+from pysifen.sdk.validation import validate_xml
 
 SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 ET.register_namespace("", SIFEN_NS)
@@ -23,6 +23,7 @@ _AMOUNT_Q = Decimal("0.00000001")
 _AMOUNT4_Q = Decimal("0.0001")
 _PERCENT_Q = Decimal("0.00000001")
 _ITEM_TOTAL_Q = Decimal("0.00000001")
+_PY_TZ = ZoneInfo("America/Asuncion")
 
 _TRANSACTION_CODE_BY_NAME = {
     "venta_mercaderia": 1,
@@ -233,6 +234,7 @@ class _ItemComputation:
     base_10: Decimal
     iva_5: Decimal
     iva_10: Decimal
+    total_gs: Decimal | None
 
 
 @dataclass(slots=True)
@@ -253,6 +255,7 @@ class _Totals:
     redondeo: Decimal
     total_neto: Decimal
     total_iva: Decimal
+    total_gs: Decimal | None
 
 
 def build_typed_document_xml(
@@ -336,6 +339,13 @@ def _build_factura_xml(
         condicion_tipo_cambio=condicion_tipo_cambio,
     )
     totals = _calculate_totals(item_computations, moneda=moneda)
+    totals.total_gs = _resolve_total_gs(
+        totals=totals,
+        item_computations=item_computations,
+        moneda=moneda,
+        condicion_tipo_cambio=condicion_tipo_cambio,
+        tipo_cambio=tipo_cambio,
+    )
     _assert_totals_consistency(totals)
 
     doc_id = _build_doc_id(
@@ -453,6 +463,13 @@ def _build_nota_credito_xml(
         condicion_tipo_cambio=condicion_tipo_cambio,
     )
     totals = _calculate_totals(item_computations, moneda=moneda)
+    totals.total_gs = _resolve_total_gs(
+        totals=totals,
+        item_computations=item_computations,
+        moneda=moneda,
+        condicion_tipo_cambio=condicion_tipo_cambio,
+        tipo_cambio=tipo_cambio,
+    )
     _assert_totals_consistency(totals)
 
     doc_id = _build_doc_id(
@@ -783,6 +800,8 @@ def _append_receiver(*, gdat: ET.Element, cliente: dict) -> None:
     if ddir:
         _sub(rec, "dDirRec", ddir)
     numero_casa = _clean_text(cliente.get("numero_casa"))
+    if ddir and not numero_casa:
+        raise SifenValidationError("documents.cliente.numero_casa_required")
     if numero_casa:
         _sub(rec, "dNumCasRec", numero_casa)
     dep = _clean_text(cliente.get("departamento"))
@@ -1152,6 +1171,20 @@ def _append_items(
             taxable = _ZERO
             iva = _ZERO
             base_exe = total_item
+        taxable = _quantize_tax_value(taxable, moneda=moneda)
+        iva = _quantize_tax_value(iva, moneda=moneda)
+        base_exe = _quantize_tax_value(base_exe, moneda=moneda)
+        rate_item = None
+        total_item_gs = None
+        if moneda != "PYG" and condicion_tipo_cambio == 2:
+            rate_item = _coerce_decimal(
+                _first_non_none(item, "tipo_cambio_item", "dTiCamIt"),
+                field_name=f"items[{index}].tipo_cambio_item",
+                default=None,
+                required=True,
+                min_value=Decimal("0.0001"),
+            )
+            total_item_gs = _quantize_guarani_value(total_item * rate_item)
 
         if dtip is not None:
             current = _sub(dtip, "gCamItem")
@@ -1186,14 +1219,7 @@ def _append_items(
 
             values = _sub(current, "gValorItem")
             _sub(values, "dPUniProSer", _as_sifen_amount(unit_price))
-            if moneda != "PYG" and condicion_tipo_cambio == 2:
-                rate_item = _coerce_decimal(
-                    _first_non_none(item, "tipo_cambio_item", "dTiCamIt"),
-                    field_name=f"items[{index}].tipo_cambio_item",
-                    default=None,
-                    required=True,
-                    min_value=Decimal("0.0001"),
-                )
+            if rate_item is not None:
                 _sub(values, "dTiCamIt", _as_sifen_amount4(rate_item))
             _sub(values, "dTotBruOpeItem", _as_sifen_amount(total_bruto))
 
@@ -1215,7 +1241,8 @@ def _append_items(
             _sub(rests, "dAntPreUniIt", _as_sifen_amount(anticipo_particular))
             _sub(rests, "dAntGloPreUniIt", _as_sifen_amount(anticipo_global))
             _sub(rests, "dTotOpeItem", _as_sifen_amount(total_item))
-            _sub(rests, "dTotOpeGs", _as_sifen_amount(total_item))
+            if total_item_gs is not None:
+                _sub(rests, "dTotOpeGs", _as_sifen_amount(total_item_gs))
 
             iva_node = _sub(current, "gCamIVA")
             _sub(iva_node, "iAfecIVA", str(affectation))
@@ -1240,6 +1267,7 @@ def _append_items(
                 base_10=taxable if rate == 10 else _ZERO,
                 iva_5=iva if rate == 5 else _ZERO,
                 iva_10=iva if rate == 10 else _ZERO,
+                total_gs=total_item_gs,
             )
         )
     return computations
@@ -1271,9 +1299,14 @@ def _calculate_totals(item_computations: list[_ItemComputation], *, moneda: str)
     base_10 = sum((x.base_10 for x in item_computations), _ZERO).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
     iva_5 = sum((x.iva_5 for x in item_computations), _ZERO).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
     iva_10 = sum((x.iva_10 for x in item_computations), _ZERO).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
+    base_5 = _quantize_tax_value(base_5, moneda=moneda)
+    base_10 = _quantize_tax_value(base_10, moneda=moneda)
+    iva_5 = _quantize_tax_value(iva_5, moneda=moneda)
+    iva_10 = _quantize_tax_value(iva_10, moneda=moneda)
     redondeo = _calculate_rounding(total=total, moneda=moneda)
     total_neto = (total - redondeo).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
     total_iva = (iva_5 + iva_10).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
+    total_iva = _quantize_tax_value(total_iva, moneda=moneda)
     return _Totals(
         sub_exe=sub_exe,
         sub_exo=sub_exo,
@@ -1291,15 +1324,16 @@ def _calculate_totals(item_computations: list[_ItemComputation], *, moneda: str)
         redondeo=redondeo,
         total_neto=total_neto,
         total_iva=total_iva,
+        total_gs=None,
     )
 
 
 def _append_totals(de: ET.Element, totals: _Totals) -> None:
     gtot = _sub(de, "gTotSub")
-    _sub(gtot, "dSubExe", _as_sifen_amount(totals.sub_exe))
-    _sub(gtot, "dSubExo", _as_sifen_amount(totals.sub_exo))
-    _sub(gtot, "dSub5", _as_sifen_amount(totals.sub_5))
-    _sub(gtot, "dSub10", _as_sifen_amount(totals.sub_10))
+    _sub_optional_amount(gtot, "dSubExe", totals.sub_exe)
+    _sub_optional_amount(gtot, "dSubExo", totals.sub_exo)
+    _sub_optional_amount(gtot, "dSub5", totals.sub_5)
+    _sub_optional_amount(gtot, "dSub10", totals.sub_10)
     _sub(gtot, "dTotOpe", _as_sifen_amount(totals.total))
     _sub(gtot, "dTotDesc", _as_sifen_amount(totals.total_discount_particular))
     _sub(gtot, "dTotDescGlotem", _as_sifen_amount(totals.total_discount_global))
@@ -1321,18 +1355,54 @@ def _append_totals(de: ET.Element, totals: _Totals) -> None:
         _as_sifen_amount((totals.total_anticipo_particular + totals.total_anticipo_global)),
     )
     _sub(gtot, "dRedon", _as_sifen_amount4(totals.redondeo))
-    _sub(gtot, "dComi", _as_sifen_amount(_ZERO))
+    _sub_optional_amount(gtot, "dComi", _ZERO)
     _sub(gtot, "dTotGralOpe", _as_sifen_amount(totals.total_neto))
-    _sub(gtot, "dIVA5", _as_sifen_amount(totals.iva_5))
-    _sub(gtot, "dIVA10", _as_sifen_amount(totals.iva_10))
-    _sub(gtot, "dLiqTotIVA5", _as_sifen_amount(totals.iva_5))
-    _sub(gtot, "dLiqTotIVA10", _as_sifen_amount(totals.iva_10))
-    _sub(gtot, "dIVAComi", _as_sifen_amount(_ZERO))
-    _sub(gtot, "dTotIVA", _as_sifen_amount(totals.total_iva))
-    _sub(gtot, "dBaseGrav5", _as_sifen_amount(totals.base_5))
-    _sub(gtot, "dBaseGrav10", _as_sifen_amount(totals.base_10))
-    _sub(gtot, "dTBasGraIVA", _as_sifen_amount(totals.base_5 + totals.base_10))
-    _sub(gtot, "dTotalGs", _as_sifen_amount(totals.total_neto))
+    _sub_optional_amount(gtot, "dIVA5", totals.iva_5)
+    _sub_optional_amount(gtot, "dIVA10", totals.iva_10)
+    _sub_optional_amount(gtot, "dIVAComi", _ZERO)
+    _sub_optional_amount(gtot, "dTotIVA", totals.total_iva)
+    _sub_optional_amount(gtot, "dBaseGrav5", totals.base_5)
+    _sub_optional_amount(gtot, "dBaseGrav10", totals.base_10)
+    _sub_optional_amount(gtot, "dTBasGraIVA", totals.base_5 + totals.base_10)
+    if totals.total_gs is not None:
+        _sub(gtot, "dTotalGs", _as_sifen_amount(totals.total_gs))
+
+
+def _resolve_total_gs(
+    *,
+    totals: _Totals,
+    item_computations: list[_ItemComputation],
+    moneda: str,
+    condicion_tipo_cambio: int | None,
+    tipo_cambio: Decimal | None,
+) -> Decimal | None:
+    if moneda == "PYG":
+        return None
+    if condicion_tipo_cambio == 1 and tipo_cambio is not None:
+        return _quantize_guarani_value(totals.total_neto * tipo_cambio)
+    if condicion_tipo_cambio == 2:
+        total_item_gs = sum(
+            (item.total_gs or _ZERO for item in item_computations),
+            _ZERO,
+        )
+        return _quantize_guarani_value(total_item_gs)
+    return None
+
+
+def _quantize_tax_value(value: Decimal, *, moneda: str) -> Decimal:
+    if moneda == "PYG":
+        return _quantize_guarani_value(value)
+    return value.quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
+
+
+def _quantize_guarani_value(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+
+def _sub_optional_amount(parent: ET.Element, name: str, value: Decimal) -> None:
+    if value == _ZERO:
+        return
+    _sub(parent, name, _as_sifen_amount(value))
 
 
 def _append_associated_documents_if_any(*, de: ET.Element, typed_payload: dict) -> None:
@@ -1645,7 +1715,7 @@ def _resolve_item_rate(item: dict, *, affectation: int) -> int:
 def _resolve_emission_datetime(payload: dict) -> str:
     raw = _first_non_none(payload, "fecha_emision", "fecha")
     if raw is None:
-        dt = datetime.now(UTC)
+        dt = datetime.now(_PY_TZ)
     else:
         if isinstance(raw, datetime):
             dt = raw
@@ -1661,7 +1731,7 @@ def _resolve_emission_datetime(payload: dict) -> str:
                 except ValueError as exc:
                     raise SifenValidationError("fecha/fecha_emision has invalid format") from exc
     if dt.tzinfo is not None:
-        dt = dt.astimezone(UTC).replace(tzinfo=None)
+        dt = dt.astimezone(_PY_TZ).replace(tzinfo=None)
     return dt.replace(microsecond=0).isoformat()
 
 
