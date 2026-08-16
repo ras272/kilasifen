@@ -93,7 +93,8 @@ ruff check pysifen/ tests/
 - Testes de round-trip: XML → objeto → XML → comparar
 - Samples XML em `pysifen/de/samples/v150/`
 - Testes de transmissão usam mock (não fazem chamadas reais)
-- Testes de assinatura usam `tests/test_cert.pfx` (senha: `test1234`)
+- Testes de assinatura geram um PKCS#12 autofirmado efêmero em `tests/conftest.py`;
+  nenhum arquivo `*.pfx`/`*.p12` nem senha é versionado.
 
 ### Estilo
 - Ruff para lint (rules: E, F, I, W)

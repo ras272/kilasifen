@@ -61,8 +61,9 @@ CSC; this chunk computes both and substitutes them after signing.
 The 12 goldens under `tests/golden/` embed the real DigestValue (which
 depends on the cert + signed XML bytes) and the real `cHashQR` (which
 depends on the emitter CSC). They are deterministic for the fixed test
-fixture (`csc=ABCD0000000000000000000000000000`, `csc_id=0001`,
-cert at `tests/test_cert.pfx`, password `test1234`).
+fixture (`csc=ABCD0000000000000000000000000000`, `csc_id=0001`). The
+certificate is now a self-signed PKCS#12 generated ephemerally by
+`tests/conftest.py`; no certificate file or password is committed.
 
 To regenerate after a deliberate change to the unsigned XML or the QR
 URL parameters: drive the typed scenarios through the API as the
