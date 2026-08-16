@@ -38,6 +38,7 @@ from kilasifen.infrastructure.sifen.engine import (
     PysifenEmissionEngine,
 )
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
+from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
 from kilasifen.logging import (
     get_correlation_id,
     reset_correlation_id,
@@ -246,7 +247,10 @@ def process_webhook_delivery_job(
     correlation_token, worker_correlation_id = _bind_worker_correlation_id()
     engine = build_engine(database_url)
     session_factory = build_session_factory(engine)
-    deliverer = deliverer or WebhookDeliverer()
+    settings = get_settings()
+    deliverer = deliverer or WebhookDeliverer(
+        url_policy=WebhookUrlPolicy.for_environment(settings.environment)
+    )
     secret_store = EncryptedCertificateStore(encryption_key)
 
     try:
@@ -322,7 +326,9 @@ def _publish_document_status_webhooks(
         job_repository=SqlAlchemyJobRepository(session),
         secret_store=EncryptedCertificateStore(encryption_key),
         queue=queue_adapter,
-        deliverer=WebhookDeliverer(),
+        deliverer=WebhookDeliverer(
+            url_policy=WebhookUrlPolicy.for_environment(settings.environment)
+        ),
         database_url=database_url,
         encryption_key=encryption_key,
     )

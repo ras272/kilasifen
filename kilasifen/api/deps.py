@@ -43,6 +43,7 @@ from kilasifen.infrastructure.jobs.queue import RqJobQueue
 from kilasifen.infrastructure.sifen.event import PysifenEventGateway
 from kilasifen.infrastructure.sifen.query import PysifenQueryGateway
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
+from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
 from kilasifen.security import (
     ApiKeyPrincipal,
     FISCAL_WRITE_SCOPE,
@@ -298,7 +299,9 @@ def get_event_service(
         job_repository=SqlAlchemyJobRepository(session),
         secret_store=EncryptedCertificateStore(settings.encryption_key),
         queue=RqJobQueue(webhook_queue),
-        deliverer=WebhookDeliverer(),
+        deliverer=WebhookDeliverer(
+            url_policy=WebhookUrlPolicy.for_environment(settings.environment)
+        ),
         database_url=settings.database_url,
         encryption_key=settings.encryption_key,
     )
@@ -337,7 +340,9 @@ def get_webhook_service(
         job_repository=SqlAlchemyJobRepository(session),
         secret_store=EncryptedCertificateStore(settings.encryption_key),
         queue=RqJobQueue(queue),
-        deliverer=WebhookDeliverer(),
+        deliverer=WebhookDeliverer(
+            url_policy=WebhookUrlPolicy.for_environment(settings.environment)
+        ),
         database_url=settings.database_url,
         encryption_key=settings.encryption_key,
     )
