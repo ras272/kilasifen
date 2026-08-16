@@ -1,6 +1,8 @@
 """FastAPI application factory for Kila SIFEN."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from time import perf_counter
 from uuid import uuid4
 
@@ -45,6 +47,16 @@ from kilasifen.observability import initialize_sentry
 logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Release process-local resources during graceful shutdown."""
+
+    try:
+        yield
+    finally:
+        app.state.engine.dispose()
+
+
 def create_app() -> FastAPI:
     """Create and configure the platform application."""
 
@@ -58,6 +70,7 @@ def create_app() -> FastAPI:
         description=(
             "Independent multi-tenant fiscal API. Staging is restricted to SIFEN test."
         ),
+        lifespan=_lifespan,
     )
     engine = build_engine(settings.database_url)
     app.state.engine = engine
