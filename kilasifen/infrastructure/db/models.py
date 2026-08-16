@@ -283,6 +283,7 @@ class WebhookDeliveryModel(TimestampMixin, Base):
     webhook_endpoint_id: Mapped[str] = mapped_column(ForeignKey("webhook_endpoints.id"), nullable=False)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     payload_snapshot: Mapped[dict | None] = mapped_column(JSON)
+    request_body: Mapped[str | None] = mapped_column(Text)
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     request_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     response_code: Mapped[int | None] = mapped_column(Integer)

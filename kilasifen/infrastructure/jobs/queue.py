@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from rq import Queue
+from rq import Queue, Retry
 from rq.job import Job as RqJob
 
 from kilasifen.domain.jobs.models import Job
@@ -70,4 +70,5 @@ class RqJobQueue:
             },
             job_id=job.id,
             meta={"correlation_id": get_correlation_id()},
+            retry=Retry(max=7, interval=[10, 30, 120, 300, 900, 1800, 3600]),
         )

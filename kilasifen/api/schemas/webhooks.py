@@ -6,13 +6,21 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
+class WebhookRetryPolicy(BaseModel):
+    """Bounded automatic retry policy for one endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    max_attempts: int = Field(default=5, ge=1, le=8)
+
+
 class WebhookEndpointCreateRequest(BaseModel):
     """Webhook endpoint creation payload."""
 
     url: HttpUrl
-    secret: str = Field(min_length=6, max_length=255)
+    secret: str = Field(min_length=32, max_length=255)
     event_subscriptions: list[str] | None = None
-    retry_policy: dict[str, Any] | None = None
+    retry_policy: WebhookRetryPolicy | None = None
 
 
 class WebhookEndpointResponse(BaseModel):
@@ -26,7 +34,7 @@ class WebhookEndpointResponse(BaseModel):
     event_subscriptions: list[str] | None
     is_active: bool
     retry_policy: dict[str, Any] | None
-    secret_preview: str
+    secret_configured: bool
     created_at: datetime
     updated_at: datetime
 
@@ -47,6 +55,7 @@ class WebhookDeliveryResponse(BaseModel):
     webhook_endpoint_id: str
     event_type: str
     payload_snapshot: dict[str, Any] | None
+    request_body: str | None
     attempt_number: int
     request_at: datetime | None
     response_code: int | None

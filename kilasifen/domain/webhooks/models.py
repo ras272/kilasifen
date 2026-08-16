@@ -27,6 +27,7 @@ class WebhookDelivery:
     webhook_endpoint_id: str
     event_type: str
     payload_snapshot: dict | None
+    request_body: str | None
     attempt_number: int
     request_at: datetime | None
     response_code: int | None

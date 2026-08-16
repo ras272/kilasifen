@@ -3,17 +3,28 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import uuid4
 
 from kilasifen.application.jobs.service import JobService
-from kilasifen.domain.common.errors import ConflictError, NotFoundError
+from kilasifen.domain.common.errors import (
+    ConflictError,
+    NotFoundError,
+    UnprocessableEntityError,
+)
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.webhooks.models import WebhookDelivery, WebhookEndpoint
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
-from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
+from kilasifen.infrastructure.webhooks.deliverer import (
+    WebhookDeliverer,
+    serialize_webhook_body,
+)
+from kilasifen.infrastructure.webhooks.security import (
+    UnsafeWebhookUrlError,
+    WebhookUrlPolicy,
+)
 from kilasifen.repositories.emitters import EmitterRepository
 from kilasifen.repositories.jobs import JobRepository
 from kilasifen.repositories.webhooks import WebhookRepository
@@ -46,6 +57,7 @@ class WebhookService:
         deliverer: WebhookDeliverer,
         database_url: str | None = None,
         encryption_key: str | None = None,
+        url_policy: WebhookUrlPolicy | None = None,
     ):
         self.webhook_repository = webhook_repository
         self.emitter_repository = emitter_repository
@@ -56,6 +68,7 @@ class WebhookService:
         self.deliverer = deliverer
         self.database_url = database_url
         self.encryption_key = encryption_key
+        self.url_policy = url_policy or deliverer.url_policy
 
     def register_endpoint(
         self,
@@ -68,6 +81,12 @@ class WebhookService:
     ) -> WebhookEndpoint:
         if self.emitter_repository.get(emitter_id) is None:
             raise NotFoundError("emitters.not_found")
+        if len(secret) < 32:
+            raise UnprocessableEntityError("webhooks.secret_too_short")
+        try:
+            self.url_policy.resolve(url)
+        except UnsafeWebhookUrlError as exc:
+            raise UnprocessableEntityError(str(exc)) from exc
 
         timestamp = _now()
         endpoint = WebhookEndpoint(
@@ -82,10 +101,6 @@ class WebhookService:
             updated_at=timestamp,
         )
         return self.webhook_repository.save_endpoint(endpoint)
-
-    def get_secret_preview(self, endpoint: WebhookEndpoint) -> str:
-        secret = self.secret_store.decrypt_text(endpoint.secret_encrypted)
-        return _secret_preview(secret)
 
     def list_endpoints(self, emitter_id: str) -> list[WebhookEndpoint]:
         if self.emitter_repository.get(emitter_id) is None:
@@ -135,7 +150,9 @@ class WebhookService:
         self._enqueue_if_configured(job)
         return saved_delivery, job
 
-    def publish_document_status(self, *, document: Document) -> list[tuple[WebhookDelivery, Job]]:
+    def publish_document_status(
+        self, *, document: Document
+    ) -> list[tuple[WebhookDelivery, Job]]:
         """Publish one normalized document-status event to subscribed endpoints."""
 
         event_type = _document_event_type(document.internal_status)
@@ -220,7 +237,7 @@ class WebhookService:
             statuses=statuses,
         )
 
-    def process_delivery_attempt(self, *, job_id: str) -> dict[str, str]:
+    def process_delivery_attempt(self, *, job_id: str) -> dict[str, str | bool]:
         job = self.job_service.get_job(job_id)
         if job.related_entity_type != "webhook_delivery" or not job.related_entity_id:
             raise NotFoundError("jobs.webhook_delivery_context_not_found")
@@ -240,14 +257,25 @@ class WebhookService:
             event_type=delivery.event_type,
             delivery_id=delivery.id,
             payload_snapshot=delivery.payload_snapshot,
+            request_body=delivery.request_body,
         )
+
+        current_attempt = job.attempts + 1
+        max_attempts = _max_attempts(endpoint.retry_policy)
+        retry_scheduled = outcome.retryable and current_attempt < max_attempts
+        delivery_status = outcome.final_status
+        if outcome.retryable and not retry_scheduled:
+            delivery_status = "failed"
 
         updated_delivery = replace(
             delivery,
+            request_body=delivery.request_body
+            or serialize_webhook_body(delivery.payload_snapshot),
+            attempt_number=current_attempt,
             request_at=outcome.request_at,
             response_code=outcome.response_code,
             response_body_snapshot=outcome.response_body_snapshot,
-            final_status=outcome.final_status,
+            final_status=delivery_status,
             updated_at=_now(),
         )
         self.webhook_repository.save_delivery(updated_delivery)
@@ -256,24 +284,36 @@ class WebhookService:
             updated_job = replace(
                 job,
                 status="succeeded",
-                attempts=job.attempts + 1,
+                attempts=current_attempt,
                 error_snapshot=None,
+                finished_at=_now(),
                 updated_at=_now(),
             )
-        elif outcome.retryable:
+        elif retry_scheduled:
+            retry_at = _now() + timedelta(seconds=_retry_delay(current_attempt))
             updated_job = replace(
                 job,
                 status="retry_scheduled",
-                attempts=job.attempts + 1,
+                attempts=current_attempt,
                 error_snapshot={"category": "transport", "message": "retry_pending"},
+                scheduled_at=retry_at,
+                finished_at=None,
                 updated_at=_now(),
             )
         else:
             updated_job = replace(
                 job,
                 status="failed",
-                attempts=job.attempts + 1,
-                error_snapshot={"category": "delivery_failed", "message": "non_retryable"},
+                attempts=current_attempt,
+                error_snapshot={
+                    "category": "delivery_failed",
+                    "message": (
+                        "max_attempts_exhausted"
+                        if outcome.retryable
+                        else "non_retryable"
+                    ),
+                },
+                finished_at=_now(),
                 updated_at=_now(),
             )
         self.job_repository.save(updated_job)
@@ -283,6 +323,7 @@ class WebhookService:
             "job_status": updated_job.status,
             "delivery_id": updated_delivery.id,
             "delivery_status": updated_delivery.final_status,
+            "retryable": retry_scheduled,
         }
 
     def _create_delivery_job(
@@ -300,12 +341,14 @@ class WebhookService:
             "occurred_at": timestamp.isoformat(),
             "data": payload or {},
         }
+        request_body = serialize_webhook_body(envelope)
         delivery = WebhookDelivery(
             id=delivery_id,
             webhook_endpoint_id=endpoint.id,
             event_type=event_type,
             payload_snapshot=envelope,
-            attempt_number=1,
+            request_body=request_body,
+            attempt_number=0,
             request_at=None,
             response_code=None,
             response_body_snapshot=None,
@@ -333,12 +376,6 @@ class WebhookService:
 
 def _now() -> datetime:
     return datetime.now(UTC)
-
-
-def _secret_preview(secret: str) -> str:
-    if len(secret) <= 4:
-        return "***"
-    return f"{secret[:2]}***{secret[-2:]}"
 
 
 def _supports_event(*, endpoint: WebhookEndpoint, event_type: str) -> bool:
@@ -371,3 +408,18 @@ def _document_event_type(internal_status: str | None) -> str:
     }:
         return f"document.{normalized}"
     return "document.updated"
+
+
+_WEBHOOK_RETRY_DELAYS = (10, 30, 120, 300, 900, 1800, 3600)
+
+
+def _max_attempts(retry_policy: dict | None) -> int:
+    raw_value = (retry_policy or {}).get("max_attempts", 5)
+    if isinstance(raw_value, bool) or not isinstance(raw_value, int):
+        return 5
+    return min(max(raw_value, 1), 8)
+
+
+def _retry_delay(attempt_number: int) -> int:
+    index = min(max(attempt_number - 1, 0), len(_WEBHOOK_RETRY_DELAYS) - 1)
+    return _WEBHOOK_RETRY_DELAYS[index]

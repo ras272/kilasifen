@@ -388,6 +388,7 @@ Platform docs:
 - `docs/architecture/kila-platform.md`
 - `docs/operations/deployment-compose.md`
 - `docs/operations/job-lifecycle.md`
+- `docs/integrations/webhooks.md`
 - `docs/examples/kila_api_register_certificate.py`
 - `docs/examples/kila_api_emit_document.py`
 

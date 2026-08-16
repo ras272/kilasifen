@@ -13,14 +13,22 @@ from kilasifen.config import get_settings
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
-from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
+from kilasifen.infrastructure.db.repositories.emitters import (
+    SqlAlchemyEmitterRepository,
+)
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
-from kilasifen.infrastructure.db.repositories.webhooks import SqlAlchemyWebhookRepository
-from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
-from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
+from kilasifen.infrastructure.db.repositories.webhooks import (
+    SqlAlchemyWebhookRepository,
+)
+from kilasifen.infrastructure.db.session import (
+    build_engine,
+    build_session_factory,
+    session_scope,
+)
 from kilasifen.infrastructure.jobs.queue import WebhookJobQueue
+from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
+from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
 from kilasifen.testing.database import managed_test_database_url
-
 
 API_KEY = "secret-key"
 
@@ -43,7 +51,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClie
         engine = build_engine(database_url)
         Base.metadata.create_all(engine)
         session_factory = build_session_factory(engine)
-        _seed_emitter(session_factory)
+        _seed_emitter(session_factory, encryption_key)
 
         app = create_app()
 
@@ -51,7 +59,9 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClie
             def __init__(self):
                 self.enqueued_job_ids: list[str] = []
 
-            def enqueue_webhook_delivery(self, job, *, database_url: str, encryption_key: str):
+            def enqueue_webhook_delivery(
+                self, job, *, database_url: str, encryption_key: str
+            ):
                 self.enqueued_job_ids.append(job.id)
                 return {"job_id": job.id}
 
@@ -61,11 +71,19 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClie
             with session_scope(session_factory) as session:
                 yield WebhookService(
                     webhook_repository=SqlAlchemyWebhookRepository(session),
-                    emitter_repository=SqlAlchemyEmitterRepository(session),
+                    emitter_repository=SqlAlchemyEmitterRepository(
+                        session,
+                        EncryptedCertificateStore(encryption_key),
+                    ),
                     job_repository=SqlAlchemyJobRepository(session),
                     secret_store=EncryptedCertificateStore(encryption_key),
                     queue=fake_queue,
-                    deliverer=WebhookDeliverer(sender=lambda *_args, **_kwargs: None),
+                    deliverer=WebhookDeliverer(
+                        sender=lambda *_args, **_kwargs: None,
+                        url_policy=WebhookUrlPolicy(
+                            resolver=lambda _host, _port: ["93.184.216.34"]
+                        ),
+                    ),
                 )
 
         app.dependency_overrides[get_webhook_service] = _get_fake_webhook_service
@@ -79,7 +97,7 @@ def test_register_webhook_endpoint_returns_redacted_data(client: TestClient) -> 
         headers={"X-API-Key": API_KEY},
         json={
             "url": "https://erp.example.com/hooks/kila",
-            "secret": "top-secret",
+            "secret": "top-secret-webhook-key-000000000000",
             "event_subscriptions": ["document.approved", "event.approved"],
             "retry_policy": {"max_attempts": 3},
         },
@@ -90,8 +108,24 @@ def test_register_webhook_endpoint_returns_redacted_data(client: TestClient) -> 
     assert endpoint["emitter_id"] == "emitter-1"
     assert endpoint["url"] == "https://erp.example.com/hooks/kila"
     assert endpoint["is_active"] is True
-    assert endpoint["secret_preview"] == "to***et"
+    assert endpoint["secret_configured"] is True
     assert endpoint["event_subscriptions"] == ["document.approved", "event.approved"]
+
+
+def test_register_webhook_endpoint_rejects_private_network_target(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/v1/emitters/emitter-1/webhooks",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": "https://127.0.0.1/internal",
+            "secret": "top-secret-webhook-key-000000000000",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "webhooks.non_public_address"
 
 
 def test_replay_creates_delivery_and_job(client: TestClient) -> None:
@@ -100,7 +134,7 @@ def test_replay_creates_delivery_and_job(client: TestClient) -> None:
         headers={"X-API-Key": API_KEY},
         json={
             "url": "https://erp.example.com/hooks/kila",
-            "secret": "top-secret",
+            "secret": "top-secret-webhook-key-000000000000",
             "event_subscriptions": ["document.approved"],
             "retry_policy": {"max_attempts": 3},
         },
@@ -131,7 +165,7 @@ def test_get_webhook_delivery_returns_delivery_and_job(client: TestClient) -> No
         headers={"X-API-Key": API_KEY},
         json={
             "url": "https://erp.example.com/hooks/kila",
-            "secret": "top-secret",
+            "secret": "top-secret-webhook-key-000000000000",
             "event_subscriptions": ["document.approved"],
             "retry_policy": {"max_attempts": 3},
         },
@@ -159,7 +193,9 @@ def test_get_webhook_delivery_returns_delivery_and_job(client: TestClient) -> No
     assert data["job"]["job_type"] == "webhook.deliver"
 
 
-def test_replay_webhook_delivery_returns_not_found_for_other_emitter(client: TestClient) -> None:
+def test_replay_webhook_delivery_returns_not_found_for_other_emitter(
+    client: TestClient,
+) -> None:
     second_emitter = client.post(
         "/v1/emitters",
         headers={"X-API-Key": API_KEY},
@@ -178,7 +214,7 @@ def test_replay_webhook_delivery_returns_not_found_for_other_emitter(client: Tes
         headers={"X-API-Key": API_KEY},
         json={
             "url": "https://erp.example.com/hooks/foreign",
-            "secret": "top-secret",
+            "secret": "top-secret-webhook-key-000000000000",
             "event_subscriptions": ["document.approved"],
             "retry_policy": {"max_attempts": 3},
         },
@@ -204,7 +240,7 @@ def test_replay_webhook_delivery_requires_valid_api_key(client: TestClient) -> N
         headers={"X-API-Key": API_KEY},
         json={
             "url": "https://erp.example.com/hooks/auth",
-            "secret": "top-secret",
+            "secret": "top-secret-webhook-key-000000000000",
             "event_subscriptions": ["document.approved"],
             "retry_policy": {"max_attempts": 3},
         },
@@ -224,7 +260,9 @@ def test_replay_webhook_delivery_requires_valid_api_key(client: TestClient) -> N
     assert response.json()["error"]["code"] == "auth.invalid_api_key"
 
 
-def test_get_webhook_delivery_returns_not_found_for_other_emitter(client: TestClient) -> None:
+def test_get_webhook_delivery_returns_not_found_for_other_emitter(
+    client: TestClient,
+) -> None:
     second_emitter = client.post(
         "/v1/emitters",
         headers={"X-API-Key": API_KEY},
@@ -243,7 +281,7 @@ def test_get_webhook_delivery_returns_not_found_for_other_emitter(client: TestCl
         headers={"X-API-Key": API_KEY},
         json={
             "url": "https://erp.example.com/hooks/foreign-detail",
-            "secret": "top-secret",
+            "secret": "top-secret-webhook-key-000000000000",
             "event_subscriptions": ["document.approved"],
             "retry_policy": {"max_attempts": 3},
         },
@@ -274,7 +312,7 @@ def test_get_webhook_delivery_requires_valid_api_key(client: TestClient) -> None
         headers={"X-API-Key": API_KEY},
         json={
             "url": "https://erp.example.com/hooks/auth-detail",
-            "secret": "top-secret",
+            "secret": "top-secret-webhook-key-000000000000",
             "event_subscriptions": ["document.approved"],
             "retry_policy": {"max_attempts": 3},
         },
@@ -305,7 +343,7 @@ def test_list_webhook_deliveries_can_filter_by_emitter(client: TestClient) -> No
         headers={"X-API-Key": API_KEY},
         json={
             "url": "https://erp.example.com/hooks/a",
-            "secret": "top-secret",
+            "secret": "top-secret-webhook-key-000000000000",
             "event_subscriptions": ["document.approved"],
             "retry_policy": {"max_attempts": 3},
         },
@@ -338,7 +376,7 @@ def test_list_webhook_deliveries_can_filter_by_emitter(client: TestClient) -> No
         headers={"X-API-Key": API_KEY},
         json={
             "url": "https://erp.example.com/hooks/b",
-            "secret": "top-secret",
+            "secret": "top-secret-webhook-key-000000000000",
             "event_subscriptions": ["document.approved"],
             "retry_policy": {"max_attempts": 3},
         },
@@ -372,7 +410,7 @@ def test_list_webhook_deliveries_without_emitter_filter_returns_system_wide_data
         headers={"X-API-Key": API_KEY},
         json={
             "url": "https://erp.example.com/hooks/a-global",
-            "secret": "top-secret",
+            "secret": "top-secret-webhook-key-000000000000",
             "event_subscriptions": ["document.approved"],
             "retry_policy": {"max_attempts": 3},
         },
@@ -405,7 +443,7 @@ def test_list_webhook_deliveries_without_emitter_filter_returns_system_wide_data
         headers={"X-API-Key": API_KEY},
         json={
             "url": "https://erp.example.com/hooks/b-global",
-            "secret": "top-secret",
+            "secret": "top-secret-webhook-key-000000000000",
             "event_subscriptions": ["document.approved"],
             "retry_policy": {"max_attempts": 3},
         },
@@ -427,12 +465,14 @@ def test_list_webhook_deliveries_without_emitter_filter_returns_system_wide_data
 
     assert listed.status_code == 200
     deliveries = listed.json()["data"]["deliveries"]
-    delivered_doc_ids = {delivery["payload_snapshot"]["data"]["document_id"] for delivery in deliveries}
+    delivered_doc_ids = {
+        delivery["payload_snapshot"]["data"]["document_id"] for delivery in deliveries
+    }
     assert "doc-a-global" in delivered_doc_ids
     assert "doc-b-global" in delivered_doc_ids
 
 
-def _seed_emitter(session_factory) -> None:
+def _seed_emitter(session_factory, encryption_key: str) -> None:
     emitter = Emitter(
         id="emitter-1",
         external_id="erp-ares",
@@ -447,7 +487,10 @@ def _seed_emitter(session_factory) -> None:
         updated_at=_now(),
     )
     with session_scope(session_factory) as session:
-        SqlAlchemyEmitterRepository(session).save(emitter)
+        SqlAlchemyEmitterRepository(
+            session,
+            EncryptedCertificateStore(encryption_key),
+        ).save(emitter)
 
 
 def _now() -> datetime:

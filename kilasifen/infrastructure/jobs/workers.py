@@ -6,7 +6,7 @@ from datetime import date
 from xml.etree import ElementTree as ET
 
 from redis import Redis
-from rq import Queue, get_current_job
+from rq import Queue, Retry, get_current_job
 
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.webhooks.service import WebhookService
@@ -237,7 +237,7 @@ def process_webhook_delivery_job(
     database_url: str,
     encryption_key: str,
     deliverer: WebhookDeliverer | None = None,
-) -> dict[str, str]:
+) -> dict[str, str | bool]:
     """Process a webhook-delivery job."""
 
     ensure_worker_observability()
@@ -281,7 +281,9 @@ def process_webhook_delivery_job(
                     "delivery_status": payload["delivery_status"],
                 },
             )
-            return payload
+        if payload["retryable"]:
+            raise WebhookDeliveryRetryableError("webhook delivery scheduled for retry")
+        return payload
     finally:
         if correlation_token is not None:
             reset_correlation_id(correlation_token)
@@ -291,6 +293,10 @@ class _NoopWebhookQueue:
     def enqueue_webhook_delivery(self, *args, **kwargs):
         del args, kwargs
         return None
+
+
+class WebhookDeliveryRetryableError(RuntimeError):
+    """Signal RQ to apply the configured bounded retry schedule."""
 
 
 def _publish_document_status_webhooks(
@@ -348,6 +354,7 @@ class _WebhookRqQueue:
             },
             job_id=job.id,
             meta={"correlation_id": get_correlation_id()},
+            retry=Retry(max=7, interval=[10, 30, 120, 300, 900, 1800, 3600]),
         )
 
 

@@ -1,6 +1,6 @@
-import hashlib
-import hmac
 from datetime import UTC, datetime
+
+import pytest
 
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.domain.documents.models import Document
@@ -21,8 +21,15 @@ from kilasifen.infrastructure.db.session import (
     build_session_factory,
     session_scope,
 )
-from kilasifen.infrastructure.jobs.workers import process_webhook_delivery_job
+from kilasifen.infrastructure.jobs.workers import (
+    WebhookDeliveryRetryableError,
+    process_webhook_delivery_job,
+)
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
+from kilasifen.infrastructure.webhooks.security import (
+    WebhookUrlPolicy,
+    verify_signature,
+)
 from kilasifen.testing.database import managed_test_database_url
 
 
@@ -52,18 +59,22 @@ def test_process_webhook_delivery_job_signs_payload_and_marks_delivered(
             job_id="job-1",
             database_url=database_url,
             encryption_key=encryption_key,
-            deliverer=WebhookDeliverer(sender=sender),
+            deliverer=WebhookDeliverer(sender=sender, url_policy=_public_policy()),
         )
 
         assert payload["job_status"] == "succeeded"
         assert payload["delivery_status"] == "delivered"
 
-        expected_signature = hmac.new(
-            b"top-secret",
-            captured["body"].encode("utf-8"),
-            hashlib.sha256,
-        ).hexdigest()
-        assert captured["headers"]["X-Kila-Signature"] == f"sha256={expected_signature}"
+        verification = verify_signature(
+            secret="top-secret",
+            timestamp=captured["headers"]["X-Kila-Timestamp"],
+            delivery_id=captured["headers"]["X-Kila-Delivery-ID"],
+            event_type=captured["headers"]["X-Kila-Event"],
+            body=captured["body"].encode("utf-8"),
+            signature=captured["headers"]["X-Kila-Signature"],
+        )
+        assert verification.valid is True
+        assert captured["headers"]["X-Kila-Signature-Version"] == "v1"
 
 
 def test_process_webhook_delivery_job_marks_retry_pending_on_retryable_failure(
@@ -83,15 +94,79 @@ def test_process_webhook_delivery_job_marks_retry_pending_on_retryable_failure(
             del url, body, headers, timeout
             return 503, "temporarily unavailable"
 
+        with pytest.raises(WebhookDeliveryRetryableError):
+            process_webhook_delivery_job(
+                job_id="job-1",
+                database_url=database_url,
+                encryption_key=encryption_key,
+                deliverer=WebhookDeliverer(
+                    sender=sender,
+                    url_policy=_public_policy(),
+                ),
+            )
+
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            delivery = SqlAlchemyWebhookRepository(session).get_delivery("delivery-1")
+            job = SqlAlchemyJobRepository(session).get("job-1")
+        assert delivery is not None and delivery.final_status == "retry_pending"
+        assert delivery.attempt_number == 1
+        assert job is not None and job.status == "retry_scheduled"
+        assert job.scheduled_at is not None
+
+
+def test_webhook_retries_keep_exact_body_and_end_in_observable_failure(
+    tmp_path,
+) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="webhook_delivery_exhausted",
+    ) as database_url:
+        encryption_key = _fernet_key()
+        _seed_webhook_job_context(
+            database_url=database_url,
+            encryption_key=encryption_key,
+        )
+        captured_bodies: list[str] = []
+
+        def sender(*, url: str, body: str, headers: dict[str, str], timeout: float):
+            del url, headers, timeout
+            captured_bodies.append(body)
+            return 503, "temporary secret=must-not-persist"
+
+        deliverer = WebhookDeliverer(sender=sender, url_policy=_public_policy())
+        for _attempt in range(2):
+            with pytest.raises(WebhookDeliveryRetryableError):
+                process_webhook_delivery_job(
+                    job_id="job-1",
+                    database_url=database_url,
+                    encryption_key=encryption_key,
+                    deliverer=deliverer,
+                )
+
         payload = process_webhook_delivery_job(
             job_id="job-1",
             database_url=database_url,
             encryption_key=encryption_key,
-            deliverer=WebhookDeliverer(sender=sender),
+            deliverer=deliverer,
         )
 
-        assert payload["job_status"] == "retry_scheduled"
-        assert payload["delivery_status"] == "retry_pending"
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            delivery = SqlAlchemyWebhookRepository(session).get_delivery("delivery-1")
+            job = SqlAlchemyJobRepository(session).get("job-1")
+        assert payload["retryable"] is False
+        assert len(set(captured_bodies)) == 1
+        assert delivery is not None and delivery.attempt_number == 3
+        assert delivery.final_status == "failed"
+        assert "must-not-persist" not in (delivery.response_body_snapshot or "")
+        assert job is not None and job.status == "failed"
+        assert job.error_snapshot == {
+            "category": "delivery_failed",
+            "message": "max_attempts_exhausted",
+        }
 
 
 def test_publish_document_status_matches_subscriptions_and_wildcards(tmp_path) -> None:
@@ -112,7 +187,10 @@ def test_publish_document_status_matches_subscriptions_and_wildcards(tmp_path) -
         with session_scope(session_factory) as session:
             service = WebhookService(
                 webhook_repository=SqlAlchemyWebhookRepository(session),
-                emitter_repository=SqlAlchemyEmitterRepository(session),
+                emitter_repository=SqlAlchemyEmitterRepository(
+                    session,
+                    EncryptedCertificateStore(encryption_key),
+                ),
                 job_repository=SqlAlchemyJobRepository(session),
                 secret_store=EncryptedCertificateStore(encryption_key),
                 queue=fake_queue,
@@ -195,7 +273,7 @@ def test_process_webhook_delivery_job_propagates_worker_correlation_id(
             job_id="job-1",
             database_url=database_url,
             encryption_key=encryption_key,
-            deliverer=WebhookDeliverer(sender=sender),
+            deliverer=WebhookDeliverer(sender=sender, url_policy=_public_policy()),
         )
 
         assert payload["job_status"] == "succeeded"
@@ -249,6 +327,7 @@ def _seed_webhook_job_context(*, database_url: str, encryption_key: str) -> None
             "delivery_id": "delivery-1",
             "data": {"document_id": "doc-1", "status": "approved"},
         },
+        request_body=None,
         attempt_number=1,
         request_at=None,
         response_code=None,
@@ -275,7 +354,7 @@ def _seed_webhook_job_context(*, database_url: str, encryption_key: str) -> None
     )
 
     with session_scope(session_factory) as session:
-        SqlAlchemyEmitterRepository(session).save(emitter)
+        SqlAlchemyEmitterRepository(session, store).save(emitter)
         webhook_repository = SqlAlchemyWebhookRepository(session)
         webhook_repository.save_endpoint(endpoint)
         webhook_repository.save_delivery(delivery)
@@ -349,7 +428,7 @@ def _seed_webhook_publish_context(*, database_url: str, encryption_key: str) -> 
     ]
 
     with session_scope(session_factory) as session:
-        SqlAlchemyEmitterRepository(session).save(emitter)
+        SqlAlchemyEmitterRepository(session, store).save(emitter)
         repository = SqlAlchemyWebhookRepository(session)
         for endpoint in endpoints:
             repository.save_endpoint(endpoint)
@@ -371,3 +450,7 @@ def _now() -> datetime:
 
 def _fernet_key() -> str:
     return "4fV1_r04jQs6C1UNq9qS4RuCs1oQcWzER8GqW04A1lE="
+
+
+def _public_policy() -> WebhookUrlPolicy:
+    return WebhookUrlPolicy(resolver=lambda _host, _port: ["93.184.216.34"])

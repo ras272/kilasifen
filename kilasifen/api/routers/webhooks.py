@@ -2,7 +2,12 @@
 
 from fastapi import APIRouter, Depends, Request, status
 
-from kilasifen.api.deps import get_api_key_principal, get_webhook_service
+from kilasifen.api.deps import (
+    get_admin_principal,
+    get_webhook_service,
+    require_emitter_read,
+    require_emitter_write,
+)
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.api.schemas.webhooks import (
@@ -26,7 +31,7 @@ def register_webhook_endpoint(
     emitter_id: str,
     payload: WebhookEndpointCreateRequest,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_write),
     service: WebhookService = Depends(get_webhook_service),
 ) -> SuccessEnvelope:
     endpoint = service.register_endpoint(
@@ -34,13 +39,14 @@ def register_webhook_endpoint(
         url=str(payload.url),
         secret=payload.secret,
         event_subscriptions=payload.event_subscriptions,
-        retry_policy=payload.retry_policy,
+        retry_policy=(
+            payload.retry_policy.model_dump() if payload.retry_policy else None
+        ),
     )
     return SuccessEnvelope(
         data={
             "webhook_endpoint": _endpoint_response(
                 endpoint,
-                secret_preview=service.get_secret_preview(endpoint),
             ).model_dump(mode="json")
         },
         correlation_id=request.state.correlation_id,
@@ -51,7 +57,7 @@ def register_webhook_endpoint(
 def list_webhook_endpoints(
     emitter_id: str,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: WebhookService = Depends(get_webhook_service),
 ) -> SuccessEnvelope:
     endpoints = service.list_endpoints(emitter_id)
@@ -60,7 +66,6 @@ def list_webhook_endpoints(
             "webhook_endpoints": [
                 _endpoint_response(
                     endpoint,
-                    secret_preview=service.get_secret_preview(endpoint),
                 ).model_dump(mode="json")
                 for endpoint in endpoints
             ]
@@ -79,7 +84,7 @@ def replay_webhook_delivery(
     endpoint_id: str,
     payload: WebhookReplayRequest,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_write),
     service: WebhookService = Depends(get_webhook_service),
 ) -> SuccessEnvelope:
     delivery, job = service.replay_delivery_for_emitter(
@@ -90,19 +95,24 @@ def replay_webhook_delivery(
     )
     return SuccessEnvelope(
         data={
-            "delivery": WebhookDeliveryResponse.model_validate(delivery).model_dump(mode="json"),
+            "delivery": WebhookDeliveryResponse.model_validate(delivery).model_dump(
+                mode="json"
+            ),
             "job": JobResponse.model_validate(job).model_dump(mode="json"),
         },
         correlation_id=request.state.correlation_id,
     )
 
 
-@router.get("/emitters/{emitter_id}/webhook-deliveries/{delivery_id}", response_model=SuccessEnvelope)
+@router.get(
+    "/emitters/{emitter_id}/webhook-deliveries/{delivery_id}",
+    response_model=SuccessEnvelope,
+)
 def get_webhook_delivery(
     emitter_id: str,
     delivery_id: str,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: WebhookService = Depends(get_webhook_service),
 ) -> SuccessEnvelope:
     delivery, job = service.get_delivery_for_emitter(
@@ -111,8 +121,12 @@ def get_webhook_delivery(
     )
     return SuccessEnvelope(
         data={
-            "delivery": WebhookDeliveryResponse.model_validate(delivery).model_dump(mode="json"),
-            "job": JobResponse.model_validate(job).model_dump(mode="json") if job else None,
+            "delivery": WebhookDeliveryResponse.model_validate(delivery).model_dump(
+                mode="json"
+            ),
+            "job": JobResponse.model_validate(job).model_dump(mode="json")
+            if job
+            else None,
         },
         correlation_id=request.state.correlation_id,
     )
@@ -123,11 +137,10 @@ def list_webhook_deliveries(
     request: Request,
     limit: int = 50,
     offset: int = 0,
-    # TODO(multi-tenant): require emitter scoping by principal when opening API to multiple tenants.
     emitter_id: str | None = None,
     endpoint_id: str | None = None,
     status: str | None = None,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(get_admin_principal),
     service: WebhookService = Depends(get_webhook_service),
 ) -> SuccessEnvelope:
     statuses = [status] if status else None
@@ -152,8 +165,6 @@ def list_webhook_deliveries(
 
 def _endpoint_response(
     endpoint: WebhookEndpoint,
-    *,
-    secret_preview: str,
 ) -> WebhookEndpointResponse:
     return WebhookEndpointResponse(
         id=endpoint.id,
@@ -162,7 +173,7 @@ def _endpoint_response(
         event_subscriptions=endpoint.event_subscriptions,
         is_active=endpoint.is_active,
         retry_policy=endpoint.retry_policy,
-        secret_preview=secret_preview,
+        secret_configured=True,
         created_at=endpoint.created_at,
         updated_at=endpoint.updated_at,
     )

@@ -4,7 +4,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from kilasifen.domain.webhooks.models import WebhookDelivery, WebhookEndpoint
-from kilasifen.infrastructure.db.models import WebhookDeliveryModel, WebhookEndpointModel
+from kilasifen.infrastructure.db.models import (
+    WebhookDeliveryModel,
+    WebhookEndpointModel,
+)
 from kilasifen.repositories.webhooks import WebhookRepository
 
 
@@ -61,6 +64,7 @@ class SqlAlchemyWebhookRepository(WebhookRepository):
                 webhook_endpoint_id=delivery.webhook_endpoint_id,
                 event_type=delivery.event_type,
                 payload_snapshot=delivery.payload_snapshot,
+                request_body=delivery.request_body,
                 attempt_number=delivery.attempt_number,
                 request_at=delivery.request_at,
                 response_code=delivery.response_code,
@@ -73,6 +77,7 @@ class SqlAlchemyWebhookRepository(WebhookRepository):
         else:
             existing.event_type = delivery.event_type
             existing.payload_snapshot = delivery.payload_snapshot
+            existing.request_body = delivery.request_body
             existing.attempt_number = delivery.attempt_number
             existing.request_at = delivery.request_at
             existing.response_code = delivery.response_code
@@ -137,6 +142,7 @@ def _delivery_to_domain(model: WebhookDeliveryModel) -> WebhookDelivery:
         webhook_endpoint_id=model.webhook_endpoint_id,
         event_type=model.event_type,
         payload_snapshot=model.payload_snapshot,
+        request_body=model.request_body,
         attempt_number=model.attempt_number,
         request_at=model.request_at,
         response_code=model.response_code,
