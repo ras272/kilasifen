@@ -17,7 +17,12 @@ from kilasifen.api.schemas.emitters import (
 from kilasifen.application.emitters.health import EmitterHealthService
 from kilasifen.application.emitters.service import EmitterService
 from kilasifen.domain.emitters.models import Emitter
-from kilasifen.security import ApiKeyPrincipal, TENANT_READ_SCOPE, TENANT_WRITE_SCOPE
+from kilasifen.security import (
+    SECRETS_WRITE_SCOPE,
+    TENANT_READ_SCOPE,
+    TENANT_WRITE_SCOPE,
+    ApiKeyPrincipal,
+)
 
 router = APIRouter(prefix="/emitters", tags=["emitters"])
 
@@ -30,6 +35,8 @@ def create_emitter(
     service: EmitterService = Depends(get_emitter_service),
 ) -> SuccessEnvelope:
     principal.require_scope(TENANT_WRITE_SCOPE)
+    if payload.csc is not None or payload.csc_id is not None:
+        principal.require_scope(SECRETS_WRITE_SCOPE)
     emitter = service.create_emitter(
         **payload.model_dump(), owner_consumer_id=principal.consumer_id
     )
@@ -59,6 +66,8 @@ def update_emitter(
 ) -> SuccessEnvelope:
     principal.require_scope(TENANT_WRITE_SCOPE)
     principal.require_emitter(emitter_id)
+    if payload.csc is not None or payload.csc_id is not None:
+        principal.require_scope(SECRETS_WRITE_SCOPE)
     emitter = service.update_emitter(emitter_id, **payload.model_dump())
     return _envelope(request, emitter)
 
@@ -87,7 +96,11 @@ def get_emitter_health(
     principal.require_emitter(emitter_id)
     health = service.get_health(emitter_id=emitter_id)
     return SuccessEnvelope(
-        data={"health": EmitterHealthResponse.model_validate(health).model_dump(mode="json")},
+        data={
+            "health": EmitterHealthResponse.model_validate(health).model_dump(
+                mode="json"
+            )
+        },
         correlation_id=request.state.correlation_id,
     )
 

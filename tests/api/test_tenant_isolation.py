@@ -119,6 +119,16 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
         headers={"X-API-Key": _KEY_A},
         json={"document_id": "unknown", "event_type": "raw", "payload": {}},
     )
+    secret_update_response = client.patch(
+        "/v1/emitters/emitter-a",
+        headers={"X-API-Key": _KEY_A},
+        json={"csc": "caller-must-not-write-this", "csc_id": "0001"},
+    )
+    read_only_stamping_response = client.post(
+        "/v1/emitters/emitter-a/stampings",
+        headers={"X-API-Key": _READ_ONLY_KEY},
+        json={"number": "12345678", "start_date": "2026-01-01"},
+    )
 
     assert raw_create_response.status_code == 403
     assert create_response.status_code == 201
@@ -126,6 +136,8 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
     assert read_only_response.json()["error"]["code"] == "auth.insufficient_scope"
     assert global_jobs_response.status_code == 403
     assert raw_event_response.status_code == 403
+    assert secret_update_response.status_code == 403
+    assert read_only_stamping_response.status_code == 403
 
 
 def _seed_tenants(session_factory) -> None:

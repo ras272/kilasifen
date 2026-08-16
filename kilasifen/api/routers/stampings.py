@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, Depends, Request, status
 
-from kilasifen.api.deps import get_stamping_service, require_emitter_read, require_fiscal_write
+from kilasifen.api.deps import (
+    get_stamping_service,
+    require_emitter_read,
+    require_fiscal_write,
+)
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.stampings import StampingCreateRequest, StampingResponse
 from kilasifen.application.stampings.service import StampingService
@@ -20,7 +24,7 @@ def create_stamping(
     emitter_id: str,
     payload: StampingCreateRequest,
     request: Request,
-    _principal=Depends(require_emitter_read),
+    _principal=Depends(require_fiscal_write),
     service: StampingService = Depends(get_stamping_service),
 ) -> SuccessEnvelope:
     stamping = service.create_stamping(emitter_id=emitter_id, **payload.model_dump())
@@ -34,7 +38,7 @@ def create_stamping(
 def list_stampings(
     emitter_id: str,
     request: Request,
-    _principal=Depends(require_fiscal_write),
+    _principal=Depends(require_emitter_read),
     service: StampingService = Depends(get_stamping_service),
 ) -> SuccessEnvelope:
     stampings = service.list_stampings(emitter_id)
