@@ -30,12 +30,12 @@ services:
       retries: 10
 
   api:
-    image: python:3.12-slim
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kilasifen:local
     container_name: kila-api
     restart: unless-stopped
-    working_dir: /app
-    volumes:
-      - .:/app
     env_file:
       - .env
     environment:
@@ -49,20 +49,16 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    command: >
-      sh -c "pip install -e '.[platform,transmissao]' &&
-             alembic upgrade head &&
-             uvicorn kilasifen.api.app:create_app --factory --host 0.0.0.0 --port 8000"
+      migrate:
+        condition: service_completed_successfully
+    command: uvicorn kilasifen.api.app:create_app --factory --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
 
   worker:
-    image: python:3.12-slim
+    image: kilasifen:local
     container_name: kila-worker
     restart: unless-stopped
-    working_dir: /app
-    volumes:
-      - .:/app
     env_file:
       - .env
     environment:
@@ -70,13 +66,23 @@ services:
       KILA_SIFEN_REDIS_URL: ${KILA_SIFEN_REDIS_URL}
       KILA_SIFEN_ENCRYPTION_KEY: ${KILA_SIFEN_ENCRYPTION_KEY}
     depends_on:
-      api:
-        condition: service_started
       redis:
         condition: service_healthy
-    command: >
-      sh -c "pip install -e '.[platform,transmissao]' &&
-             rq worker documents webhooks -u ${KILA_SIFEN_REDIS_URL}"
+      migrate:
+        condition: service_completed_successfully
+    command: rq worker documents webhooks -u ${KILA_SIFEN_REDIS_URL}
+
+  migrate:
+    image: kilasifen:local
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      KILA_SIFEN_DATABASE_URL: ${KILA_SIFEN_DATABASE_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: alembic upgrade head
 
 volumes:
   kila-postgres-data:
