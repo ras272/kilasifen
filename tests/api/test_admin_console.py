@@ -15,16 +15,30 @@ from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
-from kilasifen.infrastructure.db.repositories.certificates import SqlAlchemyCertificateRepository
-from kilasifen.infrastructure.db.repositories.documents import SqlAlchemyDocumentRepository
-from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
+from kilasifen.infrastructure.db.repositories.certificates import (
+    SqlAlchemyCertificateRepository,
+)
+from kilasifen.infrastructure.db.repositories.documents import (
+    SqlAlchemyDocumentRepository,
+)
+from kilasifen.infrastructure.db.repositories.emitters import (
+    SqlAlchemyEmitterRepository,
+)
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
-from kilasifen.infrastructure.db.repositories.stampings import SqlAlchemyStampingRepository
-from kilasifen.infrastructure.db.repositories.webhooks import SqlAlchemyWebhookRepository
-from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
+from kilasifen.infrastructure.db.repositories.stampings import (
+    SqlAlchemyStampingRepository,
+)
+from kilasifen.infrastructure.db.repositories.webhooks import (
+    SqlAlchemyWebhookRepository,
+)
+from kilasifen.infrastructure.db.session import (
+    build_engine,
+    build_session_factory,
+    session_scope,
+)
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
+from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
 from kilasifen.testing.database import managed_test_database_url
-
 
 API_KEY = "secret-key"
 CERT_PASSWORD = "test1234"
@@ -56,11 +70,16 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClie
             with session_scope(session_factory) as session:
                 settings = get_settings()
                 certificate_repository = SqlAlchemyCertificateRepository(session)
-                emitter_repository = SqlAlchemyEmitterRepository(session)
+                emitter_repository = SqlAlchemyEmitterRepository(
+                    session,
+                    EncryptedCertificateStore(settings.encryption_key),
+                )
                 certificate_service = CertificateService(
                     certificate_repository=certificate_repository,
                     emitter_repository=emitter_repository,
-                    certificate_store=EncryptedCertificateStore(settings.encryption_key),
+                    certificate_store=EncryptedCertificateStore(
+                        settings.encryption_key
+                    ),
                 )
                 yield AdminConsoleService(
                     emitter_repository=emitter_repository,
@@ -120,7 +139,10 @@ def seeded_ids(client: TestClient) -> dict[str, str]:
         )
     backup_certificate_id = upload_backup.json()["data"]["certificate"]["id"]
 
-    client.post(f"/v1/emitters/{emitter_id}/certificates/{certificate_id}/activate", headers=headers)
+    client.post(
+        f"/v1/emitters/{emitter_id}/certificates/{certificate_id}/activate",
+        headers=headers,
+    )
 
     stamping_response = client.post(
         f"/v1/emitters/{emitter_id}/stampings",
@@ -132,7 +154,9 @@ def seeded_ids(client: TestClient) -> dict[str, str]:
         },
     )
     stamping_id = stamping_response.json()["data"]["stamping"]["id"]
-    client.post(f"/v1/emitters/{emitter_id}/stampings/{stamping_id}/activate", headers=headers)
+    client.post(
+        f"/v1/emitters/{emitter_id}/stampings/{stamping_id}/activate", headers=headers
+    )
 
     document_response = client.post(
         f"/v1/emitters/{emitter_id}/documents",
@@ -270,16 +294,24 @@ def _seed_webhook_failure(client: TestClient, emitter_id: str) -> tuple[str, str
     with session_scope(client.app.state.session_factory) as session:
         service = WebhookService(
             webhook_repository=SqlAlchemyWebhookRepository(session),
-            emitter_repository=SqlAlchemyEmitterRepository(session),
+            emitter_repository=SqlAlchemyEmitterRepository(
+                session,
+                EncryptedCertificateStore(settings.encryption_key),
+            ),
             job_repository=SqlAlchemyJobRepository(session),
             secret_store=EncryptedCertificateStore(settings.encryption_key),
             queue=_NoopWebhookQueue(),
-            deliverer=WebhookDeliverer(sender=lambda *_args, **_kwargs: None),
+            deliverer=WebhookDeliverer(
+                sender=lambda *_args, **_kwargs: None,
+                url_policy=WebhookUrlPolicy(
+                    resolver=lambda _host, _port: ["93.184.216.34"]
+                ),
+            ),
         )
         endpoint = service.register_endpoint(
             emitter_id=emitter_id,
             url="https://erp.example.com/hooks/kila",
-            secret="top-secret",
+            secret="top-secret-webhook-key-000000000000",
             event_subscriptions=["document.approved"],
             retry_policy={"max_attempts": 3},
         )
@@ -328,4 +360,3 @@ class _NoopWebhookQueue:
 
 def _now() -> datetime:
     return datetime.now(UTC)
-
