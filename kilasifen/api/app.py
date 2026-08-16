@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, Request
 
 from kilasifen.admin.router import router as admin_router
-from kilasifen.api.deps import get_api_key_principal
+from kilasifen.api.deps import enforce_request_limits, get_api_key_principal
 from kilasifen.api.errors import (
     ApiError,
     api_error_handler,
@@ -95,15 +95,32 @@ def create_app() -> FastAPI:
         return response
 
     app.include_router(health_router, prefix=f"/{settings.api_version}")
-    app.include_router(emitters_router, prefix=f"/{settings.api_version}")
-    app.include_router(certificates_router, prefix=f"/{settings.api_version}")
-    app.include_router(stampings_router, prefix=f"/{settings.api_version}")
-    app.include_router(documents_router, prefix=f"/{settings.api_version}")
-    app.include_router(jobs_router, prefix=f"/{settings.api_version}")
-    app.include_router(queries_router, prefix=f"/{settings.api_version}")
-    app.include_router(events_router, prefix=f"/{settings.api_version}")
-    app.include_router(webhooks_router, prefix=f"/{settings.api_version}")
-    app.include_router(admin_router)
+    limited = [Depends(enforce_request_limits)]
+    app.include_router(
+        emitters_router, prefix=f"/{settings.api_version}", dependencies=limited
+    )
+    app.include_router(
+        certificates_router, prefix=f"/{settings.api_version}", dependencies=limited
+    )
+    app.include_router(
+        stampings_router, prefix=f"/{settings.api_version}", dependencies=limited
+    )
+    app.include_router(
+        documents_router, prefix=f"/{settings.api_version}", dependencies=limited
+    )
+    app.include_router(
+        jobs_router, prefix=f"/{settings.api_version}", dependencies=limited
+    )
+    app.include_router(
+        queries_router, prefix=f"/{settings.api_version}", dependencies=limited
+    )
+    app.include_router(
+        events_router, prefix=f"/{settings.api_version}", dependencies=limited
+    )
+    app.include_router(
+        webhooks_router, prefix=f"/{settings.api_version}", dependencies=limited
+    )
+    app.include_router(admin_router, dependencies=limited)
 
     @app.get(
         f"/{settings.api_version}/auth/check",
@@ -113,6 +130,7 @@ def create_app() -> FastAPI:
     def auth_check(
         request: Request,
         _principal=Depends(get_api_key_principal),
+        _limit=Depends(enforce_request_limits),
     ) -> SuccessEnvelope:
         return SuccessEnvelope(
             data={"authenticated": True},

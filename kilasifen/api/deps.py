@@ -1,57 +1,70 @@
 """Shared API dependencies."""
 
-from collections.abc import Callable, Generator
 import hmac
+import logging
+from collections.abc import AsyncGenerator, Callable, Generator
 
 from fastapi import Depends, Header, Request
 from redis import Redis
+from redis.asyncio import Redis as AsyncRedis
 from rq import Queue
 from sqlalchemy.orm import Session
 
 from kilasifen.application.admin.service import AdminConsoleService
+from kilasifen.application.certificates.service import CertificateService
 from kilasifen.application.documents.numbering_service import DocumentNumberingService
 from kilasifen.application.documents.service import DocumentService
 from kilasifen.application.emitters.health import EmitterHealthService
+from kilasifen.application.emitters.service import EmitterService
 from kilasifen.application.events.service import EventService
 from kilasifen.application.health.service import ReadinessService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.queries.service import QueryService
 from kilasifen.application.stampings.service import StampingService
 from kilasifen.application.webhooks.service import WebhookService
-from kilasifen.application.certificates.service import CertificateService
-from kilasifen.application.emitters.service import EmitterService
 from kilasifen.config import get_settings
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.repositories.api_keys import SqlAlchemyApiKeyRepository
-from kilasifen.infrastructure.db.repositories.documents import SqlAlchemyDocumentRepository
+from kilasifen.infrastructure.db.repositories.certificates import (
+    SqlAlchemyCertificateRepository,
+)
 from kilasifen.infrastructure.db.repositories.document_numbering_sequences import (
     SqlAlchemyDocumentNumberingSequenceRepository,
+)
+from kilasifen.infrastructure.db.repositories.documents import (
+    SqlAlchemyDocumentRepository,
+)
+from kilasifen.infrastructure.db.repositories.emitters import (
+    SqlAlchemyEmitterRepository,
 )
 from kilasifen.infrastructure.db.repositories.events import SqlAlchemyEventRepository
 from kilasifen.infrastructure.db.repositories.inutilized_number_ranges import (
     SqlAlchemyInutilizedNumberRangeRepository,
 )
-from kilasifen.infrastructure.db.repositories.certificates import (
-    SqlAlchemyCertificateRepository,
-)
-from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
-from kilasifen.infrastructure.db.repositories.stampings import SqlAlchemyStampingRepository
-from kilasifen.infrastructure.db.repositories.webhooks import SqlAlchemyWebhookRepository
+from kilasifen.infrastructure.db.repositories.stampings import (
+    SqlAlchemyStampingRepository,
+)
+from kilasifen.infrastructure.db.repositories.webhooks import (
+    SqlAlchemyWebhookRepository,
+)
 from kilasifen.infrastructure.db.session import session_scope
 from kilasifen.infrastructure.jobs.queue import RqJobQueue
+from kilasifen.infrastructure.limits.redis import RedisRequestLimiter
 from kilasifen.infrastructure.sifen.event import PysifenEventGateway
 from kilasifen.infrastructure.sifen.query import PysifenQueryGateway
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
 from kilasifen.security import (
-    ApiKeyPrincipal,
     FISCAL_WRITE_SCOPE,
     PLATFORM_ADMIN_SCOPE,
     SECRETS_WRITE_SCOPE,
     TENANT_READ_SCOPE,
     TENANT_WRITE_SCOPE,
+    ApiKeyPrincipal,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def get_api_key_principal(
@@ -139,6 +152,68 @@ def require_secrets_write(
 RequireApiKey = Callable[..., ApiKeyPrincipal]
 
 
+async def enforce_request_limits(
+    request: Request,
+    principal: ApiKeyPrincipal = Depends(get_api_key_principal),
+) -> AsyncGenerator[None, None]:
+    """Acquire a shared per-credential/emitter request lease in public runtimes."""
+
+    settings = get_settings()
+    if settings.environment in {"development", "test"}:
+        yield
+        return
+
+    redis = AsyncRedis.from_url(
+        settings.redis_url,
+        socket_connect_timeout=1,
+        socket_timeout=1,
+    )
+    limiter = RedisRequestLimiter(
+        redis,
+        requests_per_window=settings.rate_limit_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+        max_concurrent=settings.max_concurrent_requests,
+        lease_seconds=settings.request_lease_seconds,
+    )
+    emitter_id = request.path_params.get("emitter_id", "global")
+    identity = f"{principal.consumer_id}:{principal.key_id}:{emitter_id}"
+    lease = None
+    try:
+        try:
+            lease = await limiter.acquire(identity)
+        except Exception as exc:
+            from kilasifen.api.errors import ApiError
+
+            raise ApiError(
+                status_code=503,
+                code="limits.backend_unavailable",
+                message="Request limiting is temporarily unavailable.",
+                category="service_unavailable",
+            ) from exc
+
+        if not lease.acquired:
+            from kilasifen.api.errors import ApiError
+
+            raise ApiError(
+                status_code=429,
+                code=f"limits.{lease.reason}_exceeded",
+                message="Request limit exceeded. Retry later.",
+                category="rate_limit",
+                details={"retry_after_seconds": lease.retry_after_seconds},
+            )
+        yield
+    finally:
+        if lease is not None:
+            try:
+                await limiter.release(lease)
+            except Exception:
+                logger.exception("limits.lease_release_failed")
+        try:
+            await redis.aclose()
+        except Exception:
+            logger.exception("limits.redis_close_failed")
+
+
 def get_db_session(request: Request) -> Generator[Session, None, None]:
     """Provide a database session for request handlers."""
 
@@ -165,9 +240,7 @@ def get_readiness_service(request: Request) -> ReadinessService:
 
 def _emitter_repository(session: Session) -> SqlAlchemyEmitterRepository:
     encryption_key = get_settings().encryption_key
-    secret_store = (
-        EncryptedCertificateStore(encryption_key) if encryption_key else None
-    )
+    secret_store = EncryptedCertificateStore(encryption_key) if encryption_key else None
     return SqlAlchemyEmitterRepository(session, secret_store)
 
 

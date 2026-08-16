@@ -25,6 +25,10 @@ def test_development_keeps_safe_local_defaults() -> None:
             "PostgreSQL cannot use localhost",
         ),
         ({"redis_url": "redis://localhost:6379/0"}, "Redis cannot use localhost"),
+        (
+            {"request_limits_enabled": False},
+            "request limits cannot be disabled",
+        ),
     ],
 )
 def test_staging_rejects_incomplete_or_local_configuration(

@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     max_pfx_upload_bytes: int = Field(
         default=2 * 1024 * 1024, ge=1024, le=10 * 1024 * 1024
     )
+    request_limits_enabled: bool = True
+    rate_limit_requests: int = Field(default=120, ge=1, le=100_000)
+    rate_limit_window_seconds: int = Field(default=60, ge=1, le=3_600)
+    max_concurrent_requests: int = Field(default=8, ge=1, le=1_000)
+    request_lease_seconds: int = Field(default=120, ge=10, le=3_600)
     sentry_dsn: str | None = None
     sentry_environment: str = "development"
     sentry_release: str | None = None
@@ -66,6 +71,8 @@ class Settings(BaseSettings):
             raise ValueError("at least one bootstrap API key is required")
         if not self.encryption_key or not _is_fernet_key(self.encryption_key):
             raise ValueError("a valid KILA_SIFEN_ENCRYPTION_KEY is required")
+        if not self.request_limits_enabled:
+            raise ValueError("request limits cannot be disabled in staging/production")
 
         database = urlparse(self.database_url)
         if not database.scheme.startswith("postgresql"):
