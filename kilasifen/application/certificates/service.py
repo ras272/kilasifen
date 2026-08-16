@@ -6,7 +6,9 @@ from uuid import uuid4
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
+from cryptography.x509.oid import NameOID
 
 from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.common.errors import ConflictError, NotFoundError
@@ -73,6 +75,11 @@ class CertificateService:
         if target is None:
             raise NotFoundError("certificates.not_found")
 
+        emitter = self.emitter_repository.get(target.emitter_id)
+        if emitter is None:
+            raise NotFoundError("emitters.not_found")
+        self._validate_activation(target, emitter.ruc)
+
         certificates = self.certificate_repository.list_for_emitter(target.emitter_id)
         activated: Certificate | None = None
         self.certificate_repository.deactivate_others(target.emitter_id, certificate_id)
@@ -102,12 +109,20 @@ class CertificateService:
         return self.activate_certificate(certificate_id)
 
     def _extract_metadata(self, p12_bytes: bytes, password: str) -> dict[str, object]:
-        _private_key, certificate, _extra = pkcs12.load_key_and_certificates(
-            p12_bytes,
-            password.encode(),
-        )
-        if certificate is None:
+        try:
+            private_key, certificate, _extra = pkcs12.load_key_and_certificates(
+                p12_bytes,
+                password.encode(),
+            )
+        except (TypeError, ValueError) as exc:
+            raise ConflictError("certificates.invalid_pkcs12") from exc
+        if certificate is None or private_key is None:
             raise ConflictError("certificates.invalid_pkcs12")
+        if (
+            not isinstance(private_key, rsa.RSAPrivateKey)
+            or private_key.key_size < 2_048
+        ):
+            raise ConflictError("certificates.unsupported_private_key")
 
         return {
             "fingerprint": certificate.fingerprint(hashes.SHA256()).hex(),
@@ -118,16 +133,28 @@ class CertificateService:
             "valid_until": _certificate_not_valid_after(certificate),
         }
 
+    @staticmethod
+    def _validate_activation(certificate: Certificate, emitter_ruc: str) -> None:
+        now = _now()
+        if certificate.valid_from is None or certificate.valid_until is None:
+            raise ConflictError("certificates.validity_missing")
+        if now < _as_utc(certificate.valid_from):
+            raise ConflictError("certificates.not_yet_valid")
+        if now >= _as_utc(certificate.valid_until):
+            raise ConflictError("certificates.expired")
+
+        detected_ruc = _normalize_ruc(certificate.detected_ruc)
+        if detected_ruc is None:
+            raise ConflictError("certificates.ruc_missing")
+        if detected_ruc != _normalize_ruc(emitter_ruc):
+            raise ConflictError("certificates.ruc_mismatch")
+
 
 def _extract_ruc(certificate: x509.Certificate) -> str | None:
-    subject = certificate.subject.rfc4514_string()
-    if "serialNumber=" not in subject:
+    values = certificate.subject.get_attributes_for_oid(NameOID.SERIAL_NUMBER)
+    if not values:
         return None
-    for part in subject.split(","):
-        part = part.strip()
-        if part.startswith("serialNumber="):
-            return part.removeprefix("serialNumber=")
-    return None
+    return _normalize_ruc(values[0].value)
 
 
 def _certificate_not_valid_before(certificate: x509.Certificate) -> datetime:
@@ -144,3 +171,17 @@ def _certificate_not_valid_after(certificate: x509.Certificate) -> datetime:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _normalize_ruc(value: str | None) -> str | None:
+    if not value:
+        return None
+    ruc_without_dv = value.strip().split("-", 1)[0]
+    digits = "".join(character for character in ruc_without_dv if character.isdigit())
+    return digits or None
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)

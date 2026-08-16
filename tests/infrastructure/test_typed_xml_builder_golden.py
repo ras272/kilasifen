@@ -1,11 +1,9 @@
 import os
+import xml.etree.ElementTree as ET
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
-
-from pysifen.assinatura import sign_xml
-from pysifen.sdk.validation import validate_xml
 
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
@@ -16,6 +14,8 @@ from kilasifen.testing.typed_contract_scenarios import (
     TypedContractScenario,
     get_typed_contract_scenarios,
 )
+from pysifen.assinatura import sign_xml
+from pysifen.sdk.validation import validate_xml
 
 _GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden"
 _CERT_PATH = Path(__file__).resolve().parents[1] / "test_cert.pfx"
@@ -72,13 +72,27 @@ def test_signed_typed_xml_matches_golden(
         f"Golden file missing: {golden_path}. "
         "Run with KILA_SIFEN_UPDATE_GOLDENS=1 to create/update snapshots."
     )
-    assert signed_xml.encode("utf-8") == golden_path.read_bytes()
+    assert _without_signature(signed_xml.encode("utf-8")) == _without_signature(
+        golden_path.read_bytes()
+    )
 
 
 def test_golden_coverage_matches_expected_names() -> None:
-    expected = sorted([f"{scenario.name}.xml" for scenario in get_typed_contract_scenarios()])
+    expected = sorted(
+        [f"{scenario.name}.xml" for scenario in get_typed_contract_scenarios()]
+    )
     existing = sorted([path.name for path in _GOLDEN_DIR.glob("*.xml")])
     assert existing == expected
+
+
+def _without_signature(xml: bytes) -> bytes:
+    """Compare the fiscal payload while allowing an ephemeral signing key."""
+
+    root = ET.fromstring(xml)
+    signature = root.find("{http://www.w3.org/2000/09/xmldsig#}Signature")
+    if signature is not None:
+        root.remove(signature)
+    return ET.tostring(root, encoding="utf-8")
 
 
 def _build_document(scenario: TypedContractScenario) -> Document:

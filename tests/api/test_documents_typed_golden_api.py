@@ -1,3 +1,4 @@
+import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from copy import deepcopy
 from datetime import UTC, date, datetime
@@ -6,8 +7,6 @@ from pathlib import Path
 import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
-
-from pysifen.assinatura import sign_xml
 
 from kilasifen.api.app import create_app
 from kilasifen.config import get_settings
@@ -23,7 +22,7 @@ from kilasifen.testing.typed_contract_scenarios import (
     TypedContractScenario,
     get_typed_contract_scenarios,
 )
-
+from pysifen.assinatura import sign_xml
 
 API_KEY = "secret-key"
 _GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden"
@@ -49,7 +48,9 @@ def cert_data() -> bytes:
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
-    with managed_test_database_url(tmp_path=tmp_path, name="typed_documents_golden") as database_url:
+    with managed_test_database_url(
+        tmp_path=tmp_path, name="typed_documents_golden"
+    ) as database_url:
         monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
         monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
         monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
@@ -71,16 +72,25 @@ def test_typed_documents_api_scenarios_match_golden_and_isolation(
     client: TestClient,
     cert_data: bytes,
 ) -> None:
-    emitter_a = _create_emitter(client, external_id=f"erp-{scenario.name}-a", ruc="80024135", dv="5")
-    emitter_b = _create_emitter(client, external_id=f"erp-{scenario.name}-b", ruc="80111111", dv="9")
+    emitter_a = _create_emitter(
+        client, external_id=f"erp-{scenario.name}-a", ruc="80024135", dv="5"
+    )
+    emitter_b = _create_emitter(
+        client, external_id=f"erp-{scenario.name}-b", ruc="80111111", dv="9"
+    )
 
-    first = _create_typed_document(client=client, emitter_id=emitter_a["id"], scenario=scenario, suffix="1")
+    first = _create_typed_document(
+        client=client, emitter_id=emitter_a["id"], scenario=scenario, suffix="1"
+    )
     assert first.status_code == 201
     first_document = first.json()["data"]["document"]
     assert first_document["document_type"] == scenario.document_type
     assert first_document["emitter_id"] == emitter_a["id"]
     assert first_document["document_number"] == 1
-    assert first_document["payload_snapshot"]["typed_contract"]["contract"] == scenario.contract
+    assert (
+        first_document["payload_snapshot"]["typed_contract"]["contract"]
+        == scenario.contract
+    )
 
     signed_xml = _build_signed_xml_from_api_document(
         api_document=first_document,
@@ -88,10 +98,16 @@ def test_typed_documents_api_scenarios_match_golden_and_isolation(
         cert_data=cert_data,
     )
     golden_path = _GOLDEN_DIR / f"{scenario.name}.xml"
-    assert golden_path.exists(), f"Golden file missing for scenario {scenario.name}: {golden_path}"
-    assert signed_xml.encode("utf-8") == golden_path.read_bytes()
+    assert golden_path.exists(), (
+        f"Golden file missing for scenario {scenario.name}: {golden_path}"
+    )
+    assert _without_signature(signed_xml.encode("utf-8")) == _without_signature(
+        golden_path.read_bytes()
+    )
 
-    second = _create_typed_document(client=client, emitter_id=emitter_a["id"], scenario=scenario, suffix="2")
+    second = _create_typed_document(
+        client=client, emitter_id=emitter_a["id"], scenario=scenario, suffix="2"
+    )
     assert second.status_code == 201
     second_document = second.json()["data"]["document"]
     assert second_document["document_number"] == 2
@@ -128,6 +144,16 @@ def _create_typed_document(
     return client.post(endpoint, headers={"X-API-Key": API_KEY}, json=body)
 
 
+def _without_signature(xml: bytes) -> bytes:
+    """Compare the fiscal payload while allowing an ephemeral signing key."""
+
+    root = ET.fromstring(xml)
+    signature = root.find("{http://www.w3.org/2000/09/xmldsig#}Signature")
+    if signature is not None:
+        root.remove(signature)
+    return ET.tostring(root, encoding="utf-8")
+
+
 def _create_emitter(client: TestClient, *, external_id: str, ruc: str, dv: str) -> dict:
     response = client.post(
         "/v1/emitters",
@@ -146,7 +172,9 @@ def _create_emitter(client: TestClient, *, external_id: str, ruc: str, dv: str) 
     return response.json()["data"]["emitter"]
 
 
-def _build_signed_xml_from_api_document(*, api_document: dict, emitter: dict, cert_data: bytes) -> str:
+def _build_signed_xml_from_api_document(
+    *, api_document: dict, emitter: dict, cert_data: bytes
+) -> str:
     document = Document(
         id=api_document["id"],
         emitter_id=api_document["emitter_id"],

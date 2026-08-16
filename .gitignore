@@ -46,3 +46,5 @@ tmp_*.xml
 tmp_*.txt
 _external/
 .claude/
+*.p12
+*.pfx
