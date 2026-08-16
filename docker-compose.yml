@@ -3,15 +3,15 @@ services:
     image: postgres:16.9
     restart: unless-stopped
     environment:
-      POSTGRES_DB: kilasifen
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - kila-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d kilasifen"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -36,12 +36,12 @@ services:
     env_file:
       - .env
     environment:
-      KILA_SIFEN_DATABASE_URL: ${KILA_SIFEN_DATABASE_URL}
-      KILA_SIFEN_REDIS_URL: ${KILA_SIFEN_REDIS_URL}
-      KILA_SIFEN_API_KEYS: ${KILA_SIFEN_API_KEYS}
-      KILA_SIFEN_ENCRYPTION_KEY: ${KILA_SIFEN_ENCRYPTION_KEY}
+      KILA_SIFEN_DATABASE_URL: ${KILA_SIFEN_DATABASE_URL:?Set KILA_SIFEN_DATABASE_URL in .env}
+      KILA_SIFEN_REDIS_URL: ${KILA_SIFEN_REDIS_URL:?Set KILA_SIFEN_REDIS_URL in .env}
+      KILA_SIFEN_API_KEYS: ${KILA_SIFEN_API_KEYS:?Set KILA_SIFEN_API_KEYS in .env}
+      KILA_SIFEN_ENCRYPTION_KEY: ${KILA_SIFEN_ENCRYPTION_KEY:?Set KILA_SIFEN_ENCRYPTION_KEY in .env}
       KILA_SIFEN_ENVIRONMENT: ${KILA_SIFEN_ENVIRONMENT:-development}
-      KILA_SIFEN_SIFEN_ENVIRONMENT: ${KILA_SIFEN_SIFEN_ENVIRONMENT}
+      KILA_SIFEN_SIFEN_ENVIRONMENT: ${KILA_SIFEN_SIFEN_ENVIRONMENT:?Set KILA_SIFEN_SIFEN_ENVIRONMENT in .env}
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,9 +60,9 @@ services:
     env_file:
       - .env
     environment:
-      KILA_SIFEN_DATABASE_URL: ${KILA_SIFEN_DATABASE_URL}
-      KILA_SIFEN_REDIS_URL: ${KILA_SIFEN_REDIS_URL}
-      KILA_SIFEN_ENCRYPTION_KEY: ${KILA_SIFEN_ENCRYPTION_KEY}
+      KILA_SIFEN_DATABASE_URL: ${KILA_SIFEN_DATABASE_URL:?Set KILA_SIFEN_DATABASE_URL in .env}
+      KILA_SIFEN_REDIS_URL: ${KILA_SIFEN_REDIS_URL:?Set KILA_SIFEN_REDIS_URL in .env}
+      KILA_SIFEN_ENCRYPTION_KEY: ${KILA_SIFEN_ENCRYPTION_KEY:?Set KILA_SIFEN_ENCRYPTION_KEY in .env}
     depends_on:
       redis:
         condition: service_healthy
@@ -77,7 +77,7 @@ services:
     env_file:
       - .env
     environment:
-      KILA_SIFEN_DATABASE_URL: ${KILA_SIFEN_DATABASE_URL}
+      KILA_SIFEN_DATABASE_URL: ${KILA_SIFEN_DATABASE_URL:?Set KILA_SIFEN_DATABASE_URL in .env}
     depends_on:
       postgres:
         condition: service_healthy
