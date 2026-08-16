@@ -4,7 +4,8 @@ import hmac
 import logging
 from collections.abc import AsyncGenerator, Callable, Generator
 
-from fastapi import Depends, Header, Request
+from fastapi import Depends, Request, Security
+from fastapi.security import APIKeyHeader
 from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
 from rq import Queue
@@ -67,11 +68,17 @@ from kilasifen.security import (
 )
 
 logger = logging.getLogger(__name__)
+api_key_header = APIKeyHeader(
+    name="X-API-Key",
+    auto_error=False,
+    scheme_name="KilaApiKey",
+    description="Private consumer credential. Never expose it to browser clients.",
+)
 
 
 def get_api_key_principal(
     request: Request,
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    x_api_key: str | None = Security(api_key_header),
 ) -> ApiKeyPrincipal:
     """Resolve a hashed database credential into a non-secret principal."""
 

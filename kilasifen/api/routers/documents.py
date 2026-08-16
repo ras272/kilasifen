@@ -1,15 +1,14 @@
 """Document API routes."""
 
 from fastapi import APIRouter, Depends, Request, status
-from fastapi.responses import JSONResponse
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 
 from kilasifen.api.deps import (
     get_admin_principal,
     get_document_service,
     get_job_service,
-    require_fiscal_write,
     require_emitter_read,
+    require_fiscal_write,
 )
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.documents import (
@@ -29,6 +28,9 @@ router = APIRouter(tags=["documents"])
     "/emitters/{emitter_id}/documents",
     response_model=SuccessEnvelope,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        200: {"description": "Idempotent replay of the existing document and job."}
+    },
     deprecated=True,
     summary="Create a raw document (platform administrators only)",
 )
@@ -54,6 +56,9 @@ def create_document(
     "/emitters/{emitter_id}/documents/facturas",
     response_model=SuccessEnvelope,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        200: {"description": "Idempotent replay of the existing document and job."}
+    },
 )
 def create_factura_document(
     emitter_id: str,
@@ -78,6 +83,9 @@ def create_factura_document(
     "/emitters/{emitter_id}/documents/notas-credito",
     response_model=SuccessEnvelope,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        200: {"description": "Idempotent replay of the existing document and job."}
+    },
 )
 def create_nota_credito_document(
     emitter_id: str,
@@ -98,7 +106,9 @@ def create_nota_credito_document(
     )
 
 
-@router.get("/emitters/{emitter_id}/documents/{document_id}", response_model=SuccessEnvelope)
+@router.get(
+    "/emitters/{emitter_id}/documents/{document_id}", response_model=SuccessEnvelope
+)
 def get_document(
     emitter_id: str,
     document_id: str,
@@ -107,12 +117,18 @@ def get_document(
     service: DocumentService = Depends(get_document_service),
     job_service: JobService = Depends(get_job_service),
 ) -> SuccessEnvelope:
-    document = service.get_document_for_emitter(emitter_id=emitter_id, document_id=document_id)
+    document = service.get_document_for_emitter(
+        emitter_id=emitter_id, document_id=document_id
+    )
     job = job_service.get_for_entity("document", document.id)
     return SuccessEnvelope(
         data={
-            "document": DocumentResponse.model_validate(document).model_dump(mode="json"),
-            "job": JobResponse.model_validate(job).model_dump(mode="json") if job else None,
+            "document": DocumentResponse.model_validate(document).model_dump(
+                mode="json"
+            ),
+            "job": JobResponse.model_validate(job).model_dump(mode="json")
+            if job
+            else None,
         },
         correlation_id=request.state.correlation_id,
     )
@@ -142,17 +158,20 @@ def list_documents(
         cdc=cdc,
     )
     jobs_by_document_id = {
-        document.id: job_service.get_for_entity("document", document.id) for document in documents
+        document.id: job_service.get_for_entity("document", document.id)
+        for document in documents
     }
     return SuccessEnvelope(
         data={
             "documents": [
                 {
-                    "document": DocumentResponse.model_validate(document).model_dump(mode="json"),
+                    "document": DocumentResponse.model_validate(document).model_dump(
+                        mode="json"
+                    ),
                     "job": (
-                        JobResponse.model_validate(jobs_by_document_id[document.id]).model_dump(
-                            mode="json"
-                        )
+                        JobResponse.model_validate(
+                            jobs_by_document_id[document.id]
+                        ).model_dump(mode="json")
                         if jobs_by_document_id[document.id]
                         else None
                     ),
@@ -252,7 +271,9 @@ def _create_document_response(
     )
     envelope = SuccessEnvelope(
         data={
-            "document": DocumentResponse.model_validate(document).model_dump(mode="json"),
+            "document": DocumentResponse.model_validate(document).model_dump(
+                mode="json"
+            ),
             "job": JobResponse.model_validate(job).model_dump(mode="json"),
         },
         correlation_id=request.state.correlation_id,

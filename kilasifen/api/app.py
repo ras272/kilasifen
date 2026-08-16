@@ -52,7 +52,13 @@ def create_app() -> FastAPI:
     configure_logging(settings.log_level)
     initialize_sentry(settings=settings, component="api")
 
-    app = FastAPI(title=settings.api_title)
+    app = FastAPI(
+        title=settings.api_title,
+        version=settings.api_version,
+        description=(
+            "Independent multi-tenant fiscal API. Staging is restricted to SIFEN test."
+        ),
+    )
     engine = build_engine(settings.database_url)
     app.state.engine = engine
     app.state.session_factory = build_session_factory(engine)
