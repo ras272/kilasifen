@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, Depends, Request
 
-from kilasifen.api.deps import get_admin_principal, get_job_service, require_emitter_read
+from kilasifen.api.deps import (
+    get_admin_principal,
+    get_job_service,
+    require_emitter_read,
+)
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.application.jobs.service import JobService
@@ -48,7 +52,9 @@ def list_jobs(
     )
     return SuccessEnvelope(
         data={
-            "jobs": [JobResponse.model_validate(job).model_dump(mode="json") for job in jobs],
+            "jobs": [
+                JobResponse.model_validate(job).model_dump(mode="json") for job in jobs
+            ],
             "pagination": {"limit": limit, "offset": offset, "count": len(jobs)},
         },
         correlation_id=request.state.correlation_id,

@@ -45,7 +45,9 @@ def test_metadata_registers_core_tables() -> None:
 
 
 def test_build_session_factory_returns_working_session(tmp_path: Path) -> None:
-    with managed_test_database_url(tmp_path=tmp_path, name="db_foundation_session") as database_url:
+    with managed_test_database_url(
+        tmp_path=tmp_path, name="db_foundation_session"
+    ) as database_url:
         engine = build_engine(database_url)
         session_factory = build_session_factory(engine)
 
@@ -58,10 +60,14 @@ def test_alembic_upgrade_creates_core_tables(
     tmp_path: Path,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    with managed_test_database_url(tmp_path=tmp_path, name="db_foundation_migration") as database_url:
+    with managed_test_database_url(
+        tmp_path=tmp_path, name="db_foundation_migration"
+    ) as database_url:
         alembic_config = Config(str(repo_root / "alembic.ini"))
         alembic_config.set_main_option("script_location", str(repo_root / "alembic"))
-        alembic_config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
+        alembic_config.set_main_option(
+            "sqlalchemy.url", database_url.replace("%", "%%")
+        )
         monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
 
         command.upgrade(alembic_config, "head")

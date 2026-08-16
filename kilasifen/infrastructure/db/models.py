@@ -64,12 +64,16 @@ class EmitterModel(TimestampMixin, Base):
     ruc: Mapped[str] = mapped_column(String(16), nullable=False)
     dv: Mapped[str] = mapped_column(String(4), nullable=False)
     legal_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    tax_environment: Mapped[str] = mapped_column(String(16), nullable=False, default="test")
+    tax_environment: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="test"
+    )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     csc: Mapped[str | None] = mapped_column(Text)
     csc_id: Mapped[str | None] = mapped_column(String(16))
 
-    certificates: Mapped[list["CertificateModel"]] = relationship(back_populates="emitter")
+    certificates: Mapped[list["CertificateModel"]] = relationship(
+        back_populates="emitter"
+    )
     stampings: Mapped[list["StampingModel"]] = relationship(back_populates="emitter")
     documents: Mapped[list["DocumentModel"]] = relationship(back_populates="emitter")
     numbering_sequences: Mapped[list["DocumentNumberingSequenceModel"]] = relationship(
@@ -80,7 +84,9 @@ class EmitterModel(TimestampMixin, Base):
     inutilized_number_ranges: Mapped[list["InutilizedNumberRangeModel"]] = relationship(
         back_populates="emitter"
     )
-    webhook_endpoints: Mapped[list["WebhookEndpointModel"]] = relationship(back_populates="emitter")
+    webhook_endpoints: Mapped[list["WebhookEndpointModel"]] = relationship(
+        back_populates="emitter"
+    )
     consumer_grant: Mapped["ConsumerEmitterModel | None"] = relationship(
         back_populates="emitter"
     )
@@ -167,7 +173,9 @@ class DocumentModel(TimestampMixin, Base):
     last_query_response_raw: Mapped[str | None] = mapped_column(Text)
     last_query_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cdc: Mapped[str | None] = mapped_column(String(64))
-    internal_status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    internal_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="draft"
+    )
     sifen_status: Mapped[str | None] = mapped_column(String(32))
     sifen_result_code: Mapped[str | None] = mapped_column(String(16))
     sifen_result_message: Mapped[str | None] = mapped_column(Text)
@@ -179,8 +187,12 @@ class DocumentModel(TimestampMixin, Base):
     events: Mapped[list["EventModel"]] = relationship(back_populates="document")
 
     __table_args__ = (
-        UniqueConstraint("emitter_id", "external_id", name="uq_documents_emitter_external_id"),
-        UniqueConstraint("emitter_id", "idempotency_key", name="uq_documents_emitter_idempotency_key"),
+        UniqueConstraint(
+            "emitter_id", "external_id", name="uq_documents_emitter_external_id"
+        ),
+        UniqueConstraint(
+            "emitter_id", "idempotency_key", name="uq_documents_emitter_idempotency_key"
+        ),
         UniqueConstraint(
             "emitter_id",
             "document_type",
@@ -200,7 +212,9 @@ class DocumentNumberingSequenceModel(Base):
     establishment: Mapped[str] = mapped_column(String(3), nullable=False)
     point: Mapped[str] = mapped_column(String(3), nullable=False)
     document_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    last_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    last_number: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -277,7 +291,9 @@ class InutilizedNumberRangeModel(TimestampMixin, Base):
     event_id: Mapped[str] = mapped_column(ForeignKey("events.id"), nullable=False)
     sifen_protocol: Mapped[str | None] = mapped_column(String(64))
 
-    emitter: Mapped[EmitterModel] = relationship(back_populates="inutilized_number_ranges")
+    emitter: Mapped[EmitterModel] = relationship(
+        back_populates="inutilized_number_ranges"
+    )
     event: Mapped[EventModel] = relationship(back_populates="inutilized_ranges")
 
     __table_args__ = (
@@ -302,15 +318,21 @@ class WebhookEndpointModel(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     retry_policy: Mapped[dict | None] = mapped_column(JSON)
 
-    emitter: Mapped[EmitterModel | None] = relationship(back_populates="webhook_endpoints")
-    deliveries: Mapped[list["WebhookDeliveryModel"]] = relationship(back_populates="webhook_endpoint")
+    emitter: Mapped[EmitterModel | None] = relationship(
+        back_populates="webhook_endpoints"
+    )
+    deliveries: Mapped[list["WebhookDeliveryModel"]] = relationship(
+        back_populates="webhook_endpoint"
+    )
 
 
 class WebhookDeliveryModel(TimestampMixin, Base):
     __tablename__ = "webhook_deliveries"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    webhook_endpoint_id: Mapped[str] = mapped_column(ForeignKey("webhook_endpoints.id"), nullable=False)
+    webhook_endpoint_id: Mapped[str] = mapped_column(
+        ForeignKey("webhook_endpoints.id"), nullable=False
+    )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     payload_snapshot: Mapped[dict | None] = mapped_column(JSON)
     request_body: Mapped[str | None] = mapped_column(Text)
@@ -318,6 +340,10 @@ class WebhookDeliveryModel(TimestampMixin, Base):
     request_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     response_code: Mapped[int | None] = mapped_column(Integer)
     response_body_snapshot: Mapped[str | None] = mapped_column(Text)
-    final_status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    final_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending"
+    )
 
-    webhook_endpoint: Mapped[WebhookEndpointModel] = relationship(back_populates="deliveries")
+    webhook_endpoint: Mapped[WebhookEndpointModel] = relationship(
+        back_populates="deliveries"
+    )

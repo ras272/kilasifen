@@ -15,7 +15,9 @@ def test_upgrade_backfills_ownership_and_encrypts_existing_csc(
     tmp_path: Path,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[2]
-    with managed_test_database_url(tmp_path=tmp_path, name="tenancy_secret_upgrade") as url:
+    with managed_test_database_url(
+        tmp_path=tmp_path, name="tenancy_secret_upgrade"
+    ) as url:
         config = Config(str(repo_root / "alembic.ini"))
         config.set_main_option("script_location", str(repo_root / "alembic"))
         config.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
@@ -67,8 +69,8 @@ def test_upgrade_backfills_ownership_and_encrypts_existing_csc(
             ).one()
 
         assert encrypted_csc != "legacy-csc-secret"
-        assert EncryptedCertificateStore(encryption_key).decrypt_text(encrypted_csc) == (
-            "legacy-csc-secret"
-        )
+        assert EncryptedCertificateStore(encryption_key).decrypt_text(
+            encrypted_csc
+        ) == ("legacy-csc-secret")
         assert ownership[0] == ownership[1]
         assert "tenant:read" in ownership[2]

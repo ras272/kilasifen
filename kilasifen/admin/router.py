@@ -135,7 +135,9 @@ def retry_job(
     service: AdminConsoleService = Depends(get_admin_service),
 ) -> RedirectResponse:
     job = service.retry_job(job_id)
-    fallback = f"/admin/jobs?emitter_id={job.emitter_id}" if job.emitter_id else "/admin/jobs"
+    fallback = (
+        f"/admin/jobs?emitter_id={job.emitter_id}" if job.emitter_id else "/admin/jobs"
+    )
     return RedirectResponse(
         url=_safe_next(next_url, fallback=fallback),
         status_code=status.HTTP_303_SEE_OTHER,
@@ -146,4 +148,3 @@ def _safe_next(next_url: str, *, fallback: str) -> str:
     if next_url.startswith("/admin"):
         return next_url
     return fallback
-

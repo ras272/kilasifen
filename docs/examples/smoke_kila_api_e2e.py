@@ -149,12 +149,12 @@ class KilaApiClient:
         try:
             payload = response.json()
         except ValueError as exc:
-            raise SmokeFailure(
-                f"{method} {path} returned non-JSON payload."
-            ) from exc
+            raise SmokeFailure(f"{method} {path} returned non-JSON payload.") from exc
 
         if "error" in payload:
-            raise SmokeFailure(f"{method} {path} returned error envelope: {payload['error']}")
+            raise SmokeFailure(
+                f"{method} {path} returned error envelope: {payload['error']}"
+            )
         if "data" not in payload:
             raise SmokeFailure(f"{method} {path} missing data envelope.")
         return payload["data"]
@@ -506,7 +506,9 @@ def ensure_active_stamping(
         payload=None,
         expected_statuses=(200,),
     )["stamping"]
-    return f"created+activated stamping_id={activated['id']} number={activated['number']}"
+    return (
+        f"created+activated stamping_id={activated['id']} number={activated['number']}"
+    )
 
 
 def build_document_payload(

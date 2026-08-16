@@ -54,7 +54,9 @@ def upgrade() -> None:
     )
 
     with op.batch_alter_table("api_keys") as batch_op:
-        batch_op.add_column(sa.Column("consumer_id", sa.String(length=36), nullable=True))
+        batch_op.add_column(
+            sa.Column("consumer_id", sa.String(length=36), nullable=True)
+        )
         batch_op.add_column(sa.Column("scopes", sa.JSON(), nullable=True))
 
     connection = op.get_bind()
@@ -79,7 +81,9 @@ def upgrade() -> None:
     emitters = sa.table("emitters", sa.column("id", sa.String(length=36)))
 
     consumer_by_emitter: dict[str, str] = {}
-    for position, emitter_id in enumerate(connection.execute(sa.select(emitters.c.id)), start=1):
+    for position, emitter_id in enumerate(
+        connection.execute(sa.select(emitters.c.id)), start=1
+    ):
         consumer_id = str(uuid4())
         emitter_id = emitter_id[0]
         consumer_by_emitter[emitter_id] = consumer_id
@@ -147,7 +151,9 @@ def downgrade() -> None:
             existing_nullable=True,
         )
     with op.batch_alter_table("api_keys") as batch_op:
-        batch_op.add_column(sa.Column("emitter_id", sa.String(length=36), nullable=True))
+        batch_op.add_column(
+            sa.Column("emitter_id", sa.String(length=36), nullable=True)
+        )
         batch_op.create_foreign_key(
             "fk_api_keys_emitter_id_emitters", "emitters", ["emitter_id"], ["id"]
         )
@@ -167,7 +173,9 @@ def downgrade() -> None:
         )
     )
     with op.batch_alter_table("api_keys") as batch_op:
-        batch_op.drop_constraint("fk_api_keys_consumer_id_consumers", type_="foreignkey")
+        batch_op.drop_constraint(
+            "fk_api_keys_consumer_id_consumers", type_="foreignkey"
+        )
         batch_op.drop_column("scopes")
         batch_op.drop_column("consumer_id")
     op.drop_table("consumer_emitters")

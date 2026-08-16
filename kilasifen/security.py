@@ -86,7 +86,9 @@ def verify_api_key(raw_key: str, encoded_hash: str) -> bool:
     """Verify a stored credential hash using constant-time comparison."""
 
     try:
-        algorithm, iterations_text, salt_text, expected_text = encoded_hash.split("$", 3)
+        algorithm, iterations_text, salt_text, expected_text = encoded_hash.split(
+            "$", 3
+        )
         if algorithm != "pbkdf2_sha256":
             return False
         iterations = int(iterations_text)
