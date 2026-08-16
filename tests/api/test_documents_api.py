@@ -1,6 +1,6 @@
 from collections.abc import Iterator
-import logging
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 from cryptography.fernet import Fernet
@@ -11,7 +11,6 @@ from kilasifen.config import get_settings
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
-
 
 API_KEY = "secret-key"
 
@@ -78,7 +77,9 @@ def second_emitter_id(client: TestClient) -> str:
     return response.json()["data"]["emitter"]["id"]
 
 
-def test_create_document_returns_document_and_job(client: TestClient, emitter_id: str) -> None:
+def test_create_document_returns_document_and_job(
+    client: TestClient, emitter_id: str
+) -> None:
     response = client.post(
         f"/v1/emitters/{emitter_id}/documents",
         headers={"X-API-Key": API_KEY},
@@ -98,7 +99,9 @@ def test_create_document_returns_document_and_job(client: TestClient, emitter_id
     assert body["job"]["status"] == "queued"
 
 
-def test_create_document_is_idempotent_for_same_key(client: TestClient, emitter_id: str) -> None:
+def test_create_document_is_idempotent_for_same_key(
+    client: TestClient, emitter_id: str
+) -> None:
     payload = {
         "external_id": "erp-doc-1",
         "idempotency_key": "idem-1",
@@ -145,7 +148,9 @@ def test_create_factura_typed_endpoint_returns_document_and_job(
                 "numero": 10,
                 "fecha": "2026-04-25T10:00:00",
                 "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
-                "items": [{"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}],
+                "items": [
+                    {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
+                ],
             },
         },
     )
@@ -168,8 +173,12 @@ def test_create_nota_credito_typed_endpoint_returns_document_and_job(
             "idempotency_key": "idem-nc-1",
             "nota_credito": {
                 "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
-                "documento_asociado": {"cdc": "01800123450001001000000012026010112345678901"},
-                "items": [{"descripcion": "Descuento", "cantidad": 1, "precioUnitario": 500}],
+                "documento_asociado": {
+                    "cdc": "01800123450001001000000012026010112345678901"
+                },
+                "items": [
+                    {"descripcion": "Descuento", "cantidad": 1, "precioUnitario": 500}
+                ],
             },
         },
     )
@@ -208,7 +217,9 @@ def test_create_typed_document_rejects_caller_supplied_xml(
             "factura": {
                 "generated_xml": "<attacker-controlled/>",
                 "cliente": {"ruc": "80069563-1"},
-                "items": [{"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1}],
+                "items": [
+                    {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1}
+                ],
             },
         },
     )
@@ -299,7 +310,10 @@ def test_get_document_returns_document_and_associated_job(
             "external_id": "erp-doc-detail",
             "idempotency_key": "idem-detail",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='DETAIL'/></rDE>", "doc_id": "DETAIL"},
+            "payload": {
+                "generated_xml": "<rDE><DE Id='DETAIL'/></rDE>",
+                "doc_id": "DETAIL",
+            },
         },
     )
     document_id = created.json()["data"]["document"]["id"]
@@ -328,7 +342,10 @@ def test_get_document_returns_not_found_for_other_emitter_document(
             "external_id": "erp-doc-detail-b",
             "idempotency_key": "idem-detail-b",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='DETAILB'/></rDE>", "doc_id": "DETAILB"},
+            "payload": {
+                "generated_xml": "<rDE><DE Id='DETAILB'/></rDE>",
+                "doc_id": "DETAILB",
+            },
         },
     )
     document_id = created.json()["data"]["document"]["id"]
@@ -353,7 +370,10 @@ def test_get_document_requires_valid_api_key(
             "external_id": "erp-doc-auth",
             "idempotency_key": "idem-auth",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='AUTH'/></rDE>", "doc_id": "AUTH"},
+            "payload": {
+                "generated_xml": "<rDE><DE Id='AUTH'/></rDE>",
+                "doc_id": "AUTH",
+            },
         },
     )
     document_id = created.json()["data"]["document"]["id"]
@@ -427,9 +447,13 @@ def test_get_document_xml_returns_not_found_for_other_emitter_document(
 def test_create_typed_document_ignores_client_number_and_logs_warning(
     client: TestClient,
     emitter_id: str,
-    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    caplog.set_level(logging.WARNING, logger="kilasifen.application.documents.service")
+    warning = Mock()
+    monkeypatch.setattr(
+        "kilasifen.application.documents.service.logger.warning",
+        warning,
+    )
     response = client.post(
         f"/v1/emitters/{emitter_id}/documents/facturas",
         headers={"X-API-Key": API_KEY},
@@ -440,7 +464,9 @@ def test_create_typed_document_ignores_client_number_and_logs_warning(
                 "numero": 999,
                 "fecha": "2026-04-25T10:00:00",
                 "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
-                "items": [{"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}],
+                "items": [
+                    {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
+                ],
             },
         },
     )
@@ -449,7 +475,5 @@ def test_create_typed_document_ignores_client_number_and_logs_warning(
     document = response.json()["data"]["document"]
     assert document["document_number"] == 1
     assert document["payload_snapshot"]["typed_contract"]["payload"]["numero"] == 1
-    assert any(
-        record.getMessage() == "documents.numbering.client_number_ignored"
-        for record in caplog.records
-    )
+    warning.assert_called_once()
+    assert warning.call_args.args[0] == "documents.numbering.client_number_ignored"
