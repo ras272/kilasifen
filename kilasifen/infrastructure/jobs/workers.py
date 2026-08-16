@@ -58,20 +58,25 @@ logger = logging.getLogger(__name__)
 def process_document_job(
     *,
     job_id: str,
-    database_url: str,
-    encryption_key: str,
+    database_url: str | None = None,
+    encryption_key: str | None = None,
     emission_engine: DocumentEmissionEngine | None = None,
     current_date: date | None = None,
     webhook_queue=None,
 ) -> dict[str, str]:
     """Process a document-emission job using the configured engine."""
 
+    settings = get_settings()
+    database_url, encryption_key = _worker_runtime_secrets(
+        database_url=database_url,
+        encryption_key=encryption_key,
+    )
     ensure_worker_observability()
     correlation_token, worker_correlation_id = _bind_worker_correlation_id()
     engine = build_engine(database_url)
     session_factory = build_session_factory(engine)
     emission_engine = emission_engine or PysifenEmissionEngine(
-        deployment_environment=get_settings().sifen_environment
+        deployment_environment=settings.sifen_environment
     )
     certificate_store = EncryptedCertificateStore(encryption_key)
 
@@ -237,17 +242,21 @@ def process_document_job(
 def process_webhook_delivery_job(
     *,
     job_id: str,
-    database_url: str,
-    encryption_key: str,
+    database_url: str | None = None,
+    encryption_key: str | None = None,
     deliverer: WebhookDeliverer | None = None,
 ) -> dict[str, str | bool]:
     """Process a webhook-delivery job."""
 
+    settings = get_settings()
+    database_url, encryption_key = _worker_runtime_secrets(
+        database_url=database_url,
+        encryption_key=encryption_key,
+    )
     ensure_worker_observability()
     correlation_token, worker_correlation_id = _bind_worker_correlation_id()
     engine = build_engine(database_url)
     session_factory = build_session_factory(engine)
-    settings = get_settings()
     deliverer = deliverer or WebhookDeliverer(
         url_policy=WebhookUrlPolicy.for_environment(settings.environment)
     )
@@ -305,6 +314,20 @@ class WebhookDeliveryRetryableError(RuntimeError):
     """Signal RQ to apply the configured bounded retry schedule."""
 
 
+def _worker_runtime_secrets(
+    *,
+    database_url: str | None,
+    encryption_key: str | None,
+) -> tuple[str, str]:
+    """Resolve secrets in worker memory without accepting them from Redis jobs."""
+
+    settings = get_settings()
+    resolved_key = encryption_key or settings.encryption_key
+    if not resolved_key:
+        raise RuntimeError("KILA_SIFEN_ENCRYPTION_KEY is required by workers")
+    return database_url or settings.database_url, resolved_key
+
+
 def _publish_document_status_webhooks(
     *,
     document,
@@ -355,13 +378,10 @@ class _WebhookRqQueue:
         self.queue = queue
 
     def enqueue_webhook_delivery(self, job, *, database_url: str, encryption_key: str):
+        del database_url, encryption_key
         return self.queue.enqueue_call(
             func=process_webhook_delivery_job,
-            kwargs={
-                "job_id": job.id,
-                "database_url": database_url,
-                "encryption_key": encryption_key,
-            },
+            kwargs={"job_id": job.id},
             job_id=job.id,
             meta={"correlation_id": get_correlation_id()},
             retry=Retry(max=7, interval=[10, 30, 120, 300, 900, 1800, 3600]),

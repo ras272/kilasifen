@@ -39,15 +39,13 @@ class RqJobQueue:
         database_url: str,
         encryption_key: str,
     ) -> RqJob:
-        """Enqueue document emission work."""
+        """Enqueue only a durable identifier; workers load secrets from their env."""
+
+        del database_url, encryption_key
 
         return self.queue.enqueue_call(
             func=process_document_job,
-            kwargs={
-                "job_id": job.id,
-                "database_url": database_url,
-                "encryption_key": encryption_key,
-            },
+            kwargs={"job_id": job.id},
             job_id=job.id,
             meta={"correlation_id": get_correlation_id()},
         )
@@ -59,15 +57,13 @@ class RqJobQueue:
         database_url: str,
         encryption_key: str,
     ) -> RqJob:
-        """Enqueue webhook delivery work."""
+        """Enqueue only a durable identifier; workers load secrets from their env."""
+
+        del database_url, encryption_key
 
         return self.queue.enqueue_call(
             func=process_webhook_delivery_job,
-            kwargs={
-                "job_id": job.id,
-                "database_url": database_url,
-                "encryption_key": encryption_key,
-            },
+            kwargs={"job_id": job.id},
             job_id=job.id,
             meta={"correlation_id": get_correlation_id()},
             retry=Retry(max=7, interval=[10, 30, 120, 300, 900, 1800, 3600]),

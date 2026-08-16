@@ -72,7 +72,9 @@ def test_rq_queue_enqueues_document_job_with_expected_payload() -> None:
         == "kilasifen.infrastructure.jobs.workers.process_document_job"
     )
     assert enqueued.kwargs["job_id"] == "job-1"
-    assert enqueued.kwargs["encryption_key"] == _fernet_key()
+    assert set(enqueued.kwargs) == {"job_id"}
+    assert "encryption_key" not in str(enqueued.data)
+    assert "postgresql+psycopg" not in str(enqueued.data)
     assert enqueued.meta["correlation_id"] == "corr-123"
 
 
@@ -231,6 +233,9 @@ def test_rq_queue_enqueues_webhook_delivery_with_correlation_id() -> None:
         == "kilasifen.infrastructure.jobs.workers.process_webhook_delivery_job"
     )
     assert enqueued.meta["correlation_id"] == "corr-webhook-1"
+    assert set(enqueued.kwargs) == {"job_id"}
+    assert "encryption_key" not in str(enqueued.data)
+    assert "postgresql+psycopg" not in str(enqueued.data)
     assert enqueued.retries_left == 7
     assert enqueued.retry_intervals == [10, 30, 120, 300, 900, 1800, 3600]
 
