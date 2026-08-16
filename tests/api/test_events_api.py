@@ -6,9 +6,9 @@ import pytest
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
+import kilasifen.application.events.service as event_service_module
 from kilasifen.api.app import create_app
 from kilasifen.api.deps import get_event_service
-import kilasifen.application.events.service as event_service_module
 from kilasifen.application.events.service import EventService
 from kilasifen.config import get_settings
 from kilasifen.domain.certificates.models import Certificate
@@ -17,21 +17,30 @@ from kilasifen.domain.emitters.models import Emitter
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.models import DocumentNumberingSequenceModel
-from kilasifen.infrastructure.db.repositories.certificates import SqlAlchemyCertificateRepository
+from kilasifen.infrastructure.db.repositories.certificates import (
+    SqlAlchemyCertificateRepository,
+)
 from kilasifen.infrastructure.db.repositories.document_numbering_sequences import (
     SqlAlchemyDocumentNumberingSequenceRepository,
 )
-from kilasifen.infrastructure.db.repositories.documents import SqlAlchemyDocumentRepository
-from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
+from kilasifen.infrastructure.db.repositories.documents import (
+    SqlAlchemyDocumentRepository,
+)
+from kilasifen.infrastructure.db.repositories.emitters import (
+    SqlAlchemyEmitterRepository,
+)
 from kilasifen.infrastructure.db.repositories.events import SqlAlchemyEventRepository
 from kilasifen.infrastructure.db.repositories.inutilized_number_ranges import (
     SqlAlchemyInutilizedNumberRangeRepository,
 )
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
-from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
+from kilasifen.infrastructure.db.session import (
+    build_engine,
+    build_session_factory,
+    session_scope,
+)
 from kilasifen.infrastructure.sifen.event import EventSubmissionOutcome
 from kilasifen.testing.database import managed_test_database_url
-
 
 API_KEY = "secret-key"
 
@@ -84,14 +93,21 @@ def client(
             with session_scope(session_factory) as session:
                 yield EventService(
                     event_repository=SqlAlchemyEventRepository(session),
-                    emitter_repository=SqlAlchemyEmitterRepository(session),
+                    emitter_repository=SqlAlchemyEmitterRepository(
+                        session,
+                        EncryptedCertificateStore(encryption_key),
+                    ),
                     document_repository=SqlAlchemyDocumentRepository(session),
                     certificate_repository=SqlAlchemyCertificateRepository(session),
                     job_repository=SqlAlchemyJobRepository(session),
                     certificate_store=EncryptedCertificateStore(encryption_key),
                     submission_gateway=FakeEventGateway(),
-                    numbering_repository=SqlAlchemyDocumentNumberingSequenceRepository(session),
-                    inutilized_range_repository=SqlAlchemyInutilizedNumberRangeRepository(session),
+                    numbering_repository=SqlAlchemyDocumentNumberingSequenceRepository(
+                        session
+                    ),
+                    inutilized_range_repository=SqlAlchemyInutilizedNumberRangeRepository(
+                        session
+                    ),
                     webhook_publisher=FakeWebhookPublisher(published_webhooks),
                 )
 
@@ -207,7 +223,9 @@ def test_cancel_factura_within_48h_succeeds_and_publishes_webhook(
     assert response.status_code == 201
     body = response.json()["data"]
     assert body["event"]["status"] == "approved"
-    assert any(item["event_type"] == "document.cancelled" for item in published_webhooks)
+    assert any(
+        item["event_type"] == "document.cancelled" for item in published_webhooks
+    )
 
 
 def test_cancel_nota_credito_within_168h_succeeds(client: TestClient) -> None:
@@ -272,7 +290,9 @@ def test_cancel_rejects_when_child_dte_not_cancelled(client: TestClient) -> None
     assert response.status_code == 409
     body = response.json()["error"]
     assert body["code"] == "events.cancel.child_dte_not_cancelled"
-    assert body["details"]["child_cdcs"] == ["01800123450001001000040112026042012345678901"]
+    assert body["details"]["child_cdcs"] == [
+        "01800123450001001000040112026042012345678901"
+    ]
 
 
 def test_cancel_cross_emitter_returns_404(client: TestClient) -> None:
@@ -304,7 +324,9 @@ def test_inutilization_success_publishes_webhook(
     )
     assert response.status_code == 201
     assert response.json()["data"]["event"]["status"] == "approved"
-    assert any(item["event_type"] == "numbering.inutilized" for item in published_webhooks)
+    assert any(
+        item["event_type"] == "numbering.inutilized" for item in published_webhooks
+    )
 
 
 def test_inutilization_rejects_used_range(client: TestClient) -> None:
@@ -428,7 +450,9 @@ def test_inutilization_isolation_between_emitters(client: TestClient) -> None:
     assert second.status_code == 201
 
 
-def test_inutilization_deadline_exceeded_when_sequence_is_too_old(client: TestClient) -> None:
+def test_inutilization_deadline_exceeded_when_sequence_is_too_old(
+    client: TestClient,
+) -> None:
     response = client.post(
         "/v1/emitters/emitter-1/inutilizations",
         headers={"X-API-Key": API_KEY},
@@ -481,7 +505,7 @@ def _seed_event_context(
     certificate_store: EncryptedCertificateStore,
 ) -> None:
     with session_scope(session_factory) as session:
-        emitter_repo = SqlAlchemyEmitterRepository(session)
+        emitter_repo = SqlAlchemyEmitterRepository(session, certificate_store)
         cert_repo = SqlAlchemyCertificateRepository(session)
         doc_repo = SqlAlchemyDocumentRepository(session)
 

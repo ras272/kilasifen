@@ -42,7 +42,9 @@ def clear_settings_cache() -> Iterator[None]:
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
-    with managed_test_database_url(tmp_path=tmp_path, name="tenant_isolation") as database_url:
+    with managed_test_database_url(
+        tmp_path=tmp_path, name="tenant_isolation"
+    ) as database_url:
         monkeypatch.setenv("KILA_SIFEN_API_KEYS", "[]")
         monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
         monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
@@ -92,7 +94,9 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
             "idempotency_key": "tenant-a-idempotency",
             "factura": {
                 "cliente": {"ruc": "80000001-1"},
-                "items": [{"descripcion": "Servicio", "cantidad": 1, "precioUnitario": 1}],
+                "items": [
+                    {"descripcion": "Servicio", "cantidad": 1, "precioUnitario": 1}
+                ],
             },
         },
     )
@@ -110,12 +114,18 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
         "/v1/jobs",
         headers={"X-API-Key": _KEY_A},
     )
+    raw_event_response = client.post(
+        "/v1/emitters/emitter-a/events",
+        headers={"X-API-Key": _KEY_A},
+        json={"document_id": "unknown", "event_type": "raw", "payload": {}},
+    )
 
     assert raw_create_response.status_code == 403
     assert create_response.status_code == 201
     assert read_only_response.status_code == 403
     assert read_only_response.json()["error"]["code"] == "auth.insufficient_scope"
     assert global_jobs_response.status_code == 403
+    assert raw_event_response.status_code == 403
 
 
 def _seed_tenants(session_factory) -> None:

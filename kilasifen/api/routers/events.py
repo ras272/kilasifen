@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, Depends, Request, status
 
-from kilasifen.api.deps import get_event_service, require_emitter_read, require_fiscal_write
+from kilasifen.api.deps import (
+    get_admin_principal,
+    get_event_service,
+    require_fiscal_write,
+)
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.events import (
     CancelDocumentRequest,
@@ -21,12 +25,14 @@ router = APIRouter(tags=["events"])
     "/emitters/{emitter_id}/events",
     response_model=SuccessEnvelope,
     status_code=status.HTTP_201_CREATED,
+    deprecated=True,
+    summary="Create a raw fiscal event (platform administrators only)",
 )
 def create_event(
     emitter_id: str,
     payload: EventCreateRequest,
     request: Request,
-    _principal=Depends(require_emitter_read),
+    _principal=Depends(get_admin_principal),
     service: EventService = Depends(get_event_service),
 ) -> SuccessEnvelope:
     event, job = service.create_event(
@@ -97,7 +103,9 @@ def inutilize_numbers(
         data={
             "event": EventResponse.model_validate(event).model_dump(mode="json"),
             "job": JobResponse.model_validate(job).model_dump(mode="json"),
-            "inutilization": InutilizedRangeResponse.model_validate(range_item).model_dump(mode="json"),
+            "inutilization": InutilizedRangeResponse.model_validate(
+                range_item
+            ).model_dump(mode="json"),
         },
         correlation_id=request.state.correlation_id,
     )
@@ -115,7 +123,9 @@ def get_event(
     return SuccessEnvelope(
         data={
             "event": EventResponse.model_validate(event).model_dump(mode="json"),
-            "job": JobResponse.model_validate(job).model_dump(mode="json") if job else None,
+            "job": JobResponse.model_validate(job).model_dump(mode="json")
+            if job
+            else None,
         },
         correlation_id=request.state.correlation_id,
     )
