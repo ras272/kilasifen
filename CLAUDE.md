@@ -40,7 +40,7 @@ pysifen/
 │       ├── consulta.py            # ConsultaSIFEN: consultar_de(), consultar_lote(), consultar_ruc()
 │       └── evento.py              # TransmissaoEvento: enviar_evento()
 ├── tests/
-│   ├── test_cert.pfx              # Certificado de teste (senha: test1234)
+│   ├── conftest.py                # Gera PKCS#12 autofirmado efêmero para testes
 │   ├── test_de.py                 # Testes de leitura/escrita DE
 │   ├── test_generate_de.py        # Testes de geração programática, round-trip, validação XSD
 │   ├── test_assinatura.py         # Testes de assinatura digital com signxml
