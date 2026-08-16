@@ -10,6 +10,7 @@ from redis.asyncio import Redis as AsyncRedis
 from rq import Queue
 from sqlalchemy.orm import Session
 
+from kilasifen.application.access.service import AccessService
 from kilasifen.application.admin.service import AdminConsoleService
 from kilasifen.application.certificates.service import CertificateService
 from kilasifen.application.documents.numbering_service import DocumentNumberingService
@@ -24,6 +25,7 @@ from kilasifen.application.stampings.service import StampingService
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
+from kilasifen.infrastructure.db.repositories.access import SqlAlchemyAccessRepository
 from kilasifen.infrastructure.db.repositories.api_keys import SqlAlchemyApiKeyRepository
 from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
@@ -220,6 +222,12 @@ def get_db_session(request: Request) -> Generator[Session, None, None]:
     session_factory = request.app.state.session_factory
     with session_scope(session_factory) as session:
         yield session
+
+
+def get_access_service(session: Session = Depends(get_db_session)) -> AccessService:
+    """Build platform access administration use cases."""
+
+    return AccessService(SqlAlchemyAccessRepository(session))
 
 
 def get_readiness_service(request: Request) -> ReadinessService:

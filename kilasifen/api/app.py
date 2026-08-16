@@ -16,6 +16,7 @@ from kilasifen.api.errors import (
     service_unavailable_error_handler,
     unprocessable_entity_error_handler,
 )
+from kilasifen.api.routers.access import router as access_router
 from kilasifen.api.routers.certificates import router as certificates_router
 from kilasifen.api.routers.documents import router as documents_router
 from kilasifen.api.routers.emitters import router as emitters_router
@@ -119,6 +120,9 @@ def create_app() -> FastAPI:
     )
     app.include_router(
         webhooks_router, prefix=f"/{settings.api_version}", dependencies=limited
+    )
+    app.include_router(
+        access_router, prefix=f"/{settings.api_version}", dependencies=limited
     )
     app.include_router(admin_router, dependencies=limited)
 
