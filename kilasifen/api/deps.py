@@ -88,10 +88,16 @@ def get_api_key_principal(
     settings = get_settings()
     with session_scope(request.app.state.session_factory) as session:
         repository = SqlAlchemyApiKeyRepository(session)
+        matched_position: int | None = None
         for position, bootstrap_key in enumerate(settings.api_keys):
-            if hmac.compare_digest(x_api_key, bootstrap_key):
-                repository.ensure_bootstrap_admin(bootstrap_key, position=position)
-                break
+            matched = hmac.compare_digest(x_api_key, bootstrap_key)
+            if matched and matched_position is None:
+                matched_position = position
+        if matched_position is not None:
+            repository.ensure_bootstrap_admin(
+                settings.api_keys[matched_position],
+                position=matched_position,
+            )
         principal = repository.authenticate(x_api_key)
 
     if principal is None:
