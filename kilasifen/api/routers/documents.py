@@ -5,10 +5,11 @@ from fastapi.responses import JSONResponse
 from fastapi.responses import Response
 
 from kilasifen.api.deps import (
+    get_admin_principal,
     get_document_service,
     get_job_service,
+    require_fiscal_write,
     require_emitter_read,
-    require_emitter_write,
 )
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.documents import (
@@ -28,12 +29,14 @@ router = APIRouter(tags=["documents"])
     "/emitters/{emitter_id}/documents",
     response_model=SuccessEnvelope,
     status_code=status.HTTP_201_CREATED,
+    deprecated=True,
+    summary="Create a raw document (platform administrators only)",
 )
 def create_document(
     emitter_id: str,
     payload: DocumentCreateRequest,
     request: Request,
-    _principal=Depends(require_emitter_write),
+    _principal=Depends(get_admin_principal),
     service: DocumentService = Depends(get_document_service),
 ) -> JSONResponse:
     return _create_document_response(
@@ -56,7 +59,7 @@ def create_factura_document(
     emitter_id: str,
     payload: FacturaCreateRequest,
     request: Request,
-    _principal=Depends(require_emitter_write),
+    _principal=Depends(require_fiscal_write),
     service: DocumentService = Depends(get_document_service),
 ) -> JSONResponse:
     factura_payload = payload.factura.model_dump(mode="json")
@@ -80,7 +83,7 @@ def create_nota_credito_document(
     emitter_id: str,
     payload: NotaCreditoCreateRequest,
     request: Request,
-    _principal=Depends(require_emitter_write),
+    _principal=Depends(require_fiscal_write),
     service: DocumentService = Depends(get_document_service),
 ) -> JSONResponse:
     nota_credito_payload = payload.nota_credito.model_dump(mode="json")
@@ -219,9 +222,9 @@ def get_document_kude_data(
 
 def _build_typed_payload(contract: str, typed_payload: dict) -> dict:
     payload = {
-        "generated_xml": typed_payload.get("generated_xml"),
-        "signed_xml": typed_payload.get("signed_xml"),
-        "doc_id": typed_payload.get("doc_id"),
+        "generated_xml": None,
+        "signed_xml": None,
+        "doc_id": None,
         "typed_contract": {
             "contract": contract,
             "payload": typed_payload,

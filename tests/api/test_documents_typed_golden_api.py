@@ -29,6 +29,8 @@ API_KEY = "secret-key"
 _GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden"
 _CERT_PATH = Path(__file__).resolve().parents[1] / "test_cert.pfx"
 _CERT_PASSWORD = "test1234"
+_TEST_CSC = "ABCD0000000000000000000000000000"
+_TEST_CSC_ID = "0001"
 
 
 @pytest.fixture(autouse=True)
@@ -136,8 +138,8 @@ def _create_emitter(client: TestClient, *, external_id: str, ruc: str, dv: str) 
             "dv": dv,
             "legal_name": "ARES PARAGUAY SRL",
             "tax_environment": "test",
-            "csc": "ABCD0000000000000000000000000000",
-            "csc_id": "0001",
+            "csc": _TEST_CSC,
+            "csc_id": _TEST_CSC_ID,
         },
     )
     assert response.status_code == 201
@@ -178,8 +180,9 @@ def _build_signed_xml_from_api_document(*, api_document: dict, emitter: dict, ce
         legal_name=emitter["legal_name"],
         tax_environment=emitter["tax_environment"],
         status=emitter["status"],
-        csc=emitter.get("csc"),
-        csc_id=emitter.get("csc_id"),
+        # Secret write-only fields are intentionally absent from API responses.
+        csc=_TEST_CSC,
+        csc_id=_TEST_CSC_ID,
         created_at=_parse_datetime(emitter["created_at"]),
         updated_at=_parse_datetime(emitter["updated_at"]),
     )

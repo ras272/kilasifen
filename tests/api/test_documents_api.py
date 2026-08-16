@@ -140,8 +140,6 @@ def test_create_factura_typed_endpoint_returns_document_and_job(
             "external_id": "erp-factura-1",
             "idempotency_key": "idem-factura-1",
             "factura": {
-                "generated_xml": "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'><DE Id='01800123450001001000000012026010112345678901'/></rDE>",
-                "doc_id": "01800123450001001000000012026010112345678901",
                 "establecimiento": 1,
                 "punto": "001",
                 "numero": 10,
@@ -169,8 +167,7 @@ def test_create_nota_credito_typed_endpoint_returns_document_and_job(
             "external_id": "erp-nc-1",
             "idempotency_key": "idem-nc-1",
             "nota_credito": {
-                "generated_xml": "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'><DE Id='01800123450001001000000512026010112345678901'/></rDE>",
-                "doc_id": "01800123450001001000000512026010112345678901",
+                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
                 "documento_asociado": {"cdc": "01800123450001001000000012026010112345678901"},
                 "items": [{"descripcion": "Descuento", "cantidad": 1, "precioUnitario": 500}],
             },
@@ -183,7 +180,7 @@ def test_create_nota_credito_typed_endpoint_returns_document_and_job(
     assert body["job"]["job_type"] == "document.emit"
 
 
-def test_create_typed_document_requires_xml_or_signed_xml(
+def test_create_typed_document_requires_business_payload(
     client: TestClient,
     emitter_id: str,
 ) -> None:
@@ -193,8 +190,25 @@ def test_create_typed_document_requires_xml_or_signed_xml(
         json={
             "external_id": "erp-factura-2",
             "idempotency_key": "idem-factura-2",
+            "factura": {},
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_typed_document_rejects_caller_supplied_xml(
+    client: TestClient,
+    emitter_id: str,
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={
             "factura": {
-                "doc_id": "01800123450001001000000012026010112345678901",
+                "generated_xml": "<attacker-controlled/>",
+                "cliente": {"ruc": "80069563-1"},
+                "items": [{"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1}],
             },
         },
     )

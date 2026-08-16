@@ -15,19 +15,10 @@ class DocumentCreateRequest(BaseModel):
     payload: dict[str, Any] | None = None
 
 
-class DocumentTransportPayload(BaseModel):
-    """Transport-level payload used by typed document contracts."""
-
-    generated_xml: str | None = None
-    signed_xml: str | None = None
-    doc_id: str | None = Field(default=None, min_length=1, max_length=64)
-
-    def has_xml_payload(self) -> bool:
-        return bool(self.generated_xml or self.signed_xml)
-
-
-class FacturaContractPayload(DocumentTransportPayload):
+class FacturaContractPayload(BaseModel):
     """Business payload for Factura endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
 
     tipo_documento: int = 1
     establecimiento: int | str | None = None
@@ -47,24 +38,24 @@ class FacturaContractPayload(DocumentTransportPayload):
     cliente: dict[str, Any] | None = None
     condicion_operacion: dict[str, Any] | None = None
     condicion: dict[str, Any] | None = None
-    items: list[dict[str, Any]] | None = None
+    items: list[dict[str, Any]] | None = Field(default=None, max_length=1_000)
     documento_asociado: dict[str, Any] | None = None
     factura: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def validate_factura_payload(self) -> "FacturaContractPayload":
-        if self.has_xml_payload():
-            return self
         if not isinstance(self.cliente, dict):
-            raise ValueError("cliente is required when generated_xml/signed_xml is missing")
+            raise ValueError("cliente is required")
         if not isinstance(self.items, list) or not self.items:
-            raise ValueError("items is required when generated_xml/signed_xml is missing")
+            raise ValueError("items is required")
         return self
 
 
-class NotaCreditoContractPayload(DocumentTransportPayload):
+class NotaCreditoContractPayload(BaseModel):
     """Business payload for Nota de Crédito endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
 
     tipo_documento: int = 5
     establecimiento: int | str | None = None
@@ -83,7 +74,7 @@ class NotaCreditoContractPayload(DocumentTransportPayload):
     cliente: dict[str, Any] | None = None
     condicion_operacion: dict[str, Any] | None = None
     condicion: dict[str, Any] | None = None
-    items: list[dict[str, Any]] | None = None
+    items: list[dict[str, Any]] | None = Field(default=None, max_length=1_000)
     motivo_emision: int | str | None = None
     documento_asociado: dict[str, Any] | None = None
     nota_credito: dict[str, Any] | None = None
@@ -91,16 +82,12 @@ class NotaCreditoContractPayload(DocumentTransportPayload):
 
     @model_validator(mode="after")
     def validate_nota_credito_payload(self) -> "NotaCreditoContractPayload":
-        if self.has_xml_payload():
-            return self
         if not isinstance(self.cliente, dict):
-            raise ValueError("cliente is required when generated_xml/signed_xml is missing")
+            raise ValueError("cliente is required")
         if not isinstance(self.items, list) or not self.items:
-            raise ValueError("items is required when generated_xml/signed_xml is missing")
+            raise ValueError("items is required")
         if not isinstance(self.documento_asociado, dict):
-            raise ValueError(
-                "documento_asociado is required when generated_xml/signed_xml is missing"
-            )
+            raise ValueError("documento_asociado is required")
         tipo_documento_asociado = self.documento_asociado.get("tipo")
         has_cdc = bool(self.documento_asociado.get("cdc"))
         if tipo_documento_asociado in {None, 1, "1"} and not has_cdc:
@@ -113,6 +100,8 @@ class NotaCreditoContractPayload(DocumentTransportPayload):
 class FacturaCreateRequest(BaseModel):
     """Typed API contract for factura emission."""
 
+    model_config = ConfigDict(extra="forbid")
+
     external_id: str | None = Field(default=None, max_length=128)
     idempotency_key: str | None = Field(default=None, max_length=128)
     factura: FacturaContractPayload
@@ -120,6 +109,8 @@ class FacturaCreateRequest(BaseModel):
 
 class NotaCreditoCreateRequest(BaseModel):
     """Typed API contract for nota de crédito emission."""
+
+    model_config = ConfigDict(extra="forbid")
 
     external_id: str | None = Field(default=None, max_length=128)
     idempotency_key: str | None = Field(default=None, max_length=128)

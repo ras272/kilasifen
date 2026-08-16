@@ -20,6 +20,7 @@ from kilasifen.infrastructure.db.session import (
     session_scope,
 )
 from kilasifen.security import (
+    FISCAL_WRITE_SCOPE,
     TENANT_READ_SCOPE,
     TENANT_WRITE_SCOPE,
     hash_api_key,
@@ -73,7 +74,7 @@ def test_credentials_can_use_only_owned_emitters(client: TestClient) -> None:
 
 
 def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
-    create_response = client.post(
+    raw_create_response = client.post(
         "/v1/emitters/emitter-a/documents",
         headers={"X-API-Key": _KEY_A},
         json={
@@ -81,6 +82,18 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
             "idempotency_key": "tenant-a-idempotency",
             "document_type": "factura",
             "payload": {"generated_xml": "<rDE><DE Id='A1'/></rDE>", "doc_id": "A1"},
+        },
+    )
+    create_response = client.post(
+        "/v1/emitters/emitter-a/documents/facturas",
+        headers={"X-API-Key": _KEY_A},
+        json={
+            "external_id": "tenant-a-document",
+            "idempotency_key": "tenant-a-idempotency",
+            "factura": {
+                "cliente": {"ruc": "80000001-1"},
+                "items": [{"descripcion": "Servicio", "cantidad": 1, "precioUnitario": 1}],
+            },
         },
     )
     read_only_response = client.post(
@@ -98,6 +111,7 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
         headers={"X-API-Key": _KEY_A},
     )
 
+    assert raw_create_response.status_code == 403
     assert create_response.status_code == 201
     assert read_only_response.status_code == 403
     assert read_only_response.json()["error"]["code"] == "auth.insufficient_scope"
@@ -139,13 +153,13 @@ def _seed_tenants(session_factory) -> None:
                     "credential-a",
                     "consumer-a",
                     _KEY_A,
-                    [TENANT_READ_SCOPE, TENANT_WRITE_SCOPE],
+                    [TENANT_READ_SCOPE, TENANT_WRITE_SCOPE, FISCAL_WRITE_SCOPE],
                 ),
                 _credential(
                     "credential-b",
                     "consumer-b",
                     _KEY_B,
-                    [TENANT_READ_SCOPE, TENANT_WRITE_SCOPE],
+                    [TENANT_READ_SCOPE, TENANT_WRITE_SCOPE, FISCAL_WRITE_SCOPE],
                 ),
                 _credential(
                     "credential-read-only",
