@@ -20,18 +20,17 @@ def main() -> None:
         "factura": {
             "establecimiento": 1,
             "punto": "001",
-            "numero": 1001,
             "fecha": "2026-04-25T10:00:00",
             "cliente": {
                 "ruc": "80069563-1",
-                "razonSocial": "TIPS S.A",
+                "razon_social": "TIPS S.A",
             },
             "items": [
                 {
                     "codigo": "A-001",
                     "descripcion": "Producto de prueba",
                     "cantidad": 1,
-                    "precioUnitario": 100000,
+                    "precio_unitario": 100000,
                     "iva": 10,
                 }
             ],

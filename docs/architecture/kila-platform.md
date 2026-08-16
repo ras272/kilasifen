@@ -5,14 +5,14 @@
 `pysifen` is the fiscal engine.
 `kilasifen` is the platform layer for API, persistence, jobs, and operations.
 
-This separation keeps XML/signature transport logic reusable while giving the
-author's ERP one stable HTTP contract.
+This separation keeps XML/signature transport logic reusable while exposing one
+stable HTTP contract to independent ERP consumers.
 
 Current deployment/integration stance:
 
-- one API integrator today: the author's ERP
-- multiple emitters / RUCs under that ERP
-- strict cross-emitter isolation is required
+- Teko is the first planned consumer, not part of this repository
+- consumers own one or more emitters through explicit grants
+- strict cross-consumer and cross-emitter isolation is required
 
 For the current MVP scope, treat `docs/architecture/current-scope.md` as the
 source of truth.
@@ -46,6 +46,7 @@ Rules:
 - Queries
 - Events
 - Webhooks
+- Consumer access administration
 - Admin console (operational read model)
 
 ## Data and traceability
@@ -62,9 +63,10 @@ This makes operations auditable and replayable without parsing raw SOAP at runti
 
 ## Security boundaries
 
-- API access through API keys (`X-API-Key`)
-- `.p12` and passwords encrypted at rest with Fernet key
-- webhook signing with HMAC (`X-Kila-Signature`)
+- API keys stored as salted PBKDF2 hashes with scopes and ownership
+- CSC, `.p12`, and passwords encrypted at rest with a mandatory Fernet key
+- webhook signing with versioned HMAC over timestamp, delivery, event, and body
+- Redis-backed per-credential/emitter rate and concurrency leases
 - secrets and endpoints configured through env variables
 - emitter data must never leak across tenant/emitter boundaries
 

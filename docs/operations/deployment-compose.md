@@ -1,68 +1,23 @@
-# Deployment Guide (Docker Compose)
+# Stack local con Docker Compose
 
-## Objective
+Compose es una facilidad de desarrollo, no la receta de producción.
 
-Run a full local stack for API + workers with PostgreSQL and Redis.
+1. Copiar `.env.example` a `.env`.
+2. Generar `POSTGRES_PASSWORD`, `KILA_SIFEN_ENCRYPTION_KEY` y una API key local.
+3. Completar `KILA_SIFEN_DATABASE_URL` con el host Compose `postgres`.
+4. Ejecutar `docker compose config --quiet` y `docker compose up -d --build`.
+5. Consultar `http://127.0.0.1:8000/v1/health` y `/v1/ready`.
 
-## Files
-
-- `docker-compose.yml`
-- `.env.example`
-
-## Quick start
-
-1. Copy `.env.example` to `.env`.
-2. Set:
-   - `KILA_SIFEN_ENCRYPTION_KEY`
-   - `KILA_SIFEN_API_KEYS`
-   - `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE=true`
-   - `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS=true`
-3. Start stack:
-
-```bash
-docker compose up -d --build
-```
-
-4. Check services:
+PostgreSQL, Redis y API se publican sólo en loopback. `migrate` termina antes de
+API/worker. Ambos consumen la misma imagen bloqueada y no instalan dependencias al
+iniciar.
 
 ```bash
 docker compose ps
+docker compose logs -f api worker migrate
 ```
 
-## What each service does
-
-- `postgres`: source-of-truth persistence
-- `redis`: queue transport
-- `api`: runs migrations and exposes HTTP API on `:8000`
-- `worker`: processes `documents` and `webhooks` queues
-- with document webhook publish enabled, successful/failed document transitions fan out
-  to subscribed webhook endpoints automatically
-
-## Health checks
-
-- API:
-
-```bash
-curl -H "X-API-Key: local-dev-api-key" http://localhost:8000/v1/health
-```
-
-- Ready:
-
-```bash
-curl -H "X-API-Key: local-dev-api-key" http://localhost:8000/v1/ready
-```
-
-## Logs
-
-```bash
-docker compose logs -f api
-docker compose logs -f worker
-```
-
-## Windows local worker note
-
-RQ's default worker timeout signals are Unix-oriented.
-For local Windows runs, use the cross-platform worker class:
+Para Windows sin contenedor:
 
 ```bash
 python -m rq.cli worker documents webhooks \
@@ -70,20 +25,5 @@ python -m rq.cli worker documents webhooks \
   --worker-class kilasifen.infrastructure.jobs.worker_classes.CrossPlatformSimpleWorker
 ```
 
-## Stop
-
-```bash
-docker compose down
-```
-
-To remove Postgres data volume:
-
-```bash
-docker compose down -v
-```
-
-## Operational notes
-
-- API and worker both install project dependencies on startup in this development compose.
-- For production, build fixed images and pin dependency versions.
-- Keep `KILA_SIFEN_ENCRYPTION_KEY` stable; rotating it requires re-encryption strategy for stored certificate material.
+`docker compose down` conserva PostgreSQL. `docker compose down -v` destruye el
+volumen y se reserva a datos locales descartables.

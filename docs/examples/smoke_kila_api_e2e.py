@@ -9,6 +9,8 @@ This script validates the operational path end-to-end:
 5. Optional webhook replay flow
 
 It prints explicit PASS/FAIL output and exits with non-zero code on failure.
+Because it exercises the deprecated raw XML route, its credential must be a
+platform-admin bootstrap key. ERP parity tests should use the typed examples.
 """
 
 from __future__ import annotations
@@ -464,7 +466,7 @@ def ensure_active_certificate(
         )["certificate"]
 
     activated = client.post(
-        f"/v1/certificates/{uploaded['id']}/activate",
+        f"/v1/emitters/{emitter_id}/certificates/{uploaded['id']}/activate",
         payload=None,
         expected_statuses=(200,),
     )["certificate"]
@@ -500,7 +502,7 @@ def ensure_active_stamping(
     )["stamping"]
 
     activated = client.post(
-        f"/v1/stampings/{created['id']}/activate",
+        f"/v1/emitters/{emitter_id}/stampings/{created['id']}/activate",
         payload=None,
         expected_statuses=(200,),
     )["stamping"]

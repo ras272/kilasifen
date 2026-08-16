@@ -1,7 +1,7 @@
 # Kila SIFEN API Contract
 
-This document describes the internal HTTP contract used by the author's ERP.
-For current product/deployment scope, see `docs/architecture/current-scope.md`.
+This document summarizes the external HTTP contract for independent ERP consumers.
+The complete consumer contract is `docs/INTEGRATION.md` and OpenAPI.
 
 ## Versioning
 
@@ -51,10 +51,11 @@ Rules:
 
 ## Authentication
 
-V1 uses API keys.
+V1 uses consumer-scoped API keys stored only as one-way hashes.
 
 Clients send the key in:
 
 - `X-API-Key`
 
 Protected endpoints reject missing or invalid keys with `401`.
+Ownership violations return `404`; insufficient scopes return `403`.

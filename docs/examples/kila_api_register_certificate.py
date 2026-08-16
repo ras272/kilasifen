@@ -36,7 +36,7 @@ def main() -> None:
     print(f"uploaded certificate: {certificate_id}")
 
     activate = requests.post(
-        f"{api_url}/v1/certificates/{certificate_id}/activate",
+        f"{api_url}/v1/emitters/{emitter_id}/certificates/{certificate_id}/activate",
         headers={"X-API-Key": api_key},
         timeout=30,
     )

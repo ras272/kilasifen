@@ -1,14 +1,13 @@
 services:
   postgres:
-    image: postgres:16
-    container_name: kila-postgres
+    image: postgres:16.9
     restart: unless-stopped
     environment:
       POSTGRES_DB: kilasifen
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - kila-postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -18,11 +17,10 @@ services:
       retries: 10
 
   redis:
-    image: redis:7
-    container_name: kila-redis
+    image: redis:7.4.5-alpine
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -34,7 +32,6 @@ services:
       context: .
       dockerfile: Dockerfile
     image: kilasifen:local
-    container_name: kila-api
     restart: unless-stopped
     env_file:
       - .env
@@ -43,6 +40,7 @@ services:
       KILA_SIFEN_REDIS_URL: ${KILA_SIFEN_REDIS_URL}
       KILA_SIFEN_API_KEYS: ${KILA_SIFEN_API_KEYS}
       KILA_SIFEN_ENCRYPTION_KEY: ${KILA_SIFEN_ENCRYPTION_KEY}
+      KILA_SIFEN_ENVIRONMENT: ${KILA_SIFEN_ENVIRONMENT:-development}
       KILA_SIFEN_SIFEN_ENVIRONMENT: ${KILA_SIFEN_SIFEN_ENVIRONMENT}
     depends_on:
       postgres:
@@ -53,11 +51,11 @@ services:
         condition: service_completed_successfully
     command: uvicorn kilasifen.api.app:create_app --factory --host 0.0.0.0 --port 8000
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    stop_grace_period: 30s
 
   worker:
     image: kilasifen:local
-    container_name: kila-worker
     restart: unless-stopped
     env_file:
       - .env
@@ -71,6 +69,7 @@ services:
       migrate:
         condition: service_completed_successfully
     command: rq worker documents webhooks -u ${KILA_SIFEN_REDIS_URL}
+    stop_grace_period: 60s
 
   migrate:
     image: kilasifen:local

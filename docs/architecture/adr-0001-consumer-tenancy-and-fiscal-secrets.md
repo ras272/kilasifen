@@ -29,8 +29,8 @@ Staging is restricted to test; production also requires
 
 ## Key rotation
 
-For API credentials, create a second hashed credential for the same consumer and
-scopes, deploy it to the caller, verify traffic, then mark the old row inactive.
+For API credentials, issue a second credential through the platform-admin endpoint,
+deploy it to the caller, verify traffic, then revoke the old credential.
 Never log or persist the newly generated raw value after its one-time handoff.
 
 For CSC or certificates, write the replacement through the scoped secret endpoint,

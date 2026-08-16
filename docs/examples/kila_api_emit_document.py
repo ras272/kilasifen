@@ -1,4 +1,4 @@
-"""Example: create a document emission job through Kila SIFEN API."""
+"""Legacy platform-admin raw XML example; ERP consumers must use typed routes."""
 
 from __future__ import annotations
 

@@ -35,6 +35,7 @@ COPY --chown=kilasifen:kilasifen alembic.ini pyproject.toml README.md MIT-LICENS
 USER kilasifen
 
 EXPOSE 8000
+STOPSIGNAL SIGTERM
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.getenv('PORT','8000')+'/v1/health', timeout=3)"
 
