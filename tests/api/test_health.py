@@ -3,6 +3,8 @@ import logging
 from fastapi.testclient import TestClient
 
 from kilasifen.api.app import create_app
+from kilasifen.api.deps import get_readiness_service
+from kilasifen.application.health.service import DependencyCheck, ReadinessReport
 
 
 def test_health_endpoint_returns_ok() -> None:
@@ -17,14 +19,47 @@ def test_health_endpoint_returns_ok() -> None:
 
 
 def test_ready_endpoint_returns_ok() -> None:
-    client = TestClient(create_app())
+    app = create_app()
+    app.dependency_overrides[get_readiness_service] = lambda: _ReadinessStub(
+        ReadinessReport(
+            database=DependencyCheck("ok"),
+            redis=DependencyCheck("ok"),
+            workers=DependencyCheck("not_required"),
+        )
+    )
+    client = TestClient(app)
 
     response = client.get("/v1/ready")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["data"] == {"status": "ready"}
+    assert body["data"] == {
+        "status": "ready",
+        "checks": {
+            "database": {"status": "ok"},
+            "redis": {"status": "ok"},
+            "workers": {"status": "not_required"},
+        },
+    }
     assert isinstance(body["correlation_id"], str)
+
+
+def test_ready_endpoint_returns_503_when_a_dependency_is_down() -> None:
+    app = create_app()
+    app.dependency_overrides[get_readiness_service] = lambda: _ReadinessStub(
+        ReadinessReport(
+            database=DependencyCheck("ok"),
+            redis=DependencyCheck("down"),
+            workers=DependencyCheck("down"),
+        )
+    )
+    client = TestClient(app)
+
+    response = client.get("/v1/ready")
+
+    assert response.status_code == 503
+    assert response.json()["data"]["status"] == "not_ready"
+    assert response.json()["data"]["checks"]["redis"] == {"status": "down"}
 
 
 def test_health_request_emits_structured_request_log(
@@ -46,3 +81,11 @@ def test_health_request_emits_structured_request_log(
     assert record.method == "GET"
     assert record.path == "/v1/health"
     assert record.status_code == 200
+
+
+class _ReadinessStub:
+    def __init__(self, report: ReadinessReport):
+        self.report = report
+
+    def check(self) -> ReadinessReport:
+        return self.report

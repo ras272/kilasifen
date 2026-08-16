@@ -13,6 +13,7 @@ from kilasifen.application.documents.numbering_service import DocumentNumberingS
 from kilasifen.application.documents.service import DocumentService
 from kilasifen.application.emitters.health import EmitterHealthService
 from kilasifen.application.events.service import EventService
+from kilasifen.application.health.service import ReadinessService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.queries.service import QueryService
 from kilasifen.application.stampings.service import StampingService
@@ -143,6 +144,22 @@ def get_db_session(request: Request) -> Generator[Session, None, None]:
     session_factory = request.app.state.session_factory
     with session_scope(session_factory) as session:
         yield session
+
+
+def get_readiness_service(request: Request) -> ReadinessService:
+    """Build dependency probes with bounded Redis network timeouts."""
+
+    settings = get_settings()
+    redis_connection = Redis.from_url(
+        settings.redis_url,
+        socket_connect_timeout=1,
+        socket_timeout=1,
+    )
+    return ReadinessService(
+        engine=request.app.state.engine,
+        redis_connection=redis_connection,
+        require_workers=settings.readiness_requires_workers,
+    )
 
 
 def _emitter_repository(session: Session) -> SqlAlchemyEmitterRepository:

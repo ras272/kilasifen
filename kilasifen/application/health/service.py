@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from redis import Redis
 from rq import Worker
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
+CheckStatus = Literal["ok", "down", "not_required"]
+
 
 @dataclass(frozen=True, slots=True)
 class DependencyCheck:
     """Public, non-sensitive state for one runtime dependency."""
 
-    status: str
+    status: CheckStatus
     detail: str | None = None
 
 
