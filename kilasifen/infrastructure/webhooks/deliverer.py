@@ -23,13 +23,14 @@ MAX_REQUEST_BODY_BYTES = 256 * 1024
 MAX_RESPONSE_BODY_BYTES = 64 * 1024
 MAX_RESPONSE_SNAPSHOT_CHARS = 2048
 _REDACTED = "[REDACTED]"
+_TRUNCATION_SUFFIX = "...[truncated]"
 _SENSITIVE_KEY = re.compile(
     r"(?:authorization|cookie|token|secret|password|passwd|api[_-]?key|csc|certificate)",
     re.IGNORECASE,
 )
 _SENSITIVE_TEXT = re.compile(
     r"(?i)(authorization|cookie|token|secret|password|passwd|api[_-]?key|csc)"
-    r"(\s*[:=]\s*)([^\s,;]+)"
+    r"(\s*[:=]\s*)([^,;\r\n]+)"
 )
 
 
@@ -173,9 +174,11 @@ def sanitize_response_snapshot(response_text: str) -> str:
             _redact_value(value), separators=(",", ":"), sort_keys=True
         )
     if len(snapshot) > MAX_RESPONSE_SNAPSHOT_CHARS:
-        return f"{snapshot[:MAX_RESPONSE_SNAPSHOT_CHARS]}...[truncated]"
+        content_limit = MAX_RESPONSE_SNAPSHOT_CHARS - len(_TRUNCATION_SUFFIX)
+        return f"{snapshot[:content_limit]}{_TRUNCATION_SUFFIX}"
     if len(response_text) > MAX_RESPONSE_SNAPSHOT_CHARS:
-        return f"{snapshot}...[truncated]"
+        content_limit = MAX_RESPONSE_SNAPSHOT_CHARS - len(_TRUNCATION_SUFFIX)
+        return f"{snapshot[:content_limit]}{_TRUNCATION_SUFFIX}"
     return snapshot
 
 

@@ -214,3 +214,9 @@ def test_response_snapshot_is_bounded_and_redacts_credentials() -> None:
     assert "also-secret" not in snapshot
     assert "[REDACTED]" in snapshot
     assert snapshot.endswith("...[truncated]")
+    assert len(snapshot) <= 2048
+
+    plain_snapshot = sanitize_response_snapshot(
+        "Authorization: Bearer token-value-must-not-survive\nresult=failed"
+    )
+    assert "token-value-must-not-survive" not in plain_snapshot
