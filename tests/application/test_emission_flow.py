@@ -438,7 +438,7 @@ def _seed_emission_context(database_url: str, store: EncryptedCertificateStore) 
     )
 
     with session_scope(session_factory) as session:
-        SqlAlchemyEmitterRepository(session).save(emitter)
+        SqlAlchemyEmitterRepository(session, store).save(emitter)
         SqlAlchemyCertificateRepository(session).save(certificate)
         SqlAlchemyStampingRepository(session).save(stamping)
         SqlAlchemyDocumentRepository(session).save(document)

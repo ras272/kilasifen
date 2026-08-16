@@ -19,12 +19,19 @@ from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
 )
-from kilasifen.infrastructure.db.repositories.documents import SqlAlchemyDocumentRepository
-from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
-from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
+from kilasifen.infrastructure.db.repositories.documents import (
+    SqlAlchemyDocumentRepository,
+)
+from kilasifen.infrastructure.db.repositories.emitters import (
+    SqlAlchemyEmitterRepository,
+)
+from kilasifen.infrastructure.db.session import (
+    build_engine,
+    build_session_factory,
+    session_scope,
+)
 from kilasifen.infrastructure.sifen.query import DocumentQueryOutcome, RucQueryOutcome
 from kilasifen.testing.database import managed_test_database_url
-
 
 API_KEY = "secret-key"
 
@@ -57,7 +64,10 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClie
         def _get_fake_query_service() -> QueryService:
             with session_scope(session_factory) as session:
                 yield QueryService(
-                    emitter_repository=SqlAlchemyEmitterRepository(session),
+                    emitter_repository=SqlAlchemyEmitterRepository(
+                        session,
+                        EncryptedCertificateStore(encryption_key),
+                    ),
                     certificate_repository=SqlAlchemyCertificateRepository(session),
                     document_repository=SqlAlchemyDocumentRepository(session),
                     certificate_store=EncryptedCertificateStore(encryption_key),
@@ -208,7 +218,7 @@ def _seed_query_context(
     )
 
     with session_scope(session_factory) as session:
-        SqlAlchemyEmitterRepository(session).save(emitter)
+        SqlAlchemyEmitterRepository(session, certificate_store).save(emitter)
         SqlAlchemyCertificateRepository(session).save(certificate)
         SqlAlchemyDocumentRepository(session).save(document)
 
