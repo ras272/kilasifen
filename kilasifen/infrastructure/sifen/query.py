@@ -21,6 +21,7 @@ from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
 )
 
 from kilasifen.domain.emitters.models import Emitter
+from pysifen.sdk.errors import SifenValidationError
 
 
 @dataclass(slots=True)
@@ -81,7 +82,8 @@ class SifenQueryGateway(Protocol):
 class PysifenQueryGateway:
     """Concrete query gateway backed by pysifen transport."""
 
-    def __init__(self):
+    def __init__(self, deployment_environment: str = "test"):
+        self.deployment_environment = deployment_environment
         self.serializer = XmlSerializer(
             config=SerializerConfig(xml_declaration=True, encoding="UTF-8")
         )
@@ -158,6 +160,10 @@ class PysifenQueryGateway:
         certificate_password: str,
         operation,
     ):
+        if emitter.tax_environment != self.deployment_environment:
+            raise SifenValidationError(
+                "Emitter tax environment does not match this deployment"
+            )
         ambiente = TEST if emitter.tax_environment == "test" else PRODUCCION
         with ConsultaSIFEN(
             ambiente=ambiente,

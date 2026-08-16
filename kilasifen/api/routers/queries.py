@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Request
 
-from kilasifen.api.deps import get_api_key_principal, get_query_service
+from kilasifen.api.deps import get_query_service, require_emitter_read
 from kilasifen.api.errors import ApiError
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.queries import (
@@ -20,7 +20,7 @@ def query_ruc(
     emitter_id: str,
     ruc: str,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: QueryService = Depends(get_query_service),
 ) -> SuccessEnvelope:
     try:
@@ -62,7 +62,7 @@ def query_document(
     emitter_id: str,
     document_id: str,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: QueryService = Depends(get_query_service),
 ) -> SuccessEnvelope:
     try:

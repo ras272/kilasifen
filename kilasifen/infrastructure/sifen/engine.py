@@ -53,8 +53,13 @@ class DocumentEmissionEngine(Protocol):
 class PysifenEmissionEngine:
     """Concrete emission engine backed by pysifen transport and signing."""
 
-    def __init__(self, mapper: PysifenPayloadMapper | None = None):
+    def __init__(
+        self,
+        mapper: PysifenPayloadMapper | None = None,
+        deployment_environment: str = "test",
+    ):
         self.mapper = mapper or PysifenPayloadMapper()
+        self.deployment_environment = deployment_environment
         self.serializer = XmlSerializer(
             config=SerializerConfig(xml_declaration=True, encoding="UTF-8")
         )
@@ -70,6 +75,7 @@ class PysifenEmissionEngine:
         stamping: Stamping,
     ) -> EmissionOutcome:
         del certificate
+        _require_deployment_environment(emitter, self.deployment_environment)
         emission_input = self.mapper.map_document(
             document,
             emitter=emitter,
@@ -145,6 +151,13 @@ def _normalize_response(response) -> tuple[str | None, str | None, str]:
         status = "rejected"
 
     return result_code, result_message, status
+
+
+def _require_deployment_environment(emitter: Emitter, expected: str) -> None:
+    if emitter.tax_environment != expected:
+        raise SifenValidationError(
+            "Emitter tax environment does not match this deployment"
+        )
 
 
 def _first_result_node(prot):

@@ -14,7 +14,7 @@ class EmitterCreateRequest(BaseModel):
     dv: str = Field(min_length=1, max_length=4)
     legal_name: str = Field(min_length=1, max_length=255)
     tax_environment: Literal["test", "production"]
-    csc: str | None = Field(default=None, max_length=255)
+    csc: str | None = Field(default=None, max_length=255, repr=False)
     csc_id: str | None = Field(default=None, max_length=16)
 
 
@@ -23,7 +23,7 @@ class EmitterUpdateRequest(BaseModel):
 
     legal_name: str | None = Field(default=None, min_length=1, max_length=255)
     tax_environment: Literal["test", "production"] | None = None
-    csc: str | None = Field(default=None, max_length=255)
+    csc: str | None = Field(default=None, max_length=255, repr=False)
     csc_id: str | None = Field(default=None, max_length=16)
 
 
@@ -39,7 +39,7 @@ class EmitterResponse(BaseModel):
     legal_name: str
     tax_environment: str
     status: str
-    csc: str | None
+    csc_configured: bool
     csc_id: str | None
     created_at: datetime
     updated_at: datetime

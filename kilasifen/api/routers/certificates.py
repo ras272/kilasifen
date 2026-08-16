@@ -5,8 +5,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 
 from kilasifen.api.deps import (
-    get_api_key_principal,
     get_certificate_service,
+    require_emitter_read,
+    require_secrets_write,
 )
 from kilasifen.api.schemas.certificates import CertificateResponse
 from kilasifen.api.schemas.common import SuccessEnvelope
@@ -27,7 +28,7 @@ async def upload_certificate(
     logical_name: Annotated[str, Form()],
     password: Annotated[str, Form()],
     file: UploadFile = File(...),
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: CertificateService = Depends(get_certificate_service),
 ) -> SuccessEnvelope:
     certificate = service.upload_certificate(
@@ -46,7 +47,7 @@ async def upload_certificate(
 def list_certificates(
     emitter_id: str,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_secrets_write),
     service: CertificateService = Depends(get_certificate_service),
 ) -> SuccessEnvelope:
     certificates = service.list_certificates(emitter_id)
@@ -69,7 +70,7 @@ def activate_certificate(
     emitter_id: str,
     certificate_id: str,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_secrets_write),
     service: CertificateService = Depends(get_certificate_service),
 ) -> SuccessEnvelope:
     certificate = service.activate_certificate_for_emitter(

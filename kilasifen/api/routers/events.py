@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Request, status
 
-from kilasifen.api.deps import get_api_key_principal, get_event_service
+from kilasifen.api.deps import get_event_service, require_emitter_read, require_fiscal_write
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.events import (
     CancelDocumentRequest,
@@ -26,7 +26,7 @@ def create_event(
     emitter_id: str,
     payload: EventCreateRequest,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: EventService = Depends(get_event_service),
 ) -> SuccessEnvelope:
     event, job = service.create_event(
@@ -54,7 +54,7 @@ def cancel_document(
     document_id: str,
     payload: CancelDocumentRequest,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_fiscal_write),
     service: EventService = Depends(get_event_service),
 ) -> SuccessEnvelope:
     event, job = service.cancel_document(
@@ -80,7 +80,7 @@ def inutilize_numbers(
     emitter_id: str,
     payload: InutilizeRequest,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_fiscal_write),
     service: EventService = Depends(get_event_service),
 ) -> SuccessEnvelope:
     event, job, range_item = service.inutilize_numbers(
@@ -108,7 +108,7 @@ def get_event(
     emitter_id: str,
     event_id: str,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_fiscal_write),
     service: EventService = Depends(get_event_service),
 ) -> SuccessEnvelope:
     event, job = service.get_event_for_emitter(emitter_id=emitter_id, event_id=event_id)

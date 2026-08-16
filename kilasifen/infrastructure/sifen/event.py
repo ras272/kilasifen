@@ -51,7 +51,8 @@ class EventSubmissionGateway(Protocol):
 class PysifenEventGateway:
     """Concrete event submission adapter backed by pysifen."""
 
-    def __init__(self):
+    def __init__(self, deployment_environment: str = "test"):
+        self.deployment_environment = deployment_environment
         self.serializer = XmlSerializer(
             config=SerializerConfig(xml_declaration=True, encoding="UTF-8")
         )
@@ -65,6 +66,10 @@ class PysifenEventGateway:
         certificate_bytes: bytes,
         certificate_password: str,
     ) -> EventSubmissionOutcome:
+        if emitter.tax_environment != self.deployment_environment:
+            raise SifenValidationError(
+                "Emitter tax environment does not match this deployment"
+            )
         event_xml = _extract_event_xml(event.input_payload)
         request_xml = _build_enviar_evento_request_xml(
             d_id=_generate_id(),

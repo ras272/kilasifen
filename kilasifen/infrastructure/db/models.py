@@ -6,13 +6,13 @@ from datetime import date, datetime
 from uuid import uuid4
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     Date,
     DateTime,
     ForeignKey,
     Index,
     Integer,
-    JSON,
     String,
     Text,
     UniqueConstraint,
@@ -43,6 +43,19 @@ class TimestampMixin:
     )
 
 
+class ConsumerModel(TimestampMixin, Base):
+    __tablename__ = "consumers"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+
+    api_keys: Mapped[list["ApiKeyModel"]] = relationship(back_populates="consumer")
+    emitter_grants: Mapped[list["ConsumerEmitterModel"]] = relationship(
+        back_populates="consumer"
+    )
+
+
 class EmitterModel(TimestampMixin, Base):
     __tablename__ = "emitters"
 
@@ -53,7 +66,7 @@ class EmitterModel(TimestampMixin, Base):
     legal_name: Mapped[str] = mapped_column(String(255), nullable=False)
     tax_environment: Mapped[str] = mapped_column(String(16), nullable=False, default="test")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
-    csc: Mapped[str | None] = mapped_column(String(255))
+    csc: Mapped[str | None] = mapped_column(Text)
     csc_id: Mapped[str | None] = mapped_column(String(16))
 
     certificates: Mapped[list["CertificateModel"]] = relationship(back_populates="emitter")
@@ -68,7 +81,9 @@ class EmitterModel(TimestampMixin, Base):
         back_populates="emitter"
     )
     webhook_endpoints: Mapped[list["WebhookEndpointModel"]] = relationship(back_populates="emitter")
-    api_keys: Mapped[list["ApiKeyModel"]] = relationship(back_populates="emitter")
+    consumer_grant: Mapped["ConsumerEmitterModel | None"] = relationship(
+        back_populates="emitter"
+    )
 
     __table_args__ = (UniqueConstraint("ruc", "dv", name="uq_emitters_ruc_dv"),)
 
@@ -77,13 +92,28 @@ class ApiKeyModel(TimestampMixin, Base):
     __tablename__ = "api_keys"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
-    emitter_id: Mapped[str | None] = mapped_column(ForeignKey("emitters.id"))
+    consumer_id: Mapped[str] = mapped_column(ForeignKey("consumers.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     key_prefix: Mapped[str] = mapped_column(String(32), nullable=False)
     key_hash: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
 
-    emitter: Mapped[EmitterModel | None] = relationship(back_populates="api_keys")
+    consumer: Mapped[ConsumerModel] = relationship(back_populates="api_keys")
+
+
+class ConsumerEmitterModel(TimestampMixin, Base):
+    __tablename__ = "consumer_emitters"
+
+    consumer_id: Mapped[str] = mapped_column(
+        ForeignKey("consumers.id"), primary_key=True
+    )
+    emitter_id: Mapped[str] = mapped_column(
+        ForeignKey("emitters.id"), primary_key=True, unique=True
+    )
+
+    consumer: Mapped[ConsumerModel] = relationship(back_populates="emitter_grants")
+    emitter: Mapped[EmitterModel] = relationship(back_populates="consumer_grant")
 
 
 class CertificateModel(TimestampMixin, Base):

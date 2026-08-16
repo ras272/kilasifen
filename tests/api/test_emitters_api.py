@@ -2,6 +2,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from kilasifen.api.app import create_app
@@ -26,6 +27,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClie
     with managed_test_database_url(tmp_path=tmp_path, name="emitters") as database_url:
         monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
         monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
+        monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
 
         engine = build_engine(database_url)
         Base.metadata.create_all(engine)

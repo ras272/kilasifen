@@ -4,7 +4,12 @@ from fastapi import APIRouter, Depends, Request, status
 from fastapi.responses import JSONResponse
 from fastapi.responses import Response
 
-from kilasifen.api.deps import get_api_key_principal, get_document_service, get_job_service
+from kilasifen.api.deps import (
+    get_document_service,
+    get_job_service,
+    require_emitter_read,
+    require_emitter_write,
+)
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.documents import (
     DocumentCreateRequest,
@@ -28,7 +33,7 @@ def create_document(
     emitter_id: str,
     payload: DocumentCreateRequest,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_write),
     service: DocumentService = Depends(get_document_service),
 ) -> JSONResponse:
     return _create_document_response(
@@ -51,7 +56,7 @@ def create_factura_document(
     emitter_id: str,
     payload: FacturaCreateRequest,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_write),
     service: DocumentService = Depends(get_document_service),
 ) -> JSONResponse:
     factura_payload = payload.factura.model_dump(mode="json")
@@ -75,7 +80,7 @@ def create_nota_credito_document(
     emitter_id: str,
     payload: NotaCreditoCreateRequest,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_write),
     service: DocumentService = Depends(get_document_service),
 ) -> JSONResponse:
     nota_credito_payload = payload.nota_credito.model_dump(mode="json")
@@ -95,7 +100,7 @@ def get_document(
     emitter_id: str,
     document_id: str,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: DocumentService = Depends(get_document_service),
     job_service: JobService = Depends(get_job_service),
 ) -> SuccessEnvelope:
@@ -120,7 +125,7 @@ def list_documents(
     document_type: str | None = None,
     external_id: str | None = None,
     cdc: str | None = None,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: DocumentService = Depends(get_document_service),
     job_service: JobService = Depends(get_job_service),
 ) -> SuccessEnvelope:
@@ -161,7 +166,7 @@ def list_documents(
 def get_document_xml(
     emitter_id: str,
     document_id: str,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: DocumentService = Depends(get_document_service),
 ) -> Response:
     xml_content = service.get_document_xml_for_emitter(
@@ -175,7 +180,7 @@ def get_document_xml(
 def get_document_kude(
     emitter_id: str,
     document_id: str,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: DocumentService = Depends(get_document_service),
 ) -> Response:
     pdf_bytes = service.get_document_kude(
@@ -199,7 +204,7 @@ def get_document_kude_data(
     emitter_id: str,
     document_id: str,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: DocumentService = Depends(get_document_service),
 ) -> SuccessEnvelope:
     data = service.get_document_kude_data(

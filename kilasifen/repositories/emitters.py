@@ -27,3 +27,7 @@ class EmitterRepository(ABC):
     @abstractmethod
     def list_all(self) -> list[Emitter]:
         """List all emitters."""
+
+    @abstractmethod
+    def grant_owner(self, *, consumer_id: str, emitter_id: str) -> None:
+        """Assign the emitter to exactly one consumer."""

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Form, Query, Request, status
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from kilasifen.api.deps import get_admin_service, get_api_key_principal
+from kilasifen.api.deps import get_admin_principal, get_admin_service
 from kilasifen.application.admin.service import AdminConsoleService
 
 _TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 @router.get("", include_in_schema=False)
 def admin_root(
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(get_admin_principal),
 ) -> RedirectResponse:
     return RedirectResponse(url="/admin/emitters", status_code=status.HTTP_302_FOUND)
 
@@ -25,7 +25,7 @@ def admin_root(
 @router.get("/emitters", include_in_schema=False)
 def emitters_list(
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(get_admin_principal),
     service: AdminConsoleService = Depends(get_admin_service),
 ):
     emitters = service.list_emitters()
@@ -41,7 +41,7 @@ def emitter_detail(
     emitter_id: str,
     request: Request,
     limit: int = Query(default=20, ge=5, le=100),
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(get_admin_principal),
     service: AdminConsoleService = Depends(get_admin_service),
 ):
     detail = service.get_emitter_detail(emitter_id, limit=limit)
@@ -57,7 +57,7 @@ def documents_list(
     request: Request,
     emitter_id: str | None = Query(default=None),
     limit: int = Query(default=50, ge=5, le=200),
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(get_admin_principal),
     service: AdminConsoleService = Depends(get_admin_service),
 ):
     documents = service.list_documents(limit=limit, emitter_id=emitter_id)
@@ -78,7 +78,7 @@ def jobs_list(
     emitter_id: str | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     limit: int = Query(default=50, ge=5, le=200),
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(get_admin_principal),
     service: AdminConsoleService = Depends(get_admin_service),
 ):
     jobs = service.list_jobs(limit=limit, emitter_id=emitter_id, status=status_filter)
@@ -99,7 +99,7 @@ def webhooks_list(
     request: Request,
     emitter_id: str | None = Query(default=None),
     limit: int = Query(default=50, ge=5, le=200),
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(get_admin_principal),
     service: AdminConsoleService = Depends(get_admin_service),
 ):
     rows = service.list_failed_webhook_deliveries(limit=limit, emitter_id=emitter_id)
@@ -115,7 +115,7 @@ def activate_certificate(
     certificate_id: str,
     _request: Request,
     next_url: str = Form(default="/admin/emitters"),
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(get_admin_principal),
     service: AdminConsoleService = Depends(get_admin_service),
 ) -> RedirectResponse:
     certificate = service.activate_certificate(certificate_id)
@@ -131,7 +131,7 @@ def retry_job(
     job_id: str,
     _request: Request,
     next_url: str = Form(default="/admin/jobs"),
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(get_admin_principal),
     service: AdminConsoleService = Depends(get_admin_service),
 ) -> RedirectResponse:
     job = service.retry_job(job_id)

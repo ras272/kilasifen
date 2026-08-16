@@ -6,6 +6,8 @@ from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.models import (
     ApiKeyModel,
     CertificateModel,
+    ConsumerEmitterModel,
+    ConsumerModel,
     DocumentNumberingSequenceModel,
     DocumentModel,
     EmitterModel,
@@ -24,6 +26,8 @@ from kilasifen.testing.database import managed_test_database_url
 EXPECTED_TABLES = {
     ApiKeyModel.__tablename__,
     CertificateModel.__tablename__,
+    ConsumerModel.__tablename__,
+    ConsumerEmitterModel.__tablename__,
     DocumentModel.__tablename__,
     DocumentNumberingSequenceModel.__tablename__,
     EmitterModel.__tablename__,

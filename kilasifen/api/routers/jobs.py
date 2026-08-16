@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends, Request
 
-from kilasifen.api.deps import get_api_key_principal, get_job_service
+from kilasifen.api.deps import get_admin_principal, get_job_service, require_emitter_read
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.application.jobs.service import JobService
@@ -15,7 +15,7 @@ def get_job(
     emitter_id: str,
     job_id: str,
     request: Request,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: JobService = Depends(get_job_service),
 ) -> SuccessEnvelope:
     job = service.get_job_for_emitter(emitter_id=emitter_id, job_id=job_id)
@@ -35,7 +35,7 @@ def list_jobs(
     status: str | None = None,
     job_type: str | None = None,
     related_entity_type: str | None = None,
-    _principal=Depends(get_api_key_principal),
+    _principal=Depends(get_admin_principal),
     service: JobService = Depends(get_job_service),
 ) -> SuccessEnvelope:
     jobs = service.list_jobs(

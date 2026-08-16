@@ -69,7 +69,9 @@ def process_document_job(
     correlation_token, worker_correlation_id = _bind_worker_correlation_id()
     engine = build_engine(database_url)
     session_factory = build_session_factory(engine)
-    emission_engine = emission_engine or PysifenEmissionEngine()
+    emission_engine = emission_engine or PysifenEmissionEngine(
+        deployment_environment=get_settings().sifen_environment
+    )
     certificate_store = EncryptedCertificateStore(encryption_key)
 
     try:
@@ -77,7 +79,7 @@ def process_document_job(
             job_repository = SqlAlchemyJobRepository(session)
             job_service = JobService(job_repository)
             document_repository = SqlAlchemyDocumentRepository(session)
-            emitter_repository = SqlAlchemyEmitterRepository(session)
+            emitter_repository = SqlAlchemyEmitterRepository(session, certificate_store)
             certificate_repository = SqlAlchemyCertificateRepository(session)
             stamping_repository = SqlAlchemyStampingRepository(session)
             job, document = job_service.get_document_job_context(
@@ -265,7 +267,7 @@ def process_webhook_delivery_job(
 
             service = WebhookService(
                 webhook_repository=SqlAlchemyWebhookRepository(session),
-                emitter_repository=SqlAlchemyEmitterRepository(session),
+                emitter_repository=SqlAlchemyEmitterRepository(session, secret_store),
                 job_repository=SqlAlchemyJobRepository(session),
                 secret_store=secret_store,
                 queue=_NoopWebhookQueue(),
@@ -314,7 +316,9 @@ def _publish_document_status_webhooks(
     queue_adapter = webhook_queue or _build_webhook_queue(settings.redis_url)
     service = WebhookService(
         webhook_repository=SqlAlchemyWebhookRepository(session),
-        emitter_repository=SqlAlchemyEmitterRepository(session),
+        emitter_repository=SqlAlchemyEmitterRepository(
+            session, EncryptedCertificateStore(encryption_key)
+        ),
         job_repository=SqlAlchemyJobRepository(session),
         secret_store=EncryptedCertificateStore(encryption_key),
         queue=queue_adapter,
