@@ -16,7 +16,11 @@ from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signe
 from kilasifen.infrastructure.sifen.mapper import PysifenPayloadMapper
 from pysifen import PRODUCCION, TEST, sign_xml
 from pysifen.sdk.client import SifenClient
-from pysifen.sdk.errors import SifenValidationError
+from pysifen.sdk.errors import (
+    SifenTimeoutError,
+    SifenTransportError,
+    SifenValidationError,
+)
 from pysifen.transmissao.de import _build_enviar_de_request_xml
 
 
@@ -32,6 +36,25 @@ class EmissionOutcome:
     result_code: str | None
     result_message: str | None
     cdc: str | None = None
+
+
+class EmissionTransportUncertainError(RuntimeError):
+    """Transport failed after a stable fiscal payload had been prepared."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        generated_xml: str,
+        signed_xml: str,
+        request_xml: str,
+        cdc: str,
+    ) -> None:
+        super().__init__(message)
+        self.generated_xml = generated_xml
+        self.signed_xml = signed_xml
+        self.request_xml = request_xml
+        self.cdc = cdc
 
 
 class DocumentEmissionEngine(Protocol):
@@ -101,12 +124,21 @@ class PysifenEmissionEngine:
         ambiente = TEST if emitter.tax_environment == "test" else PRODUCCION
         request_xml = _build_enviar_de_request_xml(1, signed_xml).decode("utf-8")
 
-        with SifenClient(
-            ambiente=ambiente,
-            pkcs12_data=certificate_bytes,
-            pkcs12_password=certificate_password,
-        ) as client:
-            response = client.enviar_de_xml(signed_xml)
+        try:
+            with SifenClient(
+                ambiente=ambiente,
+                pkcs12_data=certificate_bytes,
+                pkcs12_password=certificate_password,
+            ) as client:
+                response = client.enviar_de_xml(signed_xml)
+        except (SifenTimeoutError, SifenTransportError) as exc:
+            raise EmissionTransportUncertainError(
+                str(exc),
+                generated_xml=generated_xml,
+                signed_xml=signed_xml,
+                request_xml=request_xml,
+                cdc=emission_input.doc_id or "",
+            ) from exc
 
         result_code, result_message, status = _normalize_response(response)
         response_raw = self.serializer.render(response)

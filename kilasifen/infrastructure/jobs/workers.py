@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import replace
-from datetime import date
+from datetime import UTC, date, datetime
 from xml.etree import ElementTree as ET
 
 from redis import Redis
@@ -11,7 +11,10 @@ from rq import Queue, Retry, get_current_job
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
-from kilasifen.domain.common.fiscal_states import job_status_for_document
+from kilasifen.domain.common.fiscal_states import (
+    DOCUMENT_TERMINAL_STATUSES,
+    job_status_for_document,
+)
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
@@ -36,8 +39,11 @@ from kilasifen.infrastructure.db.session import (
 )
 from kilasifen.infrastructure.sifen.engine import (
     DocumentEmissionEngine,
+    EmissionOutcome,
+    EmissionTransportUncertainError,
     PysifenEmissionEngine,
 )
+from kilasifen.infrastructure.sifen.query import PysifenQueryGateway, SifenQueryGateway
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
 from kilasifen.logging import (
@@ -55,6 +61,8 @@ from pysifen.sdk.errors import (
 
 logger = logging.getLogger(__name__)
 
+_MAX_DOCUMENT_ATTEMPTS = 5
+
 
 def process_document_job(
     *,
@@ -62,6 +70,7 @@ def process_document_job(
     database_url: str | None = None,
     encryption_key: str | None = None,
     emission_engine: DocumentEmissionEngine | None = None,
+    query_gateway: SifenQueryGateway | None = None,
     current_date: date | None = None,
     webhook_queue=None,
 ) -> dict[str, str]:
@@ -79,7 +88,12 @@ def process_document_job(
     emission_engine = emission_engine or PysifenEmissionEngine(
         deployment_environment=settings.sifen_environment
     )
+    query_gateway = query_gateway or PysifenQueryGateway(
+        deployment_environment=settings.sifen_environment
+    )
     certificate_store = EncryptedCertificateStore(encryption_key)
+    retryable = False
+    payload: dict[str, str]
 
     try:
         with session_scope(session_factory) as session:
@@ -93,6 +107,26 @@ def process_document_job(
                 job_id=job_id,
                 document_repository=document_repository,
             )
+            if document.internal_status in DOCUMENT_TERMINAL_STATUSES:
+                return {
+                    "job_id": job.id,
+                    "job_type": job.job_type,
+                    "document_id": document.id,
+                    "document_type": document.document_type,
+                    "job_status": job.status,
+                    "document_status": document.internal_status,
+                }
+            attempt_number = job.attempts + 1
+            job = replace(
+                job,
+                status="processing",
+                attempts=attempt_number,
+                started_at=_now(),
+                finished_at=None,
+                worker_correlation_id=worker_correlation_id,
+                updated_at=_now(),
+            )
+            job_repository.save(job)
             emitter = emitter_repository.get(document.emitter_id)
             if emitter is None:
                 raise RuntimeError("Emitter not found for document job")
@@ -126,14 +160,22 @@ def process_document_job(
             )
 
             try:
-                outcome = emission_engine.emit_document(
+                outcome = _reconcile_before_resubmission(
                     document=document,
                     emitter=emitter,
-                    certificate=certificate,
                     certificate_bytes=certificate_bytes,
                     certificate_password=certificate_password,
-                    stamping=stamping,
+                    query_gateway=query_gateway,
                 )
+                if outcome is None:
+                    outcome = emission_engine.emit_document(
+                        document=document,
+                        emitter=emitter,
+                        certificate=certificate,
+                        certificate_bytes=certificate_bytes,
+                        certificate_password=certificate_password,
+                        stamping=stamping,
+                    )
                 updated_document = replace(
                     document,
                     generated_xml=outcome.generated_xml,
@@ -170,6 +212,7 @@ def process_document_job(
                         worker_correlation_id=worker_correlation_id,
                     )
                 else:
+                    retryable = True
                     updated_job = replace(
                         job,
                         status="retry_scheduled",
@@ -180,6 +223,24 @@ def process_document_job(
                         },
                         worker_correlation_id=worker_correlation_id,
                     )
+            except EmissionTransportUncertainError as exc:
+                retryable = True
+                updated_document = replace(
+                    document,
+                    generated_xml=exc.generated_xml,
+                    signed_xml=exc.signed_xml,
+                    sifen_request_xml=exc.request_xml,
+                    cdc=exc.cdc or document.cdc,
+                    internal_status="retry_pending",
+                    sifen_status="retry_pending",
+                    sifen_result_message=str(exc),
+                )
+                updated_job = replace(
+                    job,
+                    status="retry_scheduled",
+                    error_snapshot={"category": "transport", "message": str(exc)},
+                    worker_correlation_id=worker_correlation_id,
+                )
             except SifenValidationError as exc:
                 updated_document = replace(document, internal_status="failed")
                 updated_job = replace(
@@ -192,6 +253,7 @@ def process_document_job(
                     worker_correlation_id=worker_correlation_id,
                 )
             except (SifenTimeoutError, SifenTransportError) as exc:
+                retryable = True
                 updated_document = replace(document, internal_status="retry_pending")
                 updated_job = replace(
                     job,
@@ -218,6 +280,31 @@ def process_document_job(
                     worker_correlation_id=worker_correlation_id,
                 )
 
+            if retryable and attempt_number >= _MAX_DOCUMENT_ATTEMPTS:
+                retryable = False
+                updated_document = replace(
+                    updated_document,
+                    internal_status="failed",
+                    sifen_status="failed",
+                    sifen_result_message="document retry attempts exhausted",
+                )
+                updated_job = replace(
+                    updated_job,
+                    status="failed",
+                    error_snapshot={
+                        "category": "retry_exhausted",
+                        "message": "document retry attempts exhausted",
+                    },
+                    finished_at=_now(),
+                    updated_at=_now(),
+                )
+            elif updated_job.status in {"succeeded", "failed"}:
+                updated_job = replace(
+                    updated_job,
+                    finished_at=_now(),
+                    updated_at=_now(),
+                )
+
             document_repository.save(updated_document)
             job_repository.save(updated_job)
             _publish_document_status_webhooks(
@@ -239,7 +326,7 @@ def process_document_job(
                 },
             )
 
-            return {
+            payload = {
                 "job_id": updated_job.id,
                 "job_type": updated_job.job_type,
                 "document_id": updated_document.id,
@@ -247,6 +334,11 @@ def process_document_job(
                 "job_status": updated_job.status,
                 "document_status": updated_document.internal_status,
             }
+        if retryable:
+            raise DocumentEmissionRetryableError(
+                "document emission requires retry or reconciliation"
+            )
+        return payload
     finally:
         if correlation_token is not None:
             reset_correlation_id(correlation_token)
@@ -325,6 +417,52 @@ class _NoopWebhookQueue:
 
 class WebhookDeliveryRetryableError(RuntimeError):
     """Signal RQ to apply the configured bounded retry schedule."""
+
+
+class DocumentEmissionRetryableError(RuntimeError):
+    """Signal RQ to retry a transport-uncertain fiscal document safely."""
+
+
+def _reconcile_before_resubmission(
+    *,
+    document,
+    emitter,
+    certificate_bytes: bytes,
+    certificate_password: str,
+    query_gateway: SifenQueryGateway,
+) -> EmissionOutcome | None:
+    if (
+        document.internal_status not in {"retry_pending", "submitted"}
+        or not document.cdc
+    ):
+        return None
+
+    outcome = query_gateway.query_document(
+        emitter=emitter,
+        certificate_bytes=certificate_bytes,
+        certificate_password=certificate_password,
+        cdc=document.cdc,
+    )
+    if outcome.status != "found":
+        return None
+
+    signed_xml = outcome.content_xml or document.signed_xml
+    if not signed_xml:
+        raise SifenValidationError("SIFEN returned a document without XML content")
+    return EmissionOutcome(
+        generated_xml=document.generated_xml,
+        signed_xml=signed_xml,
+        request_xml=outcome.request_xml,
+        response_raw=outcome.response_raw,
+        sifen_status="approved",
+        result_code=outcome.result_code,
+        result_message=outcome.result_message,
+        cdc=document.cdc,
+    )
+
+
+def _now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _worker_runtime_secrets(

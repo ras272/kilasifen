@@ -76,6 +76,8 @@ def test_rq_queue_enqueues_document_job_with_expected_payload() -> None:
     assert "encryption_key" not in str(enqueued.data)
     assert "postgresql+psycopg" not in str(enqueued.data)
     assert enqueued.meta["correlation_id"] == "corr-123"
+    assert enqueued.retries_left == 4
+    assert enqueued.retry_intervals == [30, 120, 600, 1800]
 
 
 def test_process_document_job_hydrates_job_and_document_context(tmp_path) -> None:

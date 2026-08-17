@@ -48,6 +48,7 @@ class RqJobQueue:
             kwargs={"job_id": job.id},
             job_id=job.id,
             meta={"correlation_id": get_correlation_id()},
+            retry=Retry(max=4, interval=[30, 120, 600, 1800]),
         )
 
     def enqueue_webhook_delivery(
