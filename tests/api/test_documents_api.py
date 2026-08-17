@@ -259,6 +259,67 @@ def test_create_factura_typed_endpoint_without_xml_is_accepted(
     assert body["document"]["payload_snapshot"]["generated_xml"] is None
 
 
+@pytest.mark.parametrize(
+    "factura",
+    [
+        {
+            "cliente": {"naturaleza": 2, "nombre": "CLIENTE SIN DOCUMENTO"},
+            "items": [
+                {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
+            ],
+        },
+        {
+            "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+            "items": [
+                {
+                    "descripcion": "Neto negativo",
+                    "cantidad": 1,
+                    "precioUnitario": 1000,
+                    "descuento_particular": 1001,
+                }
+            ],
+        },
+        {
+            "moneda": "PYG",
+            "condicion_tipo_cambio": 1,
+            "tipo_cambio": 7300,
+            "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+            "items": [
+                {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
+            ],
+        },
+        {
+            "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+            "condicion_operacion": {
+                "tipo": "contado",
+                "formas_pago": [{"tipo": "cheque", "monto": 1000}],
+            },
+            "items": [
+                {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
+            ],
+        },
+    ],
+    ids=[
+        "receiver-identity",
+        "negative-net-item",
+        "pyg-exchange-rate",
+        "incomplete-cheque",
+    ],
+)
+def test_create_factura_rejects_invalid_fiscal_contract_before_queueing(
+    client: TestClient,
+    emitter_id: str,
+    factura: dict,
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={"factura": factura},
+    )
+
+    assert response.status_code == 422
+
+
 def test_list_documents_returns_only_requested_emitter_documents(
     client: TestClient,
     emitter_id: str,
