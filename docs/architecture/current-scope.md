@@ -8,7 +8,7 @@ consumidor; otros ERP pueden incorporarse sin compartir identidad ni secretos.
 
 - consumidores, credenciales hasheadas, scopes y ownership de emisores;
 - factura y nota de crédito mediante contratos tipados;
-- cancelación e inutilización tipadas;
+- cancelación e inutilización tipadas y procesadas por worker dedicado;
 - numeración fiscal atómica server-side;
 - CSC/PFX/password cifrados y nunca serializados al consumidor;
 - jobs RQ, idempotencia, XML, KuDE PDF/datos y consultas;
@@ -22,7 +22,9 @@ consumidor; otros ERP pueden incorporarse sin compartir identidad ni secretos.
 - habilitar SIFEN producción;
 - modificar Teko o integrar FacturaSend;
 - OAuth/JWT, email, SDK público o portal público;
-- DE de exportación/importación y recibos.
+- DE de exportación/importación;
+- Recibo Electrónico de Dinero fiscal hasta que DNIT publique una estructura
+  completa y consumible (ver ADR-0002).
 
 OpenAPI y [docs/INTEGRATION.md](../INTEGRATION.md) son el contrato HTTP vigente.
 Los archivos `docs/progress` y `docs/superpowers` son historia de implementación,

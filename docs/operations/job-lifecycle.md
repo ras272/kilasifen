@@ -29,6 +29,22 @@ Jobs are the operational ledger for retries, observability, and support.
      events like `document.approved`, `document.rejected`, `document.retry_pending`
      to active subscribed webhook endpoints.
 
+If transport becomes uncertain after XML generation, the exact generated/signed
+payload and CDC remain durable. A retry queries SIFEN by CDC first; an existing
+DTE converges to approved without resubmission. The same payload is submitted
+again only after a not-found result. Automatic attempts are bounded to five.
+
+## Fiscal event flow
+
+1. API validates/signs cancelation or inutilization and creates `event` +
+   `event.submit` job.
+2. The `events` worker loads emitter/certificate secrets from the database; no
+   secret is stored in the Redis job payload.
+3. Approved cancelation moves the document to `cancelled`; approved
+   inutilization stores its SIFEN protocol and publishes the terminal webhook.
+4. Transport failures become `retry_pending`/`retry_scheduled` and use a bounded
+   five-attempt schedule. Validation/rejection is terminal.
+
 ## Webhook delivery flow
 
 1. Endpoint replay/event creates `webhook_delivery` + `job` (`webhook.deliver`).
@@ -44,6 +60,7 @@ Admin console allows:
 
 - retrying failed/scheduled jobs for:
   - `document.emit`
+  - `event.submit`
   - `webhook.deliver`
 - activating a replacement certificate
 
@@ -53,6 +70,7 @@ Retries re-queue job payload with current DB/crypto settings.
 
 - ratio of `failed` + `retry_scheduled` by job type
 - aging of jobs in `queued`
+- missing workers for any of `documents`, `events`, `webhooks`
 - webhook failure concentration per endpoint
 - document rejection codes from SIFEN
 

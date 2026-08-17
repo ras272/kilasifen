@@ -14,6 +14,8 @@ Objetivo: mantener una trazabilidad simple entre la norma oficial, la regla tecn
 | Consulta SIFEN | Consumir servicios de consulta con las operaciones y respuestas previstas por el schema. | Manual v150, XSD `WS_SiConsDTE.xsd`, `WS_SiConsDTEAsync.xsd`, `WS_SiConsLote_v141.xsd`, `WS_SiConsRUC_v141.xsd` | `pysifen/transmissao/consulta.py`, `tests/test_ws.py` | parcial |
 | Versiones de schema | Detectar cambios locales vs remotos sin tocar artefactos generados. | XSD publicados por SET, baseline local en repo | `tests/test_schema_versions.py` | implementado |
 | Integridad de schemas | Verificar que los XSD requeridos existan y no apunten a ubicaciones remotas. | XSD local versionado | `tests/test_schema_versions.py` | implementado |
+| Reenvío incierto de DE | Nunca reenviar un CDC sin resultado definitivo; ante falta de respuesta, consultar por CDC y reutilizar el payload exacto. | Guía DNIT de mejores prácticas para gestión del envío de DE (octubre 2024) | `kilasifen/infrastructure/jobs/workers.py`, `tests/application/test_emission_flow.py` | implementado |
+| Recibo Electrónico de Dinero | No presentar `iTiDE=8` como Recibo ni habilitar transmisión hasta contar con formato/validaciones oficiales completos. | Decreto 872/2023; Manual 150; `siRecepRDE_v150.xsd` publicado por DNIT | `docs/architecture/adr-0002-recibo-electronico.md` | pendiente de DNIT |
 
 ## Proceso de actualizacion cuando cambien NT o XSD
 

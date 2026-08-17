@@ -68,8 +68,14 @@ mapea el objeto ERP. Reutilizar `idempotency_key` al reintentar la misma intenci
 - contenido incompatible: `409 Conflict`.
 
 La respuesta trae documento `queued` y job; no implica aprobación. Estados de
-documento: `queued`, `retry_pending`, `approved`, `rejected`, `failed`, `cancelled`.
+documento: `queued`, `submitted`, `retry_pending`, `approved`,
+`approved_with_observation`, `rejected`, `failed`, `cancelled`.
 Jobs: `queued`, `retry_scheduled`, `succeeded`, `failed`.
+
+Cliente, ítems, IVA, descuentos/anticipos, moneda/tipo de cambio y condición de
+pago se validan de forma anidada antes de reservar el job. Un `422` significa que
+la intención no ingresó a la cola. Los aliases históricos `razonSocial`,
+`precioUnitario` e `iva` se normalizan a `snake_case` para compatibilidad.
 
 ## Nota de crédito
 
@@ -91,8 +97,24 @@ GET  /v1/emitters/{emitter_id}/events/{event_id}
 ```
 
 Cancelación usa `{"motivo": "..."}`; inutilización usa timbrado, tipo,
-establecimiento, punto, rango y motivo. Ambas crean event/job con `201`. Los
-endpoints raw `/documents` y `/events` están deprecados y son sólo admin.
+establecimiento, punto, rango y motivo. Ambas crean un event/job `queued` con
+`201`; el worker `events` transmite a SIFEN y el ERP consulta el evento/job o
+recibe el webhook terminal. Los endpoints raw `/documents` y `/events` están
+deprecados y son sólo admin.
+
+Ante timeout de emisión, Kila persiste el XML exacto y consulta primero por CDC.
+Sólo reenvía cuando SIFEN informa que el DE no existe; nunca se genera un CDC
+nuevo para reintentar la misma intención.
+
+## Recibo Electrónico de Dinero
+
+No existe endpoint fiscal de Recibo en v1. El Decreto 872/2023 lo define, pero el
+Manual Técnico 150 vigente no publica su formato y `siRecepRDE_v150.xsd` depende
+de `rde/150/RDE_Group.xsd`, actualmente ausente del servidor oficial. No se usa
+`iTiDE=8`: ese código corresponde a Comprobante de Retención Electrónico.
+
+La decisión y condición de habilitación están en
+[adr-0002-recibo-electronico.md](architecture/adr-0002-recibo-electronico.md).
 
 ## Webhooks
 
