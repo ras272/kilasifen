@@ -83,6 +83,19 @@ class WebhookPublisher(Protocol):
         """Publish one event to subscribed webhook endpoints."""
 
 
+class EventJobQueue(Protocol):
+    """Minimal queue contract used to submit fiscal events asynchronously."""
+
+    def enqueue_event_submit(
+        self,
+        job: Job,
+        *,
+        database_url: str,
+        encryption_key: str,
+    ):
+        """Enqueue one durable event job identifier."""
+
+
 class EventService:
     """Use cases for fiscal event lifecycle."""
 
@@ -99,6 +112,9 @@ class EventService:
         numbering_repository: DocumentNumberingSequenceRepository | None = None,
         inutilized_range_repository: InutilizedNumberRangeRepository | None = None,
         webhook_publisher: WebhookPublisher | None = None,
+        queue: EventJobQueue | None = None,
+        database_url: str | None = None,
+        encryption_key: str | None = None,
     ):
         self.event_repository = event_repository
         self.emitter_repository = emitter_repository
@@ -111,6 +127,9 @@ class EventService:
         self.numbering_repository = numbering_repository
         self.inutilized_range_repository = inutilized_range_repository
         self.webhook_publisher = webhook_publisher
+        self.queue = queue
+        self.database_url = database_url
+        self.encryption_key = encryption_key
 
     def create_event(
         self,
@@ -183,23 +202,7 @@ class EventService:
         )
 
         if event.status == "approved":
-            self.document_repository.save(
-                replace(
-                    document,
-                    internal_status="cancelled",
-                    sifen_status="cancelled",
-                    updated_at=_now(),
-                )
-            )
-            self._publish_webhook_event(
-                emitter_id=emitter_id,
-                event_type="document.cancelled",
-                payload={
-                    "document_id": document.id,
-                    "cdc": document.cdc,
-                    "event_id": event.id,
-                },
-            )
+            self._apply_approved_event(event=event, protocol=None)
         return event, job
 
     def inutilize_numbers(
@@ -334,20 +337,7 @@ class EventService:
         saved_range = self.inutilized_range_repository.save(range_item)
 
         if event.status == "approved":
-            self._publish_webhook_event(
-                emitter_id=emitter_id,
-                event_type="numbering.inutilized",
-                payload={
-                    "event_id": event.id,
-                    "document_type": normalized_document_type,
-                    "establishment": normalized_est,
-                    "point": normalized_point,
-                    "numero_desde": numero_desde,
-                    "numero_hasta": numero_hasta,
-                    "timbrado": timbrado,
-                    "sifen_protocol": protocol,
-                },
-            )
+            self._apply_approved_event(event=event, protocol=protocol)
         return event, job, saved_range
 
     def get_event(self, event_id: str) -> tuple[Event, Job | None]:
@@ -364,6 +354,78 @@ class EventService:
         if event.emitter_id != emitter_id:
             raise NotFoundError("events.not_found")
         return event, job
+
+    def process_queued_event(self, *, job_id: str) -> dict[str, str | bool | None]:
+        """Submit one persisted fiscal event and return its durable outcome."""
+
+        job = self.job_service.get_job(job_id)
+        if job.related_entity_type != "event" or not job.related_entity_id:
+            raise NotFoundError("jobs.event_context_not_found")
+        event = self.event_repository.get(job.related_entity_id)
+        if event is None:
+            raise NotFoundError("events.not_found")
+
+        if event.status in {"approved", "rejected"} or (
+            event.status == "failed" and job.status != "queued"
+        ):
+            return _event_job_payload(event=event, job=job, retryable=False)
+
+        emitter, certificate, certificate_bytes, certificate_password = (
+            self._resolve_emitter_and_active_certificate(event.emitter_id)
+        )
+        attempt_number = job.attempts + 1
+        processing_job = replace(
+            job,
+            status="processing",
+            attempts=attempt_number,
+            started_at=job.started_at or _now(),
+            updated_at=_now(),
+        )
+        self.job_repository.save(processing_job)
+
+        updated_event, updated_job, protocol = self._submit_event(
+            saved_event=event,
+            job=processing_job,
+            emitter=emitter,
+            certificate=certificate,
+            certificate_bytes=certificate_bytes,
+            certificate_password=certificate_password,
+        )
+        retryable = updated_job.status == "retry_scheduled"
+        if retryable and attempt_number >= 5:
+            retryable = False
+            updated_event = replace(
+                updated_event,
+                status="failed",
+                sifen_result_message="event retry attempts exhausted",
+                updated_at=_now(),
+            )
+            updated_job = replace(
+                updated_job,
+                status="failed",
+                error_snapshot={
+                    "category": "retry_exhausted",
+                    "message": "event retry attempts exhausted",
+                },
+                finished_at=_now(),
+                updated_at=_now(),
+            )
+        elif updated_job.status in {"succeeded", "failed"}:
+            updated_job = replace(
+                updated_job,
+                finished_at=_now(),
+                updated_at=_now(),
+            )
+
+        self.event_repository.save(updated_event)
+        self.job_repository.save(updated_job)
+        if updated_event.status == "approved":
+            self._apply_approved_event(event=updated_event, protocol=protocol)
+        return _event_job_payload(
+            event=updated_event,
+            job=updated_job,
+            retryable=retryable,
+        )
 
     def _create_and_submit_event(
         self,
@@ -403,6 +465,16 @@ class EventService:
             related_entity_id=saved_event.id,
             job_type="event.submit",
         )
+        if self.queue is not None:
+            if not self.database_url or not self.encryption_key:
+                raise RuntimeError("event queue runtime configuration is required")
+            self.queue.enqueue_event_submit(
+                job,
+                database_url=self.database_url,
+                encryption_key=self.encryption_key,
+            )
+            return saved_event, job, None
+
         updated_event, updated_job, protocol = self._submit_event(
             saved_event=saved_event,
             job=job,
@@ -458,9 +530,20 @@ class EventService:
                     },
                     updated_at=_now(),
                 )
-            else:
+            elif outcome.status == "approved":
                 updated_job = replace(
                     job, status="succeeded", error_snapshot=None, updated_at=_now()
+                )
+            else:
+                updated_job = replace(
+                    job,
+                    status="retry_scheduled",
+                    error_snapshot={
+                        "category": "sifen_pending",
+                        "code": outcome.result_code,
+                        "message": outcome.result_message,
+                    },
+                    updated_at=_now(),
                 )
         except SifenValidationError as exc:
             updated_event = replace(
@@ -489,6 +572,57 @@ class EventService:
                 updated_at=_now(),
             )
         return updated_event, updated_job, protocol
+
+    def _apply_approved_event(self, *, event: Event, protocol: str | None) -> None:
+        if event.event_type == _CANCEL_EVENT_TYPE and event.document_id:
+            document = self._get_document_for_emitter(
+                emitter_id=event.emitter_id,
+                document_id=event.document_id,
+            )
+            if not _is_cancelled_document(document):
+                document = self.document_repository.save(
+                    replace(
+                        document,
+                        internal_status="cancelled",
+                        sifen_status="cancelled",
+                        updated_at=_now(),
+                    )
+                )
+                self._publish_webhook_event(
+                    emitter_id=event.emitter_id,
+                    event_type="document.cancelled",
+                    payload={
+                        "document_id": document.id,
+                        "cdc": document.cdc,
+                        "event_id": event.id,
+                    },
+                )
+            return
+
+        if event.event_type != _INUTILIZATION_EVENT_TYPE:
+            return
+        if self.inutilized_range_repository is None:
+            raise RuntimeError("inutilized_range_repository is required")
+        range_item = self.inutilized_range_repository.get_for_event(event.id)
+        if range_item is None:
+            raise RuntimeError("inutilized number range was not persisted")
+        range_item = self.inutilized_range_repository.save(
+            replace(range_item, sifen_protocol=protocol, updated_at=_now())
+        )
+        self._publish_webhook_event(
+            emitter_id=event.emitter_id,
+            event_type="numbering.inutilized",
+            payload={
+                "event_id": event.id,
+                "document_type": range_item.document_type,
+                "establishment": range_item.establishment,
+                "point": range_item.point,
+                "numero_desde": range_item.numero_desde,
+                "numero_hasta": range_item.numero_hasta,
+                "timbrado": range_item.timbrado,
+                "sifen_protocol": protocol,
+            },
+        )
 
     def _resolve_emitter_and_active_certificate(self, emitter_id: str):
         emitter = self.emitter_repository.get(emitter_id)
@@ -622,6 +756,23 @@ class EventService:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _event_job_payload(
+    *,
+    event: Event,
+    job: Job,
+    retryable: bool,
+) -> dict[str, str | bool | None]:
+    return {
+        "job_id": job.id,
+        "job_type": job.job_type,
+        "event_id": event.id,
+        "event_type": event.event_type,
+        "job_status": job.status,
+        "event_status": event.status,
+        "retryable": retryable,
+    }
 
 
 def _now_asuncion() -> datetime:

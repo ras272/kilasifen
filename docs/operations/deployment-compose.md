@@ -20,7 +20,7 @@ docker compose logs -f api worker migrate
 Para Windows sin contenedor:
 
 ```bash
-python -m rq.cli worker documents webhooks \
+python -m rq.cli worker documents events webhooks \
   -u redis://127.0.0.1:6379/0 \
   --worker-class kilasifen.infrastructure.jobs.worker_classes.CrossPlatformSimpleWorker
 ```

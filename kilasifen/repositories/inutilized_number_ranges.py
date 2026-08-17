@@ -13,6 +13,10 @@ class InutilizedNumberRangeRepository(ABC):
         """Persist one inutilized number range."""
 
     @abstractmethod
+    def get_for_event(self, event_id: str) -> InutilizedNumberRange | None:
+        """Load the range created for one fiscal event."""
+
+    @abstractmethod
     def list_overlapping(
         self,
         *,

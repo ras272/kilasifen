@@ -80,6 +80,40 @@ def test_rq_queue_enqueues_document_job_with_expected_payload() -> None:
     assert enqueued.retry_intervals == [30, 120, 600, 1800]
 
 
+def test_rq_queue_enqueues_event_job_with_bounded_retry() -> None:
+    queue = Queue("events", connection=fakeredis.FakeRedis())
+    adapter = RqJobQueue(queue)
+    job = Job(
+        id="event-job-1",
+        emitter_id="emitter-1",
+        related_entity_type="event",
+        related_entity_id="event-1",
+        job_type="event.submit",
+        status="queued",
+        attempts=0,
+        error_snapshot=None,
+        scheduled_at=_now(),
+        started_at=None,
+        finished_at=None,
+        worker_correlation_id=None,
+        created_at=_now(),
+        updated_at=_now(),
+    )
+
+    enqueued = adapter.enqueue_event_submit(
+        job,
+        database_url="postgresql+psycopg://ignored",
+        encryption_key="ignored",
+    )
+
+    assert (
+        enqueued.func_name == "kilasifen.infrastructure.jobs.workers.process_event_job"
+    )
+    assert enqueued.kwargs == {"job_id": "event-job-1"}
+    assert enqueued.retries_left == 4
+    assert enqueued.retry_intervals == [30, 120, 600, 1800]
+
+
 def test_process_document_job_hydrates_job_and_document_context(tmp_path) -> None:
     with managed_test_database_url(tmp_path=tmp_path, name="rq_worker") as database_url:
         engine = build_engine(database_url)

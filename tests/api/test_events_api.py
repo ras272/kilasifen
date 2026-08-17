@@ -39,6 +39,7 @@ from kilasifen.infrastructure.db.session import (
     build_session_factory,
     session_scope,
 )
+from kilasifen.infrastructure.jobs.workers import process_event_job
 from kilasifen.infrastructure.sifen.event import EventSubmissionOutcome
 from kilasifen.testing.database import managed_test_database_url
 
@@ -470,6 +471,72 @@ def test_inutilization_deadline_exceeded_when_sequence_is_too_old(
     assert response.json()["error"]["code"] == "events.inutilize.deadline_exceeded"
 
 
+def test_cancel_is_queued_then_worker_applies_approved_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path, name="event_worker"
+    ) as database_url:
+        encryption_key = Fernet.generate_key().decode()
+        store = EncryptedCertificateStore(encryption_key)
+        engine = build_engine(database_url)
+        Base.metadata.create_all(engine)
+        session_factory = build_session_factory(engine)
+        _seed_event_context(
+            session_factory=session_factory,
+            certificate_store=store,
+        )
+        monkeypatch.setattr(
+            event_service_module,
+            "build_signed_cancel_event_group_xml",
+            lambda **_: "<gGroupGesEve/>",
+        )
+        queue = RecordingEventQueue()
+
+        with session_scope(session_factory) as session:
+            service = EventService(
+                event_repository=SqlAlchemyEventRepository(session),
+                emitter_repository=SqlAlchemyEmitterRepository(session, store),
+                document_repository=SqlAlchemyDocumentRepository(session),
+                certificate_repository=SqlAlchemyCertificateRepository(session),
+                job_repository=SqlAlchemyJobRepository(session),
+                certificate_store=store,
+                submission_gateway=NeverCalledEventGateway(),
+                inutilized_range_repository=(
+                    SqlAlchemyInutilizedNumberRangeRepository(session)
+                ),
+                queue=queue,
+                database_url=database_url,
+                encryption_key=encryption_key,
+            )
+            event, job = service.cancel_document(
+                emitter_id="emitter-1",
+                document_id="doc-fe-recent",
+                motivo="Cancelacion asincrona segura",
+            )
+            assert event.status == "queued"
+            assert job.status == "queued"
+            assert queue.job_ids == [job.id]
+
+        payload = process_event_job(
+            job_id=job.id,
+            database_url=database_url,
+            encryption_key=encryption_key,
+            submission_gateway=FakeEventGateway(),
+        )
+
+        assert payload["event_status"] == "approved"
+        assert payload["job_status"] == "succeeded"
+        with session_scope(session_factory) as session:
+            document = SqlAlchemyDocumentRepository(session).get("doc-fe-recent")
+            assert document is not None
+            assert document.internal_status == "cancelled"
+            persisted_job = SqlAlchemyJobRepository(session).get(job.id)
+            assert persisted_job is not None
+            assert persisted_job.attempts == 1
+
+
 class FakeEventGateway:
     def submit_event(self, **kwargs) -> EventSubmissionOutcome:
         return EventSubmissionOutcome(
@@ -482,6 +549,22 @@ class FakeEventGateway:
             result_message="Evento procesado",
             protocol="90001234",
         )
+
+
+class NeverCalledEventGateway:
+    def submit_event(self, **kwargs) -> EventSubmissionOutcome:
+        del kwargs
+        raise AssertionError("HTTP request must not submit an event to SIFEN")
+
+
+class RecordingEventQueue:
+    def __init__(self) -> None:
+        self.job_ids: list[str] = []
+
+    def enqueue_event_submit(self, job, **kwargs):
+        del kwargs
+        self.job_ids.append(job.id)
+        return None
 
 
 class FakeWebhookPublisher:

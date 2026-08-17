@@ -8,6 +8,7 @@ from xml.etree import ElementTree as ET
 from redis import Redis
 from rq import Queue, Retry, get_current_job
 
+from kilasifen.application.events.service import EventService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
@@ -24,6 +25,10 @@ from kilasifen.infrastructure.db.repositories.documents import (
 )
 from kilasifen.infrastructure.db.repositories.emitters import (
     SqlAlchemyEmitterRepository,
+)
+from kilasifen.infrastructure.db.repositories.events import SqlAlchemyEventRepository
+from kilasifen.infrastructure.db.repositories.inutilized_number_ranges import (
+    SqlAlchemyInutilizedNumberRangeRepository,
 )
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
 from kilasifen.infrastructure.db.repositories.stampings import (
@@ -42,6 +47,10 @@ from kilasifen.infrastructure.sifen.engine import (
     EmissionOutcome,
     EmissionTransportUncertainError,
     PysifenEmissionEngine,
+)
+from kilasifen.infrastructure.sifen.event import (
+    EventSubmissionGateway,
+    PysifenEventGateway,
 )
 from kilasifen.infrastructure.sifen.query import PysifenQueryGateway, SifenQueryGateway
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
@@ -107,7 +116,9 @@ def process_document_job(
                 job_id=job_id,
                 document_repository=document_repository,
             )
-            if document.internal_status in DOCUMENT_TERMINAL_STATUSES:
+            if document.internal_status in DOCUMENT_TERMINAL_STATUSES and not (
+                document.internal_status == "failed" and job.status == "queued"
+            ):
                 return {
                     "job_id": job.id,
                     "job_type": job.job_type,
@@ -409,6 +420,99 @@ def process_webhook_delivery_job(
             reset_correlation_id(correlation_token)
 
 
+def process_event_job(
+    *,
+    job_id: str,
+    database_url: str | None = None,
+    encryption_key: str | None = None,
+    submission_gateway: EventSubmissionGateway | None = None,
+    webhook_queue=None,
+) -> dict[str, str | bool | None]:
+    """Process one persisted fiscal event outside the HTTP request lifecycle."""
+
+    settings = get_settings()
+    database_url, encryption_key = _worker_runtime_secrets(
+        database_url=database_url,
+        encryption_key=encryption_key,
+    )
+    ensure_worker_observability()
+    correlation_token, worker_correlation_id = _bind_worker_correlation_id()
+    engine = build_engine(database_url)
+    session_factory = build_session_factory(engine)
+    certificate_store = EncryptedCertificateStore(encryption_key)
+    submission_gateway = submission_gateway or PysifenEventGateway(
+        settings.sifen_environment
+    )
+    retryable = False
+
+    try:
+        with session_scope(session_factory) as session:
+            job_repository = SqlAlchemyJobRepository(session)
+            job = job_repository.get(job_id)
+            if job is not None:
+                job_repository.save(
+                    replace(job, worker_correlation_id=worker_correlation_id)
+                )
+
+            webhook_publisher = None
+            if settings.document_publish_webhooks:
+                queue_adapter = webhook_queue or _build_webhook_queue(
+                    settings.redis_url
+                )
+                webhook_publisher = WebhookService(
+                    webhook_repository=SqlAlchemyWebhookRepository(session),
+                    emitter_repository=SqlAlchemyEmitterRepository(
+                        session, certificate_store
+                    ),
+                    job_repository=job_repository,
+                    secret_store=certificate_store,
+                    queue=queue_adapter,
+                    deliverer=WebhookDeliverer(
+                        url_policy=WebhookUrlPolicy.for_environment(
+                            settings.environment
+                        )
+                    ),
+                    database_url=database_url,
+                    encryption_key=encryption_key,
+                )
+
+            service = EventService(
+                event_repository=SqlAlchemyEventRepository(session),
+                emitter_repository=SqlAlchemyEmitterRepository(
+                    session, certificate_store
+                ),
+                document_repository=SqlAlchemyDocumentRepository(session),
+                certificate_repository=SqlAlchemyCertificateRepository(session),
+                job_repository=job_repository,
+                certificate_store=certificate_store,
+                submission_gateway=submission_gateway,
+                inutilized_range_repository=(
+                    SqlAlchemyInutilizedNumberRangeRepository(session)
+                ),
+                webhook_publisher=webhook_publisher,
+            )
+            payload = service.process_queued_event(job_id=job_id)
+            retryable = bool(payload["retryable"])
+            logger.info(
+                "worker.event_job.finished",
+                extra={
+                    "job_id": payload["job_id"],
+                    "event_id": payload["event_id"],
+                    "event_type": payload["event_type"],
+                    "job_status": payload["job_status"],
+                    "event_status": payload["event_status"],
+                },
+            )
+        if retryable:
+            raise EventSubmissionRetryableError(
+                "event submission requires a bounded retry"
+            )
+        return payload
+    finally:
+        if correlation_token is not None:
+            reset_correlation_id(correlation_token)
+
+
 class _NoopWebhookQueue:
     def enqueue_webhook_delivery(self, *args, **kwargs):
         del args, kwargs
@@ -421,6 +525,10 @@ class WebhookDeliveryRetryableError(RuntimeError):
 
 class DocumentEmissionRetryableError(RuntimeError):
     """Signal RQ to retry a transport-uncertain fiscal document safely."""
+
+
+class EventSubmissionRetryableError(RuntimeError):
+    """Signal RQ to retry a transport-uncertain fiscal event safely."""
 
 
 def _reconcile_before_resubmission(

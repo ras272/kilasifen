@@ -387,6 +387,10 @@ def get_event_service(
         "webhooks",
         connection=Redis.from_url(settings.redis_url),
     )
+    event_queue = Queue(
+        "events",
+        connection=Redis.from_url(settings.redis_url),
+    )
     webhook_service = WebhookService(
         webhook_repository=SqlAlchemyWebhookRepository(session),
         emitter_repository=_emitter_repository(session),
@@ -411,6 +415,9 @@ def get_event_service(
         numbering_repository=SqlAlchemyDocumentNumberingSequenceRepository(session),
         inutilized_range_repository=SqlAlchemyInutilizedNumberRangeRepository(session),
         webhook_publisher=webhook_service,
+        queue=RqJobQueue(event_queue),
+        database_url=settings.database_url,
+        encryption_key=settings.encryption_key,
     )
 
 
@@ -453,6 +460,7 @@ def get_admin_service(
 
     redis_connection = Redis.from_url(settings.redis_url)
     document_queue = Queue("documents", connection=redis_connection)
+    event_queue = Queue("events", connection=redis_connection)
     webhook_queue = Queue("webhooks", connection=redis_connection)
 
     emitter_repository = _emitter_repository(session)
@@ -477,6 +485,7 @@ def get_admin_service(
         webhook_repository=webhook_repository,
         certificate_service=certificate_service,
         document_queue=RqJobQueue(document_queue),
+        event_queue=RqJobQueue(event_queue),
         webhook_queue=RqJobQueue(webhook_queue),
         database_url=settings.database_url,
         encryption_key=settings.encryption_key,

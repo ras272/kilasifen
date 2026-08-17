@@ -27,7 +27,9 @@ from kilasifen.repositories.webhooks import WebhookRepository
 class DocumentEmissionQueue(Protocol):
     """Queue contract for document emission jobs."""
 
-    def enqueue_document_emit(self, job: Job, *, database_url: str, encryption_key: str):
+    def enqueue_document_emit(
+        self, job: Job, *, database_url: str, encryption_key: str
+    ):
         """Enqueue one document emission job."""
 
 
@@ -42,6 +44,19 @@ class WebhookDeliveryQueue(Protocol):
         encryption_key: str,
     ):
         """Enqueue one webhook delivery job."""
+
+
+class EventSubmissionQueue(Protocol):
+    """Queue contract for fiscal event submission jobs."""
+
+    def enqueue_event_submit(
+        self,
+        job: Job,
+        *,
+        database_url: str,
+        encryption_key: str,
+    ):
+        """Enqueue one fiscal event job."""
 
 
 @dataclass(slots=True)
@@ -81,6 +96,7 @@ class AdminConsoleService:
         webhook_repository: WebhookRepository,
         certificate_service: CertificateService,
         document_queue: DocumentEmissionQueue | None,
+        event_queue: EventSubmissionQueue | None,
         webhook_queue: WebhookDeliveryQueue | None,
         database_url: str | None,
         encryption_key: str | None,
@@ -95,6 +111,7 @@ class AdminConsoleService:
         self.emitter_service = EmitterService(emitter_repository)
         self.job_service = JobService(job_repository)
         self.document_queue = document_queue
+        self.event_queue = event_queue
         self.webhook_queue = webhook_queue
         self.database_url = database_url
         self.encryption_key = encryption_key
@@ -126,7 +143,9 @@ class AdminConsoleService:
                     delivery=delivery,
                     endpoint=endpoint,
                     emitter=emitter,
-                    job=self.job_repository.get_for_entity("webhook_delivery", delivery.id),
+                    job=self.job_repository.get_for_entity(
+                        "webhook_delivery", delivery.id
+                    ),
                 )
                 for delivery in deliveries
             )
@@ -136,7 +155,9 @@ class AdminConsoleService:
             emitter=emitter,
             certificates=self.certificate_repository.list_for_emitter(emitter_id),
             stampings=self.stamping_repository.list_for_emitter(emitter_id),
-            documents=self.document_repository.list_recent(limit=limit, emitter_id=emitter_id),
+            documents=self.document_repository.list_recent(
+                limit=limit, emitter_id=emitter_id
+            ),
             jobs=self.job_repository.list_recent(limit=limit, emitter_id=emitter_id),
             webhook_endpoints=endpoints,
             failed_webhook_deliveries=failed_rows[:limit],
@@ -161,7 +182,9 @@ class AdminConsoleService:
     ) -> list[Job]:
         """List recent jobs for global operations."""
 
-        return self.job_repository.list_recent(limit=limit, emitter_id=emitter_id, status=status)
+        return self.job_repository.list_recent(
+            limit=limit, emitter_id=emitter_id, status=status
+        )
 
     def list_failed_webhook_deliveries(
         self,
@@ -181,7 +204,9 @@ class AdminConsoleService:
         for delivery in deliveries:
             endpoint = endpoint_cache.get(delivery.webhook_endpoint_id)
             if endpoint is None:
-                endpoint = self.webhook_repository.get_endpoint(delivery.webhook_endpoint_id)
+                endpoint = self.webhook_repository.get_endpoint(
+                    delivery.webhook_endpoint_id
+                )
                 if endpoint is None:
                     continue
                 endpoint_cache[endpoint.id] = endpoint
@@ -203,7 +228,9 @@ class AdminConsoleService:
                     delivery=delivery,
                     endpoint=endpoint,
                     emitter=emitter,
-                    job=self.job_repository.get_for_entity("webhook_delivery", delivery.id),
+                    job=self.job_repository.get_for_entity(
+                        "webhook_delivery", delivery.id
+                    ),
                 )
             )
             if len(rows) >= limit:
@@ -219,7 +246,11 @@ class AdminConsoleService:
         """Re-queue supported failed jobs with a fresh queued status."""
 
         job = self.job_service.get_job(job_id)
-        if job.job_type not in {"document.emit", "webhook.deliver"}:
+        if job.job_type not in {
+            "document.emit",
+            "event.submit",
+            "webhook.deliver",
+        }:
             raise ConflictError("jobs.retry_unsupported")
         if job.status == "succeeded":
             raise ConflictError("jobs.retry_not_allowed")
@@ -262,9 +293,18 @@ class AdminConsoleService:
             )
             return
 
+        if job.job_type == "event.submit":
+            if self.event_queue is None:
+                raise ConflictError("jobs.retry_unavailable")
+            self.event_queue.enqueue_event_submit(
+                job,
+                database_url=self.database_url,
+                encryption_key=self.encryption_key,
+            )
+            return
+
         raise ConflictError("jobs.retry_unsupported")
 
 
 def _now() -> datetime:
     return datetime.now(UTC)
-

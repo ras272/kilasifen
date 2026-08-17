@@ -74,14 +74,14 @@ def test_readiness_requires_workers_for_every_required_queue() -> None:
 
     assert report.is_ready is False
     assert report.workers.status == "down"
-    assert report.workers.detail == "missing:webhooks"
+    assert report.workers.detail == "missing:events,webhooks"
 
 
 def test_readiness_accepts_workers_covering_all_required_queues() -> None:
     redis_connection = Mock()
     redis_connection.ping.return_value = True
     worker = Mock()
-    worker.queue_names.return_value = ["documents", "webhooks"]
+    worker.queue_names.return_value = ["documents", "events", "webhooks"]
     service = ReadinessService(
         engine=create_engine("sqlite:///:memory:"),
         redis_connection=redis_connection,

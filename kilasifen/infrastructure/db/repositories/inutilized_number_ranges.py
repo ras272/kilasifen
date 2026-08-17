@@ -5,7 +5,9 @@ from sqlalchemy.orm import Session
 
 from kilasifen.domain.events.inutilized_ranges import InutilizedNumberRange
 from kilasifen.infrastructure.db.models import EventModel, InutilizedNumberRangeModel
-from kilasifen.repositories.inutilized_number_ranges import InutilizedNumberRangeRepository
+from kilasifen.repositories.inutilized_number_ranges import (
+    InutilizedNumberRangeRepository,
+)
 
 
 class SqlAlchemyInutilizedNumberRangeRepository(InutilizedNumberRangeRepository):
@@ -77,6 +79,13 @@ class SqlAlchemyInutilizedNumberRangeRepository(InutilizedNumberRangeRepository)
             ).where(EventModel.status == "approved")
 
         return [_to_domain(model) for model in self.session.scalars(statement)]
+
+    def get_for_event(self, event_id: str) -> InutilizedNumberRange | None:
+        statement = select(InutilizedNumberRangeModel).where(
+            InutilizedNumberRangeModel.event_id == event_id
+        )
+        model = self.session.scalars(statement).first()
+        return _to_domain(model) if model is not None else None
 
     def get_max_approved_end_covering_number(
         self,

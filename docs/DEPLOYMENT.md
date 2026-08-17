@@ -8,7 +8,7 @@ ejecuta un despliegue, no crea servicios pagos y no habilita SIFEN producción.
 Un mismo commit/Dockerfile produce dos procesos no-root:
 
 - API: `uvicorn kilasifen.api.app:create_app --factory --host 0.0.0.0 --port $PORT`;
-- worker: `rq worker documents webhooks -u $KILA_SIFEN_REDIS_URL`;
+- worker: `rq worker documents events webhooks -u $KILA_SIFEN_REDIS_URL`;
 - PostgreSQL es la fuente durable;
 - Redis contiene colas, reintentos y leases de rate/concurrency;
 - `alembic upgrade head` se ejecuta una sola vez como pre-deploy de la API.
@@ -57,7 +57,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 5. Configurar healthcheck `/v1/ready`.
 6. Desplegar API y verificar health/migración. Readiness puede indicar worker ausente.
 7. Crear el servicio worker desde el mismo commit/imagen y configurar su comando RQ.
-8. Verificar que readiness observe workers para `documents` y `webhooks`.
+8. Verificar que readiness observe workers para `documents`, `events` y `webhooks`.
 9. Crear consumidor/credencial Teko con `/v1/admin/consumers`; guardar la clave
    entregada una sola vez en el secret store del backend Teko.
 10. Cargar sólo material fiscal de pruebas y ejecutar un smoke test autorizado.

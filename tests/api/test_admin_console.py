@@ -13,6 +13,7 @@ from kilasifen.application.admin.service import AdminConsoleService
 from kilasifen.application.certificates.service import CertificateService
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
+from kilasifen.domain.jobs.models import Job
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.repositories.certificates import (
@@ -90,6 +91,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClie
                     webhook_repository=SqlAlchemyWebhookRepository(session),
                     certificate_service=certificate_service,
                     document_queue=fake_queue,
+                    event_queue=fake_queue,
                     webhook_queue=fake_queue,
                     database_url=settings.database_url,
                     encryption_key=settings.encryption_key,
@@ -289,6 +291,42 @@ def test_admin_retry_job_requeues_document_job(
     assert document_job_id in client.app.state.fake_admin_queue.document_job_ids
 
 
+def test_admin_retry_job_requeues_event_job(
+    client: TestClient,
+    seeded_ids: dict[str, str],
+) -> None:
+    event_job_id = "event-job-admin-retry"
+    with session_scope(client.app.state.session_factory) as session:
+        SqlAlchemyJobRepository(session).save(
+            Job(
+                id=event_job_id,
+                emitter_id=seeded_ids["emitter_id"],
+                related_entity_type="event",
+                related_entity_id="event-admin-retry",
+                job_type="event.submit",
+                status="failed",
+                attempts=1,
+                error_snapshot={"category": "transport"},
+                scheduled_at=_now(),
+                started_at=_now(),
+                finished_at=_now(),
+                worker_correlation_id=None,
+                created_at=_now(),
+                updated_at=_now(),
+            )
+        )
+
+    response = client.post(
+        f"/admin/jobs/{event_job_id}/retry",
+        headers={"X-API-Key": API_KEY},
+        data={"next_url": "/admin/jobs"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert event_job_id in client.app.state.fake_admin_queue.event_job_ids
+
+
 def _seed_webhook_failure(client: TestClient, emitter_id: str) -> tuple[str, str]:
     settings = get_settings()
     with session_scope(client.app.state.session_factory) as session:
@@ -337,6 +375,7 @@ def _seed_webhook_failure(client: TestClient, emitter_id: str) -> tuple[str, str
 class _FakeAdminQueue:
     def __init__(self) -> None:
         self.document_job_ids: list[str] = []
+        self.event_job_ids: list[str] = []
         self.webhook_job_ids: list[str] = []
 
     def enqueue_document_emit(self, job, *, database_url: str, encryption_key: str):
@@ -349,6 +388,12 @@ class _FakeAdminQueue:
         assert database_url
         assert encryption_key
         self.webhook_job_ids.append(job.id)
+        return {"job_id": job.id}
+
+    def enqueue_event_submit(self, job, *, database_url: str, encryption_key: str):
+        assert database_url
+        assert encryption_key
+        self.event_job_ids.append(job.id)
         return {"job_id": job.id}
 
 

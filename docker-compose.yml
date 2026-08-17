@@ -68,7 +68,7 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    command: rq worker documents webhooks -u ${KILA_SIFEN_REDIS_URL}
+    command: rq worker documents events webhooks -u ${KILA_SIFEN_REDIS_URL}
     stop_grace_period: 60s
 
   migrate:

@@ -46,7 +46,7 @@ class ReadinessService:
         engine: Engine,
         redis_connection: Redis,
         require_workers: bool,
-        required_queues: tuple[str, ...] = ("documents", "webhooks"),
+        required_queues: tuple[str, ...] = ("documents", "events", "webhooks"),
     ) -> None:
         self._engine = engine
         self._redis = redis_connection
