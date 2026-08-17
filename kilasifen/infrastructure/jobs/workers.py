@@ -11,6 +11,7 @@ from rq import Queue, Retry, get_current_job
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
+from kilasifen.domain.common.fiscal_states import job_status_for_document
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
@@ -149,7 +150,8 @@ def process_document_job(
                         outcome.generated_xml,
                     ),
                 )
-                if outcome.sifen_status == "rejected":
+                orchestration_status = job_status_for_document(outcome.sifen_status)
+                if orchestration_status == "failed":
                     updated_job = replace(
                         job,
                         status="failed",
@@ -160,11 +162,22 @@ def process_document_job(
                         },
                         worker_correlation_id=worker_correlation_id,
                     )
-                else:
+                elif orchestration_status == "succeeded":
                     updated_job = replace(
                         job,
                         status="succeeded",
                         error_snapshot=None,
+                        worker_correlation_id=worker_correlation_id,
+                    )
+                else:
+                    updated_job = replace(
+                        job,
+                        status="retry_scheduled",
+                        error_snapshot={
+                            "category": "sifen_pending",
+                            "code": outcome.result_code,
+                            "message": outcome.result_message,
+                        },
                         worker_correlation_id=worker_correlation_id,
                     )
             except SifenValidationError as exc:

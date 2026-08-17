@@ -330,6 +330,52 @@ def test_process_document_job_marks_rejected_outcome_without_engine_exception(
         assert job.error_snapshot["category"] == "sifen_rejection"
 
 
+def test_process_document_job_keeps_submitted_outcome_reconcilable(tmp_path) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="emission_submitted_outcome",
+    ) as database_url:
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
+
+        payload = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            emission_engine=FakeEmissionEngine(
+                outcome=EmissionOutcome(
+                    generated_xml="<rDE/>",
+                    signed_xml=(
+                        '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+                        '<DE Id="0180012345"/><Signature/></rDE>'
+                    ),
+                    request_xml="<soap>request</soap>",
+                    response_raw="<soap>response</soap>",
+                    sifen_status="submitted",
+                    result_code="0300",
+                    result_message="Procesamiento pendiente",
+                    cdc="0180012345",
+                )
+            ),
+            current_date=date(2024, 4, 24),
+        )
+
+        assert payload["document_status"] == "submitted"
+        assert payload["job_status"] == "retry_scheduled"
+
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            job = SqlAlchemyJobRepository(session).get("job-1")
+        assert job is not None
+        assert job.status == "retry_scheduled"
+        assert job.error_snapshot == {
+            "category": "sifen_pending",
+            "code": "0300",
+            "message": "Procesamiento pendiente",
+        }
+
+
 @dataclass
 class FakeEmissionEngine:
     outcome: EmissionOutcome | None = None
