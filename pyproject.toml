@@ -4,9 +4,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kilasifen"
-description = "Bindings Python para leer y generar XML del SIFEN (Paraguay)"
+description = "API fiscal headless y motor Python para integrar SIFEN Paraguay"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.10"
 authors = [
     { name = "mileo", email = "mileo@kmee.com.br" },

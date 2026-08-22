@@ -1,10 +1,23 @@
-# kilasifen
+# KilaSifen
 
-Bindings Python para leer y generar XML del **SIFEN** (Sistema Integrado de Facturación Electrónica Nacional) de Paraguay.
+API fiscal headless para conectar cualquier ERP, comercio o producto con
+**SIFEN Paraguay** sin implementar XML, firma, SOAP, reintentos ni
+reconciliación fiscal dentro del sistema consumidor.
 
-La plataforma HTTP y su contrato de integración están documentados en el sitio
-Fumadocs de [`apps/docs`](apps/docs). Para trabajar localmente con la API,
-consultar además [`docs/INTEGRATION.md`](docs/INTEGRATION.md).
+- contratos tipados para factura, nota de crédito y nota de débito;
+- emisión asíncrona, idempotencia estricta y numeración atómica;
+- cancelación, inutilización, consultas, KuDE y webhooks HMAC;
+- aislamiento por consumidor, secretos cifrados y sandbox determinista;
+- SDK TypeScript oficial en [`sdks/typescript`](sdks/typescript).
+
+El contrato HTTP y las guías de conexión viven en el portal Fumadocs de
+[`apps/docs`](apps/docs) y en [`docs/INTEGRATION.md`](docs/INTEGRATION.md).
+
+## Motor Python
+
+El mismo repositorio incluye los bindings Python que leen, generan, validan,
+firman y transmiten XML SIFEN v150. La API usa ese motor internamente, pero los
+integradores pueden consumirla sin importar código Python ni conocer SOAP.
 
 Generados automáticamente a partir de los XSD oficiales de la SET usando [xsdata](https://xsdata.readthedocs.io/), siguiendo el mismo enfoque de [nfelib](https://github.com/akretion/nfelib).
 
