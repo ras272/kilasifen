@@ -107,6 +107,47 @@ class WebhookService:
             raise NotFoundError("emitters.not_found")
         return self.webhook_repository.list_endpoints_for_emitter(emitter_id)
 
+    def update_endpoint(
+        self,
+        *,
+        emitter_id: str,
+        endpoint_id: str,
+        changes: dict[str, object],
+    ) -> WebhookEndpoint:
+        require_active_emitter(self.emitter_repository, emitter_id)
+        endpoint = self.webhook_repository.get_endpoint(endpoint_id)
+        if endpoint is None or endpoint.emitter_id != emitter_id:
+            raise NotFoundError("webhooks.endpoint_not_found")
+
+        persistence_changes: dict[str, object] = {}
+        if "url" in changes:
+            url = str(changes["url"])
+            try:
+                self.url_policy.resolve(url)
+            except UnsafeWebhookUrlError as exc:
+                raise UnprocessableEntityError(str(exc)) from exc
+            persistence_changes["url"] = url
+        if "secret" in changes:
+            secret = str(changes["secret"])
+            if len(secret) < 32:
+                raise UnprocessableEntityError("webhooks.secret_too_short")
+            persistence_changes["secret_encrypted"] = self.secret_store.encrypt_text(
+                secret
+            )
+        for field in ("event_subscriptions", "retry_policy", "is_active"):
+            if field in changes:
+                persistence_changes[field] = changes[field]
+        persistence_changes["updated_at"] = _now()
+
+        updated = self.webhook_repository.update_endpoint_for_emitter(
+            endpoint_id=endpoint_id,
+            emitter_id=emitter_id,
+            changes=persistence_changes,
+        )
+        if updated is None:
+            raise NotFoundError("webhooks.endpoint_not_found")
+        return updated
+
     def replay_delivery(
         self,
         *,

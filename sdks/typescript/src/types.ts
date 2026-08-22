@@ -440,6 +440,14 @@ export interface WebhookEndpointCreateInput {
   retry_policy?: WebhookRetryPolicy | null;
 }
 
+export interface WebhookEndpointUpdateInput {
+  url?: string;
+  secret?: string;
+  event_subscriptions?: string[] | null;
+  retry_policy?: WebhookRetryPolicy;
+  is_active?: boolean;
+}
+
 export interface WebhookEndpoint {
   id: string;
   emitter_id: string | null;

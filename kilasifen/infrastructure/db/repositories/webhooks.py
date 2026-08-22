@@ -56,6 +56,32 @@ class SqlAlchemyWebhookRepository(WebhookRepository):
         )
         return [_endpoint_to_domain(model) for model in self.session.scalars(statement)]
 
+    def update_endpoint_for_emitter(
+        self,
+        *,
+        endpoint_id: str,
+        emitter_id: str,
+        changes: dict[str, object],
+    ) -> WebhookEndpoint | None:
+        model = self.session.get(WebhookEndpointModel, endpoint_id)
+        if model is None or model.emitter_id != emitter_id:
+            return None
+        allowed_fields = {
+            "url",
+            "secret_encrypted",
+            "event_subscriptions",
+            "retry_policy",
+            "is_active",
+            "updated_at",
+        }
+        unexpected_fields = set(changes).difference(allowed_fields)
+        if unexpected_fields:
+            raise ValueError("unsupported webhook endpoint update")
+        for field, value in changes.items():
+            setattr(model, field, value)
+        self.session.flush()
+        return _endpoint_to_domain(model)
+
     def save_delivery(self, delivery: WebhookDelivery) -> WebhookDelivery:
         existing = self.session.get(WebhookDeliveryModel, delivery.id)
         if existing is None:

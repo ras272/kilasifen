@@ -14,7 +14,7 @@ export interface HttpClientOptions {
 }
 
 interface JsonRequestOptions extends RequestOptions {
-  method?: "GET" | "POST";
+  method?: "GET" | "POST" | "PATCH";
   body?: unknown;
   idempotencyKey?: string;
 }

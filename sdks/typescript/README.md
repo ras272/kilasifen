@@ -203,6 +203,11 @@ const endpoint = await kila.webhooks.create("emitter_123", {
   retry_policy: { max_attempts: 5 },
 });
 
+await kila.webhooks.update("emitter_123", endpoint.data.webhook_endpoint.id, {
+  secret: process.env.KILASIFEN_WEBHOOK_SECRET_NEXT!,
+  is_active: true,
+});
+
 await kila.webhooks.replay("emitter_123", endpoint.data.webhook_endpoint.id, {
   event_type: "document.approved",
   payload: { document_id: "document_123" },

@@ -21,6 +21,16 @@ class WebhookRepository(ABC):
         """List webhook endpoints for one emitter."""
 
     @abstractmethod
+    def update_endpoint_for_emitter(
+        self,
+        *,
+        endpoint_id: str,
+        emitter_id: str,
+        changes: dict[str, object],
+    ) -> WebhookEndpoint | None:
+        """Apply only the supplied endpoint columns and return the updated row."""
+
+    @abstractmethod
     def save_delivery(self, delivery: WebhookDelivery) -> WebhookDelivery:
         """Persist one webhook delivery."""
 

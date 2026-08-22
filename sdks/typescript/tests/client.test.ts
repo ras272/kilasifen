@@ -333,6 +333,7 @@ describe("KilaSifen client", () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(success({ webhook_endpoint: { id: "wh_1" } }, 201))
       .mockResolvedValueOnce(success({ webhook_endpoints: [] }))
+      .mockResolvedValueOnce(success({ webhook_endpoint: { id: "wh_1", is_active: false } }))
       .mockResolvedValueOnce(success({ delivery: { id: "delivery_1" }, job: JOB }, 201));
     const client = new KilaSifen({
       apiKey: "sk_test_123",
@@ -346,13 +347,21 @@ describe("KilaSifen client", () => {
       event_subscriptions: ["document.approved"],
     });
     await client.webhooks.list("emitter_1");
+    await client.webhooks.update("emitter_1", "wh_1", {
+      secret: "new-secret-123456789012345678901234",
+      is_active: false,
+    });
     await client.webhooks.replay("emitter_1", "wh_1", {
       event_type: "document.approved",
       payload: { document_id: "doc_1" },
     });
 
     expect(fetchMock.mock.calls[0]?.[0]).toContain("/webhooks");
-    expect(fetchMock.mock.calls[2]?.[0]).toContain("/webhooks/wh_1/deliveries/replay");
+    expect(fetchMock.mock.calls[2]?.[1]?.method).toBe("PATCH");
+    expect(fetchMock.mock.calls[3]?.[0]).toContain("/webhooks/wh_1/deliveries/replay");
+    expect(() => client.webhooks.update("emitter_1", "wh_1", {})).toThrow(
+      "at least one field",
+    );
   });
 
   it("throws a typed KilaSifen error from an API error envelope", async () => {

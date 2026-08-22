@@ -128,6 +128,79 @@ def test_register_webhook_endpoint_rejects_private_network_target(
     assert response.json()["error"]["code"] == "webhooks.non_public_address"
 
 
+def test_update_webhook_endpoint_rotates_secret_and_can_disable_delivery(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/v1/emitters/emitter-1/webhooks",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": "https://erp.example.com/hooks/old",
+            "secret": "old-secret-webhook-key-000000000000",
+        },
+    )
+    endpoint_id = created.json()["data"]["webhook_endpoint"]["id"]
+
+    updated = client.patch(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": "https://erp.example.com/hooks/new",
+            "secret": "new-secret-webhook-key-000000000000",
+            "event_subscriptions": ["document.rejected"],
+            "is_active": False,
+        },
+    )
+
+    assert updated.status_code == 200
+    endpoint = updated.json()["data"]["webhook_endpoint"]
+    assert endpoint["url"] == "https://erp.example.com/hooks/new"
+    assert endpoint["event_subscriptions"] == ["document.rejected"]
+    assert endpoint["is_active"] is False
+    assert endpoint["secret_configured"] is True
+    assert "secret" not in endpoint
+
+    replay = client.post(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
+        headers={"X-API-Key": API_KEY},
+        json={"event_type": "document.rejected", "payload": {}},
+    )
+    assert replay.status_code == 409
+    assert replay.json()["error"]["code"] == "webhooks.endpoint_inactive"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"url": "https://127.0.0.1/internal"},
+        {"secret": "too-short"},
+        {"is_active": None},
+    ],
+)
+def test_update_webhook_endpoint_rejects_invalid_changes(
+    client: TestClient,
+    payload: dict,
+) -> None:
+    created = client.post(
+        "/v1/emitters/emitter-1/webhooks",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": "https://erp.example.com/hooks/kila",
+            "secret": "top-secret-webhook-key-000000000000",
+        },
+    )
+    endpoint_id = created.json()["data"]["webhook_endpoint"]["id"]
+
+    response = client.patch(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}",
+        headers={"X-API-Key": API_KEY},
+        json=payload,
+    )
+
+    assert response.status_code == 422
+
+
 def test_replay_creates_delivery_and_job(client: TestClient) -> None:
     create_response = client.post(
         "/v1/emitters/emitter-1/webhooks",

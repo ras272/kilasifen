@@ -14,6 +14,7 @@ from kilasifen.api.schemas.webhooks import (
     WebhookDeliveryResponse,
     WebhookEndpointCreateRequest,
     WebhookEndpointResponse,
+    WebhookEndpointUpdateRequest,
     WebhookReplayRequest,
 )
 from kilasifen.application.webhooks.service import WebhookService
@@ -70,6 +71,30 @@ def list_webhook_endpoints(
                 for endpoint in endpoints
             ]
         },
+        correlation_id=request.state.correlation_id,
+    )
+
+
+@router.patch(
+    "/emitters/{emitter_id}/webhooks/{endpoint_id}",
+    response_model=SuccessEnvelope,
+)
+def update_webhook_endpoint(
+    emitter_id: str,
+    endpoint_id: str,
+    payload: WebhookEndpointUpdateRequest,
+    request: Request,
+    _principal=Depends(require_emitter_write),
+    service: WebhookService = Depends(get_webhook_service),
+) -> SuccessEnvelope:
+    changes = payload.model_dump(exclude_unset=True, mode="json")
+    endpoint = service.update_endpoint(
+        emitter_id=emitter_id,
+        endpoint_id=endpoint_id,
+        changes=changes,
+    )
+    return SuccessEnvelope(
+        data={"webhook_endpoint": _endpoint_response(endpoint).model_dump(mode="json")},
         correlation_id=request.state.correlation_id,
     )
 

@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 
 class WebhookRetryPolicy(BaseModel):
@@ -21,6 +21,28 @@ class WebhookEndpointCreateRequest(BaseModel):
     secret: str = Field(min_length=32, max_length=255)
     event_subscriptions: list[str] | None = None
     retry_policy: WebhookRetryPolicy | None = None
+
+
+class WebhookEndpointUpdateRequest(BaseModel):
+    """Partial, secret-safe update for a webhook endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: HttpUrl | None = None
+    secret: str | None = Field(default=None, min_length=32, max_length=255)
+    event_subscriptions: list[str] | None = None
+    retry_policy: WebhookRetryPolicy | None = None
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def require_one_change(self) -> "WebhookEndpointUpdateRequest":
+        if not self.model_fields_set:
+            raise ValueError("at least one webhook field must be provided")
+        non_nullable = {"url", "secret", "retry_policy", "is_active"}
+        null_fields = non_nullable.intersection(self.model_fields_set)
+        if any(getattr(self, field) is None for field in null_fields):
+            raise ValueError("url, secret, retry_policy and is_active cannot be null")
+        return self
 
 
 class WebhookEndpointResponse(BaseModel):

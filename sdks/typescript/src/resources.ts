@@ -21,6 +21,7 @@ import type {
   WebhookDelivery,
   WebhookEndpoint,
   WebhookEndpointCreateInput,
+  WebhookEndpointUpdateInput,
   WebhookReplayInput,
 } from "./types";
 
@@ -226,6 +227,21 @@ export class WebhooksResource {
     return this.http.json<{ webhook_endpoints: WebhookEndpoint[] }>(
       `/v1/emitters/${segment(emitterId, "emitterId")}/webhooks`,
       requestFields(options),
+    );
+  }
+
+  update(
+    emitterId: string,
+    endpointId: string,
+    input: WebhookEndpointUpdateInput,
+    options: RequestOptions = {},
+  ): Promise<KilaResponse<{ webhook_endpoint: WebhookEndpoint }>> {
+    if (Object.keys(input).length === 0) {
+      throw new TypeError("webhook update must contain at least one field");
+    }
+    return this.http.json<{ webhook_endpoint: WebhookEndpoint }>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/webhooks/${segment(endpointId, "endpointId")}`,
+      { method: "PATCH", body: input, ...requestFields(options) },
     );
   }
 
