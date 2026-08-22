@@ -134,6 +134,8 @@ def test_openapi_exposes_the_sandbox_header_as_a_closed_enum(
         "approved",
         "approved_with_observation",
         "rejected",
+        "transport_timeout",
+        "accepted_but_response_lost",
     }
 
 

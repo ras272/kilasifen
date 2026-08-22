@@ -2,6 +2,7 @@
 
 from kilasifen.domain.sandbox import SandboxOutcome
 from kilasifen.infrastructure.sifen.engine import SubmissionOutcome
+from pysifen.sdk.errors import SifenTimeoutError
 
 _OUTCOMES = {
     SandboxOutcome.APPROVED: (
@@ -43,6 +44,13 @@ class DeterministicSandboxTransport:
         del signed_xml, certificate_bytes, certificate_password
         if tax_environment != "test":
             raise ValueError("deterministic sandbox transport requires a test emitter")
+
+        if self.outcome is SandboxOutcome.TRANSPORT_TIMEOUT:
+            raise SifenTimeoutError("Sandbox: timeout de transporte antes de responder")
+        if self.outcome is SandboxOutcome.ACCEPTED_BUT_RESPONSE_LOST:
+            raise SifenTimeoutError(
+                "Sandbox: SIFEN acepto el DE pero se perdio la respuesta"
+            )
 
         status, code, message = _OUTCOMES[self.outcome]
         response_raw = (

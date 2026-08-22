@@ -6,6 +6,7 @@ import pytest
 from kilasifen.domain.sandbox import SandboxOutcome
 from kilasifen.infrastructure.sandbox.transport import DeterministicSandboxTransport
 from kilasifen.infrastructure.sifen.engine import PysifenEmissionEngine
+from pysifen.sdk.errors import SifenTimeoutError
 
 
 @pytest.mark.parametrize(
@@ -53,6 +54,34 @@ def test_sandbox_transport_forces_outcome_without_live_sifen(
     assert result.result_code == expected_code
     assert result.cdc == "0180012345"
     assert f"<outcome>{forced_outcome.value}</outcome>" in result.response_raw
+
+
+@pytest.mark.parametrize(
+    ("forced_outcome", "expected_message"),
+    [
+        (SandboxOutcome.TRANSPORT_TIMEOUT, "timeout de transporte"),
+        (
+            SandboxOutcome.ACCEPTED_BUT_RESPONSE_LOST,
+            "acepto el DE pero se perdio la respuesta",
+        ),
+    ],
+)
+def test_sandbox_transport_simulates_ambiguous_transport_failures(
+    forced_outcome: SandboxOutcome,
+    expected_message: str,
+) -> None:
+    transport = DeterministicSandboxTransport(
+        runtime_environment="test",
+        outcome=forced_outcome,
+    )
+
+    with pytest.raises(SifenTimeoutError, match=expected_message):
+        transport.submit(
+            signed_xml="<rDE/>",
+            tax_environment="test",
+            certificate_bytes=b"unused",
+            certificate_password="unused",
+        )
 
 
 @pytest.mark.parametrize("environment", ["development", "staging", "production"])

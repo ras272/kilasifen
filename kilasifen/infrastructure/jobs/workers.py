@@ -45,6 +45,7 @@ from kilasifen.infrastructure.db.session import (
     build_session_factory,
     session_scope,
 )
+from kilasifen.infrastructure.sandbox.query import DeterministicSandboxQueryGateway
 from kilasifen.infrastructure.sandbox.transport import DeterministicSandboxTransport
 from kilasifen.infrastructure.sifen.engine import (
     DocumentEmissionEngine,
@@ -102,9 +103,6 @@ def process_document_job(
     correlation_token, worker_correlation_id = _bind_worker_correlation_id()
     engine = build_engine(database_url)
     session_factory = build_session_factory(engine)
-    query_gateway = query_gateway or PysifenQueryGateway(
-        deployment_environment=settings.sifen_environment
-    )
     certificate_store = EncryptedCertificateStore(encryption_key)
     retryable = False
     payload: dict[str, str]
@@ -124,6 +122,17 @@ def process_document_job(
             sandbox_outcome = SandboxOutcomePolicy(settings.environment).resolve(
                 document.payload_snapshot
             )
+            if query_gateway is None:
+                query_gateway = (
+                    DeterministicSandboxQueryGateway(
+                        runtime_environment=settings.environment,
+                        outcome=sandbox_outcome,
+                    )
+                    if sandbox_outcome is not None
+                    else PysifenQueryGateway(
+                        deployment_environment=settings.sifen_environment
+                    )
+                )
             if emission_engine is None:
                 sandbox_transport = (
                     DeterministicSandboxTransport(
