@@ -118,6 +118,7 @@ class PysifenDocumentTransport:
             ambiente=ambiente,
             pkcs12_data=certificate_bytes,
             pkcs12_password=certificate_password,
+            max_retries=0,
         ) as client:
             response = client.enviar_de_xml(signed_xml)
 

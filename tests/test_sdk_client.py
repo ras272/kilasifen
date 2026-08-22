@@ -8,11 +8,11 @@ from pysifen.sdk.client import SifenClient
 
 
 def test_sifen_client_builds_internal_services_with_shared_config():
-    with patch("pysifen.sdk.client.TransmissaoDE") as de_cls, patch(
-        "pysifen.sdk.client.ConsultaSIFEN"
-    ) as cons_cls, patch(
-        "pysifen.sdk.client.TransmissaoEvento"
-    ) as evt_cls:
+    with (
+        patch("pysifen.sdk.client.TransmissaoDE") as de_cls,
+        patch("pysifen.sdk.client.ConsultaSIFEN") as cons_cls,
+        patch("pysifen.sdk.client.TransmissaoEvento") as evt_cls,
+    ):
         SifenClient(
             ambiente=2,
             pkcs12_data=b"cert",
@@ -22,7 +22,7 @@ def test_sifen_client_builds_internal_services_with_shared_config():
             retry_backoff=0.5,
         )
 
-    expected_kwargs = {
+    query_kwargs = {
         "ambiente": 2,
         "pkcs12_data": b"cert",
         "pkcs12_password": "pwd",
@@ -30,9 +30,10 @@ def test_sifen_client_builds_internal_services_with_shared_config():
         "max_retries": 4,
         "retry_backoff": 0.5,
     }
-    de_cls.assert_called_once_with(**expected_kwargs)
-    cons_cls.assert_called_once_with(**expected_kwargs)
-    evt_cls.assert_called_once_with(**expected_kwargs)
+    mutation_kwargs = {**query_kwargs, "max_retries": 0}
+    de_cls.assert_called_once_with(**mutation_kwargs)
+    cons_cls.assert_called_once_with(**query_kwargs)
+    evt_cls.assert_called_once_with(**mutation_kwargs)
 
 
 def test_sifen_client_delegates_all_operations():
@@ -49,16 +50,15 @@ def test_sifen_client_delegates_all_operations():
     cons.consultar_dte_async.return_value = "cons-dte-async"
     evt.enviar_evento.return_value = "evt-ok"
 
-    with patch(
-        "pysifen.sdk.client.TransmissaoDE", return_value=de
-    ), patch(
-        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
-    ), patch(
-        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
-    ), patch(
-        "pysifen.sdk.client.poll_dte_async_status",
-        return_value="polled-async",
-    ) as poll_async:
+    with (
+        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
+        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        patch(
+            "pysifen.sdk.client.poll_dte_async_status",
+            return_value="polled-async",
+        ) as poll_async,
+    ):
         client = SifenClient(
             ambiente=2,
             pkcs12_data=b"cert",
@@ -89,9 +89,7 @@ def test_sifen_client_delegates_all_operations():
         assert client.enviar_evento("evento") == "evt-ok"
 
     de.enviar_de.assert_called_once_with("rde", sign=False)
-    de.enviar_lote.assert_called_once_with(
-        ["rde1", "rde2"], lote_id=12, sign=False
-    )
+    de.enviar_lote.assert_called_once_with(["rde1", "rde2"], lote_id=12, sign=False)
     cons.consultar_de.assert_called_once_with("1" * 44)
     cons.consultar_lote.assert_called_once_with(123)
     cons.consultar_ruc.assert_called_once_with("80069563")
@@ -109,16 +107,15 @@ def test_sifen_client_enviar_lote_y_esperar_uses_polling_helper():
     envio_lote = MagicMock(dProtConsLote="123456")
     de.enviar_lote.return_value = envio_lote
 
-    with patch(
-        "pysifen.sdk.client.TransmissaoDE", return_value=de
-    ), patch(
-        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
-    ), patch(
-        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
-    ), patch(
-        "pysifen.sdk.client.poll_lote_status",
-        return_value="lote-final",
-    ) as poll_lote:
+    with (
+        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
+        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        patch(
+            "pysifen.sdk.client.poll_lote_status",
+            return_value="lote-final",
+        ) as poll_lote,
+    ):
         client = SifenClient(
             ambiente=2,
             pkcs12_data=b"cert",
@@ -147,16 +144,15 @@ def test_sifen_client_consultar_dte_async_y_esperar_returns_both():
     async_response = MagicMock(dProtConsDTEAsync="ABC123")
     cons.consultar_dte_async.return_value = async_response
 
-    with patch(
-        "pysifen.sdk.client.TransmissaoDE", return_value=de
-    ), patch(
-        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
-    ), patch(
-        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
-    ), patch(
-        "pysifen.sdk.client.poll_dte_async_status",
-        return_value="estado-final",
-    ) as poll_async:
+    with (
+        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
+        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        patch(
+            "pysifen.sdk.client.poll_dte_async_status",
+            return_value="estado-final",
+        ) as poll_async,
+    ):
         client = SifenClient(
             ambiente=2,
             pkcs12_data=b"cert",
@@ -177,16 +173,12 @@ def test_sifen_client_consultar_dte_async_y_esperar_requires_protocol():
     de = MagicMock()
     cons = MagicMock()
     evt = MagicMock()
-    cons.consultar_dte_async.return_value = MagicMock(
-        dProtConsDTEAsync=""
-    )
+    cons.consultar_dte_async.return_value = MagicMock(dProtConsDTEAsync="")
 
-    with patch(
-        "pysifen.sdk.client.TransmissaoDE", return_value=de
-    ), patch(
-        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
-    ), patch(
-        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
+    with (
+        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
+        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
     ):
         client = SifenClient(
             ambiente=2,
@@ -206,12 +198,10 @@ def test_sifen_client_enviar_lote_y_esperar_requires_protocol():
     evt = MagicMock()
     de.enviar_lote.return_value = MagicMock(dProtConsLote=None)
 
-    with patch(
-        "pysifen.sdk.client.TransmissaoDE", return_value=de
-    ), patch(
-        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
-    ), patch(
-        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
+    with (
+        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
+        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
     ):
         client = SifenClient(
             ambiente=2,
@@ -227,22 +217,23 @@ def test_sifen_client_wraps_fiscal_generators():
     cons = MagicMock()
     evt = MagicMock()
 
-    with patch(
-        "pysifen.sdk.client.TransmissaoDE", return_value=de
-    ), patch(
-        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
-    ), patch(
-        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
-    ), patch(
-        "pysifen.sdk.client._generate_cdc",
-        return_value="CDC-OK",
-    ) as gen_cdc, patch(
-        "pysifen.sdk.client._generate_dcarqr",
-        return_value="QRCODE-OK",
-    ) as gen_qr, patch(
-        "pysifen.sdk.client._generate_dcarqr_from_signed_xml",
-        return_value="QRCODE-XML-OK",
-    ) as gen_qr_xml:
+    with (
+        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
+        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        patch(
+            "pysifen.sdk.client._generate_cdc",
+            return_value="CDC-OK",
+        ) as gen_cdc,
+        patch(
+            "pysifen.sdk.client._generate_dcarqr",
+            return_value="QRCODE-OK",
+        ) as gen_qr,
+        patch(
+            "pysifen.sdk.client._generate_dcarqr_from_signed_xml",
+            return_value="QRCODE-XML-OK",
+        ) as gen_qr_xml,
+    ):
         client = SifenClient(
             ambiente=2,
             pkcs12_data=b"cert",
@@ -258,24 +249,26 @@ def test_sifen_client_wraps_fiscal_generators():
     gen_cdc.assert_called_once_with(foo="bar")
     gen_qr.assert_called_once_with(foo="bar")
     gen_qr_xml.assert_called_once_with(foo="bar")
+
+
 def test_sifen_client_wraps_kude_helpers():
     de = MagicMock()
     cons = MagicMock()
     evt = MagicMock()
 
-    with patch(
-        "pysifen.sdk.client.TransmissaoDE", return_value=de
-    ), patch(
-        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
-    ), patch(
-        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
-    ), patch(
-        "pysifen.sdk.client._render_kude_html",
-        return_value="<html>kude</html>",
-    ) as render_kude, patch(
-        "pysifen.sdk.client._save_kude_html",
-        return_value="out.html",
-    ) as save_kude:
+    with (
+        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
+        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        patch(
+            "pysifen.sdk.client._render_kude_html",
+            return_value="<html>kude</html>",
+        ) as render_kude,
+        patch(
+            "pysifen.sdk.client._save_kude_html",
+            return_value="out.html",
+        ) as save_kude,
+    ):
         client = SifenClient(
             ambiente=2,
             pkcs12_data=b"cert",
@@ -305,12 +298,10 @@ def test_sifen_client_close_is_idempotent():
     cons = MagicMock()
     evt = MagicMock()
 
-    with patch(
-        "pysifen.sdk.client.TransmissaoDE", return_value=de
-    ), patch(
-        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
-    ), patch(
-        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
+    with (
+        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
+        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
     ):
         client = SifenClient(
             ambiente=2,
@@ -331,12 +322,10 @@ def test_sifen_client_context_manager_closes_services():
     cons = MagicMock()
     evt = MagicMock()
 
-    with patch(
-        "pysifen.sdk.client.TransmissaoDE", return_value=de
-    ), patch(
-        "pysifen.sdk.client.ConsultaSIFEN", return_value=cons
-    ), patch(
-        "pysifen.sdk.client.TransmissaoEvento", return_value=evt
+    with (
+        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
+        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
     ):
         with SifenClient(
             ambiente=2,
@@ -348,4 +337,3 @@ def test_sifen_client_context_manager_closes_services():
     de.close.assert_called_once()
     cons.close.assert_called_once()
     evt.close.assert_called_once()
-

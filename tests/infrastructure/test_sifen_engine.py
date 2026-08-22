@@ -1,4 +1,9 @@
-from kilasifen.infrastructure.sifen.engine import _normalize_response
+from unittest.mock import MagicMock, patch
+
+from kilasifen.infrastructure.sifen.engine import (
+    PysifenDocumentTransport,
+    _normalize_response,
+)
 from kilasifen.infrastructure.sifen.typed_xml_builder import _resolve_emission_datetime
 
 
@@ -43,3 +48,39 @@ def test_resolve_emission_datetime_preserves_py_local_wall_time_from_offset() ->
     )
 
     assert resolved == "2026-04-26T23:21:14"
+
+
+def test_live_document_transport_disables_automatic_mutation_retries() -> None:
+    response = _FakeResponse(
+        _FakeProt(
+            status="Aprobado",
+            result=_FakeResult(code="0260", message="DE aprobado"),
+        )
+    )
+    client = MagicMock()
+    client.__enter__.return_value = client
+    client.enviar_de_xml.return_value = response
+
+    with patch(
+        "kilasifen.infrastructure.sifen.engine.SifenClient",
+        return_value=client,
+    ) as client_class:
+        transport = PysifenDocumentTransport()
+        transport.serializer = MagicMock()
+        transport.serializer.render.return_value = "<response />"
+
+        outcome = transport.submit(
+            signed_xml="<rDE />",
+            tax_environment="test",
+            certificate_bytes=b"certificate",
+            certificate_password="password",
+        )
+
+    client_class.assert_called_once_with(
+        ambiente=2,
+        pkcs12_data=b"certificate",
+        pkcs12_password="password",
+        max_retries=0,
+    )
+    client.enviar_de_xml.assert_called_once_with("<rDE />")
+    assert outcome.sifen_status == "approved"

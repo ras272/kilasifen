@@ -6,6 +6,7 @@ Uso recomendado:
 El envio de DE esta desactivado por defecto para evitar consumir numeracion
 accidentalmente. Usar --send-de solo con XML preparado para TEST.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -53,7 +54,9 @@ def run_smoke(args: argparse.Namespace) -> int:
         pkcs12_data=cert_data,
         pkcs12_password=password,
         timeout=args.timeout,
-        max_retries=0,
+        # Queries are safe to retry. SifenClient still forces mutation
+        # transports (DE/event) to zero automatic retries.
+        max_retries=2,
     ) as client:
         ruc_result = client.consultar_ruc(args.ruc)
         print("consulta_ruc:", ruc_result.dCodRes, ruc_result.dMsgRes)
@@ -105,9 +108,7 @@ def run_smoke(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="Smoke real contra SIFEN TEST."
-    )
+    parser = argparse.ArgumentParser(description="Smoke real contra SIFEN TEST.")
     parser.add_argument("--ruc", default="80024135-5")
     parser.add_argument(
         "--xml",

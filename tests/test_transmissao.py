@@ -1,4 +1,5 @@
 """Testes unitários do módulo de transmissão SIFEN."""
+
 import os
 import warnings
 from decimal import Decimal
@@ -82,16 +83,14 @@ class TestConfig:
         from pysifen.transmissao.config import TEST, get_endpoint
 
         assert get_endpoint(TEST, "cons_ruc") == (
-            "https://sifen-test.set.gov.py/"
-            "de/ws/consultas/consulta-ruc.wsdl"
+            "https://sifen-test.set.gov.py/de/ws/consultas/consulta-ruc.wsdl"
         )
 
     def test_consulta_lote_endpoint_usa_ruta_oficial(self):
         from pysifen.transmissao.config import TEST, get_endpoint
 
         assert get_endpoint(TEST, "cons_lote") == (
-            "https://sifen-test.set.gov.py/"
-            "de/ws/consultas/consulta-lote.wsdl"
+            "https://sifen-test.set.gov.py/de/ws/consultas/consulta-lote.wsdl"
         )
 
     def test_get_endpoint_ambiente_invalido(self):
@@ -187,15 +186,9 @@ class TestTransmissaoDE:
         assert t.pkcs12_data == b"fake-cert"
         assert t.pkcs12_password == "fake-pass"
 
-    @patch(
-        "pysifen.transmissao.base.TransmissaoBase._sign_xml"
-    )
-    @patch(
-        "pysifen.transmissao.base.TransmissaoBase._serialize"
-    )
-    def test_enviar_de_mock(
-        self, mock_serialize, mock_sign
-    ):
+    @patch("pysifen.transmissao.base.TransmissaoBase._sign_xml")
+    @patch("pysifen.transmissao.base.TransmissaoBase._serialize")
+    def test_enviar_de_mock(self, mock_serialize, mock_sign):
         from pysifen.de.bindings.v150.prot_proces_de_v150 import (
             RProtDe,
         )
@@ -210,8 +203,7 @@ class TestTransmissaoDE:
             '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">xml</rDE>'
         )
         mock_sign.return_value = (
-            '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
-            "signed</rDE>"
+            '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">signed</rDE>'
         )
 
         mock_response = RRetEnviDe(
@@ -232,9 +224,7 @@ class TestTransmissaoDE:
         t._send_raw_xml = MagicMock(return_value=mock_response)
 
         rde_mock = MagicMock()
-        rde_mock.DE.Id = (
-            "01800695631001001000000612024112917595714694"
-        )
+        rde_mock.DE.Id = "01800695631001001000000612024112917595714694"
 
         result = t.enviar_de(rde_mock)
 
@@ -258,18 +248,10 @@ class TestTransmissaoDE:
         with pytest.raises(ValueError, match="não pode ser vazia"):
             t.enviar_lote([])
 
-    @patch(
-        "pysifen.transmissao.base.TransmissaoBase._get_client"
-    )
-    @patch(
-        "pysifen.transmissao.base.TransmissaoBase._sign_xml"
-    )
-    @patch(
-        "pysifen.transmissao.base.TransmissaoBase._serialize"
-    )
-    def test_enviar_lote_mock(
-        self, mock_serialize, mock_sign, mock_client
-    ):
+    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
+    @patch("pysifen.transmissao.base.TransmissaoBase._sign_xml")
+    @patch("pysifen.transmissao.base.TransmissaoBase._serialize")
+    def test_enviar_lote_mock(self, mock_serialize, mock_sign, mock_client):
         from pysifen.de.bindings.v150.ws_si_recep_lote_de_v141 import (
             RResEnviLoteDe,
         )
@@ -307,9 +289,11 @@ class TestTransmissaoDE:
         """Testa enviar_de com sign=False."""
         t = self._make_transmissao()
 
-        with patch.object(t, "_send_raw_xml") as mock_send_raw, \
-             patch.object(t, "_sign_xml") as mock_sign, \
-             patch.object(t, "_serialize") as mock_serialize:
+        with (
+            patch.object(t, "_send_raw_xml") as mock_send_raw,
+            patch.object(t, "_sign_xml") as mock_sign,
+            patch.object(t, "_serialize") as mock_serialize,
+        ):
             from pysifen.de.bindings.v150.prot_proces_de_v150 import (
                 RProtDe,
             )
@@ -321,8 +305,7 @@ class TestTransmissaoDE:
             )
 
             mock_serialize.return_value = (
-                '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
-                "xml</rDE>"
+                '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">xml</rDE>'
             )
             mock_send_raw.return_value = RRetEnviDe(
                 rProtDe=RProtDe(
@@ -354,9 +337,7 @@ class TestTransmissaoDE:
             )
         )
 
-        result = t.enviar_de_xml(
-            b'<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd" />'
-        )
+        result = t.enviar_de_xml(b'<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd" />')
 
         assert isinstance(result, RRetEnviDe)
         assert t._send_raw_xml.call_args.args[0] == "recep_de"
@@ -406,9 +387,7 @@ class TestConsultaSIFEN:
         with pytest.raises(ValueError, match="Formato de RUC invalido"):
             c.consultar_ruc("80024135-")
 
-    @patch(
-        "pysifen.transmissao.base.TransmissaoBase._get_client"
-    )
+    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_de_mock(self, mock_client):
         from pysifen.de.bindings.v150.ws_si_cons_de_v141 import (
             REnviConsDeResponse,
@@ -431,9 +410,7 @@ class TestConsultaSIFEN:
         assert isinstance(result, REnviConsDeResponse)
         assert result.dCodRes == "0422"
 
-    @patch(
-        "pysifen.transmissao.base.TransmissaoBase._get_client"
-    )
+    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_lote_mock(self, mock_client):
         from pysifen.de.bindings.v150.ws_si_cons_lote_v141 import (
             RResEnviConsLoteDe,
@@ -454,9 +431,7 @@ class TestConsultaSIFEN:
         assert isinstance(result, RResEnviConsLoteDe)
         assert result.dCodResLot == "0362"
 
-    @patch(
-        "pysifen.transmissao.base.TransmissaoBase._get_client"
-    )
+    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_ruc_mock(self, mock_client):
         from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
             RResEnviConsRuc,
@@ -485,9 +460,7 @@ class TestConsultaSIFEN:
         assert result.xContRUC.dRazCons == "Empresa Demo S.A."
         assert result.xContRUC.dRUCFactElec == "S"
 
-    @patch(
-        "pysifen.transmissao.base.TransmissaoBase._get_client"
-    )
+    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_ruc_normaliza_formato_con_dv(self, mock_client):
         from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
             RResEnviConsRuc,
@@ -508,9 +481,64 @@ class TestConsultaSIFEN:
         sent_request = client_mock.send.call_args.args[0]
         assert sent_request.dRUCCons == "80024135"
 
-    @patch(
-        "pysifen.transmissao.base.TransmissaoBase._get_client"
-    )
+    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
+    def test_consultar_ruc_recovers_from_unexpected_sifen_envelope(
+        self,
+        mock_client,
+    ):
+        from xsdata.exceptions import ParserError
+
+        from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
+            RResEnviConsRuc,
+        )
+
+        expected = RResEnviConsRuc(
+            dCodRes="0502",
+            dMsgRes="RUC encontrado",
+        )
+        mock_client.return_value.send.side_effect = ParserError(
+            "unexpected rRetEnviDe envelope"
+        )
+        c = self._make_consulta()
+        c._cleanup_transport = MagicMock()
+        c._send_safe_query = MagicMock(return_value=expected)
+
+        result = c.consultar_ruc("80024135-5")
+
+        assert result is expected
+        c._cleanup_transport.assert_called_once_with()
+        c._send_safe_query.assert_called_once()
+
+    def test_safe_query_reconnects_after_mismatched_protocol(self):
+        from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
+            REnviConsRuc,
+            RResEnviConsRuc,
+        )
+
+        unexpected = b"""<rRetEnviDe xmlns='http://ekuatia.set.gov.py/sifen/xsd'>
+          <rProtDe><gResProc><dCodRes>0160</dCodRes>
+          <dMsgRes>XML Mal Formado.</dMsgRes></gResProc></rProtDe>
+        </rRetEnviDe>"""
+        expected = b"""<rResEnviConsRUC xmlns='http://ekuatia.set.gov.py/sifen/xsd'>
+          <dCodRes>0502</dCodRes><dMsgRes>RUC encontrado</dMsgRes>
+        </rResEnviConsRUC>"""
+        c = self._make_consulta()
+        c.max_retries = 1
+        c.retry_backoff = 0
+        c._send_raw_xml = MagicMock(side_effect=[unexpected, expected])
+        c._cleanup_transport = MagicMock()
+
+        result = c._send_safe_query(
+            "cons_ruc",
+            REnviConsRuc(dId=1, dRUCCons="80024135"),
+            RResEnviConsRuc,
+        )
+
+        assert result.dCodRes == "0502"
+        assert c._send_raw_xml.call_count == 2
+        c._cleanup_transport.assert_called_once_with()
+
+    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_dte_mock(self, mock_client):
         from pysifen.de.bindings.v150.ws_si_cons_dte import (
             RConsDteResponse,
@@ -532,9 +560,7 @@ class TestConsultaSIFEN:
         assert isinstance(result, RConsDteResponse)
         assert result.dMsgRes == "Consulta exitosa"
 
-    @patch(
-        "pysifen.transmissao.base.TransmissaoBase._get_client"
-    )
+    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_dte_async_mock(self, mock_client):
         from pysifen.de.bindings.v150.ws_si_cons_dteasync import (
             REnviConsDteAsyncResponse,
@@ -574,9 +600,7 @@ class TestTransmissaoEvento:
             pkcs12_password="fake-pass",
         )
 
-    @patch(
-        "pysifen.transmissao.base.TransmissaoBase._get_client"
-    )
+    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
     def test_enviar_evento_mock(self, mock_client):
         from pysifen.de.bindings.v150.prot_proces_eventos_v141 import (
             TgResProc,
@@ -873,9 +897,7 @@ class TestTransmissaoBase:
 
         assert result == b"<rRetEnviDe>rechazado</rRetEnviDe>"
 
-    def test_transport_envuelve_request_en_soap_y_extrae_body(
-        self, monkeypatch
-    ):
+    def test_transport_envuelve_request_en_soap_y_extrae_body(self, monkeypatch):
         from pysifen.transmissao.base import _create_transport
 
         transport = _create_transport(
@@ -918,18 +940,18 @@ class TestTransmissaoBase:
         assert captured["data"].count(b"<?xml") == 1
         assert b"<rEnviConsRUC>" in captured["data"]
         assert (
-            captured["headers"]["Content-Type"]
-            == "application/soap+xml; charset=utf-8"
+            captured["headers"]["Content-Type"] == "application/soap+xml; charset=utf-8"
         )
         assert "content-type" not in captured["headers"]
         assert result == b"<rRespuesta>ok</rRespuesta>"
 
     def test_get_client_reutiliza_transport_y_cliente(self, monkeypatch):
+        from xsdata.formats.dataclass.client import TransportTypes
+
         from pysifen.de.bindings.v150.ws_si_recep_de_v150 import (
             REnviDe,
             RRetEnviDe,
         )
-        from xsdata.formats.dataclass.client import TransportTypes
         from pysifen.transmissao.base import TransmissaoBase
         from pysifen.transmissao.config import TEST
 

@@ -7,16 +7,17 @@ from pysifen.sdk.errors import (
     SifenTimeoutError,
     SifenTransportClosedError,
     SifenTransportError,
+    SifenUnexpectedResponseError,
     SifenValidationError,
 )
 from pysifen.sdk.fiscal import (
     build_qr_payload,
     build_qr_payload_from_signed_xml,
     calculate_mod11_dv,
-    generate_dcarqr_from_signed_xml,
     format_cdc_for_kude,
-    generate_dcarqr,
     generate_cdc,
+    generate_dcarqr,
+    generate_dcarqr_from_signed_xml,
 )
 from pysifen.sdk.kude import (
     build_kude_context,
@@ -41,6 +42,7 @@ __all__ = [
     "SifenTransportError",
     "SifenTransportClosedError",
     "SifenTimeoutError",
+    "SifenUnexpectedResponseError",
     "calculate_mod11_dv",
     "generate_cdc",
     "format_cdc_for_kude",

@@ -1,13 +1,20 @@
 """High-level SDK client facade for SIFEN operations."""
+
 from __future__ import annotations
 
 from pysifen.sdk.fiscal import (
     generate_cdc as _generate_cdc,
+)
+from pysifen.sdk.fiscal import (
     generate_dcarqr as _generate_dcarqr,
+)
+from pysifen.sdk.fiscal import (
     generate_dcarqr_from_signed_xml as _generate_dcarqr_from_signed_xml,
 )
 from pysifen.sdk.kude import (
     render_kude_html as _render_kude_html,
+)
+from pysifen.sdk.kude import (
     save_kude_html as _save_kude_html,
 )
 from pysifen.sdk.polling import (
@@ -34,17 +41,30 @@ class SifenClient:
         max_retries: int = 2,
         retry_backoff: float = 0.2,
     ):
-        base_kwargs = {
-            "ambiente": ambiente,
-            "pkcs12_data": pkcs12_data,
-            "pkcs12_password": pkcs12_password,
-            "timeout": timeout,
-            "max_retries": max_retries,
-            "retry_backoff": retry_backoff,
-        }
-        self._de = TransmissaoDE(**base_kwargs)
-        self._consulta = ConsultaSIFEN(**base_kwargs)
-        self._evento = TransmissaoEvento(**base_kwargs)
+        self._de = TransmissaoDE(
+            ambiente=ambiente,
+            pkcs12_data=pkcs12_data,
+            pkcs12_password=pkcs12_password,
+            timeout=timeout,
+            max_retries=0,
+            retry_backoff=retry_backoff,
+        )
+        self._consulta = ConsultaSIFEN(
+            ambiente=ambiente,
+            pkcs12_data=pkcs12_data,
+            pkcs12_password=pkcs12_password,
+            timeout=timeout,
+            max_retries=max_retries,
+            retry_backoff=retry_backoff,
+        )
+        self._evento = TransmissaoEvento(
+            ambiente=ambiente,
+            pkcs12_data=pkcs12_data,
+            pkcs12_password=pkcs12_password,
+            timeout=timeout,
+            max_retries=0,
+            retry_backoff=retry_backoff,
+        )
         self._closed = False
 
     def enviar_de(self, rde, sign: bool = True):
@@ -129,9 +149,7 @@ class SifenClient:
         )
         prot_lote = getattr(envio, "dProtConsLote", None)
         if prot_lote is None:
-            raise ValueError(
-                "enviar_lote response must include dProtConsLote"
-            )
+            raise ValueError("enviar_lote response must include dProtConsLote")
         return poll_lote_status(
             consultar_lote=self.consultar_lote,
             prot_lote=prot_lote,

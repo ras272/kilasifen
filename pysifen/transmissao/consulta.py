@@ -1,7 +1,10 @@
 """Consultas ao SIFEN (DE, lote, RUC, DTE)."""
+
 from __future__ import annotations
 
 from decimal import Decimal
+
+from xsdata.exceptions import ParserError
 
 from pysifen.de.bindings.v150.ws_si_cons_de_v141 import (
     REnviConsDeRequest,
@@ -56,14 +59,11 @@ class ConsultaSIFEN(TransmissaoBase):
             return response
 
         return self._parse(
-            response if isinstance(response, str)
-            else response.decode(),
+            response if isinstance(response, str) else response.decode(),
             REnviConsDeResponse,
         )
 
-    def consultar_lote(
-        self, prot_lote: int | Decimal
-    ) -> RResEnviConsLoteDe:
+    def consultar_lote(self, prot_lote: int | Decimal) -> RResEnviConsLoteDe:
         """Consulta resultado de lote pelo protocolo.
 
         Args:
@@ -84,8 +84,7 @@ class ConsultaSIFEN(TransmissaoBase):
             return response
 
         return self._parse(
-            response if isinstance(response, str)
-            else response.decode(),
+            response if isinstance(response, str) else response.decode(),
             RResEnviConsLoteDe,
         )
 
@@ -111,20 +110,24 @@ class ConsultaSIFEN(TransmissaoBase):
         )
 
         client = self._get_client("cons_ruc")
-        response = client.send(request)
+        try:
+            response = client.send(request)
+        except ParserError:
+            # SIFEN TEST can intermittently return a different service
+            # envelope. RUC lookup is read-only, so a fresh safe retry is
+            # preferable to leaking an xsdata ParserError to API consumers.
+            self._cleanup_transport()
+            return self._send_safe_query("cons_ruc", request, RResEnviConsRuc)
 
         if isinstance(response, RResEnviConsRuc):
             return response
 
         return self._parse(
-            response if isinstance(response, str)
-            else response.decode(),
+            response if isinstance(response, str) else response.decode(),
             RResEnviConsRuc,
         )
 
-    def consultar_dte(
-        self, consulta_dte
-    ) -> RConsDteResponse:
+    def consultar_dte(self, consulta_dte) -> RConsDteResponse:
         """Consulta DTE (Documento Tributário Eletrônico).
 
         Args:
@@ -144,14 +147,11 @@ class ConsultaSIFEN(TransmissaoBase):
             return response
 
         return self._parse(
-            response if isinstance(response, str)
-            else response.decode(),
+            response if isinstance(response, str) else response.decode(),
             RConsDteResponse,
         )
 
-    def consultar_dte_async(
-        self, consulta_dte_async
-    ) -> REnviConsDteAsyncResponse:
+    def consultar_dte_async(self, consulta_dte_async) -> REnviConsDteAsyncResponse:
         """Dispara consulta DTE async y retorna protocolo de consulta.
 
         Args:
@@ -172,8 +172,7 @@ class ConsultaSIFEN(TransmissaoBase):
             return response
 
         return self._parse(
-            response if isinstance(response, str)
-            else response.decode(),
+            response if isinstance(response, str) else response.decode(),
             REnviConsDteAsyncResponse,
         )
 

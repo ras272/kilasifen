@@ -1,9 +1,10 @@
 """Classe base para transmissÃ£o SOAP ao SIFEN."""
+
 from __future__ import annotations
 
+import re
 import tempfile
 import time
-import re
 from xml.etree import ElementTree
 
 from xsdata.formats.dataclass.parsers import XmlParser
@@ -31,7 +32,7 @@ class TransmissaoBase:
         pkcs12_data: bytes,
         pkcs12_password: str,
         timeout: float = 30.0,
-        max_retries: int = 2,
+        max_retries: int = 0,
         retry_backoff: float = 0.2,
     ):
         self.ambiente = ambiente
@@ -56,9 +57,7 @@ class TransmissaoBase:
     def _ensure_open(self):
         """Falha se a instancia jÃ¡ foi fechada."""
         if self._closed:
-            raise SifenTransportClosedError(
-                "A instancia de transporte ya fue cerrada"
-            )
+            raise SifenTransportClosedError("A instancia de transporte ya fue cerrada")
 
     def _get_cert_files(self) -> tuple[str, str]:
         """Extrai cert e key do PKCS12 para arquivos temporÃ¡rios.
@@ -84,12 +83,8 @@ class TransmissaoBase:
             else self.pkcs12_password,
         )
 
-        cert_file = tempfile.NamedTemporaryFile(
-            suffix=".pem", delete=False
-        )
-        key_file = tempfile.NamedTemporaryFile(
-            suffix=".pem", delete=False
-        )
+        cert_file = tempfile.NamedTemporaryFile(suffix=".pem", delete=False)
+        key_file = tempfile.NamedTemporaryFile(suffix=".pem", delete=False)
 
         cert_file.write(certificate.public_bytes(Encoding.PEM))
         cert_file.close()
@@ -188,6 +183,39 @@ class TransmissaoBase:
         url = get_endpoint(self.ambiente, servico)
         return self._get_transport().post(url, data=xml)
 
+    def _send_safe_query(self, servico: str, request, response_type):
+        """Send an idempotent query and reject mismatched SIFEN envelopes."""
+
+        from pysifen.sdk.errors import SifenUnexpectedResponseError
+
+        request_xml = self._serialize(request)
+        expected_root = response_type.Meta.name
+        last_error: SifenUnexpectedResponseError | None = None
+
+        for attempt in range(self.max_retries + 1):
+            response = self._send_raw_xml(servico, request_xml)
+            actual_root, code, message = _response_identity(response)
+            if actual_root == expected_root:
+                return self._parse(response.decode("utf-8"), response_type)
+
+            last_error = SifenUnexpectedResponseError(
+                expected_root=expected_root,
+                actual_root=actual_root,
+                code=code,
+                response_message=message,
+            )
+            if attempt < self.max_retries:
+                self._cleanup_transport()
+                self._sleep_before_safe_query_retry(attempt)
+
+        assert last_error is not None
+        raise last_error
+
+    def _sleep_before_safe_query_retry(self, attempt: int) -> None:
+        delay = self.retry_backoff * (2**attempt)
+        if delay > 0:
+            time.sleep(delay)
+
     def cleanup(self):
         """Remove arquivos temporÃ¡rios de certificado."""
         self.close()
@@ -262,15 +290,16 @@ class RequestsTransport:
         self._session.close()
 
     def post(self, url, data, headers=None):
-        from pysifen.sdk.errors import (
-            SifenTimeoutError,
-            SifenTransportError,
-        )
         from requests.exceptions import (
             ConnectionError,
             HTTPError,
             RequestException,
             Timeout,
+        )
+
+        from pysifen.sdk.errors import (
+            SifenTimeoutError,
+            SifenTransportError,
         )
 
         request_headers = headers or {
@@ -301,24 +330,16 @@ class RequestsTransport:
                 if xml_response is not None:
                     return xml_response
                 if self._is_non_retryable_http_error(exc):
-                    raise SifenTransportError(
-                        "Falha no transporte SOAP"
-                    ) from exc
+                    raise SifenTransportError("Falha no transporte SOAP") from exc
                 if attempt >= self._max_retries:
-                    raise SifenTransportError(
-                        "Falha no transporte SOAP"
-                    ) from exc
+                    raise SifenTransportError("Falha no transporte SOAP") from exc
                 self._sleep_before_retry(attempt)
             except ConnectionError as exc:
                 if attempt >= self._max_retries:
-                    raise SifenTransportError(
-                        "Falha no transporte SOAP"
-                    ) from exc
+                    raise SifenTransportError("Falha no transporte SOAP") from exc
                 self._sleep_before_retry(attempt)
             except RequestException as exc:
-                raise SifenTransportError(
-                    "Falha no transporte SOAP"
-                ) from exc
+                raise SifenTransportError("Falha no transporte SOAP") from exc
 
         raise SifenTransportError("Falha no transporte SOAP")
 
@@ -367,7 +388,7 @@ def _wrap_soap_envelope(data: str | bytes) -> bytes:
 
     envelope = (
         '<?xml version="1.0" encoding="UTF-8"?>'
-        '<soap:Envelope '
+        "<soap:Envelope "
         'xmlns:soap="http://www.w3.org/2003/05/soap-envelope">'
         "<soap:Header/>"
         f"<soap:Body>{payload}</soap:Body>"
@@ -404,6 +425,28 @@ def _extract_http_error_xml_body(exc) -> bytes | None:
         except ElementTree.ParseError:
             return None
     return extracted
+
+
+def _response_identity(data: bytes) -> tuple[str, str | None, str | None]:
+    """Return only non-sensitive protocol identity from a SIFEN response."""
+
+    try:
+        root = ElementTree.fromstring(data)
+    except ElementTree.ParseError:
+        return "invalid_xml", None, None
+
+    root_name = root.tag.rsplit("}", 1)[-1]
+    code = None
+    message = None
+    for element in root.iter():
+        local_name = element.tag.rsplit("}", 1)[-1]
+        if code is None and local_name in {"dCodRes", "dCodResLot"}:
+            code = element.text
+        if message is None and local_name in {"dMsgRes", "dMsgResLot"}:
+            message = element.text
+        if code is not None and message is not None:
+            break
+    return root_name, code, message
 
 
 def _get_service_models(servico: str):
