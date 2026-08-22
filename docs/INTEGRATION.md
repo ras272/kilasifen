@@ -17,6 +17,32 @@ POST /v1/admin/consumers
 POST /v1/admin/consumers/{consumer_id}/credentials
 ```
 
+El RUC es una identidad global de plataforma. Por eso sólo una credencial con
+`platform:admin` puede darlo de alta y asignarlo al consumidor en una operación:
+
+```json
+POST /v1/emitters
+{
+  "owner_consumer_id": "consumer_uuid",
+  "ruc": "80024135",
+  "dv": "5",
+  "legal_name": "Empresa SA",
+  "tax_environment": "test"
+}
+```
+
+Compatibilidad: la ruta y el resto del payload no cambian; si
+`owner_consumer_id` se omite, el emisor queda asignado al consumidor de la clave
+administradora. Desde esta versión, una clave tenant que intentaba crear un
+emisor recibe `403 auth.insufficient_scope`. Lecturas y actualizaciones de
+emisores ya asignados conservan sus scopes anteriores.
+
+`POST /v1/emitters/{id}/deactivate` es un kill switch. Un emisor inactivo sigue
+siendo legible y permite corregir metadatos no secretos, pero toda nueva
+operación fiscal o con secretos responde `409 emitters.inactive`. Los workers ya
+encolados aplican la misma regla antes de descifrar, firmar o contactar SIFEN o
+un webhook.
+
 ## Envelope y errores
 
 Éxito: `{"data": {}, "correlation_id": "uuid"}`.

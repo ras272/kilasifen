@@ -10,6 +10,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.x509.oid import NameOID
 
+from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.common.errors import ConflictError, NotFoundError
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
@@ -38,8 +39,7 @@ class CertificateService:
         password: str,
         p12_bytes: bytes,
     ) -> Certificate:
-        if self.emitter_repository.get(emitter_id) is None:
-            raise NotFoundError("emitters.not_found")
+        require_active_emitter(self.emitter_repository, emitter_id)
 
         certificate = self._extract_metadata(p12_bytes, password)
         encrypted_p12 = self.certificate_store.encrypt_bytes(p12_bytes)
@@ -75,6 +75,7 @@ class CertificateService:
         if target is None:
             raise NotFoundError("certificates.not_found")
 
+        require_active_emitter(self.emitter_repository, target.emitter_id)
         emitter = self.emitter_repository.get(target.emitter_id)
         if emitter is None:
             raise NotFoundError("emitters.not_found")

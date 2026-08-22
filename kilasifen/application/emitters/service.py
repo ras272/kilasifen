@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.domain.common.errors import (
     ConflictError,
     NotFoundError,
@@ -81,6 +82,8 @@ class EmitterService:
     ) -> Emitter:
         if tax_environment is not None:
             self._validate_tax_environment(tax_environment)
+        if csc is not None or csc_id is not None:
+            require_active_emitter(self.repository, emitter_id)
         emitter = self.get_emitter(emitter_id)
         updated = replace(
             emitter,

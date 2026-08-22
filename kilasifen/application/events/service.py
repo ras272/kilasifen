@@ -9,6 +9,7 @@ from typing import Protocol
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.jobs.service import JobService
 from kilasifen.domain.common.errors import (
     ConflictError,
@@ -625,6 +626,7 @@ class EventService:
         )
 
     def _resolve_emitter_and_active_certificate(self, emitter_id: str):
+        require_active_emitter(self.emitter_repository, emitter_id)
         emitter = self.emitter_repository.get(emitter_id)
         if emitter is None:
             raise NotFoundError("emitters.not_found")

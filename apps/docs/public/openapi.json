@@ -861,6 +861,19 @@
             "title": "Legal Name",
             "type": "string"
           },
+          "owner_consumer_id": {
+            "anyOf": [
+              {
+                "maxLength": 36,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Consumer Id"
+          },
           "ruc": {
             "maxLength": 16,
             "minLength": 8,
@@ -2736,7 +2749,9 @@
         "enum": [
           "approved",
           "approved_with_observation",
-          "rejected"
+          "rejected",
+          "transport_timeout",
+          "accepted_but_response_lost"
         ],
         "title": "SandboxOutcome",
         "type": "string"

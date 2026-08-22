@@ -3,12 +3,14 @@ from datetime import UTC, datetime
 import pytest
 
 from kilasifen.application.webhooks.service import WebhookService
+from kilasifen.domain.common.errors import ConflictError
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.webhooks.models import WebhookDelivery, WebhookEndpoint
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
+from kilasifen.infrastructure.db.models import EmitterModel, WebhookEndpointModel
 from kilasifen.infrastructure.db.repositories.emitters import (
     SqlAlchemyEmitterRepository,
 )
@@ -75,6 +77,49 @@ def test_process_webhook_delivery_job_signs_payload_and_marks_delivered(
         )
         assert verification.valid is True
         assert captured["headers"]["X-Kila-Signature-Version"] == "v1"
+
+
+def test_queued_webhook_job_honors_inactive_emitter_before_secret_access(
+    tmp_path,
+) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="inactive_emitter_webhook_worker",
+    ) as database_url:
+        encryption_key = _fernet_key()
+        _seed_webhook_job_context(
+            database_url=database_url,
+            encryption_key=encryption_key,
+        )
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            emitter = session.get(EmitterModel, "emitter-1")
+            endpoint = session.get(WebhookEndpointModel, "endpoint-1")
+            assert emitter is not None and endpoint is not None
+            emitter.status = "inactive"
+            endpoint.secret_encrypted = "invalid-ciphertext-must-not-be-decrypted"
+
+        def never_called_sender(**kwargs):
+            del kwargs
+            raise AssertionError("inactive emitter reached the webhook destination")
+
+        with pytest.raises(ConflictError, match="emitters.inactive"):
+            process_webhook_delivery_job(
+                job_id="job-1",
+                database_url=database_url,
+                encryption_key=encryption_key,
+                deliverer=WebhookDeliverer(
+                    sender=never_called_sender,
+                    url_policy=_public_policy(),
+                ),
+            )
+
+        with session_scope(session_factory) as session:
+            job = SqlAlchemyJobRepository(session).get("job-1")
+            delivery = SqlAlchemyWebhookRepository(session).get_delivery("delivery-1")
+        assert job is not None and job.status == "queued" and job.attempts == 0
+        assert delivery is not None and delivery.final_status == "pending"
 
 
 def test_process_webhook_delivery_job_marks_retry_pending_on_retryable_failure(

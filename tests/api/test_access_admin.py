@@ -64,11 +64,31 @@ def test_admin_can_issue_use_and_revoke_consumer_credential(
             raw_key = credential["api_key"]
             assert raw_key.startswith("ks_")
 
+            emitter = client.post(
+                "/v1/emitters",
+                headers={"X-API-Key": _ADMIN_KEY},
+                json={
+                    "owner_consumer_id": consumer_id,
+                    "external_id": "teko-staging",
+                    "ruc": "80024135",
+                    "dv": "5",
+                    "legal_name": "TEKO STAGING SA",
+                    "tax_environment": "test",
+                },
+            )
+            assert emitter.status_code == 201
+            emitter_id = emitter.json()["data"]["emitter"]["id"]
+
             authenticated = client.get(
                 "/v1/auth/check",
                 headers={"X-API-Key": raw_key},
             )
             assert authenticated.status_code == 200
+            assigned_emitter = client.get(
+                f"/v1/emitters/{emitter_id}",
+                headers={"X-API-Key": raw_key},
+            )
+            assert assigned_emitter.status_code == 200
 
             with session_scope(client.app.state.session_factory) as session:
                 stored = session.scalar(

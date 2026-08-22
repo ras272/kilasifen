@@ -5,6 +5,7 @@ import pytest
 
 from kilasifen.config import get_settings
 from kilasifen.domain.certificates.models import Certificate
+from kilasifen.domain.common.errors import ConflictError
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.jobs.models import Job
@@ -12,6 +13,7 @@ from kilasifen.domain.stampings.models import Stamping
 from kilasifen.domain.webhooks.models import WebhookEndpoint
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
+from kilasifen.infrastructure.db.models import CertificateModel, EmitterModel
 from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
 )
@@ -105,6 +107,49 @@ def test_process_document_job_persists_emission_artifacts(tmp_path) -> None:
         assert job is not None
         assert job.status == "succeeded"
         assert job.error_snapshot is None
+
+
+def test_queued_document_job_honors_inactive_emitter_before_secret_access(
+    tmp_path,
+) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="inactive_emitter_worker",
+    ) as database_url:
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            emitter = session.get(EmitterModel, "emitter-1")
+            certificate = session.get(CertificateModel, "cert-1")
+            assert emitter is not None and certificate is not None
+            emitter.status = "inactive"
+            emitter.csc = "invalid-ciphertext-must-not-be-decrypted"
+            certificate.encrypted_p12 = "invalid-ciphertext-must-not-be-decrypted"
+            certificate.encrypted_password = "invalid-ciphertext-must-not-be-decrypted"
+
+        class NeverCalledEmissionEngine:
+            def emit_document(self, **kwargs):
+                del kwargs
+                raise AssertionError(
+                    "inactive emitter reached the SIFEN emission engine"
+                )
+
+        with pytest.raises(ConflictError, match="emitters.inactive"):
+            process_document_job(
+                job_id="job-1",
+                database_url=database_url,
+                encryption_key=_fernet_key(),
+                emission_engine=NeverCalledEmissionEngine(),
+                current_date=date(2024, 4, 24),
+            )
+
+        with session_scope(session_factory) as session:
+            job = SqlAlchemyJobRepository(session).get("job-1")
+            document = SqlAlchemyDocumentRepository(session).get("document-1")
+        assert job is not None and job.status == "queued" and job.attempts == 0
+        assert document is not None and document.internal_status == "queued"
 
 
 @pytest.mark.parametrize(

@@ -9,6 +9,7 @@ from kilasifen.application.documents.idempotency import (
     require_matching_idempotent_intent,
 )
 from kilasifen.application.documents.numbering_service import DocumentNumberingService
+from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.sandbox.service import SandboxOutcomePolicy
 from kilasifen.domain.common.errors import ConflictError, NotFoundError
@@ -75,8 +76,7 @@ class DocumentService:
             sandbox_outcome,
         )
 
-        if self.emitter_repository.get(emitter_id) is None:
-            raise NotFoundError("emitters.not_found")
+        require_active_emitter(self.emitter_repository, emitter_id)
 
         if idempotency_key:
             existing = self.document_repository.get_by_idempotency_key(

@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import uuid4
 
+from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.jobs.service import JobService
 from kilasifen.domain.common.errors import (
     ConflictError,
@@ -79,8 +80,7 @@ class WebhookService:
         event_subscriptions: list[str] | None,
         retry_policy: dict | None,
     ) -> WebhookEndpoint:
-        if self.emitter_repository.get(emitter_id) is None:
-            raise NotFoundError("emitters.not_found")
+        require_active_emitter(self.emitter_repository, emitter_id)
         if len(secret) < 32:
             raise UnprocessableEntityError("webhooks.secret_too_short")
         try:
@@ -120,6 +120,10 @@ class WebhookService:
         if not endpoint.is_active:
             raise ConflictError("webhooks.endpoint_inactive")
 
+        if endpoint.emitter_id is None:
+            raise ConflictError("webhooks.emitter_required")
+        require_active_emitter(self.emitter_repository, endpoint.emitter_id)
+
         saved_delivery, job = self._create_delivery_job(
             endpoint=endpoint,
             event_type=event_type,
@@ -141,6 +145,8 @@ class WebhookService:
             raise NotFoundError("webhooks.endpoint_not_found")
         if not endpoint.is_active:
             raise ConflictError("webhooks.endpoint_inactive")
+
+        require_active_emitter(self.emitter_repository, emitter_id)
 
         saved_delivery, job = self._create_delivery_job(
             endpoint=endpoint,
@@ -180,8 +186,7 @@ class WebhookService:
     ) -> list[tuple[WebhookDelivery, Job]]:
         """Fan out one event to active endpoints subscribed to the event type."""
 
-        if self.emitter_repository.get(emitter_id) is None:
-            raise NotFoundError("emitters.not_found")
+        require_active_emitter(self.emitter_repository, emitter_id)
 
         results: list[tuple[WebhookDelivery, Job]] = []
         endpoints = self.webhook_repository.list_endpoints_for_emitter(emitter_id)
@@ -249,6 +254,10 @@ class WebhookService:
         endpoint = self.webhook_repository.get_endpoint(delivery.webhook_endpoint_id)
         if endpoint is None:
             raise NotFoundError("webhooks.endpoint_not_found")
+
+        if endpoint.emitter_id is None:
+            raise ConflictError("webhooks.emitter_required")
+        require_active_emitter(self.emitter_repository, endpoint.emitter_id)
 
         secret = self.secret_store.decrypt_text(endpoint.secret_encrypted)
         outcome = self.deliverer.deliver(

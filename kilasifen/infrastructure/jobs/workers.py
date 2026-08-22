@@ -7,6 +7,7 @@ from xml.etree import ElementTree as ET
 
 from rq import get_current_job
 
+from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.events.service import EventService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.sandbox.service import SandboxOutcomePolicy
@@ -171,6 +172,7 @@ def process_document_job(
                 updated_at=_now(),
             )
             job_repository.save(job)
+            require_active_emitter(emitter_repository, document.emitter_id)
             emitter = emitter_repository.get(document.emitter_id)
             if emitter is None:
                 raise RuntimeError("Emitter not found for document job")

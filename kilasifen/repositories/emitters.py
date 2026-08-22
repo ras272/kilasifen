@@ -17,6 +17,10 @@ class EmitterRepository(ABC):
         """Load an emitter by id."""
 
     @abstractmethod
+    def get_status_for_update(self, emitter_id: str) -> str | None:
+        """Lock an emitter row and return its status without loading secrets."""
+
+    @abstractmethod
     def get_by_external_id(self, external_id: str) -> Emitter | None:
         """Load an emitter by external id."""
 

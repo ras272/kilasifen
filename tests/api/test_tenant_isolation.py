@@ -143,6 +143,32 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
     assert read_only_stamping_response.status_code == 403
 
 
+def test_tenants_cannot_claim_a_global_ruc(client: TestClient) -> None:
+    payload = {
+        "external_id": "attempted-global-claim",
+        "ruc": "80000999",
+        "dv": "9",
+        "legal_name": "GLOBAL RUC CLAIM",
+        "tax_environment": "test",
+    }
+
+    tenant_a = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": _KEY_A},
+        json=payload,
+    )
+    tenant_b = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": _KEY_B},
+        json=payload,
+    )
+
+    assert tenant_a.status_code == 403
+    assert tenant_b.status_code == 403
+    assert tenant_a.json()["error"]["code"] == "auth.insufficient_scope"
+    assert tenant_b.json()["error"]["code"] == "auth.insufficient_scope"
+
+
 def _seed_tenants(session_factory) -> None:
     with session_scope(session_factory) as session:
         session.add_all(

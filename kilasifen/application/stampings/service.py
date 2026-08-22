@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 from uuid import uuid4
 
+from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.domain.common.errors import ConflictError, NotFoundError
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.repositories.emitters import EmitterRepository
@@ -29,8 +30,7 @@ class StampingService:
         start_date: date,
         end_date: date | None,
     ) -> Stamping:
-        if self.emitter_repository.get(emitter_id) is None:
-            raise NotFoundError("emitters.not_found")
+        require_active_emitter(self.emitter_repository, emitter_id)
         if end_date is not None and end_date < start_date:
             raise ConflictError("stampings.invalid_date_window")
 
@@ -57,6 +57,8 @@ class StampingService:
         target = self.stamping_repository.get(stamping_id)
         if target is None:
             raise NotFoundError("stampings.not_found")
+
+        require_active_emitter(self.emitter_repository, target.emitter_id)
 
         stampings = self.stamping_repository.list_for_emitter(target.emitter_id)
         activated: Stamping | None = None

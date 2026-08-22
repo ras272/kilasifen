@@ -61,6 +61,7 @@ def _service(certificate: Certificate) -> CertificateService:
     certificate_repository = Mock()
     certificate_repository.get.return_value = certificate
     emitter_repository = Mock()
+    emitter_repository.get_status_for_update.return_value = "active"
     emitter_repository.get.return_value = Emitter(
         id=certificate.emitter_id,
         external_id="erp-test",

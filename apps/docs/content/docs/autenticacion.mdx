@@ -21,10 +21,10 @@ navegador.
 | Scope | Permite |
 | --- | --- |
 | `tenant:read` | Leer emisores y recursos propios. |
-| `tenant:write` | Crear o modificar emisores propios. |
+| `tenant:write` | Modificar metadatos no secretos de emisores propios. |
 | `fiscal:write` | Crear documentos y eventos fiscales. |
 | `secrets:write` | Administrar PFX y otros secretos fiscales. |
-| `platform:admin` | Administrar consumidores; nunca se entrega a un ERP. |
+| `platform:admin` | Administrar consumidores y asignar RUC/emisores; nunca se entrega a un ERP. |
 
 Un recurso perteneciente a otro consumidor responde `404`, no `403`, para no
 revelar su existencia.

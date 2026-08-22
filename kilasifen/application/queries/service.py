@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime
 
+from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.domain.common.errors import ConflictError, NotFoundError
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
@@ -118,6 +119,7 @@ class QueryService:
         return self.document_repository.save(updated), outcome
 
     def _get_emitter(self, emitter_id: str) -> Emitter:
+        require_active_emitter(self.emitter_repository, emitter_id)
         emitter = self.emitter_repository.get(emitter_id)
         if emitter is None:
             raise NotFoundError("emitters.not_found")

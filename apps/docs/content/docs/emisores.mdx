@@ -4,25 +4,40 @@ description: Representá cada contribuyente y aislá su configuración fiscal.
 icon: Building2
 ---
 
-Un emisor pertenece a un único consumidor. Sus certificados, timbrados,
-documentos, eventos y webhooks heredan ese límite de acceso.
+Un emisor pertenece a un único consumidor. Su RUC es una identidad global de la
+plataforma; por eso el alta y la asignación las hace un administrador. Sus
+certificados, timbrados, documentos, eventos y webhooks heredan ese límite.
 
 ## Crear
 
 ```bash
 curl -X POST https://TU_API/v1/emitters \
-  -H "X-API-Key: $KILA_API_KEY" \
+  -H "X-API-Key: $KILA_PLATFORM_ADMIN_KEY" \
   -H "Content-Type: application/json" \
   -d '{
+    "owner_consumer_id": "CONSUMER_ID",
     "external_id": "empresa_42",
     "ruc": "80024135",
     "dv": "5",
-    "razon_social": "Empresa Ejemplo S.A."
+    "legal_name": "Empresa Ejemplo S.A.",
+    "tax_environment": "test"
   }'
 ```
 
 `external_id` es la referencia estable de tu ERP. Usá el `id` asignado por
 KilaSifen en las rutas posteriores.
+
+Una clave tenant no puede reclamar un RUC nuevo. Si intentaba usar esta ruta,
+ahora recibe `403 auth.insufficient_scope`; sus lecturas y actualizaciones de
+emisores asignados no cambian.
+
+## Desactivar
+
+`POST /v1/emitters/{emitter_id}/deactivate` detiene inmediatamente nuevas
+emisiones, eventos, consultas SIFEN, cambios de certificados/timbrados y entregas
+webhook. También bloquea jobs que ya estaban en cola antes de descifrar secretos
+o contactar servicios externos. Las lecturas siguen disponibles y el error para
+una nueva operación es `409 emitters.inactive`.
 
 ## Comprobar preparación
 

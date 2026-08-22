@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class EmitterCreateRequest(BaseModel):
     """Emitter creation payload."""
 
+    owner_consumer_id: str | None = Field(default=None, min_length=1, max_length=36)
     external_id: str | None = Field(default=None, max_length=128)
     ruc: str = Field(min_length=8, max_length=16)
     dv: str = Field(min_length=1, max_length=4)

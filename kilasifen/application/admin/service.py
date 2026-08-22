@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from kilasifen.application.certificates.service import CertificateService
+from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.emitters.service import EmitterService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.domain.certificates.models import Certificate
@@ -254,6 +255,9 @@ class AdminConsoleService:
             raise ConflictError("jobs.retry_unsupported")
         if job.status == "succeeded":
             raise ConflictError("jobs.retry_not_allowed")
+        if not job.emitter_id:
+            raise ConflictError("jobs.emitter_context_required")
+        require_active_emitter(self.emitter_repository, job.emitter_id)
 
         timestamp = _now()
         retry_job = replace(

@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, Request, status
 
 from kilasifen.api.deps import (
+    get_admin_principal,
     get_api_key_principal,
     get_emitter_health_service,
     get_emitter_service,
@@ -31,14 +32,13 @@ router = APIRouter(prefix="/emitters", tags=["emitters"])
 def create_emitter(
     payload: EmitterCreateRequest,
     request: Request,
-    principal: ApiKeyPrincipal = Depends(get_api_key_principal),
+    principal: ApiKeyPrincipal = Depends(get_admin_principal),
     service: EmitterService = Depends(get_emitter_service),
 ) -> SuccessEnvelope:
-    principal.require_scope(TENANT_WRITE_SCOPE)
-    if payload.csc is not None or payload.csc_id is not None:
-        principal.require_scope(SECRETS_WRITE_SCOPE)
+    create_payload = payload.model_dump(exclude={"owner_consumer_id"})
     emitter = service.create_emitter(
-        **payload.model_dump(), owner_consumer_id=principal.consumer_id
+        **create_payload,
+        owner_consumer_id=payload.owner_consumer_id or principal.consumer_id,
     )
     return _envelope(request, emitter)
 

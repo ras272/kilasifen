@@ -3,9 +3,14 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from kilasifen.domain.common.errors import NotFoundError
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
-from kilasifen.infrastructure.db.models import ConsumerEmitterModel, EmitterModel
+from kilasifen.infrastructure.db.models import (
+    ConsumerEmitterModel,
+    ConsumerModel,
+    EmitterModel,
+)
 from kilasifen.repositories.emitters import EmitterRepository
 
 
@@ -56,6 +61,14 @@ class SqlAlchemyEmitterRepository(EmitterRepository):
             return None
         return _to_domain(model, self.secret_store)
 
+    def get_status_for_update(self, emitter_id: str) -> str | None:
+        statement = (
+            select(EmitterModel.status)
+            .where(EmitterModel.id == emitter_id)
+            .with_for_update()
+        )
+        return self.session.scalar(statement)
+
     def get_by_external_id(self, external_id: str) -> Emitter | None:
         statement = select(EmitterModel).where(EmitterModel.external_id == external_id)
         model = self.session.scalar(statement)
@@ -81,6 +94,8 @@ class SqlAlchemyEmitterRepository(EmitterRepository):
         ]
 
     def grant_owner(self, *, consumer_id: str, emitter_id: str) -> None:
+        if self.session.get(ConsumerModel, consumer_id) is None:
+            raise NotFoundError("consumers.not_found")
         existing = self.session.scalar(
             select(ConsumerEmitterModel).where(
                 ConsumerEmitterModel.emitter_id == emitter_id
