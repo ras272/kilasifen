@@ -1,0 +1,31 @@
+---
+title: Estados y reintentos
+description: Interpretá el resultado fiscal sin duplicar documentos.
+icon: RefreshCcw
+---
+
+## Estados del documento
+
+| Estado | Significado |
+| --- | --- |
+| `queued` | La intención fue persistida y espera worker. |
+| `submitted` | SIFEN recibió el request, pero aún no hay resultado definitivo. |
+| `retry_pending` | Existe incertidumbre recuperable; habrá reconciliación. |
+| `approved` | Aprobado por SIFEN. |
+| `approved_with_observation` | Aprobado con observaciones que deben conservarse. |
+| `rejected` | Rechazo definitivo de SIFEN. |
+| `failed` | Fallo técnico terminal. |
+| `cancelled` | Cancelación aprobada posteriormente. |
+
+## Regla ante incertidumbre
+
+KilaSifen persiste el CDC, el XML exacto y el request enviado. Ante timeout o
+respuesta indeterminada:
+
+1. consulta el documento por CDC;
+2. converge al resultado si SIFEN ya lo conoce;
+3. reenvía el mismo payload únicamente si SIFEN informa que no existe;
+4. nunca genera otro CDC para la misma intención.
+
+Los reintentos internos usan esperas acotadas. El ERP no debe crear una segunda
+intención para “destrabar” un documento.

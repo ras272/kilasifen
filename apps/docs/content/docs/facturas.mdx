@@ -1,0 +1,36 @@
+---
+title: Facturas
+description: Enviá una intención tipada, idempotente y lista para procesamiento asíncrono.
+icon: ReceiptText
+---
+
+```http
+POST /v1/emitters/{emitter_id}/documents/facturas
+```
+
+El contrato valida receptor, ítems, IVA, moneda, tipo de cambio, descuentos,
+anticipos y condición de pago antes de crear el job.
+
+## Identificadores
+
+- `external_id`: identifica la venta en tu ERP.
+- `idempotency_key`: identifica esta intención fiscal exacta.
+- `document.id`: identifica el recurso dentro de KilaSifen.
+- `cdc`: aparece cuando el documento fiscal ya fue construido.
+
+No envíes número fiscal, XML generado, XML firmado ni CDC. Esos valores son
+responsabilidad de KilaSifen.
+
+## Semántica idempotente
+
+| Situación | Respuesta |
+| --- | --- |
+| Primera creación | `201 Created` |
+| Misma intención y misma clave | `200 OK`, mismo documento y job |
+| Misma clave con contenido diferente | `409 Conflict` |
+| Payload fiscal inválido | `422 Unprocessable Entity` |
+
+<Callout type="info" title="Una creación no es una aprobación">
+  `queued`, `submitted` y `retry_pending` son estados intermedios. Sólo los
+  estados terminales describen el resultado fiscal definitivo.
+</Callout>

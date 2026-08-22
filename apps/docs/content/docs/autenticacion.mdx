@@ -1,0 +1,36 @@
+---
+title: Autenticación y scopes
+description: Protegé la credencial y otorgá únicamente las capacidades necesarias.
+icon: KeyRound
+---
+
+Cada request protegido usa una credencial privada en el header `X-API-Key`.
+
+```http
+X-API-Key: kila_live_••••••••••••••••
+```
+
+## Dónde guardar la clave
+
+Guardala en el secret manager o variables cifradas del backend consumidor. No
+debe aparecer en Git, logs, analytics, localStorage ni código enviado al
+navegador.
+
+## Scopes
+
+| Scope | Permite |
+| --- | --- |
+| `tenant:read` | Leer emisores y recursos propios. |
+| `tenant:write` | Crear o modificar emisores propios. |
+| `fiscal:write` | Crear documentos y eventos fiscales. |
+| `secrets:write` | Administrar PFX y otros secretos fiscales. |
+| `platform:admin` | Administrar consumidores; nunca se entrega a un ERP. |
+
+Un recurso perteneciente a otro consumidor responde `404`, no `403`, para no
+revelar su existencia.
+
+## Rotación
+
+Creá una segunda credencial, desplegala en el consumidor, confirmá tráfico con
+la nueva clave y recién entonces revocá la anterior. La API muestra el secreto
+completo una sola vez al crearlo.

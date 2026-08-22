@@ -1,0 +1,34 @@
+---
+title: Emisores
+description: Representá cada contribuyente y aislá su configuración fiscal.
+icon: Building2
+---
+
+Un emisor pertenece a un único consumidor. Sus certificados, timbrados,
+documentos, eventos y webhooks heredan ese límite de acceso.
+
+## Crear
+
+```bash
+curl -X POST https://TU_API/v1/emitters \
+  -H "X-API-Key: $KILA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "external_id": "empresa_42",
+    "ruc": "80024135",
+    "dv": "5",
+    "razon_social": "Empresa Ejemplo S.A."
+  }'
+```
+
+`external_id` es la referencia estable de tu ERP. Usá el `id` asignado por
+KilaSifen en las rutas posteriores.
+
+## Comprobar preparación
+
+```http
+GET /v1/emitters/{emitter_id}/health
+```
+
+El resultado indica si existe certificado activo, timbrado activo y CSC. No
+intentes emitir hasta que el emisor esté preparado.

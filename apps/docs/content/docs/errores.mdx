@@ -1,0 +1,30 @@
+---
+title: Errores y diagnóstico
+description: Usá códigos estables y correlation IDs para decidir la recuperación.
+icon: CircleAlert
+---
+
+```json
+{
+  "error": {
+    "code": "documents.not_found",
+    "message": "Resource was not found.",
+    "category": "not_found",
+    "correlation_id": "7d33c16a-4ec1-4327-90f2-bc5517c120f2",
+    "details": null
+  }
+}
+```
+
+| HTTP | Acción del consumidor |
+| --- | --- |
+| `401` | Revisar o rotar la credencial. No reintentar en loop. |
+| `403` | Solicitar el scope requerido. |
+| `404` | Revisar el ID y el ownership del emisor. |
+| `409` | Resolver la colisión o reutilizar la intención original. |
+| `422` | Corregir el payload; no ingresó a la cola. |
+| `429` | Respetar el límite y aplicar backoff. |
+| `503` | Reintentar con backoff porque una dependencia no está disponible. |
+
+Conservá `correlation_id` en logs del ERP y tickets de soporte. Nunca agregues la
+API key, contraseña del PFX, CSC, XML firmado completo ni datos de tarjeta.

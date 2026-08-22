@@ -40,6 +40,13 @@ htmlcov/
 .env
 .env.local
 
+# Node / documentation site
+node_modules/
+.next/
+.source/
+.vercel/
+*.tsbuildinfo
+
 # Local lab / scratch artifacts (not part of the project)
 tmp/
 tmp_*.xml

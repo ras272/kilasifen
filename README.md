@@ -2,6 +2,10 @@
 
 Bindings Python para leer y generar XML del **SIFEN** (Sistema Integrado de Facturación Electrónica Nacional) de Paraguay.
 
+La plataforma HTTP y su contrato de integración están documentados en el sitio
+Fumadocs de [`apps/docs`](apps/docs). Para trabajar localmente con la API,
+consultar además [`docs/INTEGRATION.md`](docs/INTEGRATION.md).
+
 Generados automáticamente a partir de los XSD oficiales de la SET usando [xsdata](https://xsdata.readthedocs.io/), siguiendo el mismo enfoque de [nfelib](https://github.com/akretion/nfelib).
 
 ## Instalación

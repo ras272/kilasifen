@@ -1,0 +1,86 @@
+---
+title: Inicio rápido
+description: Emití una factura de prueba siguiendo el recorrido mínimo seguro.
+icon: Rocket
+---
+
+Antes de empezar necesitás la URL del ambiente, una API key de consumidor y un
+emisor configurado por un administrador de la plataforma.
+
+<Steps>
+  <Step>
+  ### Verificá la API
+
+  ```bash
+  curl https://TU_API/v1/health
+  ```
+
+  `health` confirma que el proceso responde. Antes de emitir, verificá también
+  `/v1/ready`, que controla PostgreSQL, Redis y los workers.
+  </Step>
+
+  <Step>
+  ### Consultá el emisor
+
+  ```bash
+  curl https://TU_API/v1/emitters/EMITTER_ID \
+    -H "X-API-Key: $KILA_API_KEY"
+  ```
+
+  La clave sólo puede acceder a emisores pertenecientes a su consumidor.
+  </Step>
+
+  <Step>
+  ### Emití una factura
+
+  ```bash
+  curl -X POST https://TU_API/v1/emitters/EMITTER_ID/documents/facturas \
+    -H "X-API-Key: $KILA_API_KEY" \
+    -H "Content-Type: application/json" \
+    --data @factura.json
+  ```
+
+  ```json title="factura.json"
+  {
+    "external_id": "venta_1842",
+    "idempotency_key": "venta_1842_v1",
+    "factura": {
+      "establecimiento": "001",
+      "punto": "001",
+      "fecha_emision": "2026-08-22T09:30:00-03:00",
+      "moneda": "PYG",
+      "cliente": {
+        "ruc": "80000000-0",
+        "razon_social": "Cliente de prueba"
+      },
+      "items": [
+        {
+          "descripcion": "Servicio mensual",
+          "cantidad": 1,
+          "precio_unitario": 150000,
+          "tasa": 10
+        }
+      ]
+    }
+  }
+  ```
+  </Step>
+
+  <Step>
+  ### Esperá el estado final
+
+  La creación devuelve un documento y un job en `queued`; todavía no significa
+  aprobación. Consultá el documento o procesá sus webhooks hasta obtener un
+  estado terminal.
+
+  ```bash
+  curl https://TU_API/v1/emitters/EMITTER_ID/documents/DOCUMENT_ID \
+    -H "X-API-Key: $KILA_API_KEY"
+  ```
+  </Step>
+</Steps>
+
+<Callout type="warn" title="Reintentos del ERP">
+  Si tu request inicial pierde la respuesta, reenviá exactamente la misma
+  intención con el mismo `idempotency_key`. No inventes una nueva clave.
+</Callout>

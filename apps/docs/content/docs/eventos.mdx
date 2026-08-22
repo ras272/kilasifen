@@ -1,0 +1,28 @@
+---
+title: Cancelación e inutilización
+description: Ejecutá eventos fiscales como procesos durables y observables.
+icon: Ban
+---
+
+Los eventos responden `201` con un evento y un job en cola. El request HTTP no
+espera a SIFEN.
+
+## Cancelar un documento
+
+```bash
+curl -X POST https://TU_API/v1/emitters/EMITTER_ID/documents/DOCUMENT_ID/cancel \
+  -H "X-API-Key: $KILA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"motivo":"Error en los datos de la operación"}'
+```
+
+El documento pasa a `cancelled` solamente cuando SIFEN aprueba el evento.
+
+## Inutilizar numeración
+
+```http
+POST /v1/emitters/{emitter_id}/inutilizations
+```
+
+Enviá timbrado, tipo de documento, establecimiento, punto, número inicial,
+número final y motivo. KilaSifen evita superponer rangos ya inutilizados.

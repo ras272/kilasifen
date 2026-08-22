@@ -1,0 +1,36 @@
+---
+title: Webhooks
+description: Recibí resultados terminales con firma HMAC y procesamiento idempotente.
+icon: Webhook
+---
+
+Registrá una URL HTTPS pública y un secreto aleatorio de al menos 32 caracteres.
+El secreto nunca vuelve a aparecer en la API.
+
+## Headers firmados
+
+| Header | Contenido |
+| --- | --- |
+| `X-Kila-Signature-Version` | `v1` |
+| `X-Kila-Timestamp` | Unix time UTC |
+| `X-Kila-Delivery-ID` | UUID durable de la entrega |
+| `X-Kila-Event` | Tipo de evento |
+| `X-Kila-Signature` | `v1=` + HMAC-SHA256 hexadecimal |
+
+La entrada binaria exacta es:
+
+```text
+v1 + "." + timestamp + "." + delivery_id + "." + event_type + "." + raw_body
+```
+
+## Orden de procesamiento
+
+1. Conservá los bytes crudos del body.
+2. Rechazá timestamps alejados más de 300 segundos.
+3. Verificá el HMAC con comparación en tiempo constante.
+4. Comprobá si el delivery ID ya fue procesado.
+5. Aplicá el cambio y guardá el ID dentro de la misma transacción.
+6. Respondé `2xx` después del commit.
+
+Un delivery ID repetido debe responder éxito sin repetir el efecto de negocio.
+KilaSifen reintenta transporte, `408`, `425`, `429` y `5xx`.

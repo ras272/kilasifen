@@ -1,0 +1,10 @@
+/node_modules
+/.next
+/.source
+/.vercel
+/out
+/*.tsbuildinfo
+/content/docs/api-reference/*.mdx
+/content/docs/api-reference/meta.json
+next-env.d.ts
+.env*.local

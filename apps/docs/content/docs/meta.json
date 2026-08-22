@@ -1,0 +1,21 @@
+{
+  "title": "KilaSifen",
+  "pages": [
+    "index",
+    "inicio-rapido",
+    "---Configurar---",
+    "autenticacion",
+    "emisores",
+    "certificados-y-timbrado",
+    "---Operar---",
+    "facturas",
+    "notas-de-credito",
+    "estados-y-reintentos",
+    "eventos",
+    "consultas",
+    "webhooks",
+    "errores",
+    "---Referencia---",
+    "api-reference"
+  ]
+}

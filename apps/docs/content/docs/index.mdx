@@ -1,0 +1,40 @@
+---
+title: KilaSifen
+description: La capa fiscal entre tu ERP y SIFEN.
+icon: BookOpen
+---
+
+KilaSifen recibe intenciones de negocio tipadas, genera y firma el XML fiscal,
+lo transmite a SIFEN y conserva el resultado durable. Tu ERP no administra XML,
+certificados ni reintentos de red.
+
+<Cards>
+  <Card title="Integrar en 10 minutos" description="Creá un emisor y enviá tu primera factura de prueba." href="/docs/inicio-rapido" />
+  <Card title="Referencia HTTP" description="Explorá rutas, parámetros y esquemas generados desde OpenAPI." href="/docs/api-reference" />
+</Cards>
+
+## Qué cubre v1
+
+- Factura electrónica y nota de crédito con contratos estrictos.
+- Numeración fiscal atómica e idempotencia por intención.
+- Firma, envío, consulta por CDC y generación de KuDE.
+- Cancelación e inutilización asíncronas.
+- Webhooks HMAC con reintentos y protección contra replay.
+- Aislamiento por consumidor, emisor y scopes.
+
+<Callout type="info" title="Contrato backend-to-backend">
+  La API key debe vivir únicamente en el backend del ERP. No la incluyas en una
+  aplicación web, móvil ni en código JavaScript entregado al navegador.
+</Callout>
+
+## Convenciones
+
+Todas las rutas públicas comienzan con `/v1`, los cuerpos JSON usan
+`snake_case` y las respuestas incluyen un `correlation_id` para diagnóstico.
+
+```json title="Respuesta exitosa"
+{
+  "data": {},
+  "correlation_id": "7d33c16a-4ec1-4327-90f2-bc5517c120f2"
+}
+```

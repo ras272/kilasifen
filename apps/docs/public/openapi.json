@@ -1,0 +1,4867 @@
+{
+  "components": {
+    "schemas": {
+      "AssociatedDocumentPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "cdc": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{44}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cdc"
+          },
+          "establecimiento": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Establecimiento"
+          },
+          "fecha_emision": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Emision"
+          },
+          "numero": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero"
+          },
+          "numero_constancia": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{11}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero Constancia"
+          },
+          "numero_control": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9A-Za-z-]{8}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero Control"
+          },
+          "punto": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Punto"
+          },
+          "timbrado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timbrado"
+          },
+          "tipo": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "enum": [
+                  "electronico",
+                  "impreso",
+                  "constancia_electronica"
+                ],
+                "type": "string"
+              }
+            ],
+            "default": 1,
+            "title": "Tipo"
+          },
+          "tipo_constancia": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Constancia"
+          },
+          "tipo_documento_impreso": {
+            "anyOf": [
+              {
+                "maximum": 4.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Documento Impreso"
+          }
+        },
+        "title": "AssociatedDocumentPayload",
+        "type": "object"
+      },
+      "Body_upload_certificate_v1_emitters__emitter_id__certificates_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "logical_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Logical Name",
+            "type": "string"
+          },
+          "password": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "logical_name",
+          "password",
+          "file"
+        ],
+        "title": "Body_upload_certificate_v1_emitters__emitter_id__certificates_post",
+        "type": "object"
+      },
+      "CancelDocumentRequest": {
+        "description": "Typed request payload for cancelation events.",
+        "properties": {
+          "motivo": {
+            "maxLength": 500,
+            "minLength": 5,
+            "title": "Motivo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "motivo"
+        ],
+        "title": "CancelDocumentRequest",
+        "type": "object"
+      },
+      "CardPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "codigo_autorizacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Autorizacion"
+          },
+          "dv_procesadora": {
+            "anyOf": [
+              {
+                "pattern": "^\\d$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dv Procesadora"
+          },
+          "forma_procesamiento": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Forma Procesamiento"
+          },
+          "marca": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Marca"
+          },
+          "nombre_titular": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "minLength": 4,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nombre Titular"
+          },
+          "razon_social_procesadora": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Razon Social Procesadora"
+          },
+          "ruc_procesadora": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{5,8}(?:-\\d)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruc Procesadora"
+          },
+          "ultimos_4": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ultimos 4"
+          }
+        },
+        "required": [
+          "marca",
+          "forma_procesamiento"
+        ],
+        "title": "CardPayload",
+        "type": "object"
+      },
+      "ConsumerCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ConsumerCreateRequest",
+        "type": "object"
+      },
+      "CredentialCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Scopes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "scopes"
+        ],
+        "title": "CredentialCreateRequest",
+        "type": "object"
+      },
+      "CreditPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "cuotas": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/InstallmentPayload"
+                },
+                "maxItems": 999,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cuotas"
+          },
+          "descripcion": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripcion"
+          },
+          "monto_entrega_inicial": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Monto Entrega Inicial"
+          },
+          "plazo_descripcion": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plazo Descripcion"
+          },
+          "tipo": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "enum": [
+                  "plazo",
+                  "cuotas"
+                ],
+                "type": "string"
+              }
+            ],
+            "title": "Tipo"
+          }
+        },
+        "required": [
+          "tipo"
+        ],
+        "title": "CreditPayload",
+        "type": "object"
+      },
+      "CustomerPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "celular": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Celular"
+          },
+          "ciudad": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ciudad"
+          },
+          "codigo_cliente": {
+            "anyOf": [
+              {
+                "maxLength": 15,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Cliente"
+          },
+          "compras_publicas": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicProcurementPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "departamento": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Departamento"
+          },
+          "descripcion_ciudad": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripcion Ciudad"
+          },
+          "descripcion_departamento": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripcion Departamento"
+          },
+          "descripcion_distrito": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripcion Distrito"
+          },
+          "direccion": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direccion"
+          },
+          "distrito": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distrito"
+          },
+          "dv": {
+            "anyOf": [
+              {
+                "pattern": "^\\d$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dv"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "naturaleza": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Naturaleza"
+          },
+          "nombre": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nombre"
+          },
+          "numero_casa": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero Casa"
+          },
+          "numero_documento_identidad": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero Documento Identidad"
+          },
+          "pais_codigo": {
+            "default": "PRY",
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Pais Codigo",
+            "type": "string"
+          },
+          "pais_descripcion": {
+            "default": "Paraguay",
+            "maxLength": 100,
+            "minLength": 3,
+            "title": "Pais Descripcion",
+            "type": "string"
+          },
+          "razon_social": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Razon Social"
+          },
+          "ruc": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{5,8}(?:-\\d)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruc"
+          },
+          "telefono": {
+            "anyOf": [
+              {
+                "maxLength": 15,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telefono"
+          },
+          "tipo_contribuyente": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Contribuyente"
+          },
+          "tipo_documento_identidad": {
+            "anyOf": [
+              {
+                "maximum": 9.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Documento Identidad"
+          },
+          "tipo_operacion": {
+            "anyOf": [
+              {
+                "maximum": 4.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Operacion"
+          }
+        },
+        "title": "CustomerPayload",
+        "type": "object"
+      },
+      "DocumentCreateRequest": {
+        "description": "Document creation payload.",
+        "properties": {
+          "document_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Document Type",
+            "type": "string"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          }
+        },
+        "required": [
+          "document_type"
+        ],
+        "title": "DocumentCreateRequest",
+        "type": "object"
+      },
+      "EconomicActivityPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "codigo": {
+            "maxLength": 8,
+            "minLength": 1,
+            "title": "Codigo",
+            "type": "string"
+          },
+          "descripcion": {
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Descripcion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "codigo",
+          "descripcion"
+        ],
+        "title": "EconomicActivityPayload",
+        "type": "object"
+      },
+      "EmitterCreateRequest": {
+        "description": "Emitter creation payload.",
+        "properties": {
+          "csc": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csc"
+          },
+          "csc_id": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csc Id"
+          },
+          "dv": {
+            "maxLength": 4,
+            "minLength": 1,
+            "title": "Dv",
+            "type": "string"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "legal_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Legal Name",
+            "type": "string"
+          },
+          "ruc": {
+            "maxLength": 16,
+            "minLength": 8,
+            "title": "Ruc",
+            "type": "string"
+          },
+          "tax_environment": {
+            "enum": [
+              "test",
+              "production"
+            ],
+            "title": "Tax Environment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ruc",
+          "dv",
+          "legal_name",
+          "tax_environment"
+        ],
+        "title": "EmitterCreateRequest",
+        "type": "object"
+      },
+      "EmitterPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "actividad_economica": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EconomicActivityPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ciudad": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ciudad"
+          },
+          "complemento_1": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complemento 1"
+          },
+          "complemento_2": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complemento 2"
+          },
+          "departamento": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Departamento"
+          },
+          "descripcion_ciudad": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripcion Ciudad"
+          },
+          "descripcion_departamento": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripcion Departamento"
+          },
+          "descripcion_distrito": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripcion Distrito"
+          },
+          "direccion": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direccion"
+          },
+          "distrito": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Distrito"
+          },
+          "dv": {
+            "anyOf": [
+              {
+                "pattern": "^\\d$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dv"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "numero": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero"
+          },
+          "razon_social": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 4,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Razon Social"
+          },
+          "responsable_generacion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GenerationResponsiblePayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ruc": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{5,8}(?:-\\d)?$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ruc"
+          },
+          "telefono": {
+            "anyOf": [
+              {
+                "maxLength": 15,
+                "minLength": 6,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Telefono"
+          }
+        },
+        "title": "EmitterPayload",
+        "type": "object"
+      },
+      "EmitterUpdateRequest": {
+        "description": "Emitter update payload.",
+        "properties": {
+          "csc": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csc"
+          },
+          "csc_id": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csc Id"
+          },
+          "legal_name": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legal Name"
+          },
+          "tax_environment": {
+            "anyOf": [
+              {
+                "enum": [
+                  "test",
+                  "production"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tax Environment"
+          }
+        },
+        "title": "EmitterUpdateRequest",
+        "type": "object"
+      },
+      "EventCreateRequest": {
+        "description": "Event creation payload.",
+        "properties": {
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "event_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Event Type",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          }
+        },
+        "required": [
+          "document_id",
+          "event_type"
+        ],
+        "title": "EventCreateRequest",
+        "type": "object"
+      },
+      "FacturaContractPayload": {
+        "additionalProperties": false,
+        "description": "Validated business payload for Factura endpoint.",
+        "properties": {
+          "cliente": {
+            "$ref": "#/components/schemas/CustomerPayload"
+          },
+          "codigo_seguridad": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Seguridad"
+          },
+          "condicion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationConditionPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "condicion_operacion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationConditionPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "condicion_tipo_cambio": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condicion Tipo Cambio"
+          },
+          "documento_asociado": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AssociatedDocumentPayload"
+              },
+              {
+                "items": {
+                  "$ref": "#/components/schemas/AssociatedDocumentPayload"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documento Asociado"
+          },
+          "emisor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmitterPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "establecimiento": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Establecimiento"
+          },
+          "factura": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Factura"
+          },
+          "fecha": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha"
+          },
+          "fecha_emision": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Emision"
+          },
+          "indicador_presencia": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indicador Presencia"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ItemPayload"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "moneda": {
+            "default": "PYG",
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Moneda",
+            "type": "string"
+          },
+          "numero": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero"
+          },
+          "punto": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Punto"
+          },
+          "tipo_cambio": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Cambio"
+          },
+          "tipo_contribuyente": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Contribuyente"
+          },
+          "tipo_documento": {
+            "const": 1,
+            "default": 1,
+            "title": "Tipo Documento",
+            "type": "integer"
+          },
+          "tipo_impuesto": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Impuesto"
+          },
+          "tipo_transaccion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Transaccion"
+          }
+        },
+        "required": [
+          "cliente",
+          "items"
+        ],
+        "title": "FacturaContractPayload",
+        "type": "object"
+      },
+      "FacturaCreateRequest": {
+        "additionalProperties": false,
+        "description": "Typed API contract for factura emission.",
+        "properties": {
+          "external_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "factura": {
+            "$ref": "#/components/schemas/FacturaContractPayload"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          }
+        },
+        "required": [
+          "factura"
+        ],
+        "title": "FacturaCreateRequest",
+        "type": "object"
+      },
+      "GenerationResponsiblePayload": {
+        "additionalProperties": false,
+        "properties": {
+          "cargo": {
+            "maxLength": 100,
+            "minLength": 2,
+            "title": "Cargo",
+            "type": "string"
+          },
+          "nombre": {
+            "maxLength": 255,
+            "minLength": 4,
+            "title": "Nombre",
+            "type": "string"
+          },
+          "numero_documento": {
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Numero Documento",
+            "type": "string"
+          },
+          "tipo_documento": {
+            "default": 1,
+            "maximum": 9.0,
+            "minimum": 1.0,
+            "title": "Tipo Documento",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "numero_documento",
+          "nombre",
+          "cargo"
+        ],
+        "title": "GenerationResponsiblePayload",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InstallmentPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "fecha_vencimiento": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Vencimiento"
+          },
+          "moneda": {
+            "default": "PYG",
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Moneda",
+            "type": "string"
+          },
+          "monto": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,20}0*$)\\d{0,15}\\.\\d{0,4}0*$)",
+                "type": "string"
+              }
+            ],
+            "title": "Monto"
+          }
+        },
+        "required": [
+          "monto"
+        ],
+        "title": "InstallmentPayload",
+        "type": "object"
+      },
+      "InutilizeRequest": {
+        "description": "Typed request payload for inutilization events.",
+        "properties": {
+          "document_type": {
+            "enum": [
+              "factura",
+              "fe_exportacion",
+              "fe_importacion",
+              "autofactura",
+              "nota_credito",
+              "nota_debito",
+              "nota_remision",
+              "comprobante_retencion"
+            ],
+            "title": "Document Type",
+            "type": "string"
+          },
+          "establishment": {
+            "title": "Establishment",
+            "type": "string"
+          },
+          "motivo": {
+            "maxLength": 500,
+            "minLength": 5,
+            "title": "Motivo",
+            "type": "string"
+          },
+          "numero_desde": {
+            "minimum": 1.0,
+            "title": "Numero Desde",
+            "type": "integer"
+          },
+          "numero_hasta": {
+            "minimum": 1.0,
+            "title": "Numero Hasta",
+            "type": "integer"
+          },
+          "point": {
+            "title": "Point",
+            "type": "string"
+          },
+          "timbrado": {
+            "pattern": "^\\d{8}$",
+            "title": "Timbrado",
+            "type": "string"
+          }
+        },
+        "required": [
+          "timbrado",
+          "document_type",
+          "establishment",
+          "point",
+          "numero_desde",
+          "numero_hasta",
+          "motivo"
+        ],
+        "title": "InutilizeRequest",
+        "type": "object"
+      },
+      "ItemPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "afectacion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "enum": [
+                  "gravado",
+                  "exonerado",
+                  "exento",
+                  "gravado_parcial"
+                ],
+                "type": "string"
+              }
+            ],
+            "default": "gravado",
+            "title": "Afectacion"
+          },
+          "anticipo_global": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Anticipo Global"
+          },
+          "anticipo_particular": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Anticipo Particular"
+          },
+          "cantidad": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,6}|(?=[\\d.]{1,15}0*$)\\d{0,6}\\.\\d{0,8}0*$)",
+                "type": "string"
+              }
+            ],
+            "title": "Cantidad"
+          },
+          "cdc_anticipo": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{44}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cdc Anticipo"
+          },
+          "codigo_interno": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Interno"
+          },
+          "descripcion": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Descripcion",
+            "type": "string"
+          },
+          "descripcion_unidad": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descripcion Unidad"
+          },
+          "descuento_global": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Descuento Global"
+          },
+          "descuento_particular": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "title": "Descuento Particular"
+          },
+          "precio_unitario": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,24}0*$)\\d{0,15}\\.\\d{0,8}0*$)",
+                "type": "string"
+              }
+            ],
+            "title": "Precio Unitario"
+          },
+          "proporcion_gravada": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 100.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proporcion Gravada"
+          },
+          "tasa": {
+            "default": 10,
+            "enum": [
+              0,
+              5,
+              10
+            ],
+            "title": "Tasa",
+            "type": "integer"
+          },
+          "tipo_cambio_item": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Cambio Item"
+          },
+          "unidad_medida": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "default": 77,
+            "title": "Unidad Medida"
+          }
+        },
+        "required": [
+          "descripcion",
+          "cantidad",
+          "precio_unitario"
+        ],
+        "title": "ItemPayload",
+        "type": "object"
+      },
+      "NotaCreditoContractPayload": {
+        "additionalProperties": false,
+        "description": "Validated business payload for Nota de Crédito endpoint.",
+        "properties": {
+          "cliente": {
+            "$ref": "#/components/schemas/CustomerPayload"
+          },
+          "codigo_seguridad": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Seguridad"
+          },
+          "condicion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationConditionPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "condicion_operacion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationConditionPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "condicion_tipo_cambio": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condicion Tipo Cambio"
+          },
+          "documento_asociado": {
+            "$ref": "#/components/schemas/AssociatedDocumentPayload"
+          },
+          "emisor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmitterPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "establecimiento": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Establecimiento"
+          },
+          "fecha": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha"
+          },
+          "fecha_emision": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Emision"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ItemPayload"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "moneda": {
+            "default": "PYG",
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Moneda",
+            "type": "string"
+          },
+          "motivo_emision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo Emision"
+          },
+          "nota_credito": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nota Credito"
+          },
+          "numero": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero"
+          },
+          "punto": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Punto"
+          },
+          "tipo_cambio": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Cambio"
+          },
+          "tipo_contribuyente": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Contribuyente"
+          },
+          "tipo_documento": {
+            "const": 5,
+            "default": 5,
+            "title": "Tipo Documento",
+            "type": "integer"
+          },
+          "tipo_impuesto": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Impuesto"
+          },
+          "tipo_transaccion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Transaccion"
+          }
+        },
+        "required": [
+          "cliente",
+          "items",
+          "documento_asociado"
+        ],
+        "title": "NotaCreditoContractPayload",
+        "type": "object"
+      },
+      "NotaCreditoCreateRequest": {
+        "additionalProperties": false,
+        "description": "Typed API contract for nota de crédito emission.",
+        "properties": {
+          "external_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "nota_credito": {
+            "$ref": "#/components/schemas/NotaCreditoContractPayload"
+          }
+        },
+        "required": [
+          "nota_credito"
+        ],
+        "title": "NotaCreditoCreateRequest",
+        "type": "object"
+      },
+      "OperationConditionPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "credito": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreditPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "formas_pago": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PaymentPayload"
+                },
+                "maxItems": 99,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Formas Pago"
+          },
+          "tipo": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "enum": [
+                  "contado",
+                  "credito"
+                ],
+                "type": "string"
+              }
+            ],
+            "default": "contado",
+            "title": "Tipo"
+          }
+        },
+        "title": "OperationConditionPayload",
+        "type": "object"
+      },
+      "PaymentPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "banco": {
+            "anyOf": [
+              {
+                "maxLength": 20,
+                "minLength": 4,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Banco"
+          },
+          "moneda": {
+            "default": "PYG",
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Moneda",
+            "type": "string"
+          },
+          "moneda_descripcion": {
+            "anyOf": [
+              {
+                "maxLength": 60,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Moneda Descripcion"
+          },
+          "monto": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,20}0*$)\\d{0,15}\\.\\d{0,4}0*$)",
+                "type": "string"
+              }
+            ],
+            "title": "Monto"
+          },
+          "numero_cheque": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero Cheque"
+          },
+          "tarjeta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CardPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tipo": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Tipo"
+          },
+          "tipo_cambio": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Cambio"
+          }
+        },
+        "required": [
+          "tipo",
+          "monto"
+        ],
+        "title": "PaymentPayload",
+        "type": "object"
+      },
+      "PublicProcurementPayload": {
+        "additionalProperties": false,
+        "properties": {
+          "anio": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Anio"
+          },
+          "entidad": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Entidad"
+          },
+          "fecha_codigo": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Fecha Codigo"
+          },
+          "modalidad": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Modalidad"
+          },
+          "secuencia": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Secuencia"
+          }
+        },
+        "required": [
+          "modalidad",
+          "entidad",
+          "anio",
+          "secuencia",
+          "fecha_codigo"
+        ],
+        "title": "PublicProcurementPayload",
+        "type": "object"
+      },
+      "StampingCreateRequest": {
+        "description": "Stamping creation payload.",
+        "properties": {
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "number": {
+            "maxLength": 32,
+            "minLength": 1,
+            "title": "Number",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "number",
+          "start_date"
+        ],
+        "title": "StampingCreateRequest",
+        "type": "object"
+      },
+      "SuccessEnvelope": {
+        "description": "Standard success response envelope.",
+        "properties": {
+          "correlation_id": {
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "additionalProperties": true,
+            "title": "Data",
+            "type": "object"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "SuccessEnvelope",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "WebhookEndpointCreateRequest": {
+        "description": "Webhook endpoint creation payload.",
+        "properties": {
+          "event_subscriptions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Subscriptions"
+          },
+          "retry_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WebhookRetryPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "secret": {
+            "maxLength": 255,
+            "minLength": 32,
+            "title": "Secret",
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "maxLength": 2083,
+            "minLength": 1,
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "secret"
+        ],
+        "title": "WebhookEndpointCreateRequest",
+        "type": "object"
+      },
+      "WebhookReplayRequest": {
+        "description": "Replay request payload.",
+        "properties": {
+          "event_type": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Event Type",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          }
+        },
+        "required": [
+          "event_type"
+        ],
+        "title": "WebhookReplayRequest",
+        "type": "object"
+      },
+      "WebhookRetryPolicy": {
+        "additionalProperties": false,
+        "description": "Bounded automatic retry policy for one endpoint.",
+        "properties": {
+          "max_attempts": {
+            "default": 5,
+            "maximum": 8.0,
+            "minimum": 1.0,
+            "title": "Max Attempts",
+            "type": "integer"
+          }
+        },
+        "title": "WebhookRetryPolicy",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "KilaApiKey": {
+        "description": "Private consumer credential. Never expose it to browser clients.",
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey"
+      }
+    }
+  },
+  "info": {
+    "description": "API fiscal multi-tenant para emitir, consultar y conciliar documentos electrónicos con SIFEN.",
+    "title": "KilaSifen API",
+    "version": "v1"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/admin/consumers": {
+      "post": {
+        "operationId": "create_consumer_v1_admin_consumers_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsumerCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Crear consumidor",
+        "tags": [
+          "access administration"
+        ]
+      }
+    },
+    "/v1/admin/consumers/{consumer_id}/credentials": {
+      "post": {
+        "operationId": "issue_credential_v1_admin_consumers__consumer_id__credentials_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "consumer_id",
+            "required": true,
+            "schema": {
+              "title": "Consumer Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Emitir credencial",
+        "tags": [
+          "access administration"
+        ]
+      }
+    },
+    "/v1/admin/consumers/{consumer_id}/credentials/{credential_id}/revoke": {
+      "post": {
+        "operationId": "revoke_credential_v1_admin_consumers__consumer_id__credentials__credential_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "consumer_id",
+            "required": true,
+            "schema": {
+              "title": "Consumer Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "credential_id",
+            "required": true,
+            "schema": {
+              "title": "Credential Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Revocar credencial",
+        "tags": [
+          "access administration"
+        ]
+      }
+    },
+    "/v1/auth/check": {
+      "get": {
+        "operationId": "auth_check_v1_auth_check_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Comprobar autenticación",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/v1/emitters": {
+      "post": {
+        "operationId": "create_emitter_v1_emitters_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmitterCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Crear emisor",
+        "tags": [
+          "emitters"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}": {
+      "get": {
+        "operationId": "get_emitter_v1_emitters__emitter_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Obtener emisor",
+        "tags": [
+          "emitters"
+        ]
+      },
+      "patch": {
+        "operationId": "update_emitter_v1_emitters__emitter_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmitterUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Actualizar emisor",
+        "tags": [
+          "emitters"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/certificates": {
+      "get": {
+        "operationId": "list_certificates_v1_emitters__emitter_id__certificates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Listar certificados",
+        "tags": [
+          "certificates"
+        ]
+      },
+      "post": {
+        "operationId": "upload_certificate_v1_emitters__emitter_id__certificates_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_certificate_v1_emitters__emitter_id__certificates_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Cargar certificado",
+        "tags": [
+          "certificates"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/certificates/{certificate_id}/activate": {
+      "post": {
+        "operationId": "activate_certificate_v1_emitters__emitter_id__certificates__certificate_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "certificate_id",
+            "required": true,
+            "schema": {
+              "title": "Certificate Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Activar certificado",
+        "tags": [
+          "certificates"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/deactivate": {
+      "post": {
+        "operationId": "deactivate_emitter_v1_emitters__emitter_id__deactivate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Desactivar emisor",
+        "tags": [
+          "emitters"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/documents": {
+      "get": {
+        "operationId": "list_documents_v1_emitters__emitter_id__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "internal_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Internal Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "document_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Document Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "external_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "External Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cdc",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cdc"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Listar documentos",
+        "tags": [
+          "documents"
+        ]
+      },
+      "post": {
+        "deprecated": true,
+        "operationId": "create_document_v1_emitters__emitter_id__documents_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay of the existing document and job."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Crear documento raw (sólo plataforma)",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/documents/facturas": {
+      "post": {
+        "operationId": "create_factura_document_v1_emitters__emitter_id__documents_facturas_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FacturaCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay of the existing document and job."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Crear factura",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/documents/notas-credito": {
+      "post": {
+        "operationId": "create_nota_credito_document_v1_emitters__emitter_id__documents_notas_credito_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotaCreditoCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay of the existing document and job."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Crear nota de crédito",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/documents/{document_id}": {
+      "get": {
+        "operationId": "get_document_v1_emitters__emitter_id__documents__document_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Obtener documento",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/documents/{document_id}/cancel": {
+      "post": {
+        "operationId": "cancel_document_v1_emitters__emitter_id__documents__document_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelDocumentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Cancelar documento",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/documents/{document_id}/kude": {
+      "get": {
+        "operationId": "get_document_kude_v1_emitters__emitter_id__documents__document_id__kude_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Descargar KuDE",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/documents/{document_id}/kude/data": {
+      "get": {
+        "operationId": "get_document_kude_data_v1_emitters__emitter_id__documents__document_id__kude_data_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Obtener datos del KuDE",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/documents/{document_id}/xml": {
+      "get": {
+        "operationId": "get_document_xml_v1_emitters__emitter_id__documents__document_id__xml_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Descargar XML",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/events": {
+      "post": {
+        "deprecated": true,
+        "operationId": "create_event_v1_emitters__emitter_id__events_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Crear evento raw (sólo plataforma)",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/events/{event_id}": {
+      "get": {
+        "operationId": "get_event_v1_emitters__emitter_id__events__event_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "event_id",
+            "required": true,
+            "schema": {
+              "title": "Event Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Obtener evento",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/health": {
+      "get": {
+        "operationId": "get_emitter_health_v1_emitters__emitter_id__health_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Comprobar preparación del emisor",
+        "tags": [
+          "emitters"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/inutilizations": {
+      "post": {
+        "operationId": "inutilize_numbers_v1_emitters__emitter_id__inutilizations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InutilizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Inutilizar numeración",
+        "tags": [
+          "events"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/jobs/{job_id}": {
+      "get": {
+        "operationId": "get_job_v1_emitters__emitter_id__jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Obtener job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/queries/documents/{document_id}": {
+      "get": {
+        "operationId": "query_document_v1_emitters__emitter_id__queries_documents__document_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Consultar documento en SIFEN",
+        "tags": [
+          "queries"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/queries/ruc/{ruc}": {
+      "get": {
+        "operationId": "query_ruc_v1_emitters__emitter_id__queries_ruc__ruc__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "ruc",
+            "required": true,
+            "schema": {
+              "title": "Ruc",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Consultar RUC en SIFEN",
+        "tags": [
+          "queries"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/stampings": {
+      "get": {
+        "operationId": "list_stampings_v1_emitters__emitter_id__stampings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Listar timbrados",
+        "tags": [
+          "stampings"
+        ]
+      },
+      "post": {
+        "operationId": "create_stamping_v1_emitters__emitter_id__stampings_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StampingCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Crear timbrado",
+        "tags": [
+          "stampings"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/stampings/{stamping_id}/activate": {
+      "post": {
+        "operationId": "activate_stamping_v1_emitters__emitter_id__stampings__stamping_id__activate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "stamping_id",
+            "required": true,
+            "schema": {
+              "title": "Stamping Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Activar timbrado",
+        "tags": [
+          "stampings"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/webhook-deliveries/{delivery_id}": {
+      "get": {
+        "operationId": "get_webhook_delivery_v1_emitters__emitter_id__webhook_deliveries__delivery_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "delivery_id",
+            "required": true,
+            "schema": {
+              "title": "Delivery Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Obtener entrega de webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/webhooks": {
+      "get": {
+        "operationId": "list_webhook_endpoints_v1_emitters__emitter_id__webhooks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Listar webhooks",
+        "tags": [
+          "webhooks"
+        ]
+      },
+      "post": {
+        "operationId": "register_webhook_endpoint_v1_emitters__emitter_id__webhooks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEndpointCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Registrar webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/webhooks/{endpoint_id}/deliveries/replay": {
+      "post": {
+        "operationId": "replay_webhook_delivery_v1_emitters__emitter_id__webhooks__endpoint_id__deliveries_replay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookReplayRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Reprocesar entrega de webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "description": "Return the liveness status.",
+        "operationId": "health_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Comprobar liveness",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/v1/jobs": {
+      "get": {
+        "operationId": "list_jobs_v1_jobs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "emitter_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Emitter Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "job_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Job Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "related_entity_type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Related Entity Type"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Listar jobs",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/ready": {
+      "get": {
+        "description": "Report whether mandatory storage, queue, and worker dependencies are usable.",
+        "operationId": "ready_v1_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Comprobar readiness",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/v1/webhook-deliveries": {
+      "get": {
+        "operationId": "list_webhook_deliveries_v1_webhook_deliveries_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "emitter_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Emitter Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "endpoint_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Endpoint Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Listar entregas de webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "Consumidores, credenciales y scopes administrativos.",
+      "name": "access administration",
+      "x-displayName": "Administración de acceso"
+    },
+    {
+      "description": "Comprobación de credenciales y principal activo.",
+      "name": "auth",
+      "x-displayName": "Autenticación"
+    },
+    {
+      "description": "Carga y activación segura de PKCS#12.",
+      "name": "certificates",
+      "x-displayName": "Certificados"
+    },
+    {
+      "description": "Facturas, notas de crédito, XML y KuDE.",
+      "name": "documents",
+      "x-displayName": "Documentos"
+    },
+    {
+      "description": "Configuración y preparación de contribuyentes.",
+      "name": "emitters",
+      "x-displayName": "Emisores"
+    },
+    {
+      "description": "Cancelación e inutilización asíncronas.",
+      "name": "events",
+      "x-displayName": "Eventos"
+    },
+    {
+      "description": "Liveness y readiness de la plataforma.",
+      "name": "health",
+      "x-displayName": "Estado del sistema"
+    },
+    {
+      "description": "Seguimiento de procesos asíncronos.",
+      "name": "jobs",
+      "x-displayName": "Jobs"
+    },
+    {
+      "description": "Consultas de documentos y RUC en SIFEN.",
+      "name": "queries",
+      "x-displayName": "Consultas"
+    },
+    {
+      "description": "Vigencias y numeración fiscal.",
+      "name": "stampings",
+      "x-displayName": "Timbrados"
+    },
+    {
+      "description": "Endpoints, entregas firmadas y replay.",
+      "name": "webhooks",
+      "x-displayName": "Webhooks"
+    }
+  ]
+}

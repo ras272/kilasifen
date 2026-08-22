@@ -1,0 +1,35 @@
+---
+title: Consultas y artefactos
+description: Recuperá estado, XML y KuDE sin depender exclusivamente de webhooks.
+icon: SearchCheck
+---
+
+## Estado de un documento
+
+```http
+GET /v1/emitters/{emitter_id}/documents/{document_id}
+```
+
+La respuesta incluye el documento y su job asociado.
+
+## Consultar SIFEN
+
+```http
+GET /v1/emitters/{emitter_id}/queries/documents/{document_id}
+GET /v1/emitters/{emitter_id}/queries/ruc/{ruc}
+```
+
+Usá la consulta por documento para reconciliar manualmente un estado cuando sea
+necesario. La consulta RUC permite comprobar información tributaria expuesta por
+SIFEN; no es una central de riesgo crediticio.
+
+## Descargar artefactos
+
+```http
+GET /v1/emitters/{emitter_id}/documents/{document_id}/xml
+GET /v1/emitters/{emitter_id}/documents/{document_id}/kude
+GET /v1/emitters/{emitter_id}/documents/{document_id}/kude/data
+```
+
+El KuDE sólo está disponible cuando existe información suficiente para
+representar el documento.
