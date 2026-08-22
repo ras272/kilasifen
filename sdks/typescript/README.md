@@ -1,0 +1,155 @@
+# `@kilasifen/sdk`
+
+Official, dependency-free TypeScript SDK for the KilaSifen headless fiscal API.
+It works in Node.js 20+, Bun, Deno and modern server/edge runtimes that expose
+the Fetch and Web Crypto APIs.
+
+## Install
+
+```bash
+pnpm add @kilasifen/sdk
+```
+
+## Create a client
+
+KilaSifen can be hosted or self-hosted, so `baseUrl` is explicit and never
+silently points production traffic at another environment.
+
+```ts
+import { KilaSifen } from "@kilasifen/sdk";
+
+const kila = new KilaSifen({
+  apiKey: process.env.KILASIFEN_API_KEY!,
+  baseUrl: process.env.KILASIFEN_BASE_URL!,
+});
+```
+
+## Emit a factura
+
+```ts
+const result = await kila.facturas.create(
+  "emitter_123",
+  {
+    external_id: "venta_987",
+    factura: {
+      establecimiento: "001",
+      punto: "001",
+      cliente: {
+        ruc: "80069563-1",
+        razon_social: "TIPS S.A.",
+      },
+      items: [
+        {
+          codigo_interno: "SKU-1",
+          descripcion: "Producto",
+          cantidad: 1,
+          precio_unitario: 100_000,
+          tasa: 10,
+        },
+      ],
+    },
+  },
+  { idempotencyKey: "venta_987" },
+);
+
+console.log(result.data.document.id);
+console.log(result.data.job.id);
+console.log(result.correlationId);
+```
+
+Use one stable `idempotencyKey` for each fiscal intent and persist it with your
+sale. The SDK sends it as both `Idempotency-Key` and the current API contract's
+`idempotency_key`, so retries remain safe across API versions.
+
+## Emit a nota de crédito
+
+```ts
+await kila.notasCredito.create(
+  "emitter_123",
+  {
+    external_id: "devolucion_42",
+    nota_credito: {
+      cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+      documento_asociado: { cdc: "CDC_DE_44_DIGITOS" },
+      items: [
+        { descripcion: "Devolución", cantidad: 1, precio_unitario: 50_000 },
+      ],
+    },
+  },
+  { idempotencyKey: "devolucion_42" },
+);
+```
+
+## Query state
+
+```ts
+const document = await kila.documents.get("emitter_123", "document_123");
+const job = await kila.jobs.get("emitter_123", document.data.job!.id);
+```
+
+All successful calls return `{ data, correlationId, status }`. Keep the
+correlation ID in application logs when requesting support.
+
+## Typed errors
+
+```ts
+import { isKilaSifenError } from "@kilasifen/sdk";
+
+try {
+  await kila.documents.get("emitter_123", "missing");
+} catch (error) {
+  if (isKilaSifenError(error)) {
+    console.error(error.code, error.category, error.correlationId);
+    if (error.retryable) {
+      // Retry GET requests. Reuse the same idempotency key for POST requests.
+    }
+  }
+  throw error;
+}
+```
+
+`KilaSifenError` represents a valid API error envelope.
+`KilaSifenConnectionError` represents timeouts, network failures or malformed
+responses. Both expose a `retryable` flag, but your retry policy must still use
+the same idempotency key for fiscal mutations.
+
+## Verify webhooks
+
+Always verify the exact raw request body **before** parsing JSON. Persist the
+delivery ID atomically with your business transaction; the replay callback must
+query that durable store, not process memory.
+
+```ts
+import { verifyWebhook } from "@kilasifen/sdk";
+
+const verification = await verifyWebhook({
+  rawBody,
+  secret: process.env.KILASIFEN_WEBHOOK_SECRET!,
+  headers: request.headers,
+  isDeliveryProcessed: async (deliveryId) => {
+    return database.webhookDelivery.exists(deliveryId);
+  },
+});
+
+if (!verification.valid) {
+  throw new Error(`Invalid webhook: ${verification.reason}`);
+}
+
+const event = JSON.parse(rawBody);
+```
+
+The verifier checks signature version, timestamp tolerance (five minutes by
+default), the `v1` HMAC-SHA256 signature and optional replay state using the
+same byte-level format as the KilaSifen backend.
+
+## Development
+
+```bash
+pnpm install
+pnpm lint
+pnpm test
+pnpm build
+```
+
+The package has no runtime dependencies and publishes ESM, CommonJS and
+TypeScript declarations.

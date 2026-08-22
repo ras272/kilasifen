@@ -1,0 +1,64 @@
+{
+  "name": "@kilasifen/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript SDK for the KilaSifen headless fiscal API.",
+  "keywords": [
+    "sifen",
+    "paraguay",
+    "facturacion-electronica",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "KilaSifen",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "lint": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm lint && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.4"
+  },
+  "packageManager": "pnpm@10.33.4",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ras272/kilasifen.git",
+    "directory": "sdks/typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/ras272/kilasifen/issues"
+  },
+  "homepage": "https://kilasifen-docs.vercel.app"
+}
