@@ -2,10 +2,11 @@
 
 import base64
 from functools import lru_cache
+from ipaddress import ip_network
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,17 +35,40 @@ class Settings(BaseSettings):
     max_pfx_upload_bytes: int = Field(
         default=2 * 1024 * 1024, ge=1024, le=10 * 1024 * 1024
     )
+    max_json_request_body_bytes: int = Field(
+        default=1024 * 1024,
+        ge=1024,
+        le=10 * 1024 * 1024,
+    )
+    multipart_body_overhead_bytes: int = Field(
+        default=64 * 1024,
+        ge=4096,
+        le=1024 * 1024,
+    )
     request_limits_enabled: bool = True
+    pre_auth_rate_limit_requests: int = Field(default=600, ge=1, le=1_000_000)
+    pre_auth_max_concurrent_requests: int = Field(default=32, ge=1, le=10_000)
+    trusted_proxy_cidrs: list[str] = Field(default_factory=list)
     rate_limit_requests: int = Field(default=120, ge=1, le=100_000)
     rate_limit_window_seconds: int = Field(default=60, ge=1, le=3_600)
     max_concurrent_requests: int = Field(default=8, ge=1, le=1_000)
     request_lease_seconds: int = Field(default=120, ge=10, le=3_600)
+    readiness_cache_seconds: float = Field(default=5.0, ge=0.1, le=60.0)
     sentry_dsn: str | None = None
     sentry_environment: str = "development"
     sentry_release: str | None = None
     sentry_traces_sample_rate: float = 0.0
     document_auto_enqueue: bool = False
     document_publish_webhooks: bool = False
+
+    @field_validator("trusted_proxy_cidrs")
+    @classmethod
+    def validate_trusted_proxy_cidrs(cls, values: list[str]) -> list[str]:
+        """Reject invalid proxy ranges instead of silently trusting bad config."""
+
+        for value in values:
+            ip_network(value, strict=False)
+        return values
 
     @model_validator(mode="after")
     def validate_sifen_deployment_boundary(self) -> "Settings":

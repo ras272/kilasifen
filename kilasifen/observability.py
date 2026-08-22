@@ -15,7 +15,16 @@ logger = logging.getLogger(__name__)
 
 _SCRUBBED_VALUE = "[redacted]"
 _SENSITIVE_FIELDS = {
+    "api_key",
+    "api_keys",
+    "authorization",
+    "certificate_password",
+    "config",
+    "configuration",
+    "cookie",
     "generated_xml",
+    "database_url",
+    "encryption_key",
     "signed_xml",
     "sifen_request_xml",
     "sifen_response_raw",
@@ -24,6 +33,17 @@ _SENSITIVE_FIELDS = {
     "payload_snapshot",
     "encrypted_p12",
     "encrypted_password",
+    "password",
+    "pfx",
+    "pkcs12_data",
+    "redis_url",
+    "secret",
+    "secrets",
+    "sentry_dsn",
+    "set_cookie",
+    "settings",
+    "token",
+    "x_api_key",
     "csc",
     "csc_id",
 }
@@ -67,6 +87,7 @@ def initialize_sentry(*, settings: Settings, component: str) -> bool:
         traces_sample_rate=settings.sentry_traces_sample_rate,
         integrations=integrations,
         send_default_pii=False,
+        include_local_variables=False,
         before_send=_before_send,
         before_breadcrumb=_before_breadcrumb,
         before_send_transaction=_before_send_transaction,
@@ -111,14 +132,15 @@ def _sanitize_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _sanitize_value(value: Any, *, field_name: str | None = None):
+    if field_name is not None and _is_sensitive_field(field_name):
+        return _SCRUBBED_VALUE
+    if isinstance(value, Settings):
+        return _SCRUBBED_VALUE
     if isinstance(value, dict):
         sanitized: dict[str, Any] = {}
         for key, item in value.items():
             key_name = str(key)
-            if key_name.lower() in _SENSITIVE_FIELDS:
-                sanitized[key_name] = _SCRUBBED_VALUE
-            else:
-                sanitized[key_name] = _sanitize_value(item, field_name=key_name)
+            sanitized[key_name] = _sanitize_value(item, field_name=key_name)
         return sanitized
     if isinstance(value, list):
         return [_sanitize_value(item, field_name=field_name) for item in value]
@@ -128,7 +150,16 @@ def _sanitize_value(value: Any, *, field_name: str | None = None):
         if _should_redact_string(value):
             return _SCRUBBED_VALUE
         return value
+    if isinstance(value, bytes):
+        return _SCRUBBED_VALUE
     return value
+
+
+def _is_sensitive_field(field_name: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", "_", field_name.lower()).strip("_")
+    if normalized in _SENSITIVE_FIELDS:
+        return True
+    return normalized.endswith(("_password", "_secret", "_token", "_api_key"))
 
 
 def _should_redact_string(value: str) -> bool:

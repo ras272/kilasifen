@@ -177,7 +177,7 @@ async def enforce_request_limits(
     request: Request,
     principal: ApiKeyPrincipal = Depends(get_api_key_principal),
 ) -> AsyncGenerator[None, None]:
-    """Acquire a shared per-credential/emitter request lease in public runtimes."""
+    """Acquire the global shared budget for one authenticated credential."""
 
     settings = get_settings()
     if settings.environment in {"development", "test"}:
@@ -196,8 +196,7 @@ async def enforce_request_limits(
         max_concurrent=settings.max_concurrent_requests,
         lease_seconds=settings.request_lease_seconds,
     )
-    emitter_id = request.path_params.get("emitter_id", "global")
-    identity = f"{principal.consumer_id}:{principal.key_id}:{emitter_id}"
+    identity = f"credential:{principal.consumer_id}:{principal.key_id}"
     lease = None
     try:
         try:

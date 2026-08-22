@@ -18,6 +18,10 @@ from kilasifen.api.errors import (
     service_unavailable_error_handler,
     unprocessable_entity_error_handler,
 )
+from kilasifen.api.middleware import (
+    PreAuthRateLimitMiddleware,
+    RequestBodyLimitMiddleware,
+)
 from kilasifen.api.routers.access import router as access_router
 from kilasifen.api.routers.certificates import router as certificates_router
 from kilasifen.api.routers.documents import router as documents_router
@@ -29,6 +33,7 @@ from kilasifen.api.routers.queries import router as queries_router
 from kilasifen.api.routers.stampings import router as stampings_router
 from kilasifen.api.routers.webhooks import router as webhooks_router
 from kilasifen.api.schemas.common import SuccessEnvelope
+from kilasifen.application.health.service import ReadinessProbeCache
 from kilasifen.config import get_settings
 from kilasifen.domain.common.errors import (
     ConflictError,
@@ -72,9 +77,14 @@ def create_app() -> FastAPI:
         ),
         lifespan=_lifespan,
     )
+    app.add_middleware(RequestBodyLimitMiddleware, settings=settings)
+    app.add_middleware(PreAuthRateLimitMiddleware, settings=settings)
     engine = build_engine(settings.database_url)
     app.state.engine = engine
     app.state.session_factory = build_session_factory(engine)
+    app.state.readiness_probe_cache = ReadinessProbeCache(
+        settings.readiness_cache_seconds
+    )
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(NotFoundError, not_found_error_handler)
     app.add_exception_handler(ConflictError, conflict_error_handler)

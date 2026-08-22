@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from threading import Lock
+from time import monotonic
+from typing import Callable, Literal
 
 from redis import Redis
 from rq import Worker
@@ -35,6 +37,30 @@ class ReadinessReport:
             check.status in {"ok", "not_required"}
             for check in (self.database, self.redis, self.workers)
         )
+
+
+class ReadinessProbeCache:
+    """Coalesce concurrent probes and briefly reuse their safe public result."""
+
+    def __init__(self, ttl_seconds: float) -> None:
+        self._ttl_seconds = ttl_seconds
+        self._lock = Lock()
+        self._report: ReadinessReport | None = None
+        self._expires_at = 0.0
+
+    def get_or_check(self, check: Callable[[], ReadinessReport]) -> ReadinessReport:
+        now = monotonic()
+        if self._report is not None and now < self._expires_at:
+            return self._report
+
+        with self._lock:
+            now = monotonic()
+            if self._report is not None and now < self._expires_at:
+                return self._report
+            report = check()
+            self._report = report
+            self._expires_at = monotonic() + self._ttl_seconds
+            return report
 
 
 class ReadinessService:

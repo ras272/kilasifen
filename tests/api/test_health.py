@@ -62,6 +62,24 @@ def test_ready_endpoint_returns_503_when_a_dependency_is_down() -> None:
     assert response.json()["data"]["checks"]["redis"] == {"status": "down"}
 
 
+def test_ready_endpoint_reuses_a_recent_dependency_probe() -> None:
+    app = create_app()
+    stub = _ReadinessStub(
+        ReadinessReport(
+            database=DependencyCheck("ok"),
+            redis=DependencyCheck("ok"),
+            workers=DependencyCheck("not_required"),
+        )
+    )
+    app.dependency_overrides[get_readiness_service] = lambda: stub
+    client = TestClient(app)
+
+    assert client.get("/v1/ready").status_code == 200
+    assert client.get("/v1/ready").status_code == 200
+
+    assert stub.check_count == 1
+
+
 def test_health_request_emits_structured_request_log(
     caplog,
 ) -> None:
@@ -86,6 +104,8 @@ def test_health_request_emits_structured_request_log(
 class _ReadinessStub:
     def __init__(self, report: ReadinessReport):
         self.report = report
+        self.check_count = 0
 
     def check(self) -> ReadinessReport:
+        self.check_count += 1
         return self.report

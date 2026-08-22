@@ -32,7 +32,7 @@ def ready(
 ) -> SuccessEnvelope | JSONResponse:
     """Report whether mandatory storage, queue, and worker dependencies are usable."""
 
-    report = service.check()
+    report = request.app.state.readiness_probe_cache.get_or_check(service.check)
     readiness = ReadinessData(
         status="ready" if report.is_ready else "not_ready",
         checks={

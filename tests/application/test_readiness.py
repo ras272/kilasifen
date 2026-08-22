@@ -1,8 +1,45 @@
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from unittest.mock import Mock, patch
 
 from sqlalchemy import create_engine
 
-from kilasifen.application.health.service import ReadinessService
+from kilasifen.application.health.service import (
+    DependencyCheck,
+    ReadinessProbeCache,
+    ReadinessReport,
+    ReadinessService,
+)
+
+
+def test_readiness_cache_coalesces_concurrent_dependency_probes() -> None:
+    cache = ReadinessProbeCache(ttl_seconds=30)
+    started = Event()
+    release = Event()
+    call_count = 0
+    report = ReadinessReport(
+        database=DependencyCheck("ok"),
+        redis=DependencyCheck("ok"),
+        workers=DependencyCheck("not_required"),
+    )
+
+    def check() -> ReadinessReport:
+        nonlocal call_count
+        call_count += 1
+        started.set()
+        assert release.wait(timeout=2)
+        return report
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(cache.get_or_check, check)
+        assert started.wait(timeout=2)
+        second = executor.submit(cache.get_or_check, check)
+        release.set()
+
+        assert first.result(timeout=2) is report
+        assert second.result(timeout=2) is report
+
+    assert call_count == 1
 
 
 def test_readiness_reports_healthy_dependencies_when_workers_are_optional() -> None:

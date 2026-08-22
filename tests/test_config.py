@@ -76,3 +76,8 @@ def test_production_requires_explicit_enablement() -> None:
             enable_production=False,
             _env_file=None,
         )
+
+
+def test_trusted_proxy_ranges_must_be_valid_cidrs() -> None:
+    with pytest.raises(ValidationError, match="does not appear"):
+        Settings(trusted_proxy_cidrs=["not-a-network"], _env_file=None)

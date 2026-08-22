@@ -105,12 +105,41 @@ def test_initialize_sentry_configures_optional_sdk(monkeypatch) -> None:
     assert captured["init_kwargs"]["environment"] == "development"
     assert captured["init_kwargs"]["traces_sample_rate"] == 0.0
     assert captured["init_kwargs"]["send_default_pii"] is False
+    assert captured["init_kwargs"]["include_local_variables"] is False
     integrations = captured["init_kwargs"]["integrations"]
     assert len(integrations) == 2
     assert integrations[0].level == logging.INFO
     assert integrations[0].event_level == logging.ERROR
     assert integrations[1].name == "fastapi"
     assert captured["tags"] == [("kila_component", "api")]
+
+
+def test_before_send_redacts_composite_settings_and_header_secrets() -> None:
+    event = {
+        "extra": {
+            "settings": Settings(
+                api_keys=["kila_live_secret"],
+                encryption_key="not-a-real-fernet-key",
+                database_url="postgresql://user:password@db.internal/kila",
+                _env_file=None,
+            ),
+            "headers": {
+                "X-API-Key": "kila_live_secret",
+                "authorization": "Bearer private-token",
+                "accept": "application/json",
+            },
+            "certificate_bytes": b"binary-private-material",
+        }
+    }
+
+    sanitized = _before_send(event, {})
+
+    assert sanitized is not None
+    assert sanitized["extra"]["settings"] == "[redacted]"
+    assert sanitized["extra"]["headers"]["X-API-Key"] == "[redacted]"
+    assert sanitized["extra"]["headers"]["authorization"] == "[redacted]"
+    assert sanitized["extra"]["headers"]["accept"] == "application/json"
+    assert sanitized["extra"]["certificate_bytes"] == "[redacted]"
 
 
 def test_create_app_initializes_api_sentry(monkeypatch) -> None:
