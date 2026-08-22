@@ -1,4 +1,6 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 from fastapi.testclient import TestClient
 
@@ -80,6 +82,27 @@ def test_ready_endpoint_reuses_a_recent_dependency_probe() -> None:
     assert stub.check_count == 1
 
 
+def test_ready_waiter_and_health_do_not_block_behind_probe_refresh() -> None:
+    app = create_app()
+    stub = _BlockingReadinessStub()
+    app.dependency_overrides[get_readiness_service] = lambda: stub
+
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as executor:
+        first_ready = executor.submit(client.get, "/v1/ready")
+        assert stub.started.wait(timeout=2)
+        try:
+            concurrent_ready = client.get("/v1/ready")
+            health = client.get("/v1/health")
+        finally:
+            stub.release.set()
+
+        assert concurrent_ready.status_code == 503
+        assert concurrent_ready.json()["data"]["status"] == "not_ready"
+        assert health.status_code == 200
+        assert first_ready.result(timeout=2).status_code == 200
+        assert stub.check_count == 1
+
+
 def test_health_request_emits_structured_request_log(
     caplog,
 ) -> None:
@@ -108,4 +131,23 @@ class _ReadinessStub:
 
     def check(self) -> ReadinessReport:
         self.check_count += 1
+        return self.report
+
+
+class _BlockingReadinessStub(_ReadinessStub):
+    def __init__(self) -> None:
+        super().__init__(
+            ReadinessReport(
+                database=DependencyCheck("ok"),
+                redis=DependencyCheck("ok"),
+                workers=DependencyCheck("not_required"),
+            )
+        )
+        self.started = Event()
+        self.release = Event()
+
+    def check(self) -> ReadinessReport:
+        self.check_count += 1
+        self.started.set()
+        assert self.release.wait(timeout=2)
         return self.report

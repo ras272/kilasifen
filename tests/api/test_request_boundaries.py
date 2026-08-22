@@ -45,16 +45,43 @@ def test_trusted_proxy_chain_resolves_first_untrusted_hop() -> None:
     assert resolver.resolve(scope) == "203.0.113.44"
 
 
-@pytest.mark.anyio
-async def test_pre_auth_rejection_happens_before_downstream_auth(
-    monkeypatch,
+def test_trusted_proxy_combines_every_forwarded_for_header_in_order() -> None:
+    resolver = NetworkIdentityResolver(["10.0.0.0/8"])
+    scope = _scope(
+        client=("10.0.0.9", 1234),
+        headers=[
+            (b"x-forwarded-for", b"198.51.100.1"),
+            (b"x-forwarded-for", b"203.0.113.44"),
+        ],
+    )
+
+    assert resolver.resolve(scope) == "203.0.113.44"
+
+
+@pytest.mark.parametrize(
+    "forwarded_for",
+    [
+        b"not-an-ip",
+        b",".join(b"192.0.2.1" for _ in range(33)),
+        b"1" * 4097,
+    ],
+)
+def test_malformed_or_oversized_forwarded_chain_falls_back_to_peer(
+    forwarded_for: bytes,
 ) -> None:
+    resolver = NetworkIdentityResolver(["10.0.0.0/8"])
+    scope = _scope(
+        client=("10.0.0.9", 1234),
+        headers=[(b"x-forwarded-for", forwarded_for)],
+    )
+
+    assert resolver.resolve(scope) == "10.0.0.9"
+
+
+@pytest.mark.anyio
+async def test_pre_auth_rejection_happens_before_downstream_auth() -> None:
     redis = AsyncMock()
     redis.eval.return_value = [0, 601, 42, 0]
-    monkeypatch.setattr(
-        "kilasifen.api.middleware.AsyncRedis.from_url",
-        lambda *args, **kwargs: redis,
-    )
     downstream_called = False
 
     async def downstream(scope, receive, send) -> None:
@@ -64,6 +91,7 @@ async def test_pre_auth_rejection_happens_before_downstream_auth(
 
     middleware = PreAuthRateLimitMiddleware(
         downstream,
+        redis=redis,
         settings=Settings.model_construct(
             environment="production",
             request_limits_enabled=True,
@@ -85,6 +113,7 @@ async def test_pre_auth_rejection_happens_before_downstream_auth(
     assert downstream_called is False
     assert sent[0]["status"] == 429
     assert dict(sent[0]["headers"])[b"retry-after"] == b"42"
+    redis.aclose.assert_not_awaited()
 
 
 @pytest.mark.anyio
@@ -203,10 +232,6 @@ async def test_post_auth_budget_cannot_be_bypassed_with_emitter_path(
         request_lease_seconds=120,
     )
     monkeypatch.setattr("kilasifen.api.deps.get_settings", lambda: settings)
-    monkeypatch.setattr(
-        "kilasifen.api.deps.AsyncRedis.from_url",
-        lambda *args, **kwargs: redis,
-    )
     principal = ApiKeyPrincipal(
         key_id="key-1",
         consumer_id="consumer-1",
@@ -220,6 +245,7 @@ async def test_post_auth_budget_cannot_be_bypassed_with_emitter_path(
     first_rate_key = redis.eval.await_args_list[0].args[2]
     second_rate_key = redis.eval.await_args_list[2].args[2]
     assert first_rate_key == second_rate_key
+    redis.aclose.assert_not_awaited()
 
 
 async def _acquire_post_auth_limit(
@@ -227,13 +253,22 @@ async def _acquire_post_auth_limit(
     principal: ApiKeyPrincipal,
     emitter_id: str,
 ) -> None:
-    del redis
     dependency = enforce_request_limits(
-        Request(_scope(path=f"/v1/emitters/{emitter_id}")),
+        Request(
+            _scope(
+                path=f"/v1/emitters/{emitter_id}",
+                app=_AppWithRequestLimitRedis(redis),
+            )
+        ),
         principal,
     )
     await anext(dependency)
     await dependency.aclose()
+
+
+class _AppWithRequestLimitRedis:
+    def __init__(self, redis: AsyncMock) -> None:
+        self.state = type("State", (), {"request_limit_redis": redis})()
 
 
 def _scope(
@@ -242,6 +277,7 @@ def _scope(
     path: str = "/v1/documents",
     client: tuple[str, int] = ("203.0.113.8", 1234),
     headers: list[tuple[bytes, bytes]] | None = None,
+    app: object | None = None,
 ) -> dict:
     return {
         "type": "http",
@@ -256,6 +292,7 @@ def _scope(
         "client": client,
         "server": ("testserver", 443),
         "state": {},
+        "app": app,
     }
 
 

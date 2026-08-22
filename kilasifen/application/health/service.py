@@ -40,7 +40,7 @@ class ReadinessReport:
 
 
 class ReadinessProbeCache:
-    """Coalesce concurrent probes and briefly reuse their safe public result."""
+    """Serve stale readiness while one caller refreshes dependencies."""
 
     def __init__(self, ttl_seconds: float) -> None:
         self._ttl_seconds = ttl_seconds
@@ -53,14 +53,30 @@ class ReadinessProbeCache:
         if self._report is not None and now < self._expires_at:
             return self._report
 
-        with self._lock:
+        if not self._lock.acquire(blocking=False):
+            return self._report or _safe_not_ready_report()
+
+        try:
             now = monotonic()
             if self._report is not None and now < self._expires_at:
                 return self._report
-            report = check()
+            try:
+                report = check()
+            except Exception:
+                report = _safe_not_ready_report()
             self._report = report
             self._expires_at = monotonic() + self._ttl_seconds
             return report
+        finally:
+            self._lock.release()
+
+
+def _safe_not_ready_report() -> ReadinessReport:
+    return ReadinessReport(
+        database=DependencyCheck("down"),
+        redis=DependencyCheck("down"),
+        workers=DependencyCheck("down"),
+    )
 
 
 class ReadinessService:

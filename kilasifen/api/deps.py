@@ -7,7 +7,6 @@ from collections.abc import AsyncGenerator, Callable, Generator
 from fastapi import Depends, Request, Security
 from fastapi.security import APIKeyHeader
 from redis import Redis
-from redis.asyncio import Redis as AsyncRedis
 from sqlalchemy.orm import Session
 
 from kilasifen.application.access.service import AccessService
@@ -184,11 +183,7 @@ async def enforce_request_limits(
         yield
         return
 
-    redis = AsyncRedis.from_url(
-        settings.redis_url,
-        socket_connect_timeout=1,
-        socket_timeout=1,
-    )
+    redis = request.app.state.request_limit_redis
     limiter = RedisRequestLimiter(
         redis,
         requests_per_window=settings.rate_limit_requests,
@@ -228,10 +223,6 @@ async def enforce_request_limits(
                 await limiter.release(lease)
             except Exception:
                 logger.exception("limits.lease_release_failed")
-        try:
-            await redis.aclose()
-        except Exception:
-            logger.exception("limits.redis_close_failed")
 
 
 def get_db_session(request: Request) -> Generator[Session, None, None]:

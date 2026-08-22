@@ -12,7 +12,7 @@ from kilasifen.application.health.service import (
 )
 
 
-def test_readiness_cache_coalesces_concurrent_dependency_probes() -> None:
+def test_readiness_cache_returns_safe_not_ready_instead_of_blocking_waiter() -> None:
     cache = ReadinessProbeCache(ttl_seconds=30)
     started = Event()
     release = Event()
@@ -30,16 +30,64 @@ def test_readiness_cache_coalesces_concurrent_dependency_probes() -> None:
         assert release.wait(timeout=2)
         return report
 
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=1) as executor:
         first = executor.submit(cache.get_or_check, check)
         assert started.wait(timeout=2)
-        second = executor.submit(cache.get_or_check, check)
+        concurrent = cache.get_or_check(check)
+
+        assert concurrent.is_ready is False
+        assert concurrent.database.status == "down"
+        assert first.done() is False
+
         release.set()
 
         assert first.result(timeout=2) is report
-        assert second.result(timeout=2) is report
 
     assert call_count == 1
+    assert cache.get_or_check(check) is report
+
+
+def test_readiness_cache_serves_last_report_while_refreshing() -> None:
+    cache = ReadinessProbeCache(ttl_seconds=0)
+    previous = ReadinessReport(
+        database=DependencyCheck("ok"),
+        redis=DependencyCheck("ok"),
+        workers=DependencyCheck("not_required"),
+    )
+    refreshed = ReadinessReport(
+        database=DependencyCheck("down"),
+        redis=DependencyCheck("ok"),
+        workers=DependencyCheck("not_required"),
+    )
+    assert cache.get_or_check(lambda: previous) is previous
+    started = Event()
+    release = Event()
+
+    def refresh() -> ReadinessReport:
+        started.set()
+        assert release.wait(timeout=2)
+        return refreshed
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        refresh_future = executor.submit(cache.get_or_check, refresh)
+        assert started.wait(timeout=2)
+
+        assert cache.get_or_check(refresh) is previous
+
+        release.set()
+        assert refresh_future.result(timeout=2) is refreshed
+
+
+def test_readiness_cache_converts_unexpected_probe_error_to_not_ready() -> None:
+    cache = ReadinessProbeCache(ttl_seconds=30)
+
+    def failed_probe() -> ReadinessReport:
+        raise RuntimeError("unexpected probe failure")
+
+    report = cache.get_or_check(failed_probe)
+
+    assert report.is_ready is False
+    assert report.database.status == "down"
 
 
 def test_readiness_reports_healthy_dependencies_when_workers_are_optional() -> None:

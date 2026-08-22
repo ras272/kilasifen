@@ -18,6 +18,8 @@ from kilasifen.infrastructure.limits.redis import RedisRequestLimiter, RequestLe
 logger = logging.getLogger(__name__)
 
 _CERTIFICATE_UPLOAD_PARTS = ("emitters", "certificates")
+_MAX_FORWARDED_FOR_HOPS = 32
+_MAX_FORWARDED_FOR_BYTES = 4096
 
 
 class RequestBodyLimitMiddleware:
@@ -85,33 +87,34 @@ class RequestBodyLimitMiddleware:
 class PreAuthRateLimitMiddleware:
     """Apply a cheap network budget before expensive credential verification."""
 
-    def __init__(self, app: ASGIApp, *, settings: Settings) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        *,
+        settings: Settings,
+        redis: AsyncRedis,
+    ) -> None:
         self.app = app
         self.settings = settings
         self.identity_resolver = NetworkIdentityResolver(settings.trusted_proxy_cidrs)
+        self.limiter = RedisRequestLimiter(
+            redis,
+            requests_per_window=settings.pre_auth_rate_limit_requests,
+            window_seconds=settings.rate_limit_window_seconds,
+            max_concurrent=settings.pre_auth_max_concurrent_requests,
+            lease_seconds=settings.request_lease_seconds,
+        )
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if not self._must_limit(scope):
             await self.app(scope, receive, send)
             return
 
-        redis = AsyncRedis.from_url(
-            self.settings.redis_url,
-            socket_connect_timeout=1,
-            socket_timeout=1,
-        )
-        limiter = RedisRequestLimiter(
-            redis,
-            requests_per_window=self.settings.pre_auth_rate_limit_requests,
-            window_seconds=self.settings.rate_limit_window_seconds,
-            max_concurrent=self.settings.pre_auth_max_concurrent_requests,
-            lease_seconds=self.settings.request_lease_seconds,
-        )
         identity = f"network:{self.identity_resolver.resolve(scope)}"
         lease: RequestLease | None = None
         try:
             try:
-                lease = await limiter.acquire(identity)
+                lease = await self.limiter.acquire(identity)
             except Exception:
                 await _send_error(
                     scope,
@@ -141,13 +144,9 @@ class PreAuthRateLimitMiddleware:
         finally:
             if lease is not None:
                 try:
-                    await limiter.release(lease)
+                    await self.limiter.release(lease)
                 except Exception:
                     logger.exception("limits.pre_auth_lease_release_failed")
-            try:
-                await redis.aclose()
-            except Exception:
-                logger.exception("limits.pre_auth_redis_close_failed")
 
     def _must_limit(self, scope: Scope) -> bool:
         if scope["type"] != "http":
@@ -241,16 +240,30 @@ def _parse_peer(scope: Scope) -> IPv4Address | IPv6Address | None:
 def _forwarded_for(
     scope: Scope,
 ) -> tuple[IPv4Address | IPv6Address, ...] | None:
+    raw_values: list[bytes] = []
+    total_bytes = 0
     for raw_name, raw_value in scope.get("headers", []):
         if raw_name.lower() != b"x-forwarded-for":
             continue
+        total_bytes += len(raw_value)
+        if total_bytes > _MAX_FORWARDED_FOR_BYTES:
+            return None
+        raw_values.append(raw_value)
+
+    addresses: list[IPv4Address | IPv6Address] = []
+    for raw_value in raw_values:
         try:
             values = raw_value.decode("ascii").split(",")
-            addresses = tuple(ip_address(value.strip()) for value in values)
+            for value in values:
+                if len(addresses) >= _MAX_FORWARDED_FOR_HOPS:
+                    return None
+                stripped = value.strip()
+                if not stripped:
+                    return None
+                addresses.append(ip_address(stripped))
         except (UnicodeDecodeError, ValueError):
             return None
-        return addresses or None
-    return None
+    return tuple(addresses) or None
 
 
 async def _send_error(

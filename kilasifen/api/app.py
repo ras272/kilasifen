@@ -7,6 +7,7 @@ from time import perf_counter
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Request
+from redis.asyncio import Redis as AsyncRedis
 
 from kilasifen.admin.router import router as admin_router
 from kilasifen.api.deps import enforce_request_limits, get_api_key_principal
@@ -59,7 +60,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         yield
     finally:
-        app.state.engine.dispose()
+        try:
+            await app.state.request_limit_redis.aclose()
+        except Exception:
+            logger.exception("limits.shared_redis_close_failed")
+        finally:
+            app.state.engine.dispose()
 
 
 def create_app() -> FastAPI:
@@ -77,13 +83,23 @@ def create_app() -> FastAPI:
         ),
         lifespan=_lifespan,
     )
-    app.add_middleware(RequestBodyLimitMiddleware, settings=settings)
-    app.add_middleware(PreAuthRateLimitMiddleware, settings=settings)
     engine = build_engine(settings.database_url)
+    request_limit_redis = AsyncRedis.from_url(
+        settings.redis_url,
+        socket_connect_timeout=1,
+        socket_timeout=1,
+    )
     app.state.engine = engine
     app.state.session_factory = build_session_factory(engine)
+    app.state.request_limit_redis = request_limit_redis
     app.state.readiness_probe_cache = ReadinessProbeCache(
         settings.readiness_cache_seconds
+    )
+    app.add_middleware(RequestBodyLimitMiddleware, settings=settings)
+    app.add_middleware(
+        PreAuthRateLimitMiddleware,
+        settings=settings,
+        redis=request_limit_redis,
     )
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(NotFoundError, not_found_error_handler)
