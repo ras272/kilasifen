@@ -320,3 +320,154 @@ export interface DocumentQuery {
 export interface ReconciledDocument {
   document_query: DocumentQuery;
 }
+
+export interface Pagination {
+  limit: number;
+  offset: number;
+  count: number;
+}
+
+export interface DocumentListItem extends DocumentWithJob {}
+
+export interface DocumentList {
+  documents: DocumentListItem[];
+  pagination: Pagination;
+}
+
+export interface DocumentListOptions extends RequestOptions {
+  limit?: number;
+  offset?: number;
+  internalStatus?: string;
+  documentType?: string;
+  externalId?: string;
+  cdc?: string;
+}
+
+export interface Taxpayer {
+  ruc: string;
+  legal_name: string;
+  state_code: string | null;
+  state: string | null;
+  electronic_taxpayer: boolean | null;
+}
+
+export interface RucQuery {
+  queried_ruc: string;
+  status: string;
+  result_code: string | null;
+  result_message: string | null;
+  taxpayer: Taxpayer | null;
+}
+
+export interface FiscalEvent {
+  id: string;
+  emitter_id: string;
+  document_id: string | null;
+  event_type: string;
+  input_payload: Record<string, unknown> | null;
+  generated_xml: string | null;
+  signed_xml: string | null;
+  sifen_request_xml: string | null;
+  sifen_response_raw: string | null;
+  status: string;
+  sifen_result_code: string | null;
+  sifen_result_message: string | null;
+  created_at: IsoDateTime;
+  updated_at: IsoDateTime;
+}
+
+export interface EventWithJob {
+  event: FiscalEvent;
+  job: Job | null;
+}
+
+export interface CreatedEvent {
+  event: FiscalEvent;
+  job: Job;
+}
+
+export interface CancelDocumentInput {
+  motivo: string;
+}
+
+export type InutilizationDocumentType =
+  | "factura"
+  | "fe_exportacion"
+  | "fe_importacion"
+  | "autofactura"
+  | "nota_credito"
+  | "nota_debito"
+  | "nota_remision"
+  | "comprobante_retencion";
+
+export interface InutilizeNumbersInput {
+  timbrado: string;
+  document_type: InutilizationDocumentType;
+  establishment: string;
+  point: string;
+  numero_desde: number;
+  numero_hasta: number;
+  motivo: string;
+}
+
+export interface InutilizedRange {
+  id: string;
+  emitter_id: string;
+  document_type: string;
+  establishment: string;
+  point: string;
+  numero_desde: number;
+  numero_hasta: number;
+  timbrado: string;
+  event_id: string;
+  sifen_protocol: string | null;
+  created_at: IsoDateTime;
+  updated_at: IsoDateTime;
+}
+
+export interface CreatedInutilization extends CreatedEvent {
+  inutilization: InutilizedRange;
+}
+
+export interface WebhookRetryPolicy {
+  max_attempts?: number;
+}
+
+export interface WebhookEndpointCreateInput {
+  url: string;
+  secret: string;
+  event_subscriptions?: string[] | null;
+  retry_policy?: WebhookRetryPolicy | null;
+}
+
+export interface WebhookEndpoint {
+  id: string;
+  emitter_id: string | null;
+  url: string;
+  event_subscriptions: string[] | null;
+  is_active: boolean;
+  retry_policy: Record<string, unknown> | null;
+  secret_configured: boolean;
+  created_at: IsoDateTime;
+  updated_at: IsoDateTime;
+}
+
+export interface WebhookDelivery {
+  id: string;
+  webhook_endpoint_id: string;
+  event_type: string;
+  payload_snapshot: Record<string, unknown> | null;
+  request_body: string | null;
+  attempt_number: number;
+  request_at: IsoDateTime | null;
+  response_code: number | null;
+  response_body_snapshot: string | null;
+  final_status: string;
+  created_at: IsoDateTime;
+  updated_at: IsoDateTime;
+}
+
+export interface WebhookReplayInput {
+  event_type: string;
+  payload?: Record<string, JsonValue> | null;
+}

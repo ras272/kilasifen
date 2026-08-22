@@ -279,6 +279,82 @@ describe("KilaSifen client", () => {
     expect(init?.body).toBeUndefined();
   });
 
+  it("lists and queries documents with encoded filters", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(success({ documents: [], pagination: { limit: 25, offset: 0, count: 0 } }))
+      .mockResolvedValueOnce(success({ document_query: { document_id: "doc_1", cdc: "1", status: "found" } }))
+      .mockResolvedValueOnce(success({ ruc_query: { queried_ruc: "80069563", status: "found", taxpayer: null } }));
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+    });
+
+    await client.documents.list("emitter_1", { limit: 25, externalId: "sale/1" });
+    await client.documents.query("emitter_1", "doc_1");
+    await client.queries.ruc("emitter_1", "80069563-1");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/v1/emitters/emitter_1/documents?limit=25&external_id=sale%2F1",
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toContain("/queries/documents/doc_1");
+    expect(fetchMock.mock.calls[2]?.[0]).toContain("/queries/ruc/80069563-1");
+  });
+
+  it("creates typed cancellation and inutilization events", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(success({ event: { id: "event_1" }, job: JOB }, 201))
+      .mockResolvedValueOnce(success({ event: { id: "event_2" }, job: JOB, inutilization: { id: "range_1" } }, 201));
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+    });
+
+    await client.events.cancel("emitter_1", "doc/1", { motivo: "Error de datos" });
+    await client.events.inutilize("emitter_1", {
+      timbrado: "12345678",
+      document_type: "factura",
+      establishment: "001",
+      point: "001",
+      numero_desde: 10,
+      numero_hasta: 12,
+      motivo: "Rango no utilizado",
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("/documents/doc%2F1/cancel");
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
+      numero_desde: 10,
+      numero_hasta: 12,
+    });
+  });
+
+  it("manages webhook endpoints and explicit replay", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(success({ webhook_endpoint: { id: "wh_1" } }, 201))
+      .mockResolvedValueOnce(success({ webhook_endpoints: [] }))
+      .mockResolvedValueOnce(success({ delivery: { id: "delivery_1" }, job: JOB }, 201));
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+    });
+
+    await client.webhooks.create("emitter_1", {
+      url: "https://erp.example.com/kila",
+      secret: "12345678901234567890123456789012",
+      event_subscriptions: ["document.approved"],
+    });
+    await client.webhooks.list("emitter_1");
+    await client.webhooks.replay("emitter_1", "wh_1", {
+      event_type: "document.approved",
+      payload: { document_id: "doc_1" },
+    });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("/webhooks");
+    expect(fetchMock.mock.calls[2]?.[0]).toContain("/webhooks/wh_1/deliveries/replay");
+  });
+
   it("throws a typed KilaSifen error from an API error envelope", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json(

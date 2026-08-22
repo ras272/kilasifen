@@ -1,15 +1,27 @@
 import { HttpClient } from "./http";
 import type {
+  CancelDocumentInput,
   CreateOptions,
   CreatedDocument,
+  CreatedEvent,
+  CreatedInutilization,
+  DocumentList,
+  DocumentListOptions,
   DocumentWithJob,
+  EventWithJob,
   FacturaCreateInput,
+  InutilizeNumbersInput,
   Job,
   KilaResponse,
   NotaCreditoCreateInput,
   NotaDebitoCreateInput,
   ReconciledDocument,
   RequestOptions,
+  RucQuery,
+  WebhookDelivery,
+  WebhookEndpoint,
+  WebhookEndpointCreateInput,
+  WebhookReplayInput,
 } from "./types";
 
 export class FacturasResource {
@@ -95,6 +107,35 @@ export class DocumentsResource {
     );
   }
 
+  list(
+    emitterId: string,
+    options: DocumentListOptions = {},
+  ): Promise<KilaResponse<DocumentList>> {
+    const query = queryString({
+      limit: options.limit,
+      offset: options.offset,
+      internal_status: options.internalStatus,
+      document_type: options.documentType,
+      external_id: options.externalId,
+      cdc: options.cdc,
+    });
+    return this.http.json<DocumentList>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/documents${query}`,
+      requestFields(options),
+    );
+  }
+
+  query(
+    emitterId: string,
+    documentId: string,
+    options: RequestOptions = {},
+  ): Promise<KilaResponse<ReconciledDocument>> {
+    return this.http.json<ReconciledDocument>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/queries/documents/${segment(documentId, "documentId")}`,
+      requestFields(options),
+    );
+  }
+
   /**
    * Resolve an uncertain document by querying SIFEN with its existing CDC.
    * This operation never resubmits the fiscal document.
@@ -107,6 +148,107 @@ export class DocumentsResource {
     return this.http.json<ReconciledDocument>(
       `/v1/emitters/${segment(emitterId, "emitterId")}/queries/documents/${segment(documentId, "documentId")}/reconcile`,
       { method: "POST", ...requestFields(options) },
+    );
+  }
+}
+
+export class QueriesResource {
+  constructor(private readonly http: HttpClient) {}
+
+  ruc(
+    emitterId: string,
+    ruc: string,
+    options: RequestOptions = {},
+  ): Promise<KilaResponse<{ ruc_query: RucQuery }>> {
+    return this.http.json<{ ruc_query: RucQuery }>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/queries/ruc/${segment(ruc, "ruc")}`,
+      requestFields(options),
+    );
+  }
+}
+
+export class EventsResource {
+  constructor(private readonly http: HttpClient) {}
+
+  cancel(
+    emitterId: string,
+    documentId: string,
+    input: CancelDocumentInput,
+    options: RequestOptions = {},
+  ): Promise<KilaResponse<CreatedEvent>> {
+    return this.http.json<CreatedEvent>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/documents/${segment(documentId, "documentId")}/cancel`,
+      { method: "POST", body: input, ...requestFields(options) },
+    );
+  }
+
+  inutilize(
+    emitterId: string,
+    input: InutilizeNumbersInput,
+    options: RequestOptions = {},
+  ): Promise<KilaResponse<CreatedInutilization>> {
+    return this.http.json<CreatedInutilization>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/inutilizations`,
+      { method: "POST", body: input, ...requestFields(options) },
+    );
+  }
+
+  get(
+    emitterId: string,
+    eventId: string,
+    options: RequestOptions = {},
+  ): Promise<KilaResponse<EventWithJob>> {
+    return this.http.json<EventWithJob>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/events/${segment(eventId, "eventId")}`,
+      requestFields(options),
+    );
+  }
+}
+
+export class WebhooksResource {
+  constructor(private readonly http: HttpClient) {}
+
+  create(
+    emitterId: string,
+    input: WebhookEndpointCreateInput,
+    options: RequestOptions = {},
+  ): Promise<KilaResponse<{ webhook_endpoint: WebhookEndpoint }>> {
+    return this.http.json<{ webhook_endpoint: WebhookEndpoint }>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/webhooks`,
+      { method: "POST", body: input, ...requestFields(options) },
+    );
+  }
+
+  list(
+    emitterId: string,
+    options: RequestOptions = {},
+  ): Promise<KilaResponse<{ webhook_endpoints: WebhookEndpoint[] }>> {
+    return this.http.json<{ webhook_endpoints: WebhookEndpoint[] }>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/webhooks`,
+      requestFields(options),
+    );
+  }
+
+  replay(
+    emitterId: string,
+    endpointId: string,
+    input: WebhookReplayInput,
+    options: RequestOptions = {},
+  ): Promise<KilaResponse<{ delivery: WebhookDelivery; job: Job }>> {
+    return this.http.json<{ delivery: WebhookDelivery; job: Job }>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/webhooks/${segment(endpointId, "endpointId")}/deliveries/replay`,
+      { method: "POST", body: input, ...requestFields(options) },
+    );
+  }
+
+  getDelivery(
+    emitterId: string,
+    deliveryId: string,
+    options: RequestOptions = {},
+  ): Promise<KilaResponse<{ delivery: WebhookDelivery; job: Job | null }>> {
+    return this.http.json<{ delivery: WebhookDelivery; job: Job | null }>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/webhook-deliveries/${segment(deliveryId, "deliveryId")}`,
+      requestFields(options),
     );
   }
 }
@@ -168,4 +310,15 @@ function isSandboxOutcome(value: string): boolean {
 function segment(value: string, name: string): string {
   if (!value.trim()) throw new TypeError(`${name} must not be empty`);
   return encodeURIComponent(value);
+}
+
+function queryString(
+  values: Record<string, string | number | undefined>,
+): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== undefined) params.set(key, String(value));
+  }
+  const serialized = params.toString();
+  return serialized ? `?${serialized}` : "";
 }

@@ -144,6 +144,18 @@ const document = await kila.documents.get("emitter_123", "document_123");
 const job = await kila.jobs.get("emitter_123", document.data.job!.id);
 ```
 
+List and filter documents without assembling query strings manually:
+
+```ts
+const page = await kila.documents.list("emitter_123", {
+  limit: 50,
+  internalStatus: "approved",
+  externalId: "venta_987",
+});
+
+const taxpayer = await kila.queries.ruc("emitter_123", "80069563-1");
+```
+
 If transmission ended ambiguously, reconcile the existing CDC without
 resubmitting the DE:
 
@@ -159,6 +171,43 @@ console.log(reconciliation.data.document_query.status);
 Reconciliation is intentionally API-only and never creates another document.
 Use it for documents whose state requires reconciliation; validation errors are
 returned as normal typed `KilaSifenError` instances.
+
+## Fiscal events
+
+Cancellation and number-range inutilization are typed resources too; no raw
+event payload is required.
+
+```ts
+await kila.events.cancel("emitter_123", "document_123", {
+  motivo: "Datos fiscales incorrectos",
+});
+
+await kila.events.inutilize("emitter_123", {
+  timbrado: "12345678",
+  document_type: "factura",
+  establishment: "001",
+  point: "001",
+  numero_desde: 120,
+  numero_hasta: 125,
+  motivo: "Rango no utilizado",
+});
+```
+
+## Configure webhooks
+
+```ts
+const endpoint = await kila.webhooks.create("emitter_123", {
+  url: "https://erp.example.com/webhooks/kila",
+  secret: process.env.KILASIFEN_WEBHOOK_SECRET!,
+  event_subscriptions: ["document.approved", "document.rejected"],
+  retry_policy: { max_attempts: 5 },
+});
+
+await kila.webhooks.replay("emitter_123", endpoint.data.webhook_endpoint.id, {
+  event_type: "document.approved",
+  payload: { document_id: "document_123" },
+});
+```
 
 All successful calls return `{ data, correlationId, status }`. Keep the
 correlation ID in application logs when requesting support.
