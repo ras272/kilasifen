@@ -35,12 +35,22 @@ export interface RequestOptions {
   headers?: Record<string, string>;
 }
 
+export type SandboxOutcome =
+  | "approved"
+  | "approved_with_observation"
+  | "rejected";
+
 export interface CreateOptions extends RequestOptions {
   /**
    * Stable identifier for one fiscal intent. Reusing it returns the original
    * document instead of emitting another one.
    */
   idempotencyKey?: string;
+  /**
+   * Deterministic SIFEN result for automated tests. The API rejects this
+   * header outside its test runtime.
+   */
+  sandboxOutcome?: SandboxOutcome;
 }
 
 export interface PublicProcurement {
@@ -295,4 +305,18 @@ export interface DocumentWithJob {
 export interface CreatedDocument {
   document: Document;
   job: Job;
+}
+
+export interface DocumentQuery {
+  document_id: string;
+  cdc: string;
+  status: string;
+  result_code: string | null;
+  result_message: string | null;
+  content_xml: string | null;
+  processed_at: IsoDateTime | null;
+}
+
+export interface ReconciledDocument {
+  document_query: DocumentQuery;
 }

@@ -8,6 +8,7 @@ import type {
   KilaResponse,
   NotaCreditoCreateInput,
   NotaDebitoCreateInput,
+  ReconciledDocument,
   RequestOptions,
 } from "./types";
 
@@ -28,7 +29,7 @@ export class FacturasResource {
           ? { ...input, idempotency_key: idempotencyKey }
           : input,
         ...(idempotencyKey ? { idempotencyKey } : {}),
-        ...requestFields(options),
+        ...createRequestFields(options),
       },
     );
   }
@@ -51,7 +52,7 @@ export class NotasCreditoResource {
           ? { ...input, idempotency_key: idempotencyKey }
           : input,
         ...(idempotencyKey ? { idempotencyKey } : {}),
-        ...requestFields(options),
+        ...createRequestFields(options),
       },
     );
   }
@@ -74,7 +75,7 @@ export class NotasDebitoResource {
           ? { ...input, idempotency_key: idempotencyKey }
           : input,
         ...(idempotencyKey ? { idempotencyKey } : {}),
-        ...requestFields(options),
+        ...createRequestFields(options),
       },
     );
   }
@@ -91,6 +92,21 @@ export class DocumentsResource {
     return this.http.json<DocumentWithJob>(
       `/v1/emitters/${segment(emitterId, "emitterId")}/documents/${segment(documentId, "documentId")}`,
       requestFields(options),
+    );
+  }
+
+  /**
+   * Resolve an uncertain document by querying SIFEN with its existing CDC.
+   * This operation never resubmits the fiscal document.
+   */
+  reconcile(
+    emitterId: string,
+    documentId: string,
+    options: RequestOptions = {},
+  ): Promise<KilaResponse<ReconciledDocument>> {
+    return this.http.json<ReconciledDocument>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/queries/documents/${segment(documentId, "documentId")}/reconcile`,
+      { method: "POST", ...requestFields(options) },
     );
   }
 }
@@ -116,6 +132,37 @@ function requestFields(options: RequestOptions): RequestOptions {
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     ...(options.headers ? { headers: options.headers } : {}),
   };
+}
+
+function createRequestFields(options: CreateOptions): RequestOptions {
+  const headers = { ...options.headers };
+  const reservedHeader = Object.keys(headers).find(
+    (name) => name.toLowerCase() === "x-kila-test-outcome",
+  );
+  if (reservedHeader) {
+    throw new TypeError(
+      "Use sandboxOutcome instead of setting X-Kila-Test-Outcome directly",
+    );
+  }
+  if (options.sandboxOutcome !== undefined) {
+    if (!isSandboxOutcome(options.sandboxOutcome)) {
+      throw new TypeError(
+        "sandboxOutcome must be approved, approved_with_observation, or rejected",
+      );
+    }
+    headers["X-Kila-Test-Outcome"] = options.sandboxOutcome;
+  }
+  return {
+    ...(options.signal ? { signal: options.signal } : {}),
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
+  };
+}
+
+function isSandboxOutcome(value: string): boolean {
+  return value === "approved" ||
+    value === "approved_with_observation" ||
+    value === "rejected";
 }
 
 function segment(value: string, name: string): string {

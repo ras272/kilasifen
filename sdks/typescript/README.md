@@ -61,6 +61,32 @@ Use one stable `idempotencyKey` for each fiscal intent and persist it with your
 sale. The SDK sends it as both `Idempotency-Key` and the current API contract's
 `idempotency_key`, so retries remain safe across API versions.
 
+### Deterministic sandbox outcomes
+
+Tests can request one of the API's closed sandbox outcomes without manually
+constructing headers:
+
+```ts
+await kila.facturas.create(
+  "emitter_test",
+  {
+    external_id: "test_rejection_1",
+    factura: {
+      cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+      items: [{ descripcion: "Prueba", cantidad: 1, precio_unitario: 1_000 }],
+    },
+  },
+  {
+    idempotencyKey: "test_rejection_1",
+    sandboxOutcome: "rejected",
+  },
+);
+```
+
+`sandboxOutcome` accepts only `approved`, `approved_with_observation` or
+`rejected`. The SDK sends `X-Kila-Test-Outcome` only when this option is
+present, and the API rejects it outside the test runtime.
+
 ## Emit a nota de crédito
 
 ```ts
@@ -117,6 +143,22 @@ await kila.notasDebito.create(
 const document = await kila.documents.get("emitter_123", "document_123");
 const job = await kila.jobs.get("emitter_123", document.data.job!.id);
 ```
+
+If transmission ended ambiguously, reconcile the existing CDC without
+resubmitting the DE:
+
+```ts
+const reconciliation = await kila.documents.reconcile(
+  "emitter_123",
+  "document_123",
+);
+
+console.log(reconciliation.data.document_query.status);
+```
+
+Reconciliation is intentionally API-only and never creates another document.
+Use it for documents whose state requires reconciliation; validation errors are
+returned as normal typed `KilaSifenError` instances.
 
 All successful calls return `{ data, correlationId, status }`. Keep the
 correlation ID in application logs when requesting support.

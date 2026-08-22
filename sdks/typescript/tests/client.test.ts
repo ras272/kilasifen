@@ -90,10 +90,76 @@ describe("KilaSifen client", () => {
     const headers = new Headers(init?.headers);
     expect(headers.get("X-API-Key")).toBe("sk_test_123");
     expect(headers.get("Idempotency-Key")).toBe("sale-123");
+    expect(headers.has("X-Kila-Test-Outcome")).toBe(false);
     expect(JSON.parse(String(init?.body))).toMatchObject({
       external_id: "sale-123",
       idempotency_key: "sale-123",
     });
+  });
+
+  it("sends a closed sandbox outcome only when explicitly requested", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      success({ document: DOCUMENT, job: JOB }, 201),
+    );
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+    });
+
+    await client.facturas.create(
+      "emitter_1",
+      {
+        factura: {
+          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          items: [{ descripcion: "Sandbox", cantidad: 1, precio_unitario: 1000 }],
+        },
+      },
+      { sandboxOutcome: "approved_with_observation" },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(new Headers(init?.headers).get("X-Kila-Test-Outcome")).toBe(
+      "approved_with_observation",
+    );
+  });
+
+  it("prevents bypassing the typed sandbox option through custom headers", () => {
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: vi.fn<typeof fetch>(),
+    });
+
+    expect(() => client.facturas.create(
+      "emitter_1",
+      {
+        factura: {
+          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          items: [{ descripcion: "Sandbox", cantidad: 1, precio_unitario: 1000 }],
+        },
+      },
+      { headers: { "x-kila-test-outcome": "anything" } },
+    )).toThrow("Use sandboxOutcome");
+  });
+
+  it("rejects invalid sandbox outcomes at runtime for JavaScript consumers", () => {
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: vi.fn<typeof fetch>(),
+    });
+
+    expect(() => client.facturas.create(
+      "emitter_1",
+      {
+        factura: {
+          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          items: [{ descripcion: "Sandbox", cantidad: 1, precio_unitario: 1000 }],
+        },
+      },
+      { sandboxOutcome: "unknown" as never },
+    )).toThrow("sandboxOutcome must be");
   });
 
   it("uses the typed nota de credito endpoint", async () => {
@@ -181,6 +247,36 @@ describe("KilaSifen client", () => {
 
     expect(fetchMock.mock.calls[0]?.[0]).toContain("emitter%20one/documents/doc%2F123");
     expect(fetchMock.mock.calls[1]?.[0]).toContain("emitter%20one/jobs/job%2F123");
+  });
+
+  it("reconciles an uncertain document without a request body", async () => {
+    const documentQuery = {
+      document_id: "doc/123",
+      cdc: "01800123450001001000000012026010112345678901",
+      status: "found",
+      result_code: "0300",
+      result_message: "Aprobado",
+      content_xml: "<rDE version='150'/>",
+      processed_at: "2026-08-22T12:00:00Z",
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      success({ document_query: documentQuery }),
+    );
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+    });
+
+    const response = await client.documents.reconcile("emitter one", "doc/123");
+
+    expect(response.data.document_query).toEqual(documentQuery);
+    const [url, init] = fetchMock.mock.calls[0] ?? [];
+    expect(url).toBe(
+      "https://api.example.test/v1/emitters/emitter%20one/queries/documents/doc%2F123/reconcile",
+    );
+    expect(init?.method).toBe("POST");
+    expect(init?.body).toBeUndefined();
   });
 
   it("throws a typed KilaSifen error from an API error envelope", async () => {
