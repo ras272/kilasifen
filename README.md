@@ -381,10 +381,12 @@ ruff check pysifen/ tests/
 
 ## Kila SIFEN Platform (API)
 
-This repository now contains two complementary layers:
+This repository contains four complementary components:
 
 - `pysifen`: fiscal engine (XML, signature, SOAP transport)
-- `kilasifen`: internal multi-emitter API platform consumed by the author's ERP
+- `kilasifen`: headless, multi-consumer API platform for independent SIFEN integrations
+- `sdks/typescript`: official typed client for the HTTP API
+- `apps/docs`: public Fumadocs integration portal
 
 Platform docs:
 
@@ -398,11 +400,13 @@ Platform docs:
 
 Current platform scope in one line:
 
-- one ERP integration surface
-- multiple SIFEN emitters underneath
+- consumer-neutral HTTP integration surface
+- multiple isolated consumers and SIFEN emitters
 - strict emitter isolation
 - PDF + JSON KuDE support
-- typed FE/NC builders and typed cancel/inutilization events
+- typed Factura, Nota de Crédito and Nota de Débito builders
+- typed cancel/inutilization events
+- durable outbox, safe reconciliation and deterministic sandbox outcomes
 
 Local platform stack:
 

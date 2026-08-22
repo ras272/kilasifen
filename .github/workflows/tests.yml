@@ -209,6 +209,37 @@ jobs:
           pnpm typecheck
           pnpm build
 
+  typescript-sdk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.4
+          run_install: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: sdks/typescript/pnpm-lock.yaml
+
+      - name: Install SDK dependencies
+        working-directory: sdks/typescript
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate SDK
+        working-directory: sdks/typescript
+        run: |
+          pnpm lint
+          pnpm test
+          pnpm build
+          pnpm pack --dry-run
+
   check-schemas:
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule'
