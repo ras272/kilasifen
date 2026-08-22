@@ -54,6 +54,7 @@ class SqlAlchemyJobOutboxQueue:
             job_id=job.id,
             queue_name=_QUEUE_BY_JOB_TYPE[job.job_type],
             correlation_id=get_correlation_id(),
+            available_at=job.scheduled_at,
         )
 
 
@@ -116,7 +117,7 @@ class JobOutboxDispatcher:
             job = self._load_job(message.job_id)
             if job is None:
                 raise RuntimeError("persisted job is missing")
-            if job.status == "queued":
+            if job.status in {"queued", "retry_scheduled"}:
                 queue = self.queues.get(message.queue_name)
                 if queue is None:
                     raise RuntimeError("runtime queue is not configured")

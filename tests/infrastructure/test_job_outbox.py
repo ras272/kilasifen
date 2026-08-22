@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import fakeredis
@@ -135,6 +136,70 @@ def test_active_lease_prevents_a_second_dispatcher_from_claiming(tmp_path) -> No
     assert second._claim(limit=1) == []
 
 
+def test_retry_is_invisible_before_commit_and_dispatches_after_due_time(
+    tmp_path,
+) -> None:
+    session_factory = _session_factory(tmp_path, "retry_commit")
+    published: list[str] = []
+    initial_clock = datetime.now(UTC) + timedelta(seconds=1)
+    dispatcher = JobOutboxDispatcher(
+        session_factory=session_factory,
+        queues={"documents": _RecordingQueue(published)},
+        clock=lambda: initial_clock,
+    )
+    job_id = _stage_document_job(session_factory)
+    assert dispatcher.dispatch_once() == 1
+
+    retry_at = initial_clock + timedelta(seconds=30)
+    session = session_factory()
+    _stage_document_retry(session, job_id=job_id, retry_at=retry_at)
+
+    dispatcher.clock = lambda: retry_at
+    assert dispatcher.dispatch_once() == 0
+    session.rollback()
+    session.close()
+    assert dispatcher.dispatch_once() == 0
+
+    with session_factory() as session, session.begin():
+        _stage_document_retry(session, job_id=job_id, retry_at=retry_at)
+
+    dispatcher.clock = lambda: retry_at - timedelta(microseconds=1)
+    assert dispatcher.dispatch_once() == 0
+    dispatcher.clock = lambda: retry_at
+    assert dispatcher.dispatch_once() == 1
+    assert published == [job_id, job_id]
+
+
+def test_retry_restaging_revokes_an_unconfirmed_publication_lease(tmp_path) -> None:
+    session_factory = _session_factory(tmp_path, "retry_publication_race")
+    job_id = _stage_document_job(session_factory)
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    dispatcher = JobOutboxDispatcher(
+        session_factory=session_factory,
+        queues={},
+        worker_id="original-dispatcher",
+        clock=lambda: now,
+    )
+    [claimed] = dispatcher._claim(limit=1)
+
+    retry_at = now + timedelta(seconds=30)
+    with session_factory() as session, session.begin():
+        _stage_document_retry(session, job_id=job_id, retry_at=retry_at)
+
+    with session_factory() as session, session.begin():
+        confirmed = SqlAlchemyJobOutboxRepository(session).mark_published(
+            message_id=claimed.id,
+            worker_id="original-dispatcher",
+            published_at=now,
+        )
+        message = SqlAlchemyJobOutboxRepository(session).get_for_job(job_id)
+
+    assert confirmed is False
+    assert message is not None
+    assert message.status == "pending"
+    assert message.available_at.replace(tzinfo=UTC) == retry_at
+
+
 def test_rq_publication_is_idempotent_by_job_id() -> None:
     redis_connection = fakeredis.FakeRedis()
     queue = Queue("documents", connection=redis_connection)
@@ -208,6 +273,18 @@ def _stage_document_job(session_factory) -> str:
             SqlAlchemyJobOutboxRepository(session)
         ).enqueue_document_emit(job)
         return job.id
+
+
+def _stage_document_retry(session, *, job_id: str, retry_at: datetime) -> None:
+    jobs = SqlAlchemyJobRepository(session)
+    job = jobs.get(job_id)
+    assert job is not None
+    retry_job = jobs.save(
+        replace(job, status="retry_scheduled", scheduled_at=retry_at)
+    )
+    SqlAlchemyJobOutboxQueue(
+        SqlAlchemyJobOutboxRepository(session)
+    ).enqueue_document_emit(retry_job)
 
 
 class _RecordingQueue:

@@ -25,10 +25,12 @@ class SqlAlchemyJobOutboxRepository(JobOutboxRepository):
         job_id: str,
         queue_name: str,
         correlation_id: str | None,
+        available_at: datetime | None = None,
     ) -> JobOutboxMessage:
+        now = _now()
+        dispatch_at = available_at or now
         existing = self._model_for_job(job_id)
         if existing is None:
-            now = _now()
             existing = JobOutboxModel(
                 id=str(uuid4()),
                 job_id=job_id,
@@ -36,7 +38,7 @@ class SqlAlchemyJobOutboxRepository(JobOutboxRepository):
                 correlation_id=correlation_id,
                 status="pending",
                 attempts=0,
-                available_at=now,
+                available_at=dispatch_at,
                 locked_until=None,
                 locked_by=None,
                 published_at=None,
@@ -45,17 +47,17 @@ class SqlAlchemyJobOutboxRepository(JobOutboxRepository):
                 updated_at=now,
             )
             self.session.add(existing)
-        elif existing.status == "published":
+        else:
             existing.queue_name = queue_name
             existing.correlation_id = correlation_id
             existing.status = "pending"
             existing.attempts = 0
-            existing.available_at = _now()
+            existing.available_at = dispatch_at
             existing.locked_until = None
             existing.locked_by = None
             existing.published_at = None
             existing.last_error = None
-            existing.updated_at = _now()
+            existing.updated_at = now
         self.session.flush()
         return _to_domain(existing)
 

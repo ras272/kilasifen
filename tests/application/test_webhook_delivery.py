@@ -14,6 +14,9 @@ from kilasifen.infrastructure.db.models import EmitterModel, WebhookEndpointMode
 from kilasifen.infrastructure.db.repositories.emitters import (
     SqlAlchemyEmitterRepository,
 )
+from kilasifen.infrastructure.db.repositories.job_outbox import (
+    SqlAlchemyJobOutboxRepository,
+)
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
 from kilasifen.infrastructure.db.repositories.webhooks import (
     SqlAlchemyWebhookRepository,
@@ -23,10 +26,7 @@ from kilasifen.infrastructure.db.session import (
     build_session_factory,
     session_scope,
 )
-from kilasifen.infrastructure.jobs.workers import (
-    WebhookDeliveryRetryableError,
-    process_webhook_delivery_job,
-)
+from kilasifen.infrastructure.jobs.workers import process_webhook_delivery_job
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.infrastructure.webhooks.security import (
     WebhookUrlPolicy,
@@ -139,26 +139,29 @@ def test_process_webhook_delivery_job_marks_retry_pending_on_retryable_failure(
             del url, body, headers, timeout
             return 503, "temporarily unavailable"
 
-        with pytest.raises(WebhookDeliveryRetryableError):
-            process_webhook_delivery_job(
-                job_id="job-1",
-                database_url=database_url,
-                encryption_key=encryption_key,
-                deliverer=WebhookDeliverer(
-                    sender=sender,
-                    url_policy=_public_policy(),
-                ),
-            )
+        payload = process_webhook_delivery_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=encryption_key,
+            deliverer=WebhookDeliverer(
+                sender=sender,
+                url_policy=_public_policy(),
+            ),
+        )
+        assert payload["retryable"] is True
 
         engine = build_engine(database_url)
         session_factory = build_session_factory(engine)
         with session_scope(session_factory) as session:
             delivery = SqlAlchemyWebhookRepository(session).get_delivery("delivery-1")
             job = SqlAlchemyJobRepository(session).get("job-1")
+            outbox = SqlAlchemyJobOutboxRepository(session).get_for_job("job-1")
         assert delivery is not None and delivery.final_status == "retry_pending"
         assert delivery.attempt_number == 1
         assert job is not None and job.status == "retry_scheduled"
         assert job.scheduled_at is not None
+        assert outbox is not None and outbox.status == "pending"
+        assert outbox.available_at == job.scheduled_at
 
 
 def test_webhook_retries_keep_exact_body_and_end_in_observable_failure(
@@ -182,13 +185,13 @@ def test_webhook_retries_keep_exact_body_and_end_in_observable_failure(
 
         deliverer = WebhookDeliverer(sender=sender, url_policy=_public_policy())
         for _attempt in range(2):
-            with pytest.raises(WebhookDeliveryRetryableError):
-                process_webhook_delivery_job(
-                    job_id="job-1",
-                    database_url=database_url,
-                    encryption_key=encryption_key,
-                    deliverer=deliverer,
-                )
+            retry_payload = process_webhook_delivery_job(
+                job_id="job-1",
+                database_url=database_url,
+                encryption_key=encryption_key,
+                deliverer=deliverer,
+            )
+            assert retry_payload["retryable"] is True
 
         payload = process_webhook_delivery_job(
             job_id="job-1",

@@ -76,11 +76,11 @@ def test_rq_queue_enqueues_document_job_with_expected_payload() -> None:
     assert "encryption_key" not in str(enqueued.data)
     assert "postgresql+psycopg" not in str(enqueued.data)
     assert enqueued.meta["correlation_id"] == "corr-123"
-    assert enqueued.retries_left == 4
-    assert enqueued.retry_intervals == [30, 120, 600, 1800]
+    assert enqueued.retries_left is None
+    assert enqueued.retry_intervals is None
 
 
-def test_rq_queue_enqueues_event_job_with_bounded_retry() -> None:
+def test_rq_queue_enqueues_event_job_without_transport_retry() -> None:
     queue = Queue("events", connection=fakeredis.FakeRedis())
     adapter = RqJobQueue(queue)
     job = Job(
@@ -110,8 +110,8 @@ def test_rq_queue_enqueues_event_job_with_bounded_retry() -> None:
         enqueued.func_name == "kilasifen.infrastructure.jobs.workers.process_event_job"
     )
     assert enqueued.kwargs == {"job_id": "event-job-1"}
-    assert enqueued.retries_left == 4
-    assert enqueued.retry_intervals == [30, 120, 600, 1800]
+    assert enqueued.retries_left is None
+    assert enqueued.retry_intervals is None
 
 
 def test_process_document_job_hydrates_job_and_document_context(tmp_path) -> None:
@@ -272,8 +272,8 @@ def test_rq_queue_enqueues_webhook_delivery_with_correlation_id() -> None:
     assert set(enqueued.kwargs) == {"job_id"}
     assert "encryption_key" not in str(enqueued.data)
     assert "postgresql+psycopg" not in str(enqueued.data)
-    assert enqueued.retries_left == 7
-    assert enqueued.retry_intervals == [10, 30, 120, 300, 900, 1800, 3600]
+    assert enqueued.retries_left is None
+    assert enqueued.retry_intervals is None
 
 
 @dataclass

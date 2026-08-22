@@ -14,10 +14,7 @@ from kilasifen.infrastructure.db.session import (
     build_session_factory,
     session_scope,
 )
-from kilasifen.infrastructure.jobs.workers import (
-    DocumentEmissionRetryableError,
-    process_document_job,
-)
+from kilasifen.infrastructure.jobs.workers import process_document_job
 from kilasifen.infrastructure.sandbox.transport import DeterministicSandboxTransport
 from kilasifen.testing.database import managed_test_database_url
 from tests.application.test_emission_flow import (
@@ -38,13 +35,13 @@ def test_accepted_response_lost_reconciles_by_cdc_without_resubmission(
         database_name="sandbox-accepted-response-lost",
         outcome="accepted_but_response_lost",
     ) as database_url:
-        with pytest.raises(DocumentEmissionRetryableError):
-            process_document_job(
-                job_id="job-1",
-                database_url=database_url,
-                encryption_key=_fernet_key(),
-                current_date=date(2024, 4, 24),
-            )
+        result = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            current_date=date(2024, 4, 24),
+        )
+        assert result["job_status"] == "retry_scheduled"
 
         first_document, _ = _load_context(database_url)
         assert first_document.internal_status == "retry_pending"
@@ -83,13 +80,13 @@ def test_transport_timeout_queries_same_cdc_and_never_resubmits(
         database_name="sandbox-transport-timeout",
         outcome="transport_timeout",
     ) as database_url:
-        with pytest.raises(DocumentEmissionRetryableError):
-            process_document_job(
-                job_id="job-1",
-                database_url=database_url,
-                encryption_key=_fernet_key(),
-                current_date=date(2024, 4, 24),
-            )
+        result = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            current_date=date(2024, 4, 24),
+        )
+        assert result["job_status"] == "retry_scheduled"
 
         first_document, _ = _load_context(database_url)
         assert first_document.cdc == "0180012345"
@@ -101,13 +98,13 @@ def test_transport_timeout_queries_same_cdc_and_never_resubmits(
             _fail_if_resubmitted,
         )
         for _ in range(3):
-            with pytest.raises(DocumentEmissionRetryableError):
-                process_document_job(
-                    job_id="job-1",
-                    database_url=database_url,
-                    encryption_key=_fernet_key(),
-                    current_date=date(2024, 4, 24),
-                )
+            result = process_document_job(
+                job_id="job-1",
+                database_url=database_url,
+                encryption_key=_fernet_key(),
+                current_date=date(2024, 4, 24),
+            )
+            assert result["job_status"] == "retry_scheduled"
         result = process_document_job(
             job_id="job-1",
             database_url=database_url,

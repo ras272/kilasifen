@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from xml.etree import ElementTree as ET
 
 from rq import get_current_job
@@ -84,6 +84,8 @@ from pysifen.sdk.errors import (
 logger = logging.getLogger(__name__)
 
 _MAX_DOCUMENT_ATTEMPTS = 5
+_DOCUMENT_RETRY_DELAYS = (30, 120, 600, 1800)
+_EVENT_RETRY_DELAYS = (30, 120, 600, 1800)
 
 
 def process_document_job(
@@ -347,6 +349,15 @@ def process_document_job(
                         finished_at=_now(),
                         updated_at=_now(),
                     )
+            elif retryable:
+                updated_job = replace(
+                    updated_job,
+                    scheduled_at=_retry_at(
+                        attempt_number=attempt_number,
+                        delays=_DOCUMENT_RETRY_DELAYS,
+                    ),
+                    updated_at=_now(),
+                )
             elif updated_job.status in {"succeeded", "failed"}:
                 updated_job = replace(
                     updated_job,
@@ -356,6 +367,8 @@ def process_document_job(
 
             document_repository.save(updated_document)
             job_repository.save(updated_job)
+            if retryable:
+                _stage_retry_outbox(session, updated_job)
             _publish_document_status_webhooks(
                 document=updated_document,
                 session=session,
@@ -383,10 +396,6 @@ def process_document_job(
                 "job_status": updated_job.status,
                 "document_status": updated_document.internal_status,
             }
-        if retryable:
-            raise DocumentEmissionRetryableError(
-                "document emission requires retry or reconciliation"
-            )
         return payload
     finally:
         if correlation_token is not None:
@@ -441,6 +450,11 @@ def process_webhook_delivery_job(
                 deliverer=deliverer,
             )
             payload = service.process_delivery_attempt(job_id=job_id)
+            if payload["retryable"]:
+                retry_job = SqlAlchemyJobRepository(session).get(job_id)
+                if retry_job is None:
+                    raise RuntimeError("Persisted webhook retry job is missing")
+                _stage_retry_outbox(session, retry_job)
             logger.info(
                 "worker.webhook_delivery_job.finished",
                 extra={
@@ -450,8 +464,6 @@ def process_webhook_delivery_job(
                     "delivery_status": payload["delivery_status"],
                 },
             )
-        if payload["retryable"]:
-            raise WebhookDeliveryRetryableError("webhook delivery scheduled for retry")
         return payload
     finally:
         if correlation_token is not None:
@@ -529,6 +541,20 @@ def process_event_job(
             )
             payload = service.process_queued_event(job_id=job_id)
             retryable = bool(payload["retryable"])
+            if retryable:
+                retry_job = job_repository.get(job_id)
+                if retry_job is None:
+                    raise RuntimeError("Persisted event retry job is missing")
+                retry_job = replace(
+                    retry_job,
+                    scheduled_at=_retry_at(
+                        attempt_number=retry_job.attempts,
+                        delays=_EVENT_RETRY_DELAYS,
+                    ),
+                    updated_at=_now(),
+                )
+                job_repository.save(retry_job)
+                _stage_retry_outbox(session, retry_job)
             logger.info(
                 "worker.event_job.finished",
                 extra={
@@ -538,10 +564,6 @@ def process_event_job(
                     "job_status": payload["job_status"],
                     "event_status": payload["event_status"],
                 },
-            )
-        if retryable:
-            raise EventSubmissionRetryableError(
-                "event submission requires a bounded retry"
             )
         return payload
     finally:
@@ -556,15 +578,15 @@ class _NoopWebhookQueue:
 
 
 class WebhookDeliveryRetryableError(RuntimeError):
-    """Signal RQ to apply the configured bounded retry schedule."""
+    """Legacy compatibility alias for callers of the former RQ retry path."""
 
 
 class DocumentEmissionRetryableError(RuntimeError):
-    """Signal RQ to retry a transport-uncertain fiscal document safely."""
+    """Legacy compatibility alias for callers of the former RQ retry path."""
 
 
 class EventSubmissionRetryableError(RuntimeError):
-    """Signal RQ to retry a transport-uncertain fiscal event safely."""
+    """Legacy compatibility alias for callers of the former RQ retry path."""
 
 
 def _reconcile_before_resubmission(
@@ -685,6 +707,27 @@ def _mark_reconciliation_required(
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+def _retry_at(*, attempt_number: int, delays: tuple[int, ...]) -> datetime:
+    retry_index = min(max(attempt_number - 1, 0), len(delays) - 1)
+    return _now() + timedelta(seconds=delays[retry_index])
+
+
+def _stage_retry_outbox(session, job: Job) -> None:
+    """Persist the next attempt in the same transaction as its retry state."""
+
+    if job.status != "retry_scheduled" or job.scheduled_at is None:
+        raise RuntimeError("Retry jobs require a durable schedule")
+    queue = SqlAlchemyJobOutboxQueue(SqlAlchemyJobOutboxRepository(session))
+    if job.job_type == "document.emit":
+        queue.enqueue_document_emit(job)
+    elif job.job_type == "event.submit":
+        queue.enqueue_event_submit(job)
+    elif job.job_type == "webhook.deliver":
+        queue.enqueue_webhook_delivery(job)
+    else:
+        raise RuntimeError(f"Unsupported retry job type: {job.job_type}")
 
 
 def _worker_runtime_secrets(

@@ -16,6 +16,7 @@ class JobOutboxRepository(ABC):
         job_id: str,
         queue_name: str,
         correlation_id: str | None,
+        available_at: datetime | None = None,
     ) -> JobOutboxMessage:
         """Stage one job in the caller's database transaction."""
 

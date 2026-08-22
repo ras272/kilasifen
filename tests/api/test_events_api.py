@@ -33,6 +33,9 @@ from kilasifen.infrastructure.db.repositories.events import SqlAlchemyEventRepos
 from kilasifen.infrastructure.db.repositories.inutilized_number_ranges import (
     SqlAlchemyInutilizedNumberRangeRepository,
 )
+from kilasifen.infrastructure.db.repositories.job_outbox import (
+    SqlAlchemyJobOutboxRepository,
+)
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
 from kilasifen.infrastructure.db.session import (
     build_engine,
@@ -537,6 +540,68 @@ def test_cancel_is_queued_then_worker_applies_approved_outcome(
             assert persisted_job.attempts == 1
 
 
+def test_event_worker_stages_retry_in_the_same_database_transaction(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path, name="event_worker_retry"
+    ) as database_url:
+        encryption_key = Fernet.generate_key().decode()
+        store = EncryptedCertificateStore(encryption_key)
+        engine = build_engine(database_url)
+        Base.metadata.create_all(engine)
+        session_factory = build_session_factory(engine)
+        _seed_event_context(
+            session_factory=session_factory,
+            certificate_store=store,
+        )
+        monkeypatch.setattr(
+            event_service_module,
+            "build_signed_cancel_event_group_xml",
+            lambda **_: "<gGroupGesEve/>",
+        )
+
+        with session_scope(session_factory) as session:
+            service = EventService(
+                event_repository=SqlAlchemyEventRepository(session),
+                emitter_repository=SqlAlchemyEmitterRepository(session, store),
+                document_repository=SqlAlchemyDocumentRepository(session),
+                certificate_repository=SqlAlchemyCertificateRepository(session),
+                job_repository=SqlAlchemyJobRepository(session),
+                certificate_store=store,
+                submission_gateway=NeverCalledEventGateway(),
+                inutilized_range_repository=(
+                    SqlAlchemyInutilizedNumberRangeRepository(session)
+                ),
+                queue=RecordingEventQueue(),
+                database_url=database_url,
+                encryption_key=encryption_key,
+            )
+            _event, job = service.cancel_document(
+                emitter_id="emitter-1",
+                document_id="doc-fe-recent",
+                motivo="Reintento durable",
+            )
+
+        payload = process_event_job(
+            job_id=job.id,
+            database_url=database_url,
+            encryption_key=encryption_key,
+            submission_gateway=PendingEventGateway(),
+        )
+
+        assert payload["retryable"] is True
+        assert payload["job_status"] == "retry_scheduled"
+        with session_scope(session_factory) as session:
+            persisted_job = SqlAlchemyJobRepository(session).get(job.id)
+            outbox = SqlAlchemyJobOutboxRepository(session).get_for_job(job.id)
+        assert persisted_job is not None
+        assert persisted_job.scheduled_at is not None
+        assert outbox is not None and outbox.status == "pending"
+        assert outbox.available_at == persisted_job.scheduled_at
+
+
 class FakeEventGateway:
     def submit_event(self, **kwargs) -> EventSubmissionOutcome:
         return EventSubmissionOutcome(
@@ -555,6 +620,20 @@ class NeverCalledEventGateway:
     def submit_event(self, **kwargs) -> EventSubmissionOutcome:
         del kwargs
         raise AssertionError("HTTP request must not submit an event to SIFEN")
+
+
+class PendingEventGateway:
+    def submit_event(self, **kwargs) -> EventSubmissionOutcome:
+        return EventSubmissionOutcome(
+            generated_xml=kwargs["event"].generated_xml,
+            signed_xml=kwargs["event"].generated_xml,
+            request_xml="<event-request/>",
+            response_raw="<event-response/>",
+            status="submitted",
+            result_code="0300",
+            result_message="Procesamiento pendiente",
+            protocol=None,
+        )
 
 
 class RecordingEventQueue:

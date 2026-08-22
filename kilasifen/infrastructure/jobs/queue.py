@@ -2,7 +2,7 @@
 
 from typing import Protocol, cast
 
-from rq import Queue, Retry
+from rq import Queue
 from rq.exceptions import NoSuchJobError
 from rq.job import Job as RqJob
 
@@ -97,7 +97,7 @@ class RqJobQueue:
             existing.delete()
 
         try:
-            func, retry = _job_runtime()[job_type]
+            func = _job_runtime()[job_type]
         except KeyError as exc:
             raise ValueError(f"Unsupported outbox job type: {job_type}") from exc
         return cast(
@@ -107,7 +107,6 @@ class RqJobQueue:
                 kwargs={"job_id": job_id},
                 job_id=job_id,
                 meta={"correlation_id": correlation_id},
-                retry=retry,
             ),
         )
 
@@ -126,16 +125,7 @@ def _job_runtime():
     )
 
     return {
-        "document.emit": (
-            process_document_job,
-            Retry(max=4, interval=[30, 120, 600, 1800]),
-        ),
-        "webhook.deliver": (
-            process_webhook_delivery_job,
-            Retry(max=7, interval=[10, 30, 120, 300, 900, 1800, 3600]),
-        ),
-        "event.submit": (
-            process_event_job,
-            Retry(max=4, interval=[30, 120, 600, 1800]),
-        ),
+        "document.emit": process_document_job,
+        "webhook.deliver": process_webhook_delivery_job,
+        "event.submit": process_event_job,
     }
