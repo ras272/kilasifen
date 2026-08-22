@@ -5,6 +5,9 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
 
+from kilasifen.application.documents.idempotency import (
+    require_matching_idempotent_intent,
+)
 from kilasifen.application.documents.numbering_service import DocumentNumberingService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.sandbox.service import SandboxOutcomePolicy
@@ -81,6 +84,16 @@ class DocumentService:
                 idempotency_key,
             )
             if existing is not None:
+                require_matching_idempotent_intent(
+                    existing,
+                    external_id=external_id,
+                    document_type=document_type,
+                    payload_snapshot=payload_snapshot,
+                    server_managed_numbering=self._uses_server_managed_numbering(
+                        document_type=document_type,
+                        payload_snapshot=payload_snapshot,
+                    ),
+                )
                 existing_job = self.job_service.get_for_entity("document", existing.id)
                 if existing_job is None:
                     raise ConflictError("jobs.missing_for_document")
@@ -304,6 +317,21 @@ class DocumentService:
         normalized_payload["signed_xml"] = updated_typed_payload.get("signed_xml")
         normalized_payload["doc_id"] = updated_typed_payload.get("doc_id")
         return normalized_payload, establishment, point, next_number
+
+    def _uses_server_managed_numbering(
+        self,
+        *,
+        document_type: str,
+        payload_snapshot: dict | None,
+    ) -> bool:
+        if self.numbering_service is None or not isinstance(payload_snapshot, dict):
+            return False
+        typed_contract = payload_snapshot.get("typed_contract")
+        if not isinstance(typed_contract, dict):
+            return False
+        return typed_contract.get("contract") == _NUMBERED_TYPED_CONTRACTS.get(
+            document_type
+        )
 
 
 def _now() -> datetime:

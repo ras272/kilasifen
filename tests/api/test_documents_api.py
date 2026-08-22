@@ -132,6 +132,50 @@ def test_create_document_is_idempotent_for_same_key(
     )
 
 
+@pytest.mark.parametrize(
+    ("changes", "mismatched_parameters"),
+    [
+        ({"payload": {"total": "200000"}}, ["payload"]),
+        ({"document_type": "nota_credito"}, ["document_type"]),
+        ({"external_id": "erp-doc-2"}, ["external_id"]),
+    ],
+)
+def test_create_document_rejects_idempotency_key_reuse_for_different_intent(
+    client: TestClient,
+    emitter_id: str,
+    changes: dict,
+    mismatched_parameters: list[str],
+) -> None:
+    original = {
+        "external_id": "erp-doc-1",
+        "idempotency_key": "idem-conflict-1",
+        "document_type": "factura",
+        "payload": {"total": "100000"},
+    }
+    first_response = client.post(
+        f"/v1/emitters/{emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json=original,
+    )
+
+    conflicting = {**original, **changes}
+    conflict_response = client.post(
+        f"/v1/emitters/{emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json=conflicting,
+    )
+
+    assert first_response.status_code == 201
+    assert conflict_response.status_code == 409
+    error = conflict_response.json()["error"]
+    assert error["code"] == "documents.idempotency_key_conflict"
+    assert error["category"] == "conflict"
+    assert error["details"] == {
+        "existing_document_id": first_response.json()["data"]["document"]["id"],
+        "mismatched_parameters": mismatched_parameters,
+    }
+
+
 def test_create_factura_typed_endpoint_returns_document_and_job(
     client: TestClient,
     emitter_id: str,
