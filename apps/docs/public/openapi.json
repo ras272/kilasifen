@@ -2898,6 +2898,76 @@
         "title": "WebhookEndpointCreateRequest",
         "type": "object"
       },
+      "WebhookEndpointUpdateRequest": {
+        "additionalProperties": false,
+        "description": "Partial, secret-safe update for a webhook endpoint.",
+        "properties": {
+          "event_subscriptions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Subscriptions"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          },
+          "retry_policy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WebhookRetryPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "format": "uri",
+                "maxLength": 2083,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "title": "WebhookEndpointUpdateRequest",
+        "type": "object"
+      },
       "WebhookReplayRequest": {
         "description": "Replay request payload.",
         "properties": {
@@ -4981,6 +5051,72 @@
           }
         ],
         "summary": "Registrar webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/webhooks/{endpoint_id}": {
+      "patch": {
+        "operationId": "update_webhook_endpoint_v1_emitters__emitter_id__webhooks__endpoint_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookEndpointUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Update Webhook Endpoint",
         "tags": [
           "webhooks"
         ]
