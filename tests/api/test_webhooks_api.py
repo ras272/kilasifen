@@ -472,6 +472,22 @@ def test_list_webhook_deliveries_without_emitter_filter_returns_system_wide_data
     assert "doc-b-global" in delivered_doc_ids
 
 
+@pytest.mark.parametrize(
+    "query",
+    ["limit=0", "limit=101", "offset=-1"],
+)
+def test_list_webhook_deliveries_rejects_unbounded_pagination(
+    client: TestClient,
+    query: str,
+) -> None:
+    response = client.get(
+        f"/v1/webhook-deliveries?{query}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 422
+
+
 def _seed_emitter(session_factory, encryption_key: str) -> None:
     emitter = Emitter(
         id="emitter-1",

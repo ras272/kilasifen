@@ -1,6 +1,6 @@
 """Document API routes."""
 
-from fastapi import APIRouter, Depends, Header, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, status
 from fastapi.responses import JSONResponse, Response
 
 from kilasifen.api.deps import (
@@ -187,8 +187,8 @@ def get_document(
 def list_documents(
     emitter_id: str,
     request: Request,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     internal_status: str | None = None,
     document_type: str | None = None,
     external_id: str | None = None,

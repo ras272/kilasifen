@@ -1,6 +1,6 @@
 """Job API routes."""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from kilasifen.api.deps import (
     get_admin_principal,
@@ -32,9 +32,8 @@ def get_job(
 @router.get("/jobs", response_model=SuccessEnvelope)
 def list_jobs(
     request: Request,
-    limit: int = 50,
-    offset: int = 0,
-    # TODO(multi-tenant): require emitter scoping by principal when opening API to multiple tenants.
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     emitter_id: str | None = None,
     status: str | None = None,
     job_type: str | None = None,

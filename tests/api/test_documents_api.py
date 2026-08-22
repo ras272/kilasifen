@@ -528,6 +528,23 @@ def test_get_document_requires_valid_api_key(
     assert response.json()["error"]["code"] == "auth.invalid_api_key"
 
 
+@pytest.mark.parametrize(
+    "query",
+    ["limit=0", "limit=101", "offset=-1"],
+)
+def test_list_documents_rejects_unbounded_pagination(
+    client: TestClient,
+    emitter_id: str,
+    query: str,
+) -> None:
+    response = client.get(
+        f"/v1/emitters/{emitter_id}/documents?{query}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 422
+
+
 def test_get_document_xml_returns_signed_or_generated_xml(
     client: TestClient,
     emitter_id: str,

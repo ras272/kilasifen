@@ -11,7 +11,6 @@ from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
 
-
 API_KEY = "secret-key"
 
 
@@ -119,7 +118,10 @@ def test_get_job_returns_not_found_for_other_emitter(
             "external_id": "erp-doc-foreign",
             "idempotency_key": "idem-foreign",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='FOREIGN'/></rDE>", "doc_id": "FOREIGN"},
+            "payload": {
+                "generated_xml": "<rDE><DE Id='FOREIGN'/></rDE>",
+                "doc_id": "FOREIGN",
+            },
         },
     )
     foreign_job_id = created.json()["data"]["job"]["id"]
@@ -221,7 +223,9 @@ def test_list_jobs_can_filter_by_emitter(client: TestClient) -> None:
     assert jobs[0]["emitter_id"] == emitter_a
 
 
-def test_list_jobs_without_emitter_filter_returns_system_wide_jobs(client: TestClient) -> None:
+def test_list_jobs_without_emitter_filter_returns_system_wide_jobs(
+    client: TestClient,
+) -> None:
     emitter_a = client.post(
         "/v1/emitters",
         headers={"X-API-Key": API_KEY},
@@ -256,7 +260,10 @@ def test_list_jobs_without_emitter_filter_returns_system_wide_jobs(client: TestC
             "external_id": "doc-a-global",
             "idempotency_key": "idem-a-global",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='A-GLOBAL'/></rDE>", "doc_id": "A-GLOBAL"},
+            "payload": {
+                "generated_xml": "<rDE><DE Id='A-GLOBAL'/></rDE>",
+                "doc_id": "A-GLOBAL",
+            },
         },
     )
     client.post(
@@ -266,7 +273,10 @@ def test_list_jobs_without_emitter_filter_returns_system_wide_jobs(client: TestC
             "external_id": "doc-b-global",
             "idempotency_key": "idem-b-global",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='B-GLOBAL'/></rDE>", "doc_id": "B-GLOBAL"},
+            "payload": {
+                "generated_xml": "<rDE><DE Id='B-GLOBAL'/></rDE>",
+                "doc_id": "B-GLOBAL",
+            },
         },
     )
 
@@ -277,3 +287,19 @@ def test_list_jobs_without_emitter_filter_returns_system_wide_jobs(client: TestC
     emitters = {job["emitter_id"] for job in jobs}
     assert emitter_a in emitters
     assert emitter_b in emitters
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["limit=0", "limit=101", "offset=-1"],
+)
+def test_list_jobs_rejects_unbounded_pagination(
+    client: TestClient,
+    query: str,
+) -> None:
+    response = client.get(
+        f"/v1/jobs?{query}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 422
