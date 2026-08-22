@@ -120,9 +120,10 @@ recola manual pueden reenviar ese CDC.
 
 Sólo cuando `KILA_SIFEN_ENVIRONMENT=test`, una emisión puede solicitar un
 resultado reproducible con `X-Kila-Test-Outcome`: `approved`,
-`approved_with_observation` o `rejected`. El XML, CDC, firma, persistencia y
-workers reales siguen ejecutándose; únicamente se sustituye el transporte de
-red a SIFEN. El mismo header es rechazado en staging y producción.
+`approved_with_observation`, `rejected`, `transport_timeout` o
+`accepted_but_response_lost`. El XML, CDC, firma, persistencia y workers reales
+siguen ejecutándose; únicamente se sustituye el transporte de red a SIFEN. El
+mismo header es rechazado en staging y producción.
 
 ## Recibo Electrónico de Dinero
 
