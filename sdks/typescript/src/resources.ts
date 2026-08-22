@@ -7,6 +7,7 @@ import type {
   Job,
   KilaResponse,
   NotaCreditoCreateInput,
+  NotaDebitoCreateInput,
   RequestOptions,
 } from "./types";
 
@@ -44,6 +45,29 @@ export class NotasCreditoResource {
     const idempotencyKey = options.idempotencyKey;
     return this.http.json<CreatedDocument>(
       `/v1/emitters/${segment(emitterId, "emitterId")}/documents/notas-credito`,
+      {
+        method: "POST",
+        body: idempotencyKey
+          ? { ...input, idempotency_key: idempotencyKey }
+          : input,
+        ...(idempotencyKey ? { idempotencyKey } : {}),
+        ...requestFields(options),
+      },
+    );
+  }
+}
+
+export class NotasDebitoResource {
+  constructor(private readonly http: HttpClient) {}
+
+  create(
+    emitterId: string,
+    input: NotaDebitoCreateInput,
+    options: CreateOptions = {},
+  ): Promise<KilaResponse<CreatedDocument>> {
+    const idempotencyKey = options.idempotencyKey;
+    return this.http.json<CreatedDocument>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/documents/notas-debito`,
       {
         method: "POST",
         body: idempotencyKey

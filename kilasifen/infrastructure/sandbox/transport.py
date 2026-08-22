@@ -1,0 +1,60 @@
+"""Network-free SIFEN transport with deterministic test outcomes."""
+
+from kilasifen.domain.sandbox import SandboxOutcome
+from kilasifen.infrastructure.sifen.engine import SubmissionOutcome
+
+_OUTCOMES = {
+    SandboxOutcome.APPROVED: (
+        "approved",
+        "0260",
+        "Sandbox: autorizacion satisfactoria",
+    ),
+    SandboxOutcome.APPROVED_WITH_OBSERVATION: (
+        "approved_with_observation",
+        "0260",
+        "Sandbox: aprobado con observacion",
+    ),
+    SandboxOutcome.REJECTED: (
+        "rejected",
+        "1330",
+        "Sandbox: rechazo fiscal forzado",
+    ),
+}
+
+
+class DeterministicSandboxTransport:
+    """Produce one configured outcome without opening a network connection."""
+
+    def __init__(self, *, runtime_environment: str, outcome: SandboxOutcome):
+        if runtime_environment != "test":
+            raise ValueError(
+                "deterministic sandbox transport requires environment=test"
+            )
+        self.outcome = outcome
+
+    def submit(
+        self,
+        *,
+        signed_xml: str,
+        tax_environment: str,
+        certificate_bytes: bytes,
+        certificate_password: str,
+    ) -> SubmissionOutcome:
+        del signed_xml, certificate_bytes, certificate_password
+        if tax_environment != "test":
+            raise ValueError("deterministic sandbox transport requires a test emitter")
+
+        status, code, message = _OUTCOMES[self.outcome]
+        response_raw = (
+            '<sandboxSifenResponse version="1">'
+            f"<outcome>{self.outcome.value}</outcome>"
+            f"<code>{code}</code>"
+            f"<message>{message}</message>"
+            "</sandboxSifenResponse>"
+        )
+        return SubmissionOutcome(
+            response_raw=response_raw,
+            sifen_status=status,
+            result_code=code,
+            result_message=message,
+        )

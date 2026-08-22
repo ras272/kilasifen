@@ -38,6 +38,16 @@ class EmissionOutcome:
     cdc: str | None = None
 
 
+@dataclass(slots=True)
+class SubmissionOutcome:
+    """Normalized result returned by a SIFEN document transport."""
+
+    response_raw: str | None
+    sifen_status: str
+    result_code: str | None
+    result_message: str | None
+
+
 class EmissionTransportUncertainError(RuntimeError):
     """Transport failed after a stable fiscal payload had been prepared."""
 
@@ -73,6 +83,53 @@ class DocumentEmissionEngine(Protocol):
         """Emit one document and return normalized artifacts."""
 
 
+class DocumentSubmissionTransport(Protocol):
+    """Transport boundary used after XML generation and signing."""
+
+    def submit(
+        self,
+        *,
+        signed_xml: str,
+        tax_environment: str,
+        certificate_bytes: bytes,
+        certificate_password: str,
+    ) -> SubmissionOutcome:
+        """Submit signed XML and return a normalized SIFEN outcome."""
+
+
+class PysifenDocumentTransport:
+    """Live document transport backed by ``pysifen``."""
+
+    def __init__(self) -> None:
+        self.serializer = XmlSerializer(
+            config=SerializerConfig(xml_declaration=True, encoding="UTF-8")
+        )
+
+    def submit(
+        self,
+        *,
+        signed_xml: str,
+        tax_environment: str,
+        certificate_bytes: bytes,
+        certificate_password: str,
+    ) -> SubmissionOutcome:
+        ambiente = TEST if tax_environment == "test" else PRODUCCION
+        with SifenClient(
+            ambiente=ambiente,
+            pkcs12_data=certificate_bytes,
+            pkcs12_password=certificate_password,
+        ) as client:
+            response = client.enviar_de_xml(signed_xml)
+
+        result_code, result_message, status = _normalize_response(response)
+        return SubmissionOutcome(
+            response_raw=self.serializer.render(response),
+            sifen_status=status,
+            result_code=result_code,
+            result_message=result_message,
+        )
+
+
 class PysifenEmissionEngine:
     """Concrete emission engine backed by pysifen transport and signing."""
 
@@ -80,12 +137,11 @@ class PysifenEmissionEngine:
         self,
         mapper: PysifenPayloadMapper | None = None,
         deployment_environment: str = "test",
+        transport: DocumentSubmissionTransport | None = None,
     ):
         self.mapper = mapper or PysifenPayloadMapper()
         self.deployment_environment = deployment_environment
-        self.serializer = XmlSerializer(
-            config=SerializerConfig(xml_declaration=True, encoding="UTF-8")
-        )
+        self.transport = transport or PysifenDocumentTransport()
 
     def emit_document(
         self,
@@ -121,16 +177,15 @@ class PysifenEmissionEngine:
             )
             signed_xml = apply_real_qr_to_signed_xml(signed_xml, emitter=emitter)
 
-        ambiente = TEST if emitter.tax_environment == "test" else PRODUCCION
         request_xml = _build_enviar_de_request_xml(1, signed_xml).decode("utf-8")
 
         try:
-            with SifenClient(
-                ambiente=ambiente,
-                pkcs12_data=certificate_bytes,
-                pkcs12_password=certificate_password,
-            ) as client:
-                response = client.enviar_de_xml(signed_xml)
+            submission = self.transport.submit(
+                signed_xml=signed_xml,
+                tax_environment=emitter.tax_environment,
+                certificate_bytes=certificate_bytes,
+                certificate_password=certificate_password,
+            )
         except (SifenTimeoutError, SifenTransportError) as exc:
             raise EmissionTransportUncertainError(
                 str(exc),
@@ -140,16 +195,14 @@ class PysifenEmissionEngine:
                 cdc=emission_input.doc_id or "",
             ) from exc
 
-        result_code, result_message, status = _normalize_response(response)
-        response_raw = self.serializer.render(response)
         return EmissionOutcome(
             generated_xml=generated_xml,
             signed_xml=signed_xml,
             request_xml=request_xml,
-            response_raw=response_raw,
-            sifen_status=status,
-            result_code=result_code,
-            result_message=result_message,
+            response_raw=submission.response_raw,
+            sifen_status=submission.sifen_status,
+            result_code=submission.result_code,
+            result_message=submission.result_message,
             cdc=emission_input.doc_id,
         )
 

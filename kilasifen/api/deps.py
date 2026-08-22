@@ -22,6 +22,7 @@ from kilasifen.application.events.service import EventService
 from kilasifen.application.health.service import ReadinessService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.queries.service import QueryService
+from kilasifen.application.sandbox.service import SandboxOutcomePolicy
 from kilasifen.application.stampings.service import StampingService
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
@@ -353,6 +354,7 @@ def get_document_service(
         queue=queue_adapter,
         database_url=settings.database_url,
         encryption_key=settings.encryption_key,
+        sandbox_policy=SandboxOutcomePolicy(settings.environment),
     )
 
 

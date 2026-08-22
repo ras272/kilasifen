@@ -119,6 +119,53 @@ describe("KilaSifen client", () => {
     );
   });
 
+  it("emits a nota de debito with its typed contract and idempotency", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      success({ document: { ...DOCUMENT, document_type: "nota_debito" }, job: JOB }, 201),
+    );
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+    });
+
+    const response = await client.notasDebito.create(
+      "emitter_1",
+      {
+        external_id: "recupero-77",
+        nota_debito: {
+          motivo_emision: "recupero_costo",
+          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          documento_asociado: {
+            cdc: "01800123450001001000000012026010112345678901",
+          },
+          items: [
+            {
+              descripcion: "Recupero de costo",
+              cantidad: 1,
+              precio_unitario: 500,
+            },
+          ],
+        },
+      },
+      { idempotencyKey: "recupero-77-v1" },
+    );
+
+    expect(response.data.document.document_type).toBe("nota_debito");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/v1/emitters/emitter_1/documents/notas-debito",
+    );
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(new Headers(init?.headers).get("Idempotency-Key")).toBe("recupero-77-v1");
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      external_id: "recupero-77",
+      idempotency_key: "recupero-77-v1",
+      nota_debito: {
+        motivo_emision: "recupero_costo",
+      },
+    });
+  });
+
   it("retrieves documents and jobs with escaped path identifiers", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(success({ document: DOCUMENT, job: JOB }))

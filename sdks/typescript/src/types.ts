@@ -222,6 +222,13 @@ export interface NotaCredito extends BaseFiscalDocument {
   nota_credito?: Record<string, JsonValue>;
 }
 
+export interface NotaDebito extends BaseFiscalDocument {
+  tipo_documento?: 6;
+  motivo_emision?: NumericCode;
+  documento_asociado: AssociatedDocument;
+  nota_debito?: Record<string, JsonValue>;
+}
+
 export interface FacturaCreateInput {
   external_id?: string;
   factura: Factura;
@@ -230,6 +237,11 @@ export interface FacturaCreateInput {
 export interface NotaCreditoCreateInput {
   external_id?: string;
   nota_credito: NotaCredito;
+}
+
+export interface NotaDebitoCreateInput {
+  external_id?: string;
+  nota_debito: NotaDebito;
 }
 
 export interface Document {

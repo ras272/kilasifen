@@ -80,6 +80,37 @@ await kila.notasCredito.create(
 );
 ```
 
+## Emit a nota de débito
+
+La nota de débito incrementa el valor de un DTE existente y siempre requiere
+un `documento_asociado`.
+
+```ts
+await kila.notasDebito.create(
+  "emitter_123",
+  {
+    external_id: "recupero_logistica_77",
+    nota_debito: {
+      motivo_emision: "recupero_costo",
+      cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+      documento_asociado: {
+        tipo: "electronico",
+        cdc: "CDC_DE_44_DIGITOS",
+      },
+      items: [
+        {
+          descripcion: "Recupero de costo logístico",
+          cantidad: 1,
+          precio_unitario: 45_000,
+          tasa: 10,
+        },
+      ],
+    },
+  },
+  { idempotencyKey: "recupero_logistica_77_v1" },
+);
+```
+
 ## Query state
 
 ```ts

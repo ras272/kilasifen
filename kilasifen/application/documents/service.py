@@ -7,9 +7,11 @@ from uuid import uuid4
 
 from kilasifen.application.documents.numbering_service import DocumentNumberingService
 from kilasifen.application.jobs.service import JobService
+from kilasifen.application.sandbox.service import SandboxOutcomePolicy
 from kilasifen.domain.common.errors import ConflictError, NotFoundError
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.jobs.models import Job
+from kilasifen.domain.sandbox import SandboxOutcome
 from kilasifen.repositories.documents import DocumentRepository
 from kilasifen.repositories.emitters import EmitterRepository
 
@@ -41,6 +43,7 @@ class DocumentService:
         queue: DocumentJobQueue | None = None,
         database_url: str | None = None,
         encryption_key: str | None = None,
+        sandbox_policy: SandboxOutcomePolicy | None = None,
     ):
         self.document_repository = document_repository
         self.emitter_repository = emitter_repository
@@ -49,6 +52,7 @@ class DocumentService:
         self.queue = queue
         self.database_url = database_url
         self.encryption_key = encryption_key
+        self.sandbox_policy = sandbox_policy or SandboxOutcomePolicy("development")
 
     def create_document(
         self,
@@ -58,7 +62,13 @@ class DocumentService:
         idempotency_key: str | None,
         document_type: str,
         payload_snapshot: dict | None,
+        sandbox_outcome: SandboxOutcome | None = None,
     ) -> tuple[Document, Job, bool]:
+        payload_snapshot = self.sandbox_policy.apply(
+            payload_snapshot,
+            sandbox_outcome,
+        )
+
         if self.emitter_repository.get(emitter_id) is None:
             raise NotFoundError("emitters.not_found")
 
