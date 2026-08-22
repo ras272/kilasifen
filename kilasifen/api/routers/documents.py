@@ -1,6 +1,6 @@
 """Document API routes."""
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Header, Request, status
 from fastapi.responses import JSONResponse, Response
 
 from kilasifen.api.deps import (
@@ -20,8 +20,21 @@ from kilasifen.api.schemas.documents import (
 from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.application.documents.service import DocumentService
 from kilasifen.application.jobs.service import JobService
+from kilasifen.domain.sandbox import SandboxOutcome
 
 router = APIRouter(tags=["documents"])
+
+
+def get_sandbox_outcome(
+    value: SandboxOutcome | None = Header(
+        default=None,
+        alias="X-Kila-Test-Outcome",
+        description="Force a deterministic SIFEN outcome in environment=test only.",
+    ),
+) -> SandboxOutcome | None:
+    """Parse the typed sandbox outcome header."""
+
+    return value
 
 
 @router.post(
@@ -38,6 +51,7 @@ def create_document(
     emitter_id: str,
     payload: DocumentCreateRequest,
     request: Request,
+    sandbox_outcome: SandboxOutcome | None = Depends(get_sandbox_outcome),
     _principal=Depends(get_admin_principal),
     service: DocumentService = Depends(get_document_service),
 ) -> JSONResponse:
@@ -49,6 +63,7 @@ def create_document(
         idempotency_key=payload.idempotency_key,
         document_type=payload.document_type,
         payload_snapshot=payload.payload,
+        sandbox_outcome=sandbox_outcome,
     )
 
 
@@ -64,6 +79,7 @@ def create_factura_document(
     emitter_id: str,
     payload: FacturaCreateRequest,
     request: Request,
+    sandbox_outcome: SandboxOutcome | None = Depends(get_sandbox_outcome),
     _principal=Depends(require_fiscal_write),
     service: DocumentService = Depends(get_document_service),
 ) -> JSONResponse:
@@ -76,6 +92,7 @@ def create_factura_document(
         idempotency_key=payload.idempotency_key,
         document_type="factura",
         payload_snapshot=_build_typed_payload("factura_v1", factura_payload),
+        sandbox_outcome=sandbox_outcome,
     )
 
 
@@ -91,6 +108,7 @@ def create_nota_credito_document(
     emitter_id: str,
     payload: NotaCreditoCreateRequest,
     request: Request,
+    sandbox_outcome: SandboxOutcome | None = Depends(get_sandbox_outcome),
     _principal=Depends(require_fiscal_write),
     service: DocumentService = Depends(get_document_service),
 ) -> JSONResponse:
@@ -103,6 +121,7 @@ def create_nota_credito_document(
         idempotency_key=payload.idempotency_key,
         document_type="nota_credito",
         payload_snapshot=_build_typed_payload("nota_credito_v1", nota_credito_payload),
+        sandbox_outcome=sandbox_outcome,
     )
 
 
@@ -261,6 +280,7 @@ def _create_document_response(
     idempotency_key: str | None,
     document_type: str,
     payload_snapshot: dict | None,
+    sandbox_outcome: SandboxOutcome | None,
 ) -> JSONResponse:
     document, job, replayed = service.create_document(
         emitter_id=emitter_id,
@@ -268,6 +288,7 @@ def _create_document_response(
         idempotency_key=idempotency_key,
         document_type=document_type,
         payload_snapshot=payload_snapshot,
+        sandbox_outcome=sandbox_outcome,
     )
     envelope = SuccessEnvelope(
         data={

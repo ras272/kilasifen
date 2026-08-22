@@ -10,6 +10,7 @@ from rq import Queue, Retry, get_current_job
 
 from kilasifen.application.events.service import EventService
 from kilasifen.application.jobs.service import JobService
+from kilasifen.application.sandbox.service import SandboxOutcomePolicy
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
 from kilasifen.domain.common.fiscal_states import (
@@ -42,6 +43,7 @@ from kilasifen.infrastructure.db.session import (
     build_session_factory,
     session_scope,
 )
+from kilasifen.infrastructure.sandbox.transport import DeterministicSandboxTransport
 from kilasifen.infrastructure.sifen.engine import (
     DocumentEmissionEngine,
     EmissionOutcome,
@@ -94,9 +96,6 @@ def process_document_job(
     correlation_token, worker_correlation_id = _bind_worker_correlation_id()
     engine = build_engine(database_url)
     session_factory = build_session_factory(engine)
-    emission_engine = emission_engine or PysifenEmissionEngine(
-        deployment_environment=settings.sifen_environment
-    )
     query_gateway = query_gateway or PysifenQueryGateway(
         deployment_environment=settings.sifen_environment
     )
@@ -116,6 +115,22 @@ def process_document_job(
                 job_id=job_id,
                 document_repository=document_repository,
             )
+            sandbox_outcome = SandboxOutcomePolicy(settings.environment).resolve(
+                document.payload_snapshot
+            )
+            if emission_engine is None:
+                sandbox_transport = (
+                    DeterministicSandboxTransport(
+                        runtime_environment=settings.environment,
+                        outcome=sandbox_outcome,
+                    )
+                    if sandbox_outcome is not None
+                    else None
+                )
+                emission_engine = PysifenEmissionEngine(
+                    deployment_environment=settings.sifen_environment,
+                    transport=sandbox_transport,
+                )
             if document.internal_status in DOCUMENT_TERMINAL_STATUSES and not (
                 document.internal_status == "failed" and job.status == "queued"
             ):
