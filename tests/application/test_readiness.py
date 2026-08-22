@@ -80,6 +80,7 @@ def test_readiness_requires_workers_for_every_required_queue() -> None:
 def test_readiness_accepts_workers_covering_all_required_queues() -> None:
     redis_connection = Mock()
     redis_connection.ping.return_value = True
+    redis_connection.exists.return_value = True
     worker = Mock()
     worker.queue_names.return_value = ["documents", "events", "webhooks"]
     service = ReadinessService(
@@ -96,3 +97,25 @@ def test_readiness_accepts_workers_covering_all_required_queues() -> None:
 
     assert report.is_ready is True
     assert report.workers.status == "ok"
+
+
+def test_readiness_requires_outbox_dispatcher_heartbeat() -> None:
+    redis_connection = Mock()
+    redis_connection.ping.return_value = True
+    redis_connection.exists.return_value = False
+    worker = Mock()
+    worker.queue_names.return_value = ["documents", "events", "webhooks"]
+    service = ReadinessService(
+        engine=create_engine("sqlite:///:memory:"),
+        redis_connection=redis_connection,
+        require_workers=True,
+    )
+
+    with patch(
+        "kilasifen.application.health.service.Worker.all",
+        return_value=[worker],
+    ):
+        report = service.check()
+
+    assert report.is_ready is False
+    assert report.workers.detail == "missing:outbox_dispatcher"

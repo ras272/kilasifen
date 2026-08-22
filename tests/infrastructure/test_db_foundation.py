@@ -1,26 +1,28 @@
 from pathlib import Path
 
-from alembic import command
 from alembic.config import Config
+from sqlalchemy import inspect, text
+from sqlalchemy.engine.url import make_url
+
+from alembic import command
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.models import (
     ApiKeyModel,
     CertificateModel,
     ConsumerEmitterModel,
     ConsumerModel,
-    DocumentNumberingSequenceModel,
     DocumentModel,
+    DocumentNumberingSequenceModel,
     EmitterModel,
     EventModel,
     InutilizedNumberRangeModel,
     JobModel,
+    JobOutboxModel,
     StampingModel,
     WebhookDeliveryModel,
     WebhookEndpointModel,
 )
 from kilasifen.infrastructure.db.session import build_engine, build_session_factory
-from sqlalchemy import inspect, text
-from sqlalchemy.engine.url import make_url
 from kilasifen.testing.database import managed_test_database_url
 
 EXPECTED_TABLES = {
@@ -34,6 +36,7 @@ EXPECTED_TABLES = {
     EventModel.__tablename__,
     InutilizedNumberRangeModel.__tablename__,
     JobModel.__tablename__,
+    JobOutboxModel.__tablename__,
     StampingModel.__tablename__,
     WebhookDeliveryModel.__tablename__,
     WebhookEndpointModel.__tablename__,

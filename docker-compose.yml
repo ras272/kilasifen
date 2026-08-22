@@ -71,6 +71,23 @@ services:
     command: rq worker documents events webhooks -u ${KILA_SIFEN_REDIS_URL}
     stop_grace_period: 60s
 
+  outbox:
+    image: kilasifen:local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      KILA_SIFEN_DATABASE_URL: ${KILA_SIFEN_DATABASE_URL:?Set KILA_SIFEN_DATABASE_URL in .env}
+      KILA_SIFEN_REDIS_URL: ${KILA_SIFEN_REDIS_URL:?Set KILA_SIFEN_REDIS_URL in .env}
+      KILA_SIFEN_ENCRYPTION_KEY: ${KILA_SIFEN_ENCRYPTION_KEY:?Set KILA_SIFEN_ENCRYPTION_KEY in .env}
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: python -m kilasifen.infrastructure.jobs.outbox_worker
+    stop_grace_period: 30s
+
   migrate:
     image: kilasifen:local
     restart: "no"

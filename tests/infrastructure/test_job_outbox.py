@@ -1,0 +1,238 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+import fakeredis
+import pytest
+from rq import Queue
+
+from kilasifen.application.jobs.service import JobService
+from kilasifen.infrastructure.db.base import Base
+from kilasifen.infrastructure.db.repositories.job_outbox import (
+    SqlAlchemyJobOutboxRepository,
+)
+from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
+from kilasifen.infrastructure.db.session import build_engine, build_session_factory
+from kilasifen.infrastructure.jobs.outbox import (
+    JobOutboxDispatcher,
+    SqlAlchemyJobOutboxQueue,
+)
+from kilasifen.infrastructure.jobs.queue import RqJobQueue
+
+
+def test_outbox_never_publishes_before_business_commit(tmp_path) -> None:
+    session_factory = _session_factory(tmp_path, "before_commit")
+    published: list[str] = []
+    dispatcher = JobOutboxDispatcher(
+        session_factory=session_factory,
+        queues={"documents": _RecordingQueue(published)},
+    )
+
+    session = session_factory()
+    job = JobService(SqlAlchemyJobRepository(session)).create_job(
+        emitter_id=None,
+        related_entity_type="document",
+        related_entity_id="document-1",
+        job_type="document.emit",
+    )
+    SqlAlchemyJobOutboxQueue(
+        SqlAlchemyJobOutboxRepository(session)
+    ).enqueue_document_emit(job)
+
+    assert dispatcher.dispatch_once() == 0
+    assert published == []
+
+    session.commit()
+    session.close()
+    assert dispatcher.dispatch_once() == 1
+    assert published == [job.id]
+
+
+def test_outbox_recovers_after_redis_failure_without_leaking_error(tmp_path) -> None:
+    session_factory = _session_factory(tmp_path, "redis_recovery")
+    clock = _MutableClock(datetime.now(UTC) + timedelta(seconds=1))
+    queue = _FailOnceQueue()
+    job_id = _stage_document_job(session_factory)
+    dispatcher = JobOutboxDispatcher(
+        session_factory=session_factory,
+        queues={"documents": queue},
+        retry_delays=(5,),
+        clock=clock,
+    )
+
+    assert dispatcher.dispatch_once() == 0
+    with session_factory() as session:
+        failed = SqlAlchemyJobOutboxRepository(session).get_for_job(job_id)
+        assert failed is not None
+        assert failed.status == "pending"
+        assert failed.attempts == 1
+        assert failed.last_error == "ConnectionError: queue publication failed"
+        assert "redis://" not in failed.last_error
+
+    clock.now += timedelta(seconds=5)
+    assert dispatcher.dispatch_once() == 1
+    with session_factory() as session:
+        published = SqlAlchemyJobOutboxRepository(session).get_for_job(job_id)
+        assert published is not None
+        assert published.status == "published"
+        assert published.attempts == 2
+        assert published.last_error is None
+    assert queue.published == [job_id]
+
+
+@pytest.mark.parametrize(
+    ("method_name", "job_type", "queue_name"),
+    [
+        ("enqueue_document_emit", "document.emit", "documents"),
+        ("enqueue_event_submit", "event.submit", "events"),
+        ("enqueue_webhook_delivery", "webhook.deliver", "webhooks"),
+    ],
+)
+def test_all_job_queue_ports_stage_the_expected_outbox_route(
+    tmp_path,
+    method_name: str,
+    job_type: str,
+    queue_name: str,
+) -> None:
+    session_factory = _session_factory(tmp_path, job_type.replace(".", "_"))
+    with session_factory() as session, session.begin():
+        job = JobService(SqlAlchemyJobRepository(session)).create_job(
+            emitter_id=None,
+            related_entity_type="test",
+            related_entity_id="entity-1",
+            job_type=job_type,
+        )
+        queue = SqlAlchemyJobOutboxQueue(SqlAlchemyJobOutboxRepository(session))
+        getattr(queue, method_name)(job)
+
+    with session_factory() as session:
+        message = SqlAlchemyJobOutboxRepository(session).get_for_job(job.id)
+        assert message is not None
+        assert message.queue_name == queue_name
+        assert message.status == "pending"
+
+
+def test_active_lease_prevents_a_second_dispatcher_from_claiming(tmp_path) -> None:
+    session_factory = _session_factory(tmp_path, "replica_lease")
+    _stage_document_job(session_factory)
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    first = JobOutboxDispatcher(
+        session_factory=session_factory,
+        queues={},
+        worker_id="dispatcher-1",
+        clock=lambda: now,
+    )
+    second = JobOutboxDispatcher(
+        session_factory=session_factory,
+        queues={},
+        worker_id="dispatcher-2",
+        clock=lambda: now,
+    )
+
+    claimed = first._claim(limit=1)
+
+    assert len(claimed) == 1
+    assert second._claim(limit=1) == []
+
+
+def test_rq_publication_is_idempotent_by_job_id() -> None:
+    redis_connection = fakeredis.FakeRedis()
+    queue = Queue("documents", connection=redis_connection)
+    adapter = RqJobQueue(queue)
+
+    first = adapter.enqueue_outbox_job(
+        job_id="job-1",
+        job_type="document.emit",
+        correlation_id="request-1",
+    )
+    second = adapter.enqueue_outbox_job(
+        job_id="job-1",
+        job_type="document.emit",
+        correlation_id="request-1",
+    )
+
+    assert first is not None
+    assert second is not None
+    assert first.id == second.id == "job-1"
+    assert queue.job_ids == ["job-1"]
+
+
+def test_expired_lease_recovery_does_not_duplicate_rq_publication(tmp_path) -> None:
+    session_factory = _session_factory(tmp_path, "crash_recovery")
+    job_id = _stage_document_job(session_factory)
+    redis_connection = fakeredis.FakeRedis()
+    queue = Queue("documents", connection=redis_connection)
+    adapter = RqJobQueue(queue)
+    now = datetime.now(UTC) + timedelta(seconds=1)
+    crashed_dispatcher = JobOutboxDispatcher(
+        session_factory=session_factory,
+        queues={"documents": adapter},
+        worker_id="crashed-dispatcher",
+        lease_seconds=5,
+        clock=lambda: now,
+    )
+    [claimed] = crashed_dispatcher._claim(limit=1)
+    adapter.enqueue_outbox_job(
+        job_id=claimed.job_id,
+        job_type="document.emit",
+        correlation_id=claimed.correlation_id,
+    )
+
+    recovered_dispatcher = JobOutboxDispatcher(
+        session_factory=session_factory,
+        queues={"documents": adapter},
+        worker_id="recovered-dispatcher",
+        clock=lambda: now + timedelta(seconds=5),
+    )
+
+    assert recovered_dispatcher.dispatch_once() == 1
+    assert queue.job_ids == [job_id]
+
+
+def _session_factory(tmp_path, name: str):
+    database_url = f"sqlite:///{tmp_path / f'{name}.db'}"
+    engine = build_engine(database_url)
+    Base.metadata.create_all(engine)
+    return build_session_factory(engine)
+
+
+def _stage_document_job(session_factory) -> str:
+    with session_factory() as session, session.begin():
+        job = JobService(SqlAlchemyJobRepository(session)).create_job(
+            emitter_id=None,
+            related_entity_type="document",
+            related_entity_id="document-1",
+            job_type="document.emit",
+        )
+        SqlAlchemyJobOutboxQueue(
+            SqlAlchemyJobOutboxRepository(session)
+        ).enqueue_document_emit(job)
+        return job.id
+
+
+class _RecordingQueue:
+    def __init__(self, published: list[str]):
+        self.published = published
+
+    def enqueue_outbox_job(self, *, job_id: str, **_kwargs):
+        self.published.append(job_id)
+
+
+class _FailOnceQueue(_RecordingQueue):
+    def __init__(self):
+        super().__init__([])
+        self.failed = False
+
+    def enqueue_outbox_job(self, *, job_id: str, **kwargs):
+        if not self.failed:
+            self.failed = True
+            raise ConnectionError("redis://:super-secret@redis.internal")
+        super().enqueue_outbox_job(job_id=job_id, **kwargs)
+
+
+class _MutableClock:
+    def __init__(self, now: datetime):
+        self.now = now
+
+    def __call__(self) -> datetime:
+        return self.now

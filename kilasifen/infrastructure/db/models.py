@@ -254,6 +254,35 @@ class JobModel(TimestampMixin, Base):
     emitter: Mapped[EmitterModel | None] = relationship(back_populates="jobs")
 
 
+class JobOutboxModel(TimestampMixin, Base):
+    __tablename__ = "job_outbox"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_uuid)
+    job_id: Mapped[str] = mapped_column(
+        ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    queue_name: Mapped[str] = mapped_column(String(32), nullable=False)
+    correlation_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    locked_by: Mapped[str | None] = mapped_column(String(64))
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index(
+            "ix_job_outbox_dispatchable",
+            "status",
+            "available_at",
+            "locked_until",
+        ),
+    )
+
+
 class EventModel(TimestampMixin, Base):
     __tablename__ = "events"
 

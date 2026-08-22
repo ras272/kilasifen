@@ -8,7 +8,6 @@ from fastapi import Depends, Request, Security
 from fastapi.security import APIKeyHeader
 from redis import Redis
 from redis.asyncio import Redis as AsyncRedis
-from rq import Queue
 from sqlalchemy.orm import Session
 
 from kilasifen.application.access.service import AccessService
@@ -45,6 +44,9 @@ from kilasifen.infrastructure.db.repositories.events import SqlAlchemyEventRepos
 from kilasifen.infrastructure.db.repositories.inutilized_number_ranges import (
     SqlAlchemyInutilizedNumberRangeRepository,
 )
+from kilasifen.infrastructure.db.repositories.job_outbox import (
+    SqlAlchemyJobOutboxRepository,
+)
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
 from kilasifen.infrastructure.db.repositories.stampings import (
     SqlAlchemyStampingRepository,
@@ -53,7 +55,7 @@ from kilasifen.infrastructure.db.repositories.webhooks import (
     SqlAlchemyWebhookRepository,
 )
 from kilasifen.infrastructure.db.session import session_scope
-from kilasifen.infrastructure.jobs.queue import RqJobQueue
+from kilasifen.infrastructure.jobs.outbox import SqlAlchemyJobOutboxQueue
 from kilasifen.infrastructure.limits.redis import RedisRequestLimiter
 from kilasifen.infrastructure.sifen.event import PysifenEventGateway
 from kilasifen.infrastructure.sifen.query import PysifenQueryGateway
@@ -341,11 +343,7 @@ def get_document_service(
     job_service = JobService(SqlAlchemyJobRepository(session))
     queue_adapter = None
     if settings.document_auto_enqueue and settings.encryption_key:
-        queue = Queue(
-            "documents",
-            connection=Redis.from_url(settings.redis_url),
-        )
-        queue_adapter = RqJobQueue(queue)
+        queue_adapter = _job_outbox_queue(session)
     return DocumentService(
         document_repository=document_repository,
         emitter_repository=emitter_repository,
@@ -386,20 +384,13 @@ def get_event_service(
     if not settings.encryption_key:
         raise RuntimeError("KILA_SIFEN_ENCRYPTION_KEY is required for events.")
 
-    webhook_queue = Queue(
-        "webhooks",
-        connection=Redis.from_url(settings.redis_url),
-    )
-    event_queue = Queue(
-        "events",
-        connection=Redis.from_url(settings.redis_url),
-    )
+    outbox_queue = _job_outbox_queue(session)
     webhook_service = WebhookService(
         webhook_repository=SqlAlchemyWebhookRepository(session),
         emitter_repository=_emitter_repository(session),
         job_repository=SqlAlchemyJobRepository(session),
         secret_store=EncryptedCertificateStore(settings.encryption_key),
-        queue=RqJobQueue(webhook_queue),
+        queue=outbox_queue,
         deliverer=WebhookDeliverer(
             url_policy=WebhookUrlPolicy.for_environment(settings.environment)
         ),
@@ -418,7 +409,7 @@ def get_event_service(
         numbering_repository=SqlAlchemyDocumentNumberingSequenceRepository(session),
         inutilized_range_repository=SqlAlchemyInutilizedNumberRangeRepository(session),
         webhook_publisher=webhook_service,
-        queue=RqJobQueue(event_queue),
+        queue=outbox_queue,
         database_url=settings.database_url,
         encryption_key=settings.encryption_key,
     )
@@ -433,17 +424,12 @@ def get_webhook_service(
     if not settings.encryption_key:
         raise RuntimeError("KILA_SIFEN_ENCRYPTION_KEY is required for webhooks.")
 
-    queue = Queue(
-        "webhooks",
-        connection=Redis.from_url(settings.redis_url),
-    )
-
     return WebhookService(
         webhook_repository=SqlAlchemyWebhookRepository(session),
         emitter_repository=_emitter_repository(session),
         job_repository=SqlAlchemyJobRepository(session),
         secret_store=EncryptedCertificateStore(settings.encryption_key),
-        queue=RqJobQueue(queue),
+        queue=_job_outbox_queue(session),
         deliverer=WebhookDeliverer(
             url_policy=WebhookUrlPolicy.for_environment(settings.environment)
         ),
@@ -461,10 +447,7 @@ def get_admin_service(
     if not settings.encryption_key:
         raise RuntimeError("KILA_SIFEN_ENCRYPTION_KEY is required for admin.")
 
-    redis_connection = Redis.from_url(settings.redis_url)
-    document_queue = Queue("documents", connection=redis_connection)
-    event_queue = Queue("events", connection=redis_connection)
-    webhook_queue = Queue("webhooks", connection=redis_connection)
+    outbox_queue = _job_outbox_queue(session)
 
     emitter_repository = _emitter_repository(session)
     certificate_repository = SqlAlchemyCertificateRepository(session)
@@ -487,9 +470,13 @@ def get_admin_service(
         job_repository=job_repository,
         webhook_repository=webhook_repository,
         certificate_service=certificate_service,
-        document_queue=RqJobQueue(document_queue),
-        event_queue=RqJobQueue(event_queue),
-        webhook_queue=RqJobQueue(webhook_queue),
+        document_queue=outbox_queue,
+        event_queue=outbox_queue,
+        webhook_queue=outbox_queue,
         database_url=settings.database_url,
         encryption_key=settings.encryption_key,
     )
+
+
+def _job_outbox_queue(session: Session) -> SqlAlchemyJobOutboxQueue:
+    return SqlAlchemyJobOutboxQueue(SqlAlchemyJobOutboxRepository(session))

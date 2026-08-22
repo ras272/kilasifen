@@ -5,8 +5,7 @@ from dataclasses import replace
 from datetime import UTC, date, datetime
 from xml.etree import ElementTree as ET
 
-from redis import Redis
-from rq import Queue, Retry, get_current_job
+from rq import get_current_job
 
 from kilasifen.application.events.service import EventService
 from kilasifen.application.jobs.service import JobService
@@ -33,6 +32,9 @@ from kilasifen.infrastructure.db.repositories.events import SqlAlchemyEventRepos
 from kilasifen.infrastructure.db.repositories.inutilized_number_ranges import (
     SqlAlchemyInutilizedNumberRangeRepository,
 )
+from kilasifen.infrastructure.db.repositories.job_outbox import (
+    SqlAlchemyJobOutboxRepository,
+)
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
 from kilasifen.infrastructure.db.repositories.stampings import (
     SqlAlchemyStampingRepository,
@@ -45,6 +47,7 @@ from kilasifen.infrastructure.db.session import (
     build_session_factory,
     session_scope,
 )
+from kilasifen.infrastructure.jobs.outbox import SqlAlchemyJobOutboxQueue
 from kilasifen.infrastructure.sandbox.query import DeterministicSandboxQueryGateway
 from kilasifen.infrastructure.sandbox.transport import DeterministicSandboxTransport
 from kilasifen.infrastructure.sifen.engine import (
@@ -489,9 +492,7 @@ def process_event_job(
 
             webhook_publisher = None
             if settings.document_publish_webhooks:
-                queue_adapter = webhook_queue or _build_webhook_queue(
-                    settings.redis_url
-                )
+                queue_adapter = webhook_queue or _build_webhook_outbox(session)
                 webhook_publisher = WebhookService(
                     webhook_repository=SqlAlchemyWebhookRepository(session),
                     emitter_repository=SqlAlchemyEmitterRepository(
@@ -710,7 +711,7 @@ def _publish_document_status_webhooks(
     if not settings.document_publish_webhooks:
         return
 
-    queue_adapter = webhook_queue or _build_webhook_queue(settings.redis_url)
+    queue_adapter = webhook_queue or _build_webhook_outbox(session)
     service = WebhookService(
         webhook_repository=SqlAlchemyWebhookRepository(session),
         emitter_repository=SqlAlchemyEmitterRepository(
@@ -738,24 +739,8 @@ def _publish_document_status_webhooks(
         )
 
 
-def _build_webhook_queue(redis_url: str):
-    queue = Queue("webhooks", connection=Redis.from_url(redis_url))
-    return _WebhookRqQueue(queue)
-
-
-class _WebhookRqQueue:
-    def __init__(self, queue: Queue):
-        self.queue = queue
-
-    def enqueue_webhook_delivery(self, job, *, database_url: str, encryption_key: str):
-        del database_url, encryption_key
-        return self.queue.enqueue_call(
-            func=process_webhook_delivery_job,
-            kwargs={"job_id": job.id},
-            job_id=job.id,
-            meta={"correlation_id": get_correlation_id()},
-            retry=Retry(max=7, interval=[10, 30, 120, 300, 900, 1800, 3600]),
-        )
+def _build_webhook_outbox(session) -> SqlAlchemyJobOutboxQueue:
+    return SqlAlchemyJobOutboxQueue(SqlAlchemyJobOutboxRepository(session))
 
 
 def _bind_worker_correlation_id() -> tuple[object | None, str | None]:

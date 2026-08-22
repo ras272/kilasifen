@@ -95,4 +95,9 @@ class ReadinessService:
         missing = sorted(set(self._required_queues) - registered_queues)
         if missing:
             return DependencyCheck("down", detail="missing:" + ",".join(missing))
+        try:
+            if not self._redis.exists("kilasifen:outbox:heartbeat"):
+                return DependencyCheck("down", detail="missing:outbox_dispatcher")
+        except Exception:
+            return DependencyCheck("down")
         return DependencyCheck("ok")
