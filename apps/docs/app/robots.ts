@@ -1,7 +1,8 @@
 import type { MetadataRoute } from 'next';
+import { getSiteUrl } from '@/lib/shared';
 
 export default function robots(): MetadataRoute.Robots {
-  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const origin = getSiteUrl();
   return {
     rules: { userAgent: '*', allow: '/' },
     sitemap: `${origin}/sitemap.xml`,

@@ -1,8 +1,9 @@
 import type { MetadataRoute } from 'next';
+import { getSiteUrl } from '@/lib/shared';
 import { source } from '@/lib/source';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const origin = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const origin = getSiteUrl();
   return [
     { url: origin, changeFrequency: 'monthly', priority: 1 },
     ...source.getPages().map((page) => ({

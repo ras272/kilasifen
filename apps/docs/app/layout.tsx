@@ -1,10 +1,11 @@
 import { RootProvider } from 'fumadocs-ui/provider/next';
 import type { Metadata } from 'next';
+import { getSiteUrl } from '@/lib/shared';
 import { spanishUi } from '@/lib/translations';
 import './global.css';
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000'),
+  metadataBase: new URL(getSiteUrl()),
   title: {
     default: 'KilaSifen Docs',
     template: '%s — KilaSifen Docs',
