@@ -17,7 +17,7 @@ from kilasifen.api.schemas.emitters import (
 )
 from kilasifen.application.emitters.health import EmitterHealthService
 from kilasifen.application.emitters.service import EmitterService
-from kilasifen.domain.emitters.models import Emitter
+from kilasifen.domain.emitters.models import Emitter, EmitterSummary
 from kilasifen.security import (
     SECRETS_WRITE_SCOPE,
     TENANT_READ_SCOPE,
@@ -105,7 +105,15 @@ def get_emitter_health(
     )
 
 
-def _envelope(request: Request, emitter: Emitter) -> SuccessEnvelope:
+def _envelope(
+    request: Request,
+    emitter: Emitter | EmitterSummary,
+) -> SuccessEnvelope:
+    csc_configured = (
+        emitter.csc_configured
+        if isinstance(emitter, EmitterSummary)
+        else emitter.csc is not None
+    )
     response = EmitterResponse(
         id=emitter.id,
         external_id=emitter.external_id,
@@ -114,7 +122,7 @@ def _envelope(request: Request, emitter: Emitter) -> SuccessEnvelope:
         legal_name=emitter.legal_name,
         tax_environment=emitter.tax_environment,
         status=emitter.status,
-        csc_configured=emitter.csc is not None,
+        csc_configured=csc_configured,
         csc_id=emitter.csc_id,
         created_at=emitter.created_at,
         updated_at=emitter.updated_at,

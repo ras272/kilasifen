@@ -1,6 +1,5 @@
 """Emitter application service layer."""
 
-from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -10,7 +9,7 @@ from kilasifen.domain.common.errors import (
     NotFoundError,
     UnprocessableEntityError,
 )
-from kilasifen.domain.emitters.models import Emitter
+from kilasifen.domain.emitters.models import Emitter, EmitterSummary
 from kilasifen.repositories.emitters import EmitterRepository
 
 
@@ -79,25 +78,31 @@ class EmitterService:
         tax_environment: str | None,
         csc: str | None,
         csc_id: str | None,
-    ) -> Emitter:
+    ) -> EmitterSummary:
         if tax_environment is not None:
             self._validate_tax_environment(tax_environment)
-        if csc is not None or csc_id is not None:
+        updates_secret = csc is not None or csc_id is not None
+        if updates_secret:
             require_active_emitter(self.repository, emitter_id)
-        emitter = self.get_emitter(emitter_id)
-        updated = replace(
-            emitter,
-            legal_name=legal_name if legal_name is not None else emitter.legal_name,
-            tax_environment=(
-                tax_environment
-                if tax_environment is not None
-                else emitter.tax_environment
-            ),
-            csc=csc if csc is not None else emitter.csc,
-            csc_id=csc_id if csc_id is not None else emitter.csc_id,
-            updated_at=_now(),
-        )
-        return self.repository.save(updated)
+        timestamp = _now()
+        result: EmitterSummary | None = None
+        if legal_name is not None or tax_environment is not None or not updates_secret:
+            result = self.repository.update_metadata(
+                emitter_id,
+                legal_name=legal_name,
+                tax_environment=tax_environment,
+                updated_at=timestamp,
+            )
+        if updates_secret:
+            result = self.repository.update_secret(
+                emitter_id,
+                csc=csc,
+                csc_id=csc_id,
+                updated_at=timestamp,
+            )
+        if result is None:
+            raise NotFoundError("emitters.not_found")
+        return result
 
     def _validate_tax_environment(self, tax_environment: str) -> None:
         if tax_environment != self.deployment_tax_environment:
@@ -106,10 +111,11 @@ class EmitterService:
                 details={"allowed": self.deployment_tax_environment},
             )
 
-    def deactivate_emitter(self, emitter_id: str) -> Emitter:
-        emitter = self.get_emitter(emitter_id)
-        updated = replace(emitter, status="inactive", updated_at=_now())
-        return self.repository.save(updated)
+    def deactivate_emitter(self, emitter_id: str) -> EmitterSummary:
+        emitter = self.repository.deactivate(emitter_id, updated_at=_now())
+        if emitter is None:
+            raise NotFoundError("emitters.not_found")
+        return emitter
 
 
 def _now() -> datetime:

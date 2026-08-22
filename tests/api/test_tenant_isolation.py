@@ -122,6 +122,11 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
         headers={"X-API-Key": _KEY_A},
         json={"document_id": "unknown", "event_type": "raw", "payload": {}},
     )
+    metadata_update_response = client.patch(
+        "/v1/emitters/emitter-a",
+        headers={"X-API-Key": _KEY_A},
+        json={"legal_name": "Emitter A updated by tenant"},
+    )
     secret_update_response = client.patch(
         "/v1/emitters/emitter-a",
         headers={"X-API-Key": _KEY_A},
@@ -139,6 +144,7 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
     assert read_only_response.json()["error"]["code"] == "auth.insufficient_scope"
     assert global_jobs_response.status_code == 403
     assert raw_event_response.status_code == 403
+    assert metadata_update_response.status_code == 200
     assert secret_update_response.status_code == 403
     assert read_only_stamping_response.status_code == 403
 
