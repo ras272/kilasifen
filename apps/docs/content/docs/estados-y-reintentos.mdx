@@ -11,6 +11,7 @@ icon: RefreshCcw
 | `queued` | La intención fue persistida y espera worker. |
 | `submitted` | SIFEN recibió el request, pero aún no hay resultado definitivo. |
 | `retry_pending` | Existe incertidumbre recuperable; habrá reconciliación. |
+| `reconciliation_required` | Se agotó la reconciliación automática; requiere una consulta explícita por CDC. |
 | `approved` | Aprobado por SIFEN. |
 | `approved_with_observation` | Aprobado con observaciones que deben conservarse. |
 | `rejected` | Rechazo definitivo de SIFEN. |
@@ -24,8 +25,19 @@ respuesta indeterminada:
 
 1. consulta el documento por CDC;
 2. converge al resultado si SIFEN ya lo conoce;
-3. reenvía el mismo payload únicamente si SIFEN informa que no existe;
-4. nunca genera otro CDC para la misma intención.
+3. si no puede confirmar el resultado, pasa a `reconciliation_required`;
+4. nunca retransmite el DE ni genera otro CDC para la misma intención.
 
-Los reintentos internos usan esperas acotadas. El ERP no debe crear una segunda
-intención para “destrabar” un documento.
+Los reintentos internos sólo consultan. El ERP no debe crear una segunda
+intención para “destrabar” un documento ni reencolar el job esperando otro
+envío.
+
+## Reconciliación explícita
+
+```http
+POST /v1/emitters/{emitter_id}/queries/documents/{document_id}/reconcile
+X-API-Key: ...
+```
+
+La operación vuelve a consultar por el CDC persistido. Si SIFEN encuentra el DE,
+documento y job convergen atómicamente a `approved` y `succeeded`. Nunca emite.

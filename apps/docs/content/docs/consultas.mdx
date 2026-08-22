@@ -16,12 +16,17 @@ La respuesta incluye el documento y su job asociado.
 
 ```http
 GET /v1/emitters/{emitter_id}/queries/documents/{document_id}
+POST /v1/emitters/{emitter_id}/queries/documents/{document_id}/reconcile
 GET /v1/emitters/{emitter_id}/queries/ruc/{ruc}
 ```
 
-Usá la consulta por documento para reconciliar manualmente un estado cuando sea
-necesario. La consulta RUC permite comprobar información tributaria expuesta por
-SIFEN; no es una central de riesgo crediticio.
+El `GET` consulta y registra la respuesta sin forzar una transición. Usá el
+`POST .../reconcile` cuando el documento esté `retry_pending` o
+`reconciliation_required`: si SIFEN reconoce el CDC, documento y job convergen
+atómicamente al estado aprobado. La operación nunca reenvía el DE.
+
+La consulta RUC permite comprobar información tributaria expuesta por SIFEN; no
+es una central de riesgo crediticio.
 
 ## Descargar artefactos
 

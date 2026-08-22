@@ -1,0 +1,39 @@
+---
+title: Sandbox determinístico
+description: Probá aprobaciones y rechazos sin depender de la disponibilidad de SIFEN.
+icon: FlaskConical
+---
+
+El sandbox ejecuta el flujo real de KilaSifen —validación, numeración, XML v150,
+CDC, firma, persistencia, job y webhook— pero reemplaza exclusivamente el
+transporte de red. Sólo funciona con `KILA_SIFEN_ENVIRONMENT=test` y emisores de
+test.
+
+## Elegir el resultado
+
+Agregá el header a cualquier creación tipada:
+
+```http
+POST /v1/emitters/{emitter_id}/documents/facturas
+X-API-Key: ...
+X-Kila-Test-Outcome: approved_with_observation
+Content-Type: application/json
+```
+
+Resultados disponibles:
+
+| Valor | Resultado fiscal simulado |
+| --- | --- |
+| `approved` | Aprobación normal. |
+| `approved_with_observation` | Aprobación con observación. |
+| `rejected` | Rechazo fiscal definitivo. |
+
+La directiva queda versionada junto a la intención, por lo que el worker produce
+el mismo resultado aunque procese el job más tarde. Un campo `sandbox` enviado
+dentro del JSON del documento se elimina: sólo el header tipado puede activar el
+comportamiento.
+
+<Callout type="warn" title="Barrera de ambiente">
+  En staging o producción el header es rechazado. Además, el worker y el propio
+  transporte vuelven a validar el ambiente antes de ejecutar la simulación.
+</Callout>

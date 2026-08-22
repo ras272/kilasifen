@@ -68,8 +68,8 @@ mapea el objeto ERP. Reutilizar `idempotency_key` al reintentar la misma intenci
 - contenido incompatible: `409 Conflict`.
 
 La respuesta trae documento `queued` y job; no implica aprobación. Estados de
-documento: `queued`, `submitted`, `retry_pending`, `approved`,
-`approved_with_observation`, `rejected`, `failed`, `cancelled`.
+documento: `queued`, `submitted`, `retry_pending`, `reconciliation_required`,
+`approved`, `approved_with_observation`, `rejected`, `failed`, `cancelled`.
 Jobs: `queued`, `retry_scheduled`, `succeeded`, `failed`.
 
 Cliente, ítems, IVA, descuentos/anticipos, moneda/tipo de cambio y condición de
@@ -98,6 +98,7 @@ GET  /v1/emitters/{emitter_id}/jobs/{job_id}
 GET  /v1/emitters/{emitter_id}/documents/{document_id}/xml
 GET  /v1/emitters/{emitter_id}/documents/{document_id}/kude
 GET  /v1/emitters/{emitter_id}/documents/{document_id}/kude/data
+POST /v1/emitters/{emitter_id}/queries/documents/{document_id}/reconcile
 POST /v1/emitters/{emitter_id}/documents/{document_id}/cancel
 POST /v1/emitters/{emitter_id}/inutilizations
 GET  /v1/emitters/{emitter_id}/events/{event_id}
@@ -109,9 +110,19 @@ establecimiento, punto, rango y motivo. Ambas crean un event/job `queued` con
 recibe el webhook terminal. Los endpoints raw `/documents` y `/events` están
 deprecados y son sólo admin.
 
-Ante timeout de emisión, Kila persiste el XML exacto y consulta primero por CDC.
-Sólo reenvía cuando SIFEN informa que el DE no existe; nunca se genera un CDC
-nuevo para reintentar la misma intención.
+Ante timeout o respuesta ambigua de emisión, Kila persiste el CDC, XML firmado y
+request exactos, y consulta SIFEN sin volver a transmitir el DE. Después de
+agotar la reconciliación automática queda `reconciliation_required`; el ERP usa
+el endpoint `reconcile` con la misma intención original. Ni el worker ni una
+recola manual pueden reenviar ese CDC.
+
+## Sandbox determinístico
+
+Sólo cuando `KILA_SIFEN_ENVIRONMENT=test`, una emisión puede solicitar un
+resultado reproducible con `X-Kila-Test-Outcome`: `approved`,
+`approved_with_observation` o `rejected`. El XML, CDC, firma, persistencia y
+workers reales siguen ejecutándose; únicamente se sustituye el transporte de
+red a SIFEN. El mismo header es rechazado en staging y producción.
 
 ## Recibo Electrónico de Dinero
 
