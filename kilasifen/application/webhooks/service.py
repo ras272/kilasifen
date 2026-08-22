@@ -404,6 +404,7 @@ def _document_event_type(internal_status: str | None) -> str:
         "rejected",
         "failed",
         "retry_pending",
+        "reconciliation_required",
         "queued",
     }:
         return f"document.{normalized}"

@@ -17,6 +17,8 @@ from kilasifen.domain.common.fiscal_states import (
     DOCUMENT_TERMINAL_STATUSES,
     job_status_for_document,
 )
+from kilasifen.domain.documents.models import Document
+from kilasifen.domain.jobs.models import Job
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
@@ -54,7 +56,11 @@ from kilasifen.infrastructure.sifen.event import (
     EventSubmissionGateway,
     PysifenEventGateway,
 )
-from kilasifen.infrastructure.sifen.query import PysifenQueryGateway, SifenQueryGateway
+from kilasifen.infrastructure.sifen.query import (
+    DocumentQueryOutcome,
+    PysifenQueryGateway,
+    SifenQueryGateway,
+)
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
 from kilasifen.logging import (
@@ -161,13 +167,6 @@ def process_document_job(
             )
             if certificate is None:
                 raise RuntimeError("Active certificate not configured")
-            stamping = stamping_repository.get_active_for_emitter(
-                document.emitter_id,
-                on_date=current_date or date.today(),
-            )
-            if stamping is None:
-                raise RuntimeError("Active stamping not configured")
-
             logger.info(
                 "worker.document_job.started",
                 extra={
@@ -186,14 +185,20 @@ def process_document_job(
             )
 
             try:
-                outcome = _reconcile_before_resubmission(
+                reconciliation = _reconcile_before_resubmission(
                     document=document,
                     emitter=emitter,
                     certificate_bytes=certificate_bytes,
                     certificate_password=certificate_password,
                     query_gateway=query_gateway,
                 )
-                if outcome is None:
+                if reconciliation is None:
+                    stamping = stamping_repository.get_active_for_emitter(
+                        document.emitter_id,
+                        on_date=current_date or date.today(),
+                    )
+                    if stamping is None:
+                        raise RuntimeError("Active stamping not configured")
                     outcome = emission_engine.emit_document(
                         document=document,
                         emitter=emitter,
@@ -202,31 +207,24 @@ def process_document_job(
                         certificate_password=certificate_password,
                         stamping=stamping,
                     )
-                updated_document = replace(
-                    document,
-                    generated_xml=outcome.generated_xml,
-                    signed_xml=outcome.signed_xml,
-                    sifen_request_xml=outcome.request_xml,
-                    sifen_response_raw=outcome.response_raw,
-                    internal_status=outcome.sifen_status,
-                    sifen_status=outcome.sifen_status,
-                    sifen_result_code=outcome.result_code,
-                    sifen_result_message=outcome.result_message,
-                    cdc=outcome.cdc
-                    or _extract_cdc(
-                        outcome.signed_xml,
-                        outcome.generated_xml,
-                    ),
+                    updated_document = _apply_emission_outcome(document, outcome)
+                else:
+                    updated_document = _apply_reconciliation_outcome(
+                        document,
+                        reconciliation,
+                    )
+
+                orchestration_status = job_status_for_document(
+                    updated_document.internal_status
                 )
-                orchestration_status = job_status_for_document(outcome.sifen_status)
                 if orchestration_status == "failed":
                     updated_job = replace(
                         job,
                         status="failed",
                         error_snapshot={
                             "category": "sifen_rejection",
-                            "code": outcome.result_code,
-                            "message": outcome.result_message,
+                            "code": updated_document.sifen_result_code,
+                            "message": updated_document.sifen_result_message,
                         },
                         worker_correlation_id=worker_correlation_id,
                     )
@@ -239,13 +237,18 @@ def process_document_job(
                     )
                 else:
                     retryable = True
+                    pending_category = (
+                        "reconciliation_pending"
+                        if reconciliation is not None
+                        else "sifen_pending"
+                    )
                     updated_job = replace(
                         job,
                         status="retry_scheduled",
                         error_snapshot={
-                            "category": "sifen_pending",
-                            "code": outcome.result_code,
-                            "message": outcome.result_message,
+                            "category": pending_category,
+                            "code": updated_document.sifen_result_code,
+                            "message": updated_document.sifen_result_message,
                         },
                         worker_correlation_id=worker_correlation_id,
                     )
@@ -308,22 +311,28 @@ def process_document_job(
 
             if retryable and attempt_number >= _MAX_DOCUMENT_ATTEMPTS:
                 retryable = False
-                updated_document = replace(
-                    updated_document,
-                    internal_status="failed",
-                    sifen_status="failed",
-                    sifen_result_message="document retry attempts exhausted",
-                )
-                updated_job = replace(
-                    updated_job,
-                    status="failed",
-                    error_snapshot={
-                        "category": "retry_exhausted",
-                        "message": "document retry attempts exhausted",
-                    },
-                    finished_at=_now(),
-                    updated_at=_now(),
-                )
+                if _is_reconciliation_pending(updated_job):
+                    updated_document, updated_job = _mark_reconciliation_required(
+                        document=updated_document,
+                        job=updated_job,
+                    )
+                else:
+                    updated_document = replace(
+                        updated_document,
+                        internal_status="failed",
+                        sifen_status="failed",
+                        sifen_result_message="document retry attempts exhausted",
+                    )
+                    updated_job = replace(
+                        updated_job,
+                        status="failed",
+                        error_snapshot={
+                            "category": "retry_exhausted",
+                            "message": "document retry attempts exhausted",
+                        },
+                        finished_at=_now(),
+                        updated_at=_now(),
+                    )
             elif updated_job.status in {"succeeded", "failed"}:
                 updated_job = replace(
                     updated_job,
@@ -553,34 +562,112 @@ def _reconcile_before_resubmission(
     certificate_bytes: bytes,
     certificate_password: str,
     query_gateway: SifenQueryGateway,
-) -> EmissionOutcome | None:
+) -> DocumentQueryOutcome | None:
     if (
-        document.internal_status not in {"retry_pending", "submitted"}
+        document.internal_status
+        not in {"retry_pending", "submitted", "reconciliation_required"}
         or not document.cdc
     ):
         return None
 
-    outcome = query_gateway.query_document(
+    return query_gateway.query_document(
         emitter=emitter,
         certificate_bytes=certificate_bytes,
         certificate_password=certificate_password,
         cdc=document.cdc,
     )
+
+
+def _apply_emission_outcome(
+    document: Document,
+    outcome: EmissionOutcome,
+) -> Document:
+    return replace(
+        document,
+        generated_xml=outcome.generated_xml,
+        signed_xml=outcome.signed_xml,
+        sifen_request_xml=outcome.request_xml,
+        sifen_response_raw=outcome.response_raw,
+        internal_status=outcome.sifen_status,
+        sifen_status=outcome.sifen_status,
+        sifen_result_code=outcome.result_code,
+        sifen_result_message=outcome.result_message,
+        cdc=outcome.cdc
+        or _extract_cdc(
+            outcome.signed_xml,
+            outcome.generated_xml,
+        ),
+        updated_at=_now(),
+    )
+
+
+def _apply_reconciliation_outcome(
+    document: Document,
+    outcome: DocumentQueryOutcome,
+) -> Document:
+    traced_document = replace(
+        document,
+        last_query_request_xml=outcome.request_xml,
+        last_query_response_raw=outcome.response_raw,
+        last_query_at=_now(),
+        sifen_result_code=outcome.result_code,
+        sifen_result_message=outcome.result_message,
+        updated_at=_now(),
+    )
     if outcome.status != "found":
-        return None
+        # SIFEN code 0420 combines "not found" and "not approved". It is not
+        # proof that the previous submission failed, so resending here could
+        # duplicate one fiscal intent. Keep querying the immutable CDC instead.
+        return replace(
+            traced_document,
+            internal_status="retry_pending",
+            sifen_status="retry_pending",
+        )
 
     signed_xml = outcome.content_xml or document.signed_xml
     if not signed_xml:
         raise SifenValidationError("SIFEN returned a document without XML content")
-    return EmissionOutcome(
-        generated_xml=document.generated_xml,
+    return replace(
+        traced_document,
         signed_xml=signed_xml,
-        request_xml=outcome.request_xml,
-        response_raw=outcome.response_raw,
+        internal_status="approved",
         sifen_status="approved",
-        result_code=outcome.result_code,
-        result_message=outcome.result_message,
-        cdc=document.cdc,
+    )
+
+
+def _is_reconciliation_pending(job: Job) -> bool:
+    snapshot = job.error_snapshot or {}
+    return snapshot.get("category") == "reconciliation_pending"
+
+
+def _mark_reconciliation_required(
+    *,
+    document: Document,
+    job: Job,
+) -> tuple[Document, Job]:
+    message = (
+        "automatic reconciliation attempts exhausted; "
+        "the immutable CDC was not resubmitted"
+    )
+    return (
+        replace(
+            document,
+            internal_status="reconciliation_required",
+            sifen_status="reconciliation_required",
+            sifen_result_message=message,
+            updated_at=_now(),
+        ),
+        replace(
+            job,
+            status="failed",
+            error_snapshot={
+                "category": "reconciliation_required",
+                "code": document.sifen_result_code,
+                "message": message,
+            },
+            finished_at=_now(),
+            updated_at=_now(),
+        ),
     )
 
 

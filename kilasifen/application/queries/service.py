@@ -17,6 +17,11 @@ from kilasifen.infrastructure.sifen.query import (
 from kilasifen.repositories.certificates import CertificateRepository
 from kilasifen.repositories.documents import DocumentRepository
 from kilasifen.repositories.emitters import EmitterRepository
+from kilasifen.repositories.jobs import JobRepository
+
+_RECONCILABLE_DOCUMENT_STATUSES = frozenset(
+    {"submitted", "retry_pending", "reconciliation_required"}
+)
 
 
 class QueryService:
@@ -28,12 +33,14 @@ class QueryService:
         emitter_repository: EmitterRepository,
         certificate_repository: CertificateRepository,
         document_repository: DocumentRepository,
+        job_repository: JobRepository,
         certificate_store: EncryptedCertificateStore,
         query_gateway: SifenQueryGateway,
     ):
         self.emitter_repository = emitter_repository
         self.certificate_repository = certificate_repository
         self.document_repository = document_repository
+        self.job_repository = job_repository
         self.certificate_store = certificate_store
         self.query_gateway = query_gateway
 
@@ -54,6 +61,7 @@ class QueryService:
         *,
         emitter_id: str,
         document_id: str,
+        reconcile: bool = False,
     ) -> tuple[Document, DocumentQueryOutcome]:
         emitter = self._get_emitter(emitter_id)
         document = self.document_repository.get(document_id)
@@ -76,11 +84,37 @@ class QueryService:
             last_query_request_xml=outcome.request_xml,
             last_query_response_raw=outcome.response_raw,
             last_query_at=_now(),
-            sifen_status=outcome.status,
-            sifen_result_code=outcome.result_code,
-            sifen_result_message=outcome.result_message,
             updated_at=_now(),
         )
+        if (
+            reconcile
+            and document.internal_status in _RECONCILABLE_DOCUMENT_STATUSES
+            and outcome.status == "found"
+        ):
+            signed_xml = outcome.content_xml or document.signed_xml
+            if not signed_xml:
+                raise ConflictError("queries.document_content_missing")
+            updated = replace(
+                updated,
+                signed_xml=signed_xml,
+                internal_status="approved",
+                sifen_status="approved",
+                sifen_result_code=outcome.result_code,
+                sifen_result_message=outcome.result_message,
+                updated_at=_now(),
+            )
+            job = self.job_repository.get_for_entity("document", document.id)
+            if job is None:
+                raise ConflictError("jobs.missing_for_document")
+            self.job_repository.save(
+                replace(
+                    job,
+                    status="succeeded",
+                    error_snapshot=None,
+                    finished_at=_now(),
+                    updated_at=_now(),
+                )
+            )
         return self.document_repository.save(updated), outcome
 
     def _get_emitter(self, emitter_id: str) -> Emitter:

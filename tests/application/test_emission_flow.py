@@ -447,6 +447,8 @@ def test_retry_queries_cdc_and_does_not_resubmit_when_sifen_has_document(
                     internal_status="retry_pending",
                     cdc="0180012345",
                     signed_xml='<rDE><DE Id="0180012345"/><Signature/></rDE>',
+                    sifen_request_xml="<emit-request/>",
+                    sifen_response_raw="<emit-response/>",
                 )
             )
             jobs.save(replace(job, status="retry_scheduled", attempts=1))
@@ -459,6 +461,165 @@ def test_retry_queries_cdc_and_does_not_resubmit_when_sifen_has_document(
                 error=AssertionError("document must not be resubmitted")
             ),
             query_gateway=FakeQueryGateway(),
+            current_date=date(2024, 4, 24),
+        )
+
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            document = SqlAlchemyDocumentRepository(session).get("document-1")
+            job = SqlAlchemyJobRepository(session).get("job-1")
+
+        assert payload["document_status"] == "approved"
+        assert payload["job_status"] == "succeeded"
+        assert document is not None
+        assert document.sifen_request_xml == "<emit-request/>"
+        assert document.sifen_response_raw == "<emit-response/>"
+        assert document.last_query_request_xml == "<query/>"
+        assert document.last_query_response_raw == "<found/>"
+        assert document.last_query_at is not None
+        assert job is not None
+
+
+def test_ambiguous_cdc_query_never_resubmits_and_persists_query_trace(
+    tmp_path,
+) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="emission_ambiguous_reconciliation",
+    ) as database_url:
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
+        _seed_retry_pending_document(database_url, attempts=1)
+
+        with pytest.raises(DocumentEmissionRetryableError):
+            process_document_job(
+                job_id="job-1",
+                database_url=database_url,
+                encryption_key=_fernet_key(),
+                emission_engine=FakeEmissionEngine(
+                    error=AssertionError("ambiguous CDC must never be resubmitted")
+                ),
+                query_gateway=FakeQueryGateway(status="not_found"),
+                current_date=date(2024, 4, 24),
+            )
+
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            document = SqlAlchemyDocumentRepository(session).get("document-1")
+            job = SqlAlchemyJobRepository(session).get("job-1")
+
+        assert document is not None
+        assert document.internal_status == "retry_pending"
+        assert document.cdc == "0180012345"
+        assert document.signed_xml == (
+            '<rDE><DE Id="0180012345"/><Signature/></rDE>'
+        )
+        assert document.sifen_request_xml == "<emit-request/>"
+        assert document.sifen_response_raw == "<emit-response/>"
+        assert document.last_query_request_xml == "<query/>"
+        assert document.last_query_response_raw == "<not-found/>"
+        assert document.last_query_at is not None
+        assert job is not None
+        assert job.status == "retry_scheduled"
+        assert job.attempts == 2
+        assert job.error_snapshot == {
+            "category": "reconciliation_pending",
+            "code": "0420",
+            "message": "CDC no encontrado o no aprobado",
+        }
+
+
+def test_ambiguous_cdc_after_retry_budget_requires_reconciliation_without_resend(
+    tmp_path,
+) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="emission_reconciliation_required",
+    ) as database_url:
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
+        _seed_retry_pending_document(database_url, attempts=4)
+
+        payload = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            emission_engine=FakeEmissionEngine(
+                error=AssertionError("ambiguous CDC must never be resubmitted")
+            ),
+            query_gateway=FakeQueryGateway(status="not_found"),
+            current_date=date(2024, 4, 24),
+        )
+
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            document = SqlAlchemyDocumentRepository(session).get("document-1")
+            job = SqlAlchemyJobRepository(session).get("job-1")
+
+        assert payload["document_status"] == "reconciliation_required"
+        assert payload["job_status"] == "failed"
+        assert document is not None
+        assert document.internal_status == "reconciliation_required"
+        assert document.cdc == "0180012345"
+        assert document.last_query_response_raw == "<not-found/>"
+        assert job is not None
+        assert job.attempts == 5
+        assert job.error_snapshot == {
+            "category": "reconciliation_required",
+            "code": "0420",
+            "message": (
+                "automatic reconciliation attempts exhausted; "
+                "the immutable CDC was not resubmitted"
+            ),
+        }
+
+
+def test_requeued_reconciliation_required_document_still_cannot_be_resubmitted(
+    tmp_path,
+) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="emission_reconciliation_hard_barrier",
+    ) as database_url:
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
+        _seed_retry_pending_document(database_url, attempts=5)
+
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            documents = SqlAlchemyDocumentRepository(session)
+            jobs = SqlAlchemyJobRepository(session)
+            stampings = SqlAlchemyStampingRepository(session)
+            document = documents.get("document-1")
+            job = jobs.get("job-1")
+            assert document is not None and job is not None
+            documents.save(
+                replace(
+                    document,
+                    internal_status="reconciliation_required",
+                    sifen_status="reconciliation_required",
+                )
+            )
+            jobs.save(replace(job, status="queued"))
+            stamping = stampings.get_active_for_emitter(
+                "emitter-1",
+                on_date=date(2024, 4, 24),
+            )
+            assert stamping is not None
+            stampings.save(replace(stamping, is_active=False))
+
+        payload = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            emission_engine=FakeEmissionEngine(
+                error=AssertionError("hard barrier must survive a manual requeue")
+            ),
+            query_gateway=FakeQueryGateway(status="found"),
             current_date=date(2024, 4, 24),
         )
 
@@ -481,8 +642,21 @@ class FakeEmissionEngine:
 
 @dataclass
 class FakeQueryGateway:
+    status: str = "found"
+
     def query_document(self, **kwargs) -> DocumentQueryOutcome:
         del kwargs
+        if self.status == "not_found":
+            return DocumentQueryOutcome(
+                cdc="0180012345",
+                request_xml="<query/>",
+                response_raw="<not-found/>",
+                result_code="0420",
+                result_message="CDC no encontrado o no aprobado",
+                status="not_found",
+                content_xml=None,
+                processed_at=None,
+            )
         return DocumentQueryOutcome(
             cdc="0180012345",
             request_xml="<query/>",
@@ -493,6 +667,30 @@ class FakeQueryGateway:
             content_xml='<rDE><DE Id="0180012345"/><Signature/></rDE>',
             processed_at=None,
         )
+
+
+def _seed_retry_pending_document(database_url: str, *, attempts: int) -> None:
+    engine = build_engine(database_url)
+    session_factory = build_session_factory(engine)
+    with session_scope(session_factory) as session:
+        documents = SqlAlchemyDocumentRepository(session)
+        jobs = SqlAlchemyJobRepository(session)
+        document = documents.get("document-1")
+        job = jobs.get("job-1")
+        assert document is not None and job is not None
+        documents.save(
+            replace(
+                document,
+                internal_status="retry_pending",
+                sifen_status="retry_pending",
+                cdc="0180012345",
+                generated_xml="<rDE/>",
+                signed_xml='<rDE><DE Id="0180012345"/><Signature/></rDE>',
+                sifen_request_xml="<emit-request/>",
+                sifen_response_raw="<emit-response/>",
+            )
+        )
+        jobs.save(replace(job, status="retry_scheduled", attempts=attempts))
 
 
 class FakeWebhookQueue:

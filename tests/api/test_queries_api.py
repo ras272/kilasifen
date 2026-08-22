@@ -1,5 +1,5 @@
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -14,6 +14,7 @@ from kilasifen.config import get_settings
 from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
+from kilasifen.domain.jobs.models import Job
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.repositories.certificates import (
@@ -25,6 +26,7 @@ from kilasifen.infrastructure.db.repositories.documents import (
 from kilasifen.infrastructure.db.repositories.emitters import (
     SqlAlchemyEmitterRepository,
 )
+from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
 from kilasifen.infrastructure.db.session import (
     build_engine,
     build_session_factory,
@@ -70,6 +72,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClie
                     ),
                     certificate_repository=SqlAlchemyCertificateRepository(session),
                     document_repository=SqlAlchemyDocumentRepository(session),
+                    job_repository=SqlAlchemyJobRepository(session),
                     certificate_store=EncryptedCertificateStore(encryption_key),
                     query_gateway=FakeQueryGateway(),
                 )
@@ -123,10 +126,57 @@ def test_query_document_returns_normalized_payload_and_persists_trace(
     assert document is not None
     assert document.last_query_request_xml == "<query-document-request/>"
     assert document.last_query_response_raw == "<query-document-response/>"
-    assert document.sifen_status == "found"
-    assert document.sifen_result_code == "0300"
-    assert document.sifen_result_message == "Consulta DE exitosa"
+    assert document.internal_status == "approved"
+    assert document.sifen_status == "approved"
+    assert document.sifen_result_code == "0260"
+    assert document.sifen_result_message == "Autorizacion satisfactoria"
     assert document.last_query_at is not None
+
+
+def test_query_document_reconciles_transport_uncertainty_without_resubmission(
+    client: TestClient,
+) -> None:
+    engine = build_engine(get_settings().database_url)
+    session_factory = build_session_factory(engine)
+    with session_scope(session_factory) as session:
+        documents = SqlAlchemyDocumentRepository(session)
+        document = documents.get("document-1")
+        assert document is not None
+        documents.save(
+            replace(
+                document,
+                internal_status="reconciliation_required",
+                sifen_status="reconciliation_required",
+            )
+        )
+
+    response = client.post(
+        "/v1/emitters/emitter-1/queries/documents/document-1/reconcile",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["document_query"]["status"] == "found"
+    with session_scope(session_factory) as session:
+        reconciled = SqlAlchemyDocumentRepository(session).get("document-1")
+        job = SqlAlchemyJobRepository(session).get_for_entity(
+            "document",
+            "document-1",
+        )
+
+    assert reconciled is not None
+    assert reconciled.internal_status == "approved"
+    assert reconciled.sifen_status == "approved"
+    assert reconciled.sifen_result_code == "0300"
+    assert reconciled.signed_xml == "<rDE version='150'/>"
+    assert reconciled.sifen_request_xml == "<emit-request/>"
+    assert reconciled.sifen_response_raw == "<emit-response/>"
+    assert reconciled.last_query_request_xml == "<query-document-request/>"
+    assert reconciled.last_query_response_raw == "<query-document-response/>"
+    assert job is not None
+    assert job.status == "succeeded"
+    assert job.error_snapshot is None
+    assert job.finished_at is not None
 
 
 @dataclass(slots=True)
@@ -216,11 +266,28 @@ def _seed_query_context(
         created_at=_now(),
         updated_at=_now(),
     )
+    job = Job(
+        id="job-1",
+        emitter_id="emitter-1",
+        related_entity_type="document",
+        related_entity_id="document-1",
+        job_type="document.emit",
+        status="failed",
+        attempts=5,
+        error_snapshot={"category": "reconciliation_required"},
+        scheduled_at=_now(),
+        started_at=_now(),
+        finished_at=_now(),
+        worker_correlation_id=None,
+        created_at=_now(),
+        updated_at=_now(),
+    )
 
     with session_scope(session_factory) as session:
         SqlAlchemyEmitterRepository(session, certificate_store).save(emitter)
         SqlAlchemyCertificateRepository(session).save(certificate)
         SqlAlchemyDocumentRepository(session).save(document)
+        SqlAlchemyJobRepository(session).save(job)
 
 
 def _now() -> datetime:

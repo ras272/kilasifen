@@ -13,7 +13,14 @@ def test_approved_document_states_complete_the_job(status: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "status", ["queued", "processing", "submitted", "retry_pending"]
+    "status",
+    [
+        "queued",
+        "processing",
+        "submitted",
+        "retry_pending",
+        "reconciliation_required",
+    ],
 )
 def test_pending_document_states_require_reconciliation(status: str) -> None:
     assert job_status_for_document(status) == "retry_scheduled"

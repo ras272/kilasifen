@@ -371,6 +371,7 @@ def get_query_service(
         emitter_repository=_emitter_repository(session),
         certificate_repository=SqlAlchemyCertificateRepository(session),
         document_repository=SqlAlchemyDocumentRepository(session),
+        job_repository=SqlAlchemyJobRepository(session),
         certificate_store=EncryptedCertificateStore(settings.encryption_key),
         query_gateway=PysifenQueryGateway(settings.sifen_environment),
     )

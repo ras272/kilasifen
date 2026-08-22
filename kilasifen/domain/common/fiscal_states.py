@@ -4,7 +4,13 @@ from __future__ import annotations
 
 DOCUMENT_APPROVED_STATUSES = frozenset({"approved", "approved_with_observation"})
 DOCUMENT_PENDING_STATUSES = frozenset(
-    {"queued", "processing", "submitted", "retry_pending"}
+    {
+        "queued",
+        "processing",
+        "submitted",
+        "retry_pending",
+        "reconciliation_required",
+    }
 )
 DOCUMENT_TERMINAL_STATUSES = frozenset(
     {*DOCUMENT_APPROVED_STATUSES, "rejected", "failed", "cancelled"}

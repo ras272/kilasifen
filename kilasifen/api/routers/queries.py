@@ -2,7 +2,11 @@
 
 from fastapi import APIRouter, Depends, Request
 
-from kilasifen.api.deps import get_query_service, require_emitter_read
+from kilasifen.api.deps import (
+    get_query_service,
+    require_emitter_read,
+    require_fiscal_write,
+)
 from kilasifen.api.errors import ApiError
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.queries import (
@@ -65,10 +69,47 @@ def query_document(
     _principal=Depends(require_emitter_read),
     service: QueryService = Depends(get_query_service),
 ) -> SuccessEnvelope:
+    return _query_document_response(
+        emitter_id=emitter_id,
+        document_id=document_id,
+        request=request,
+        service=service,
+        reconcile=False,
+    )
+
+
+@router.post("/documents/{document_id}/reconcile", response_model=SuccessEnvelope)
+def reconcile_document(
+    emitter_id: str,
+    document_id: str,
+    request: Request,
+    _principal=Depends(require_fiscal_write),
+    service: QueryService = Depends(get_query_service),
+) -> SuccessEnvelope:
+    """Reconcile an uncertain document by CDC without resubmitting it."""
+
+    return _query_document_response(
+        emitter_id=emitter_id,
+        document_id=document_id,
+        request=request,
+        service=service,
+        reconcile=True,
+    )
+
+
+def _query_document_response(
+    *,
+    emitter_id: str,
+    document_id: str,
+    request: Request,
+    service: QueryService,
+    reconcile: bool,
+) -> SuccessEnvelope:
     try:
         document, outcome = service.query_document(
             emitter_id=emitter_id,
             document_id=document_id,
+            reconcile=reconcile,
         )
     except ValueError as exc:
         raise ApiError(
