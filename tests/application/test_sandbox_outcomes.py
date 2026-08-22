@@ -57,4 +57,3 @@ def test_policy_refuses_persisted_directive_outside_test(environment: str) -> No
         )
 
     assert exc_info.value.code == "sandbox.test_runtime_required"
-

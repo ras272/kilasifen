@@ -128,7 +128,10 @@ def test_create_event_over_document_returns_event_and_job(client: TestClient) ->
             "document_id": "doc-fe-recent",
             "event_type": "cancelacion",
             "payload": {
-                "event_xml": "<gGroupGesEve xmlns='http://ekuatia.set.gov.py/sifen/xsd' />"
+                "event_xml": (
+                    "<gGroupGesEve "
+                    "xmlns='http://ekuatia.set.gov.py/sifen/xsd' />"
+                )
             },
         },
     )
@@ -150,7 +153,10 @@ def test_get_event_returns_event_and_job(client: TestClient) -> None:
             "document_id": "doc-fe-recent",
             "event_type": "cancelacion",
             "payload": {
-                "event_xml": "<gGroupGesEve xmlns='http://ekuatia.set.gov.py/sifen/xsd' />"
+                "event_xml": (
+                    "<gGroupGesEve "
+                    "xmlns='http://ekuatia.set.gov.py/sifen/xsd' />"
+                )
             },
         },
     )
@@ -176,7 +182,10 @@ def test_get_event_returns_not_found_for_other_emitter(client: TestClient) -> No
             "document_id": "doc-emitter-2",
             "event_type": "cancelacion",
             "payload": {
-                "event_xml": "<gGroupGesEve xmlns='http://ekuatia.set.gov.py/sifen/xsd' />"
+                "event_xml": (
+                    "<gGroupGesEve "
+                    "xmlns='http://ekuatia.set.gov.py/sifen/xsd' />"
+                )
             },
         },
     )
@@ -199,7 +208,10 @@ def test_get_event_requires_valid_api_key(client: TestClient) -> None:
             "document_id": "doc-fe-recent",
             "event_type": "cancelacion",
             "payload": {
-                "event_xml": "<gGroupGesEve xmlns='http://ekuatia.set.gov.py/sifen/xsd' />"
+                "event_xml": (
+                    "<gGroupGesEve "
+                    "xmlns='http://ekuatia.set.gov.py/sifen/xsd' />"
+                )
             },
         },
     )
