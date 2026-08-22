@@ -31,7 +31,8 @@ const indexPath = './content/docs/api-reference/index.mdx';
 const generatedIndex = await readFile(indexPath, 'utf8');
 const normalizedIndex = generatedIndex
   .replace('title: Overview', 'title: Referencia API')
-  .replaceAll('/docs/..%5C..%5C', '/docs/api-reference/');
+  .replaceAll('/docs/..%5C..%5C', '/docs/api-reference/')
+  .replaceAll('/docs/../../', '/docs/api-reference/');
 
 if (normalizedIndex.includes('%5C') || normalizedIndex.includes('/../')) {
   throw new Error('La referencia OpenAPI contiene enlaces no portables.');
