@@ -43,7 +43,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
-                    "formas_pago": [{"tipo": "efectivo", "monto": "100000", "moneda": "PYG"}],
+                    "formas_pago": [
+                        {"tipo": "efectivo", "monto": "100000", "moneda": "PYG"}
+                    ],
                 },
                 "items": [
                     {
@@ -81,7 +83,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
-                    "formas_pago": [{"tipo": "efectivo", "monto": "170000", "moneda": "PYG"}],
+                    "formas_pago": [
+                        {"tipo": "efectivo", "monto": "170000", "moneda": "PYG"}
+                    ],
                 },
                 "items": [
                     {
@@ -213,9 +217,21 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                         "tipo": "cuotas",
                         "monto_entrega_inicial": "10000",
                         "cuotas": [
-                            {"monto": "30000", "fecha_vencimiento": "2026-05-10", "moneda": "PYG"},
-                            {"monto": "30000", "fecha_vencimiento": "2026-06-10", "moneda": "PYG"},
-                            {"monto": "30000", "fecha_vencimiento": "2026-07-10", "moneda": "PYG"},
+                            {
+                                "monto": "30000",
+                                "fecha_vencimiento": "2026-05-10",
+                                "moneda": "PYG",
+                            },
+                            {
+                                "monto": "30000",
+                                "fecha_vencimiento": "2026-06-10",
+                                "moneda": "PYG",
+                            },
+                            {
+                                "monto": "30000",
+                                "fecha_vencimiento": "2026-07-10",
+                                "moneda": "PYG",
+                            },
                         ],
                     },
                 },
@@ -348,7 +364,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
-                    "formas_pago": [{"tipo": "transferencia", "monto": "120.50", "moneda": "USD"}],
+                    "formas_pago": [
+                        {"tipo": "transferencia", "monto": "120.50", "moneda": "USD"}
+                    ],
                 },
                 "items": [
                     {
@@ -420,7 +438,10 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
                 },
-                "documento_asociado": {"tipo": 1, "cdc": "01800123450001001000000012026010112345678901"},
+                "documento_asociado": {
+                    "tipo": 1,
+                    "cdc": "01800123450001001000000012026010112345678901",
+                },
                 "items": [
                     {
                         "codigo_interno": "NC-TOTAL-1",
@@ -453,7 +474,10 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
                 },
-                "documento_asociado": {"tipo": 1, "cdc": "01800123450001001000000012026010112345678901"},
+                "documento_asociado": {
+                    "tipo": 1,
+                    "cdc": "01800123450001001000000012026010112345678901",
+                },
                 "items": [
                     {
                         "codigo_interno": "NC-P-1",
@@ -495,7 +519,10 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
                 },
-                "documento_asociado": {"tipo": 1, "cdc": "01800123450001001000000012026010112345678901"},
+                "documento_asociado": {
+                    "tipo": 1,
+                    "cdc": "01800123450001001000000012026010112345678901",
+                },
                 "items": [
                     {
                         "codigo_interno": "NC-DESC-1",
@@ -503,6 +530,42 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                         "unidad_medida": "77",
                         "cantidad": "1",
                         "precio_unitario": "25000",
+                        "afectacion": "gravado",
+                        "tasa": 10,
+                    }
+                ],
+            },
+        ),
+        TypedContractScenario(
+            name="nd_recupero_costo",
+            document_type="nota_debito",
+            contract="nota_debito_v1",
+            payload={
+                "numero": 1,
+                "establecimiento": "001",
+                "punto": "001",
+                "fecha_emision": "2026-04-25T10:00:00",
+                "motivo_emision": "recupero_costo",
+                "cliente": {
+                    "naturaleza": 1,
+                    "tipo_operacion": 1,
+                    "tipo_contribuyente": 2,
+                    "ruc": "80069563-1",
+                    "razon_social": "TIPS SA",
+                    "direccion": "ASUNCION",
+                    "numero_casa": "123",
+                },
+                "documento_asociado": {
+                    "tipo": 1,
+                    "cdc": "01800123450001001000000012026010112345678901",
+                },
+                "items": [
+                    {
+                        "codigo_interno": "ND-REC-1",
+                        "descripcion": "Recupero de costo logístico",
+                        "unidad_medida": "77",
+                        "cantidad": "1",
+                        "precio_unitario": "45000",
                         "afectacion": "gravado",
                         "tasa": 10,
                     }

@@ -189,6 +189,42 @@ def test_create_nota_credito_typed_endpoint_returns_document_and_job(
     assert body["job"]["job_type"] == "document.emit"
 
 
+def test_create_nota_debito_typed_endpoint_returns_document_and_job(
+    client: TestClient,
+    emitter_id: str,
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/notas-debito",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-nd-1",
+            "idempotency_key": "idem-nd-1",
+            "nota_debito": {
+                "motivo_emision": "recupero_costo",
+                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "documento_asociado": {
+                    "cdc": "01800123450001001000000012026010112345678901"
+                },
+                "items": [
+                    {
+                        "descripcion": "Recupero de costo",
+                        "cantidad": 1,
+                        "precioUnitario": 500,
+                    }
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()["data"]
+    assert body["document"]["document_type"] == "nota_debito"
+    assert body["document"]["payload_snapshot"]["typed_contract"]["contract"] == (
+        "nota_debito_v1"
+    )
+    assert body["job"]["job_type"] == "document.emit"
+
+
 def test_create_typed_document_requires_business_payload(
     client: TestClient,
     emitter_id: str,
@@ -460,7 +496,10 @@ def test_get_document_xml_returns_signed_or_generated_xml(
             "idempotency_key": "idem-xml",
             "document_type": "factura",
             "payload": {
-                "generated_xml": "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'><DE Id='XML1'/></rDE>",
+                "generated_xml": (
+                    "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'>"
+                    "<DE Id='XML1'/></rDE>"
+                ),
                 "doc_id": "XML1",
             },
         },
@@ -490,7 +529,10 @@ def test_get_document_xml_returns_not_found_for_other_emitter_document(
             "idempotency_key": "idem-xml-b",
             "document_type": "factura",
             "payload": {
-                "generated_xml": "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'><DE Id='XMLB'/></rDE>",
+                "generated_xml": (
+                    "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'>"
+                    "<DE Id='XMLB'/></rDE>"
+                ),
                 "doc_id": "XMLB",
             },
         },

@@ -385,6 +385,15 @@ class NotaCreditoContractPayload(BaseFiscalDocumentPayload):
     nota_credito: dict[str, Any] | None = None
 
 
+class NotaDebitoContractPayload(BaseFiscalDocumentPayload):
+    """Validated business payload for Nota de Debito endpoint."""
+
+    tipo_documento: Literal[6] = 6
+    motivo_emision: int | str | None = None
+    documento_asociado: AssociatedDocumentPayload
+    nota_debito: dict[str, Any] | None = None
+
+
 class FacturaCreateRequest(BaseModel):
     """Typed API contract for factura emission."""
 
@@ -403,6 +412,16 @@ class NotaCreditoCreateRequest(BaseModel):
     external_id: str | None = Field(default=None, max_length=128)
     idempotency_key: str | None = Field(default=None, max_length=128)
     nota_credito: NotaCreditoContractPayload
+
+
+class NotaDebitoCreateRequest(BaseModel):
+    """Typed API contract for nota de debito emission."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    external_id: str | None = Field(default=None, max_length=128)
+    idempotency_key: str | None = Field(default=None, max_length=128)
+    nota_debito: NotaDebitoContractPayload
 
 
 class DocumentResponse(BaseModel):

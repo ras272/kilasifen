@@ -1,8 +1,8 @@
 """Document application service layer."""
 
 import logging
-from typing import Protocol
 from datetime import UTC, datetime
+from typing import Protocol
 from uuid import uuid4
 
 from kilasifen.application.documents.numbering_service import DocumentNumberingService
@@ -20,13 +20,16 @@ logger = logging.getLogger(__name__)
 _NUMBERED_TYPED_CONTRACTS = {
     "factura": "factura_v1",
     "nota_credito": "nota_credito_v1",
+    "nota_debito": "nota_debito_v1",
 }
 
 
 class DocumentJobQueue(Protocol):
     """Queue contract for document emission jobs."""
 
-    def enqueue_document_emit(self, job: Job, *, database_url: str, encryption_key: str):
+    def enqueue_document_emit(
+        self, job: Job, *, database_url: str, encryption_key: str
+    ):
         """Enqueue one document emission job."""
 
 
@@ -144,14 +147,18 @@ class DocumentService:
             raise NotFoundError("documents.not_found")
         return document
 
-    def get_document_for_emitter(self, *, emitter_id: str, document_id: str) -> Document:
+    def get_document_for_emitter(
+        self, *, emitter_id: str, document_id: str
+    ) -> Document:
         document = self.get_document(document_id)
         if document.emitter_id != emitter_id:
             raise NotFoundError("documents.not_found")
         return document
 
     def get_document_xml_for_emitter(self, *, emitter_id: str, document_id: str) -> str:
-        document = self.get_document_for_emitter(emitter_id=emitter_id, document_id=document_id)
+        document = self.get_document_for_emitter(
+            emitter_id=emitter_id, document_id=document_id
+        )
         if document.signed_xml:
             return document.signed_xml
         if document.generated_xml:
@@ -259,7 +266,9 @@ class DocumentService:
         if not isinstance(typed_payload, dict):
             return payload_snapshot, None, None, None
 
-        establishment = _normalize_three_digits(typed_payload.get("establecimiento"), default="001")
+        establishment = _normalize_three_digits(
+            typed_payload.get("establecimiento"), default="001"
+        )
         point = _normalize_three_digits(typed_payload.get("punto"), default="001")
 
         if typed_payload.get("numero") is not None:

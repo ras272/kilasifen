@@ -16,6 +16,7 @@ from kilasifen.api.schemas.documents import (
     DocumentResponse,
     FacturaCreateRequest,
     NotaCreditoCreateRequest,
+    NotaDebitoCreateRequest,
 )
 from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.application.documents.service import DocumentService
@@ -121,6 +122,35 @@ def create_nota_credito_document(
         idempotency_key=payload.idempotency_key,
         document_type="nota_credito",
         payload_snapshot=_build_typed_payload("nota_credito_v1", nota_credito_payload),
+        sandbox_outcome=sandbox_outcome,
+    )
+
+
+@router.post(
+    "/emitters/{emitter_id}/documents/notas-debito",
+    response_model=SuccessEnvelope,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        200: {"description": "Idempotent replay of the existing document and job."}
+    },
+)
+def create_nota_debito_document(
+    emitter_id: str,
+    payload: NotaDebitoCreateRequest,
+    request: Request,
+    sandbox_outcome: SandboxOutcome | None = Depends(get_sandbox_outcome),
+    _principal=Depends(require_fiscal_write),
+    service: DocumentService = Depends(get_document_service),
+) -> JSONResponse:
+    nota_debito_payload = payload.nota_debito.model_dump(mode="json")
+    return _create_document_response(
+        request=request,
+        service=service,
+        emitter_id=emitter_id,
+        external_id=payload.external_id,
+        idempotency_key=payload.idempotency_key,
+        document_type="nota_debito",
+        payload_snapshot=_build_typed_payload("nota_debito_v1", nota_debito_payload),
         sandbox_outcome=sandbox_outcome,
     )
 

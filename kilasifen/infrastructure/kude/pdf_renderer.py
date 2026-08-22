@@ -18,12 +18,12 @@ from kilasifen.infrastructure.kude.data_extractor import extract_kude_data
 from kilasifen.infrastructure.kude.qr_generator import render_qr_image
 
 # Design tokens ------------------------------------------------------------
-INK = (28, 32, 38)              # primary text
-MUTED = (108, 117, 130)         # secondary labels
-BORDER = (220, 224, 232)        # table borders, dividers
-ACCENT = (28, 70, 115)          # deep professional blue
+INK = (28, 32, 38)  # primary text
+MUTED = (108, 117, 130)  # secondary labels
+BORDER = (220, 224, 232)  # table borders, dividers
+ACCENT = (28, 70, 115)  # deep professional blue
 ACCENT_TEXT = (255, 255, 255)
-ACCENT_SOFT = (232, 240, 250)   # zebra header / total band
+ACCENT_SOFT = (232, 240, 250)  # zebra header / total band
 ZEBRA = (247, 249, 252)
 WARNING = (176, 36, 36)
 WARNING_BG = (252, 232, 232)
@@ -73,7 +73,11 @@ def render_kude_pdf(*, document: Document, emitter: Emitter) -> bytes:
     _draw_emisor_block(pdf, data)
     _section_divider(pdf)
     _draw_general_and_receptor(pdf, data)
-    if data.get("documento_asociado") or data.get("nota_credito"):
+    if (
+        data.get("documento_asociado")
+        or data.get("nota_credito")
+        or data.get("nota_debito")
+    ):
         _section_divider(pdf)
         _draw_associated_section(pdf, data)
     _section_divider(pdf)
@@ -90,6 +94,7 @@ def render_kude_pdf(*, document: Document, emitter: Emitter) -> bytes:
 
 
 # ---------- Title bar -----------------------------------------------------
+
 
 def _draw_title_bar(pdf: FPDF, data: dict) -> None:
     timbrado = data["timbrado"]
@@ -118,6 +123,7 @@ def _draw_title_bar(pdf: FPDF, data: dict) -> None:
 
 # ---------- Environment warning ribbon ------------------------------------
 
+
 def _draw_environment_ribbon(pdf: FPDF, warning: str) -> None:
     bar_h = 5.5
     y = pdf.get_y()
@@ -132,6 +138,7 @@ def _draw_environment_ribbon(pdf: FPDF, warning: str) -> None:
 
 
 # ---------- Emisor block --------------------------------------------------
+
 
 def _draw_emisor_block(pdf: FPDF, data: dict) -> None:
     emisor = data["emisor"]
@@ -163,13 +170,22 @@ def _draw_emisor_block(pdf: FPDF, data: dict) -> None:
     pdf.set_x(info_x)
     pdf.set_font("Helvetica", "", T_BODY_SMALL)
     if emisor.get("nombre_fantasia"):
-        pdf.cell(info_w, LH_TIGHT, _safe(emisor["nombre_fantasia"]), new_x="LEFT", new_y="NEXT")
+        pdf.cell(
+            info_w,
+            LH_TIGHT,
+            _safe(emisor["nombre_fantasia"]),
+            new_x="LEFT",
+            new_y="NEXT",
+        )
         pdf.set_x(info_x)
     if actividad.get("descripcion"):
         pdf.set_text_color(*MUTED)
         pdf.cell(
-            info_w, LH_TIGHT, _safe(actividad["descripcion"]),
-            new_x="LEFT", new_y="NEXT",
+            info_w,
+            LH_TIGHT,
+            _safe(actividad["descripcion"]),
+            new_x="LEFT",
+            new_y="NEXT",
         )
         pdf.set_text_color(*INK)
         pdf.set_x(info_x)
@@ -200,7 +216,9 @@ def _draw_emisor_block(pdf: FPDF, data: dict) -> None:
     _draw_kv_row(
         pdf,
         "Vigencia",
-        _format_vigencia(timbrado["fecha_inicio_vigencia"], timbrado.get("fecha_fin_vigencia")),
+        _format_vigencia(
+            timbrado["fecha_inicio_vigencia"], timbrado.get("fecha_fin_vigencia")
+        ),
         right_w,
     )
     pdf.set_x(right_x)
@@ -211,6 +229,7 @@ def _draw_emisor_block(pdf: FPDF, data: dict) -> None:
 
 
 # ---------- Generales + receptor in two columns ---------------------------
+
 
 def _draw_general_and_receptor(pdf: FPDF, data: dict) -> None:
     g = data["datos_generales"]
@@ -272,9 +291,10 @@ def _draw_general_and_receptor(pdf: FPDF, data: dict) -> None:
 
 # ---------- Documento asociado / motivo NC --------------------------------
 
+
 def _draw_associated_section(pdf: FPDF, data: dict) -> None:
     asoc = data.get("documento_asociado")
-    nc = data.get("nota_credito")
+    nc = data.get("nota_credito") or data.get("nota_debito")
     half = (CONTENT_W - GAP_M) / 2
     top = pdf.get_y()
     right_x = MARGIN_X + half + GAP_M
@@ -290,7 +310,13 @@ def _draw_associated_section(pdf: FPDF, data: dict) -> None:
             pdf.set_x(MARGIN_X)
             pdf.set_text_color(*INK)
             pdf.set_font("Helvetica", "B", T_BODY_SMALL)
-            pdf.cell(half, LH_TIGHT, _format_cdc_compact(asoc["cdc"]), new_x="LEFT", new_y="NEXT")
+            pdf.cell(
+                half,
+                LH_TIGHT,
+                _format_cdc_compact(asoc["cdc"]),
+                new_x="LEFT",
+                new_y="NEXT",
+            )
         elif asoc["tipo"] == "impreso":
             pdf.set_x(MARGIN_X)
             line = (
@@ -318,7 +344,17 @@ def _draw_associated_section(pdf: FPDF, data: dict) -> None:
 
 # ---------- Items table ---------------------------------------------------
 
-_ITEM_HEADERS = ["Cód.", "Descripción", "Un.", "Cant.", "P. Unit.", "Desc.", "Exentas", "5%", "10%"]
+_ITEM_HEADERS = [
+    "Cód.",
+    "Descripción",
+    "Un.",
+    "Cant.",
+    "P. Unit.",
+    "Desc.",
+    "Exentas",
+    "5%",
+    "10%",
+]
 _ITEM_WIDTHS = [16, 50, 12, 14, 22, 16, 18, 18, 24]
 _ITEM_ALIGNS = ["L", "L", "C", "R", "R", "R", "R", "R", "R"]
 
@@ -333,7 +369,9 @@ def _draw_items_table(pdf: FPDF, data: dict) -> None:
     pdf.set_text_color(*ACCENT_TEXT)
     pdf.set_font("Helvetica", "B", T_LABEL + 0.5)
     pdf.set_x(MARGIN_X)
-    for header, width, align in zip(_ITEM_HEADERS, _ITEM_WIDTHS, _ITEM_ALIGNS, strict=True):
+    for header, width, align in zip(
+        _ITEM_HEADERS, _ITEM_WIDTHS, _ITEM_ALIGNS, strict=True
+    ):
         pdf.cell(width, 5.5, header, fill=True, align=align if align != "L" else "C")
     pdf.ln(5.5)
 
@@ -352,7 +390,9 @@ def _draw_items_table(pdf: FPDF, data: dict) -> None:
         cells = [
             item.get("codigo") or "",
             item.get("descripcion") or "",
-            item.get("unidad_medida", {}).get("label") or item.get("unidad_medida", {}).get("codigo") or "",
+            item.get("unidad_medida", {}).get("label")
+            or item.get("unidad_medida", {}).get("codigo")
+            or "",
             item.get("cantidad") or "",
             item.get("precio_unitario") or "",
             item.get("descuento") or "",
@@ -362,8 +402,12 @@ def _draw_items_table(pdf: FPDF, data: dict) -> None:
         ]
         for value, width, align in zip(cells, _ITEM_WIDTHS, _ITEM_ALIGNS, strict=True):
             pdf.cell(
-                width, 4.8, _truncate(_safe(value), width),
-                border="B", align=align, fill=True,
+                width,
+                4.8,
+                _truncate(_safe(value), width),
+                border="B",
+                align=align,
+                fill=True,
             )
         pdf.ln(4.8)
 
@@ -371,6 +415,7 @@ def _draw_items_table(pdf: FPDF, data: dict) -> None:
 
 
 # ---------- Totals block --------------------------------------------------
+
 
 def _draw_totals_block(pdf: FPDF, data: dict) -> None:
     t = data["totales"]
@@ -396,7 +441,9 @@ def _draw_totals_block(pdf: FPDF, data: dict) -> None:
         pdf.set_text_color(*MUTED)
         pdf.cell(label_w, LH_BODY, _safe(label), align="L")
         pdf.set_text_color(*INK)
-        pdf.cell(value_w, LH_BODY, _safe(value), align="R", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(
+            value_w, LH_BODY, _safe(value), align="R", new_x="LMARGIN", new_y="NEXT"
+        )
 
     # Total general highlight
     total_h = 8.5
@@ -415,6 +462,7 @@ def _draw_totals_block(pdf: FPDF, data: dict) -> None:
 
 
 # ---------- Consulta + QR -------------------------------------------------
+
 
 def _draw_consulta_qr(pdf: FPDF, data: dict) -> None:
     qr_url = (data.get("qr") or {}).get("url")
@@ -454,6 +502,7 @@ def _draw_consulta_qr(pdf: FPDF, data: dict) -> None:
 
 # ---------- Footer notice -------------------------------------------------
 
+
 def _draw_footer_notice(pdf: FPDF) -> None:
     pdf.set_y(280)
     pdf.set_font("Helvetica", "I", T_FOOTER)
@@ -463,6 +512,7 @@ def _draw_footer_notice(pdf: FPDF) -> None:
 
 
 # ---------- Helpers -------------------------------------------------------
+
 
 def _draw_section_label(pdf: FPDF, label: str, *, x: float, w: float, y: float) -> None:
     pdf.set_xy(x, y)
@@ -491,8 +541,12 @@ def _draw_kv_row(
     pdf.set_text_color(*INK)
     pdf.set_font("Helvetica", "B" if value_bold else "", value_size)
     pdf.cell(
-        value_w, LH_BODY, _truncate(_safe(value), value_w),
-        align="L", new_x="LMARGIN", new_y="NEXT",
+        value_w,
+        LH_BODY,
+        _truncate(_safe(value), value_w),
+        align="L",
+        new_x="LMARGIN",
+        new_y="NEXT",
     )
 
 

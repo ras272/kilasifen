@@ -30,7 +30,9 @@ def clear_settings_cache() -> Iterator[None]:
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClient]:
-    with managed_test_database_url(tmp_path=tmp_path, name="documents_kude") as database_url:
+    with managed_test_database_url(
+        tmp_path=tmp_path, name="documents_kude"
+    ) as database_url:
         monkeypatch.setenv("KILA_SIFEN_API_KEYS", f'["{API_KEY}"]')
         monkeypatch.setenv("KILA_SIFEN_DATABASE_URL", database_url)
         monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
@@ -219,6 +221,27 @@ def test_get_kude_data_returns_normalized_nota_credito(client: TestClient):
     assert body["documento_asociado"]["cdc"]
 
 
+def test_get_kude_data_returns_normalized_nota_debito(client: TestClient):
+    emitter = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
+    document = _create_document_with_signed_xml(
+        client,
+        emitter_id=emitter["id"],
+        scenario_name="nd_recupero_costo",
+        document_type="nota_debito",
+    )
+    response = client.get(
+        f"/v1/emitters/{emitter['id']}/documents/{document['id']}/kude/data",
+        headers={"X-API-Key": API_KEY},
+    )
+    assert response.status_code == 200
+    body = response.json()["data"]["kude"]
+    assert body["tipo"] == "nota_debito_electronica"
+    assert body["nota_credito"] is None
+    assert body["nota_debito"]["motivo_codigo"] == 6
+    assert body["nota_debito"]["motivo_label"] == "Recupero de costo"
+    assert body["documento_asociado"]["tipo"] == "electronico"
+
+
 def test_get_kude_data_isolates_documents_across_emitters(client: TestClient):
     emitter_a = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
     emitter_b = _create_emitter(client, external_id="erp-b", ruc="80111111", dv="9")
@@ -305,9 +328,7 @@ def test_get_kude_data_qr_matches_qr_generator_byte_exact(client: TestClient):
     fecha_emi = datetime.fromisoformat(
         de.find(f"{{{ns}}}gDatGralOpe/{{{ns}}}dFeEmiDE").text
     )
-    rec_ruc = de.find(
-        f"{{{ns}}}gDatGralOpe/{{{ns}}}gDatRec/{{{ns}}}dRucRec"
-    ).text
+    rec_ruc = de.find(f"{{{ns}}}gDatGralOpe/{{{ns}}}gDatRec/{{{ns}}}dRucRec").text
     g_tot = de.find(f"{{{ns}}}gTotSub")
     total_general = Decimal(g_tot.find(f"{{{ns}}}dTotGralOpe").text)
     total_iva = Decimal(g_tot.find(f"{{{ns}}}dTotIVA").text)

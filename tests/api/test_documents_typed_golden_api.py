@@ -134,12 +134,19 @@ def _create_typed_document(
             "idempotency_key": f"{scenario.name}-idem-{suffix}",
             "factura": payload,
         }
-    else:
+    elif scenario.document_type == "nota_credito":
         endpoint = f"/v1/emitters/{emitter_id}/documents/notas-credito"
         body = {
             "external_id": f"{scenario.name}-{suffix}",
             "idempotency_key": f"{scenario.name}-idem-{suffix}",
             "nota_credito": payload,
+        }
+    else:
+        endpoint = f"/v1/emitters/{emitter_id}/documents/notas-debito"
+        body = {
+            "external_id": f"{scenario.name}-{suffix}",
+            "idempotency_key": f"{scenario.name}-idem-{suffix}",
+            "nota_debito": payload,
         }
     return client.post(endpoint, headers={"X-API-Key": API_KEY}, json=body)
 

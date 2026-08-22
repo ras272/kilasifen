@@ -24,6 +24,7 @@ def test_openapi_describes_consumer_security_and_supported_contracts(
     required_paths = {
         "/v1/emitters/{emitter_id}/documents/facturas",
         "/v1/emitters/{emitter_id}/documents/notas-credito",
+        "/v1/emitters/{emitter_id}/documents/notas-debito",
         "/v1/emitters/{emitter_id}/documents/{document_id}",
         "/v1/emitters/{emitter_id}/jobs/{job_id}",
         "/v1/emitters/{emitter_id}/documents/{document_id}/xml",

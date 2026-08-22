@@ -282,10 +282,20 @@ def build_typed_document_xml(
             stamping=stamping,
         )
     if contract == "nota_credito_v1":
-        return _build_nota_credito_xml(
+        return _build_adjustment_note_xml(
             typed_payload=typed_payload,
             emitter=emitter,
             stamping=stamping,
+            document_type_code=5,
+            document_type_description="Nota de crédito electrónica",
+        )
+    if contract == "nota_debito_v1":
+        return _build_adjustment_note_xml(
+            typed_payload=typed_payload,
+            emitter=emitter,
+            stamping=stamping,
+            document_type_code=6,
+            document_type_description="Nota de débito electrónica",
         )
     return None
 
@@ -298,10 +308,16 @@ def _build_factura_xml(
 ) -> TypedXmlBuildResult:
     numero_documento = _required_intlike(typed_payload, "numero")
     fecha_emision = _resolve_emission_datetime(typed_payload)
-    establecimiento = _normalize_three_digits(typed_payload.get("establecimiento"), "001")
+    establecimiento = _normalize_three_digits(
+        typed_payload.get("establecimiento"), "001"
+    )
     punto = _normalize_three_digits(typed_payload.get("punto"), "001")
-    codigo_seguridad = _normalize_nine_digits(typed_payload.get("codigo_seguridad"), "123456789")
-    tipo_contribuyente = _required_intlike(typed_payload, "tipo_contribuyente", default=2)
+    codigo_seguridad = _normalize_nine_digits(
+        typed_payload.get("codigo_seguridad"), "123456789"
+    )
+    tipo_contribuyente = _required_intlike(
+        typed_payload, "tipo_contribuyente", default=2
+    )
     cliente = _required_object(typed_payload, "cliente")
     items = _required_items(typed_payload)
 
@@ -329,8 +345,8 @@ def _build_factura_xml(
         max_value=9,
         field_name="indicador_presencia",
     )
-    moneda, moneda_descripcion, condicion_tipo_cambio, tipo_cambio = _resolve_currency_data(
-        typed_payload
+    moneda, moneda_descripcion, condicion_tipo_cambio, tipo_cambio = (
+        _resolve_currency_data(typed_payload)
     )
     item_computations = _append_items(
         dtip=None,  # created later once DE structure exists
@@ -421,18 +437,26 @@ def _build_factura_xml(
     return TypedXmlBuildResult(generated_xml=generated_xml, doc_id=doc_id)
 
 
-def _build_nota_credito_xml(
+def _build_adjustment_note_xml(
     *,
     typed_payload: dict,
     emitter: Emitter,
     stamping: Stamping,
+    document_type_code: int,
+    document_type_description: str,
 ) -> TypedXmlBuildResult:
     numero_documento = _required_intlike(typed_payload, "numero")
     fecha_emision = _resolve_emission_datetime(typed_payload)
-    establecimiento = _normalize_three_digits(typed_payload.get("establecimiento"), "001")
+    establecimiento = _normalize_three_digits(
+        typed_payload.get("establecimiento"), "001"
+    )
     punto = _normalize_three_digits(typed_payload.get("punto"), "001")
-    codigo_seguridad = _normalize_nine_digits(typed_payload.get("codigo_seguridad"), "123456789")
-    tipo_contribuyente = _required_intlike(typed_payload, "tipo_contribuyente", default=2)
+    codigo_seguridad = _normalize_nine_digits(
+        typed_payload.get("codigo_seguridad"), "123456789"
+    )
+    tipo_contribuyente = _required_intlike(
+        typed_payload, "tipo_contribuyente", default=2
+    )
     cliente = _required_object(typed_payload, "cliente")
     items = _required_items(typed_payload)
     asociado = _required_object(typed_payload, "documento_asociado")
@@ -453,8 +477,8 @@ def _build_nota_credito_xml(
         max_value=5,
         field_name="tipo_impuesto",
     )
-    moneda, moneda_descripcion, condicion_tipo_cambio, tipo_cambio = _resolve_currency_data(
-        typed_payload
+    moneda, moneda_descripcion, condicion_tipo_cambio, tipo_cambio = (
+        _resolve_currency_data(typed_payload)
     )
 
     item_computations = _append_items(
@@ -474,7 +498,7 @@ def _build_nota_credito_xml(
     _assert_totals_consistency(totals)
 
     doc_id = _build_doc_id(
-        i_tide=5,
+        i_tide=document_type_code,
         emitter=emitter,
         fecha_emision=fecha_emision,
         establecimiento=establecimiento,
@@ -486,8 +510,8 @@ def _build_nota_credito_xml(
     root = _build_base_document_root(
         doc_id=doc_id,
         fecha_emision=fecha_emision,
-        i_tide=5,
-        d_des_tide="Nota de crédito electrónica",
+        i_tide=document_type_code,
+        d_des_tide=document_type_description,
         stamping=stamping,
         emitter=emitter,
         establecimiento=establecimiento,
@@ -600,19 +624,27 @@ def _build_base_document_root(
     _sub(ope, "dDesMoneOpe", moneda_descripcion)
     if moneda != "PYG":
         if condicion_tipo_cambio is None:
-            raise SifenValidationError("documents.currency.condicion_tipo_cambio_required")
+            raise SifenValidationError(
+                "documents.currency.condicion_tipo_cambio_required"
+            )
         _sub(ope, "dCondTiCam", str(condicion_tipo_cambio))
         if condicion_tipo_cambio == 1:
             if tipo_cambio is None:
                 raise SifenValidationError("documents.currency.tipo_cambio_required")
             _sub(ope, "dTiCam", _as_sifen_amount4(tipo_cambio))
     elif condicion_tipo_cambio is not None or tipo_cambio is not None:
-        raise SifenValidationError("documents.currency.condicion_tipo_cambio_not_allowed")
+        raise SifenValidationError(
+            "documents.currency.condicion_tipo_cambio_not_allowed"
+        )
 
     _append_anticipation_condition(ope=ope, typed_payload=typed_payload)
 
     emis = _sub(gdat, "gEmis")
-    emisor_payload = typed_payload.get("emisor") if isinstance(typed_payload.get("emisor"), dict) else {}
+    emisor_payload = (
+        typed_payload.get("emisor")
+        if isinstance(typed_payload.get("emisor"), dict)
+        else {}
+    )
     emisor_ruc = _clean_text(emisor_payload.get("ruc")) or emitter.ruc
     emisor_dv = _clean_text(emisor_payload.get("dv")) or emitter.dv
     emisor_name = (
@@ -622,7 +654,11 @@ def _build_base_document_root(
     )
     _sub(emis, "dRucEm", emisor_ruc)
     _sub(emis, "dDVEmi", emisor_dv)
-    _sub(emis, "iTipCont", str(_required_intlike(typed_payload, "tipo_contribuyente", default=2)))
+    _sub(
+        emis,
+        "iTipCont",
+        str(_required_intlike(typed_payload, "tipo_contribuyente", default=2)),
+    )
     _sub(emis, "dNomEmi", emisor_name)
     _sub(
         emis,
@@ -663,9 +699,9 @@ def _build_base_document_root(
     )
     if distrito:
         _sub(emis, "cDisEmi", distrito)
-    distrito_descripcion = _clean_text(emisor_payload.get("descripcion_distrito")) or _clean_text(
-        typed_payload.get("descripcion_distrito_emisor")
-    )
+    distrito_descripcion = _clean_text(
+        emisor_payload.get("descripcion_distrito")
+    ) or _clean_text(typed_payload.get("descripcion_distrito_emisor"))
     if distrito_descripcion:
         _sub(emis, "dDesDisEmi", distrito_descripcion)
     _sub(
@@ -788,7 +824,9 @@ def _append_receiver(*, gdat: ET.Element, cliente: dict) -> None:
                 )
             )
             if not doc_number:
-                raise SifenValidationError("documents.cliente.numero_documento_identidad_required")
+                raise SifenValidationError(
+                    "documents.cliente.numero_documento_identidad_required"
+                )
             _sub(rec, "iTipIDRec", str(doc_type))
             _sub(rec, "dDTipIDRec", _doc_identity_description(doc_type))
             _sub(rec, "dNumIDRec", doc_number)
@@ -848,7 +886,9 @@ def _append_public_procurement_group(*, gcam_fe: ET.Element, cliente: dict) -> N
     entidad = _clean_text(compras.get("entidad"))
     anio = _clean_text(compras.get("anio"))
     secuencia = _clean_text(compras.get("secuencia"))
-    fecha_codigo = _resolve_date(_first_non_none(compras, "fecha_codigo", "fecha")).isoformat()
+    fecha_codigo = _resolve_date(
+        _first_non_none(compras, "fecha_codigo", "fecha")
+    ).isoformat()
     if not modalidad or not entidad or not anio or not secuencia:
         raise SifenValidationError("documents.cliente.compras_publicas_invalid")
     gcomp = _sub(gcam_fe, "gCompPub")
@@ -950,7 +990,9 @@ def _append_counted_payments(
 
     for form in forms:
         if not isinstance(form, dict):
-            raise SifenValidationError("documents.condicion_operacion.forma_pago_invalid")
+            raise SifenValidationError(
+                "documents.condicion_operacion.forma_pago_invalid"
+            )
         payment_type = _resolve_code(
             _first_non_none(form, "tipo", "iTiPago"),
             mapping=_PAYMENT_TYPE_CODE_BY_NAME,
@@ -965,7 +1007,9 @@ def _append_counted_payments(
             default=total,
             min_value=_ZERO,
         )
-        payment_currency = (_clean_text(_first_non_none(form, "moneda", "cMoneTiPag")) or moneda).upper()
+        payment_currency = (
+            _clean_text(_first_non_none(form, "moneda", "cMoneTiPag")) or moneda
+        ).upper()
         payment_currency_desc = _currency_description(
             _clean_text(_first_non_none(form, "moneda_descripcion", "dDMoneTiPag"))
             or moneda_descripcion
@@ -989,10 +1033,14 @@ def _append_counted_payments(
             _sub(pago, "dTiCamTiPag", _as_sifen_amount4(payment_exchange))
 
         if payment_type == 2:
-            cheque_number = _clean_text(_first_non_none(form, "numero_cheque", "dNumCheq"))
+            cheque_number = _clean_text(
+                _first_non_none(form, "numero_cheque", "dNumCheq")
+            )
             bank = _clean_text(_first_non_none(form, "banco", "dBcoEmi"))
             if not cheque_number or not bank:
-                raise SifenValidationError("documents.condicion_operacion.cheque_invalid")
+                raise SifenValidationError(
+                    "documents.condicion_operacion.cheque_invalid"
+                )
             gcheq = _sub(pago, "gPagCheq")
             _sub(gcheq, "dNumCheq", f"{int(cheque_number):08d}")
             _sub(gcheq, "dBcoEmi", bank)
@@ -1027,7 +1075,9 @@ def _append_card_payment(*, pago: ET.Element, form: dict) -> None:
         _sub(gtar, "dRSProTar", rs_pro)
     ruc_pro = _clean_text(_first_non_none(card, "ruc_procesadora", "dRUCProTar"))
     if ruc_pro:
-        ruc_base, ruc_dv = _split_ruc_dv({"ruc": ruc_pro, "dv": _clean_text(card.get("dv_procesadora"))})
+        ruc_base, ruc_dv = _split_ruc_dv(
+            {"ruc": ruc_pro, "dv": _clean_text(card.get("dv_procesadora"))}
+        )
         _sub(gtar, "dRUCProTar", ruc_base)
         if ruc_dv:
             _sub(gtar, "dDVProTar", ruc_dv)
@@ -1050,7 +1100,11 @@ def _append_credit_payment(
     moneda: str,
     moneda_descripcion: str,
 ) -> None:
-    credit = condicion_payload.get("credito") if isinstance(condicion_payload.get("credito"), dict) else condicion_payload
+    credit = (
+        condicion_payload.get("credito")
+        if isinstance(condicion_payload.get("credito"), dict)
+        else condicion_payload
+    )
     cond_cred = _resolve_code(
         _first_non_none(credit, "tipo", "iCondCred"),
         mapping={"plazo": 1, "cuotas": 2},
@@ -1068,13 +1122,17 @@ def _append_credit_payment(
             _first_non_none(credit, "descripcion", "plazo_descripcion", "dPlazoCre")
         )
         if not plazo:
-            raise SifenValidationError("documents.condicion_operacion.credito.plazo_required")
+            raise SifenValidationError(
+                "documents.condicion_operacion.credito.plazo_required"
+            )
         _sub(gcred, "dPlazoCre", plazo)
         return
 
     cuotas = credit.get("cuotas")
     if not isinstance(cuotas, list) or not cuotas:
-        raise SifenValidationError("documents.condicion_operacion.credito.cuotas_required")
+        raise SifenValidationError(
+            "documents.condicion_operacion.credito.cuotas_required"
+        )
     _sub(gcred, "dCuotas", str(len(cuotas)))
     entrega = _coerce_decimal(
         _first_non_none(credit, "monto_entrega_inicial", "dMonEnt"),
@@ -1086,11 +1144,19 @@ def _append_credit_payment(
         _sub(gcred, "dMonEnt", _as_sifen_amount4(entrega))
     for cuota in cuotas:
         if not isinstance(cuota, dict):
-            raise SifenValidationError("documents.condicion_operacion.credito.cuota_invalid")
+            raise SifenValidationError(
+                "documents.condicion_operacion.credito.cuota_invalid"
+            )
         gcuota = _sub(gcred, "gCuotas")
-        cuota_moneda = (_clean_text(_first_non_none(cuota, "moneda", "cMoneCuo")) or moneda).upper()
+        cuota_moneda = (
+            _clean_text(_first_non_none(cuota, "moneda", "cMoneCuo")) or moneda
+        ).upper()
         _sub(gcuota, "cMoneCuo", cuota_moneda)
-        _sub(gcuota, "dDMoneCuo", _currency_description(cuota_moneda or moneda_descripcion))
+        _sub(
+            gcuota,
+            "dDMoneCuo",
+            _currency_description(cuota_moneda or moneda_descripcion),
+        )
         cuota_monto = _coerce_decimal(
             _first_non_none(cuota, "monto", "dMonCuota"),
             field_name="condicion_operacion.credito.cuota.monto",
@@ -1100,7 +1166,11 @@ def _append_credit_payment(
         )
         _sub(gcuota, "dMonCuota", _as_sifen_amount4(cuota_monto))
         if cuota.get("fecha_vencimiento"):
-            _sub(gcuota, "dVencCuo", _resolve_date(cuota["fecha_vencimiento"]).isoformat())
+            _sub(
+                gcuota,
+                "dVencCuo",
+                _resolve_date(cuota["fecha_vencimiento"]).isoformat(),
+            )
 
 
 def _append_items(
@@ -1150,7 +1220,13 @@ def _append_items(
             default=_ZERO,
             min_value=_ZERO,
         )
-        net_unit = unit_price - discount_particular - discount_global - anticipo_particular - anticipo_global
+        net_unit = (
+            unit_price
+            - discount_particular
+            - discount_global
+            - anticipo_particular
+            - anticipo_global
+        )
         if net_unit < _ZERO:
             raise SifenValidationError("documents.items.net_unit_negative")
 
@@ -1164,7 +1240,9 @@ def _append_items(
         rate = _resolve_item_rate(item, affectation=affectation)
         if affectation in {1, 4}:
             taxable = (
-                total_item * (proportion / Decimal("100")) / (Decimal("1") + (Decimal(rate) / Decimal("100")))
+                total_item
+                * (proportion / Decimal("100"))
+                / (Decimal("1") + (Decimal(rate) / Decimal("100")))
             ).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
             iva = (taxable * (Decimal(rate) / Decimal("100"))).quantize(
                 _ITEM_TOTAL_Q,
@@ -1192,11 +1270,17 @@ def _append_items(
 
         if dtip is not None:
             current = _sub(dtip, "gCamItem")
-            _sub(current, "dCodInt", _clean_text(_first_non_none(item, "codigo_interno", "codigo")) or f"ITEM{index:03d}")
+            _sub(
+                current,
+                "dCodInt",
+                _clean_text(_first_non_none(item, "codigo_interno", "codigo"))
+                or f"ITEM{index:03d}",
+            )
             _sub(
                 current,
                 "dDesProSer",
-                _clean_text(_first_non_none(item, "descripcion", "dDesProSer")) or f"Ítem {index}",
+                _clean_text(_first_non_none(item, "descripcion", "dDesProSer"))
+                or f"Ítem {index}",
             )
             _sub(
                 current,
@@ -1204,7 +1288,9 @@ def _append_items(
                 str(
                     int(
                         _clean_text(
-                            _first_non_none(item, "unidad_medida", "codigoUnidad", "cUniMed")
+                            _first_non_none(
+                                item, "unidad_medida", "codigoUnidad", "cUniMed"
+                            )
                         )
                         or "77"
                     )
@@ -1213,11 +1299,15 @@ def _append_items(
             _sub(
                 current,
                 "dDesUniMed",
-                _clean_text(_first_non_none(item, "descripcion_unidad", "unidad", "dDesUniMed"))
+                _clean_text(
+                    _first_non_none(item, "descripcion_unidad", "unidad", "dDesUniMed")
+                )
                 or "UNI",
             )
             _sub(current, "dCantProSer", _as_sifen_quantity(qty))
-            cdc_anticipo = _clean_text(_first_non_none(item, "cdc_anticipo", "dCDCAnticipo"))
+            cdc_anticipo = _clean_text(
+                _first_non_none(item, "cdc_anticipo", "dCDCAnticipo")
+            )
             if cdc_anticipo:
                 _sub(current, "dCDCAnticipo", cdc_anticipo)
 
@@ -1235,7 +1325,11 @@ def _append_items(
                 default=None,
                 min_value=_ZERO,
             )
-            if discount_percentage is None and unit_price > _ZERO and discount_particular > _ZERO:
+            if (
+                discount_percentage is None
+                and unit_price > _ZERO
+                and discount_particular > _ZERO
+            ):
                 discount_percentage = (
                     (discount_particular / unit_price) * Decimal("100")
                 ).quantize(_PERCENT_Q, rounding=ROUND_HALF_UP)
@@ -1263,10 +1357,18 @@ def _append_items(
                 amount_exo=total_item if affectation == 2 else _ZERO,
                 amount_5=total_item if rate == 5 else _ZERO,
                 amount_10=total_item if rate == 10 else _ZERO,
-                discount_particular=(discount_particular * qty).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP),
-                discount_global=(discount_global * qty).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP),
-                anticipo_particular=(anticipo_particular * qty).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP),
-                anticipo_global=(anticipo_global * qty).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP),
+                discount_particular=(discount_particular * qty).quantize(
+                    _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+                ),
+                discount_global=(discount_global * qty).quantize(
+                    _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+                ),
+                anticipo_particular=(anticipo_particular * qty).quantize(
+                    _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+                ),
+                anticipo_global=(anticipo_global * qty).quantize(
+                    _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+                ),
                 base_5=taxable if rate == 5 else _ZERO,
                 base_10=taxable if rate == 10 else _ZERO,
                 iva_5=iva if rate == 5 else _ZERO,
@@ -1277,32 +1379,60 @@ def _append_items(
     return computations
 
 
-def _calculate_totals(item_computations: list[_ItemComputation], *, moneda: str) -> _Totals:
-    sub_exe = sum((x.amount_exe for x in item_computations), _ZERO).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    sub_exo = sum((x.amount_exo for x in item_computations), _ZERO).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    sub_5 = sum((x.amount_5 for x in item_computations), _ZERO).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    sub_10 = sum((x.amount_10 for x in item_computations), _ZERO).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    total = (sub_exe + sub_exo + sub_5 + sub_10).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    total_discount_particular = sum((x.discount_particular for x in item_computations), _ZERO).quantize(
+def _calculate_totals(
+    item_computations: list[_ItemComputation], *, moneda: str
+) -> _Totals:
+    sub_exe = sum((x.amount_exe for x in item_computations), _ZERO).quantize(
+        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+    )
+    sub_exo = sum((x.amount_exo for x in item_computations), _ZERO).quantize(
+        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+    )
+    sub_5 = sum((x.amount_5 for x in item_computations), _ZERO).quantize(
+        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+    )
+    sub_10 = sum((x.amount_10 for x in item_computations), _ZERO).quantize(
+        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+    )
+    total = (sub_exe + sub_exo + sub_5 + sub_10).quantize(
+        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+    )
+    total_discount_particular = sum(
+        (x.discount_particular for x in item_computations), _ZERO
+    ).quantize(
         _ITEM_TOTAL_Q,
         rounding=ROUND_HALF_UP,
     )
-    total_discount_global = sum((x.discount_global for x in item_computations), _ZERO).quantize(
+    total_discount_global = sum(
+        (x.discount_global for x in item_computations), _ZERO
+    ).quantize(
         _ITEM_TOTAL_Q,
         rounding=ROUND_HALF_UP,
     )
-    total_anticipo_particular = sum((x.anticipo_particular for x in item_computations), _ZERO).quantize(
+    total_anticipo_particular = sum(
+        (x.anticipo_particular for x in item_computations), _ZERO
+    ).quantize(
         _ITEM_TOTAL_Q,
         rounding=ROUND_HALF_UP,
     )
-    total_anticipo_global = sum((x.anticipo_global for x in item_computations), _ZERO).quantize(
+    total_anticipo_global = sum(
+        (x.anticipo_global for x in item_computations), _ZERO
+    ).quantize(
         _ITEM_TOTAL_Q,
         rounding=ROUND_HALF_UP,
     )
-    base_5 = sum((x.base_5 for x in item_computations), _ZERO).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    base_10 = sum((x.base_10 for x in item_computations), _ZERO).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    iva_5 = sum((x.iva_5 for x in item_computations), _ZERO).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    iva_10 = sum((x.iva_10 for x in item_computations), _ZERO).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
+    base_5 = sum((x.base_5 for x in item_computations), _ZERO).quantize(
+        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+    )
+    base_10 = sum((x.base_10 for x in item_computations), _ZERO).quantize(
+        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+    )
+    iva_5 = sum((x.iva_5 for x in item_computations), _ZERO).quantize(
+        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+    )
+    iva_10 = sum((x.iva_10 for x in item_computations), _ZERO).quantize(
+        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+    )
     base_5 = _quantize_tax_value(base_5, moneda=moneda)
     base_10 = _quantize_tax_value(base_10, moneda=moneda)
     iva_5 = _quantize_tax_value(iva_5, moneda=moneda)
@@ -1343,12 +1473,16 @@ def _append_totals(de: ET.Element, totals: _Totals) -> None:
     _sub(gtot, "dTotDescGlotem", _as_sifen_amount(totals.total_discount_global))
     _sub(gtot, "dTotAntItem", _as_sifen_amount(totals.total_anticipo_particular))
     _sub(gtot, "dTotAnt", _as_sifen_amount(totals.total_anticipo_global))
-    discount_total = (totals.total_discount_particular + totals.total_discount_global).quantize(
+    discount_total = (
+        totals.total_discount_particular + totals.total_discount_global
+    ).quantize(
         _ITEM_TOTAL_Q,
         rounding=ROUND_HALF_UP,
     )
     if totals.total > _ZERO:
-        pct = ((discount_total / totals.total) * Decimal("100")).quantize(_PERCENT_Q, rounding=ROUND_HALF_UP)
+        pct = ((discount_total / totals.total) * Decimal("100")).quantize(
+            _PERCENT_Q, rounding=ROUND_HALF_UP
+        )
     else:
         pct = _ZERO
     _sub(gtot, "dPorcDescTotal", _as_sifen_percent(pct))
@@ -1356,7 +1490,9 @@ def _append_totals(de: ET.Element, totals: _Totals) -> None:
     _sub(
         gtot,
         "dAnticipo",
-        _as_sifen_amount((totals.total_anticipo_particular + totals.total_anticipo_global)),
+        _as_sifen_amount(
+            (totals.total_anticipo_particular + totals.total_anticipo_global)
+        ),
     )
     _sub(gtot, "dRedon", _as_sifen_amount4(totals.redondeo))
     _sub_optional_amount(gtot, "dComi", _ZERO)
@@ -1427,7 +1563,9 @@ def _append_outside_signature_group(*, root: ET.Element, dcarqr: str) -> None:
     _sub(gcam, "dCarQR", dcarqr)
 
 
-def _append_associated_document(*, de: ET.Element, asociado: dict, required: bool) -> None:
+def _append_associated_document(
+    *, de: ET.Element, asociado: dict, required: bool
+) -> None:
     tipo = _resolve_code(
         _first_non_none(asociado, "tipo", "iTipDocAso"),
         mapping={"electronico": 1, "impreso": 2, "constancia_electronica": 3},
@@ -1444,7 +1582,9 @@ def _append_associated_document(*, de: ET.Element, asociado: dict, required: boo
         cdc_ref = _clean_text(_first_non_none(asociado, "cdc", "dCdCDERef"))
         if not cdc_ref:
             if required:
-                raise SifenValidationError("nota_credito.documento_asociado.cdc_required")
+                raise SifenValidationError(
+                    "nota_credito.documento_asociado.cdc_required"
+                )
             return
         _sub(asoc, "dCdCDERef", cdc_ref)
         return
@@ -1456,7 +1596,9 @@ def _append_associated_document(*, de: ET.Element, asociado: dict, required: boo
         number = _clean_text(_first_non_none(asociado, "numero", "dNumDocAso"))
         issued_on = _first_non_none(asociado, "fecha_emision", "fecha", "dFecEmiDI")
         if not timbrado or not est or not point or not number or issued_on is None:
-            raise SifenValidationError("nota_credito.documento_asociado.impreso_invalid")
+            raise SifenValidationError(
+                "nota_credito.documento_asociado.impreso_invalid"
+            )
         tipo_impreso = _resolve_code(
             _first_non_none(asociado, "tipo_documento_impreso", "iTipoDocAso"),
             mapping={},
@@ -1483,15 +1625,21 @@ def _append_associated_document(*, de: ET.Element, asociado: dict, required: boo
         max_value=2,
         field_name="documento_asociado.tipo_constancia",
     )
-    numero_constancia = _clean_text(_first_non_none(asociado, "numero_constancia", "dNumCons"))
-    numero_control = _clean_text(_first_non_none(asociado, "numero_control", "dNumControl"))
+    numero_constancia = _clean_text(
+        _first_non_none(asociado, "numero_constancia", "dNumCons")
+    )
+    numero_control = _clean_text(
+        _first_non_none(asociado, "numero_control", "dNumControl")
+    )
     if not numero_constancia or not numero_control:
         raise SifenValidationError("nota_credito.documento_asociado.constancia_invalid")
     _sub(asoc, "iTipCons", str(tipo_constancia))
     _sub(
         asoc,
         "dDesTipCons",
-        "Constancia de no ser contribuyente" if tipo_constancia == 1 else "Constancia de microproductores",
+        "Constancia de no ser contribuyente"
+        if tipo_constancia == 1
+        else "Constancia de microproductores",
     )
     _sub(asoc, "dNumCons", numero_constancia)
     _sub(asoc, "dNumControl", numero_control)
@@ -1507,19 +1655,15 @@ def _resolve_dcarqr_value(
     total_iva: Decimal,
     items_count: int,
 ) -> str:
-    provided = _clean_text(
-        _first_non_none(typed_payload, "dCarQR", "dcarqr", "qr_url")
-    )
+    provided = _clean_text(_first_non_none(typed_payload, "dCarQR", "dcarqr", "qr_url"))
     if provided:
         if len(provided) < 100 or len(provided) > 600:
             raise SifenValidationError("documents.qr.length_invalid")
         return provided
 
-    compact_date = (
-        fecha_emision.replace("-", "")
-        .replace(":", "")
-        .replace("T", "")
-    )[:14]
+    compact_date = (fecha_emision.replace("-", "").replace(":", "").replace("T", ""))[
+        :14
+    ]
     payload = (
         "https://ekuatia.set.gov.py/consultas-test/qr?"
         f"nVersion=150&Id={doc_id}&dFeEmiDE={compact_date}"
@@ -1733,7 +1877,9 @@ def _resolve_emission_datetime(payload: dict) -> str:
                 try:
                     dt = datetime.combine(date.fromisoformat(value), time(0, 0, 0))
                 except ValueError as exc:
-                    raise SifenValidationError("fecha/fecha_emision has invalid format") from exc
+                    raise SifenValidationError(
+                        "fecha/fecha_emision has invalid format"
+                    ) from exc
     if dt.tzinfo is not None:
         dt = dt.astimezone(_PY_TZ).replace(tzinfo=None)
     return dt.replace(microsecond=0).isoformat()
@@ -1801,7 +1947,9 @@ def _customer_operation_type(cliente: dict) -> int:
 
 
 def _transaction_description(code: int) -> str:
-    return _TRANSACTION_DESCRIPTION_BY_CODE.get(code, _TRANSACTION_DESCRIPTION_BY_CODE[1])
+    return _TRANSACTION_DESCRIPTION_BY_CODE.get(
+        code, _TRANSACTION_DESCRIPTION_BY_CODE[1]
+    )
 
 
 def _tax_description(code: int) -> str:
@@ -1813,7 +1961,9 @@ def _presence_description(code: int) -> str:
 
 
 def _affectation_description(code: int) -> str:
-    return _AFFECTATION_DESCRIPTION_BY_CODE.get(code, _AFFECTATION_DESCRIPTION_BY_CODE[1])
+    return _AFFECTATION_DESCRIPTION_BY_CODE.get(
+        code, _AFFECTATION_DESCRIPTION_BY_CODE[1]
+    )
 
 
 def _payment_description(code: int) -> str:
@@ -1821,7 +1971,9 @@ def _payment_description(code: int) -> str:
 
 
 def _card_brand_description(code: int) -> str:
-    return _CARD_BRAND_DESCRIPTION_BY_CODE.get(code, _CARD_BRAND_DESCRIPTION_BY_CODE[99])
+    return _CARD_BRAND_DESCRIPTION_BY_CODE.get(
+        code, _CARD_BRAND_DESCRIPTION_BY_CODE[99]
+    )
 
 
 def _nota_credito_motive_description(code: int) -> str:
@@ -1829,7 +1981,9 @@ def _nota_credito_motive_description(code: int) -> str:
 
 
 def _associated_doc_type_description(code: int) -> str:
-    return _ASSOCIATED_DOC_TYPE_DESCRIPTION.get(code, _ASSOCIATED_DOC_TYPE_DESCRIPTION[1])
+    return _ASSOCIATED_DOC_TYPE_DESCRIPTION.get(
+        code, _ASSOCIATED_DOC_TYPE_DESCRIPTION[1]
+    )
 
 
 def _printed_doc_type_description(code: int) -> str:
@@ -1864,12 +2018,18 @@ def _calculate_rounding(*, total: Decimal, moneda: str) -> Decimal:
 
 
 def _assert_totals_consistency(totals: _Totals) -> None:
-    expected_total = (totals.sub_exe + totals.sub_exo + totals.sub_5 + totals.sub_10).quantize(
+    expected_total = (
+        totals.sub_exe + totals.sub_exo + totals.sub_5 + totals.sub_10
+    ).quantize(
         _ITEM_TOTAL_Q,
         rounding=ROUND_HALF_UP,
     )
-    expected_iva = (totals.iva_5 + totals.iva_10).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    expected_base = (totals.base_5 + totals.base_10).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
+    expected_iva = (totals.iva_5 + totals.iva_10).quantize(
+        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+    )
+    expected_base = (totals.base_5 + totals.base_10).quantize(
+        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
+    )
     if totals.total != expected_total:
         raise SifenValidationError("documents.totals.mismatch")
     if totals.total_iva != expected_iva:

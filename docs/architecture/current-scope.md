@@ -7,7 +7,7 @@ consumidor; otros ERP pueden incorporarse sin compartir identidad ni secretos.
 ## Incluido en v1
 
 - consumidores, credenciales hasheadas, scopes y ownership de emisores;
-- factura y nota de crédito mediante contratos tipados;
+- factura, nota de crédito y nota de débito mediante contratos tipados;
 - cancelación e inutilización tipadas y procesadas por worker dedicado;
 - numeración fiscal atómica server-side;
 - CSC/PFX/password cifrados y nunca serializados al consumidor;

@@ -22,6 +22,11 @@ _DOC_TYPE_LABELS = {
         "KuDE de Nota de Crédito Electrónica",
         "Nota de Crédito Electrónica",
     ),
+    "6": (
+        "nota_debito_electronica",
+        "KuDE de Nota de Débito Electrónica",
+        "Nota de Débito Electrónica",
+    ),
 }
 
 _CONDITION_LABELS = {"1": ("contado", "Contado"), "2": ("credito", "Crédito")}
@@ -66,7 +71,9 @@ def extract_kude_data(*, document: Document, emitter: Emitter) -> dict:
         i_tide, ("desconocido", "KuDE", "Documento Electrónico")
     )
 
-    ambiente = "test" if (emitter.tax_environment or "").lower() == "test" else "produccion"
+    ambiente = (
+        "test" if (emitter.tax_environment or "").lower() == "test" else "produccion"
+    )
     portal_root = (
         "https://ekuatia.set.gov.py/consultas-test/"
         if ambiente == "test"
@@ -78,7 +85,7 @@ def extract_kude_data(*, document: Document, emitter: Emitter) -> dict:
     datos_generales = _build_datos_generales(g_gral, g_ope, g_dtip)
     receptor = _build_receptor(g_rec)
     documento_asociado = _build_documento_asociado(de)
-    nota_credito = _build_nota_credito(g_dtip) if i_tide == "5" else None
+    adjustment_note = _build_adjustment_note(g_dtip) if i_tide in {"5", "6"} else None
     items = _build_items(g_dtip)
     totales = _build_totales(g_tot)
     qr_url = _text(g_fuera, "dCarQR") if g_fuera is not None else None
@@ -98,7 +105,8 @@ def extract_kude_data(*, document: Document, emitter: Emitter) -> dict:
             "datos_generales": datos_generales,
             "receptor": receptor,
             "documento_asociado": documento_asociado,
-            "nota_credito": nota_credito,
+            "nota_credito": adjustment_note if i_tide == "5" else None,
+            "nota_debito": adjustment_note if i_tide == "6" else None,
             "items": items,
             "totales": totales,
             "qr": {"url": qr_url, "ambiente": ambiente},
@@ -129,7 +137,9 @@ def _build_emisor(g_emis: ET.Element) -> dict:
         "nombre_fantasia": _text(g_emis, "dNomFanEmi"),
         "actividad_economica": {
             "codigo": _text(activity, "cActEco") if activity is not None else None,
-            "descripcion": _text(activity, "dDesActEco") if activity is not None else None,
+            "descripcion": _text(activity, "dDesActEco")
+            if activity is not None
+            else None,
         },
         "direccion": _text(g_emis, "dDirEmi") or "",
         "ciudad": _text(g_emis, "dDesCiuEmi") or "",
@@ -234,7 +244,7 @@ def _build_documento_asociado(de: ET.Element) -> dict | None:
     return None
 
 
-def _build_nota_credito(g_dtip: ET.Element) -> dict | None:
+def _build_adjustment_note(g_dtip: ET.Element) -> dict | None:
     g_nc = g_dtip.find(_t("gCamNCDE"))
     if g_nc is None:
         return None
@@ -289,7 +299,9 @@ def _build_items(g_dtip: ET.Element) -> list[dict]:
                 "descripcion": _text(item, "dDesProSer") or "",
                 "unidad_medida": {"codigo": unidad_med, "label": unidad_label},
                 "cantidad": _text(item, "dCantProSer") or "",
-                "precio_unitario": _text(valor, "dPUniProSer") if valor is not None else "",
+                "precio_unitario": _text(valor, "dPUniProSer")
+                if valor is not None
+                else "",
                 "descuento": descuento,
                 "anticipo": anticipo,
                 "valor_total": valor_total,

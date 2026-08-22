@@ -90,6 +90,15 @@ def test_render_kude_pdf_for_nota_credito_contains_label():
     assert pdf.startswith(b"%PDF-")
 
 
+def test_render_kude_pdf_for_nota_debito_contains_label():
+    document = _document_for_scenario("nd_recupero_costo", "nota_debito")
+    pdf = render_kude_pdf(document=document, emitter=_emitter())
+    data = extract_kude_data(document=document, emitter=_emitter())
+    assert data["kude"]["tipo_label"] == "KuDE de Nota de Débito Electrónica"
+    assert data["kude"]["nota_debito"]["motivo_codigo"] == 6
+    assert pdf.startswith(b"%PDF-")
+
+
 def test_render_kude_pdf_for_test_environment_includes_warning_data():
     document = _document_for_scenario("factura_b2b_iva10", "factura")
     data = extract_kude_data(document=document, emitter=_emitter(ambiente="test"))

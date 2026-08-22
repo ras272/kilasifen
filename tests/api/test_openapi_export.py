@@ -18,3 +18,4 @@ def test_documentation_openapi_export_matches_application_contract() -> None:
     }
     assert "/v1/emitters/{emitter_id}/documents/facturas" in exported["paths"]
     assert "/v1/emitters/{emitter_id}/documents/notas-credito" in exported["paths"]
+    assert "/v1/emitters/{emitter_id}/documents/notas-debito" in exported["paths"]

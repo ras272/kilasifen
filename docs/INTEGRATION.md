@@ -83,6 +83,13 @@ la intención no ingresó a la cola. Los aliases históricos `razonSocial`,
 `nota_credito`, igual idempotencia/numeración, y requiere `cliente`, `items` y
 `documento_asociado` (con `cdc` para DTE electrónico).
 
+## Nota de débito
+
+`POST /v1/emitters/{emitter_id}/documents/notas-debito` usa wrapper
+`nota_debito`. Comparte el contrato fiscal base, idempotencia y numeración
+atómica, y exige `documento_asociado`. El motivo `recupero_costo` se normaliza al
+código SIFEN `6`; también se aceptan los códigos `1..8` del Manual Técnico 150.
+
 ## Lecturas y operaciones fiscales
 
 ```text

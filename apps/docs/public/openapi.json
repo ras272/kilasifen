@@ -2195,6 +2195,317 @@
         "title": "NotaCreditoCreateRequest",
         "type": "object"
       },
+      "NotaDebitoContractPayload": {
+        "additionalProperties": false,
+        "description": "Validated business payload for Nota de Debito endpoint.",
+        "properties": {
+          "cliente": {
+            "$ref": "#/components/schemas/CustomerPayload"
+          },
+          "codigo_seguridad": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codigo Seguridad"
+          },
+          "condicion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationConditionPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "condicion_operacion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OperationConditionPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "condicion_tipo_cambio": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Condicion Tipo Cambio"
+          },
+          "documento_asociado": {
+            "$ref": "#/components/schemas/AssociatedDocumentPayload"
+          },
+          "emisor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmitterPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "establecimiento": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Establecimiento"
+          },
+          "fecha": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha"
+          },
+          "fecha_emision": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fecha Emision"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ItemPayload"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "moneda": {
+            "default": "PYG",
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Moneda",
+            "type": "string"
+          },
+          "motivo_emision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo Emision"
+          },
+          "nota_debito": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nota Debito"
+          },
+          "numero": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numero"
+          },
+          "punto": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Punto"
+          },
+          "tipo_cambio": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Cambio"
+          },
+          "tipo_contribuyente": {
+            "anyOf": [
+              {
+                "maximum": 2.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Contribuyente"
+          },
+          "tipo_documento": {
+            "const": 6,
+            "default": 6,
+            "title": "Tipo Documento",
+            "type": "integer"
+          },
+          "tipo_impuesto": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Impuesto"
+          },
+          "tipo_transaccion": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo Transaccion"
+          }
+        },
+        "required": [
+          "cliente",
+          "items",
+          "documento_asociado"
+        ],
+        "title": "NotaDebitoContractPayload",
+        "type": "object"
+      },
+      "NotaDebitoCreateRequest": {
+        "additionalProperties": false,
+        "description": "Typed API contract for nota de debito emission.",
+        "properties": {
+          "external_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "nota_debito": {
+            "$ref": "#/components/schemas/NotaDebitoContractPayload"
+          }
+        },
+        "required": [
+          "nota_debito"
+        ],
+        "title": "NotaDebitoCreateRequest",
+        "type": "object"
+      },
       "OperationConditionPayload": {
         "additionalProperties": false,
         "properties": {
@@ -2419,6 +2730,16 @@
         ],
         "title": "PublicProcurementPayload",
         "type": "object"
+      },
+      "SandboxOutcome": {
+        "description": "SIFEN outcomes integrations may request in the test runtime.",
+        "enum": [
+          "approved",
+          "approved_with_observation",
+          "rejected"
+        ],
+        "title": "SandboxOutcome",
+        "type": "string"
       },
       "StampingCreateRequest": {
         "description": "Stamping creation payload.",
@@ -3302,6 +3623,24 @@
               "title": "Emitter Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Force a deterministic SIFEN outcome in environment=test only.",
+            "in": "header",
+            "name": "X-Kila-Test-Outcome",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SandboxOutcome"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Force a deterministic SIFEN outcome in environment=test only.",
+              "title": "X-Kila-Test-Outcome"
+            }
           }
         ],
         "requestBody": {
@@ -3361,6 +3700,24 @@
             "schema": {
               "title": "Emitter Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Force a deterministic SIFEN outcome in environment=test only.",
+            "in": "header",
+            "name": "X-Kila-Test-Outcome",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SandboxOutcome"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Force a deterministic SIFEN outcome in environment=test only.",
+              "title": "X-Kila-Test-Outcome"
             }
           }
         ],
@@ -3422,6 +3779,24 @@
               "title": "Emitter Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Force a deterministic SIFEN outcome in environment=test only.",
+            "in": "header",
+            "name": "X-Kila-Test-Outcome",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SandboxOutcome"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Force a deterministic SIFEN outcome in environment=test only.",
+              "title": "X-Kila-Test-Outcome"
+            }
           }
         ],
         "requestBody": {
@@ -3465,6 +3840,84 @@
           }
         ],
         "summary": "Crear nota de crédito",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/documents/notas-debito": {
+      "post": {
+        "operationId": "create_nota_debito_document_v1_emitters__emitter_id__documents_notas_debito_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Force a deterministic SIFEN outcome in environment=test only.",
+            "in": "header",
+            "name": "X-Kila-Test-Outcome",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SandboxOutcome"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Force a deterministic SIFEN outcome in environment=test only.",
+              "title": "X-Kila-Test-Outcome"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NotaDebitoCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Idempotent replay of the existing document and job."
+          },
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Create Nota Debito Document",
         "tags": [
           "documents"
         ]
@@ -4081,6 +4534,63 @@
           }
         ],
         "summary": "Consultar documento en SIFEN",
+        "tags": [
+          "queries"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/queries/documents/{document_id}/reconcile": {
+      "post": {
+        "description": "Reconcile an uncertain document by CDC without resubmitting it.",
+        "operationId": "reconcile_document_v1_emitters__emitter_id__queries_documents__document_id__reconcile_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Reconcile Document",
         "tags": [
           "queries"
         ]
