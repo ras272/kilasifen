@@ -108,7 +108,10 @@ def get_api_key_principal(
                 settings.api_keys[matched_position],
                 position=matched_position,
             )
-        principal = repository.authenticate(x_api_key)
+        principal = repository.authenticate(
+            x_api_key,
+            bootstrap=matched_position is not None,
+        )
 
     if principal is None:
         from kilasifen.api.errors import ApiError

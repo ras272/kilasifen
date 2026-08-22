@@ -14,8 +14,8 @@ from kilasifen.infrastructure.db.models import (
     ConsumerModel,
 )
 from kilasifen.security import (
-    ApiKeyPrincipal,
     PLATFORM_ADMIN_SCOPE,
+    ApiKeyPrincipal,
     hash_api_key,
     key_prefix,
     verify_api_key,
@@ -31,10 +31,23 @@ class SqlAlchemyApiKeyRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def authenticate(self, raw_key: str) -> ApiKeyPrincipal | None:
+    def authenticate(
+        self,
+        raw_key: str,
+        *,
+        bootstrap: bool = False,
+    ) -> ApiKeyPrincipal | None:
+        """Authenticate one configured bootstrap key or one tenant credential."""
+
+        bootstrap_filter = (
+            ApiKeyModel.consumer_id == _BOOTSTRAP_CONSUMER_ID
+            if bootstrap
+            else ApiKeyModel.consumer_id != _BOOTSTRAP_CONSUMER_ID
+        )
         statement = select(ApiKeyModel).where(
             ApiKeyModel.key_prefix == key_prefix(raw_key),
             ApiKeyModel.status == "active",
+            bootstrap_filter,
         )
         for credential in self.session.scalars(statement):
             if verify_api_key(raw_key, credential.key_hash):
