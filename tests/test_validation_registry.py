@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.sdk.validation import resolve_schema_path, validate_xml
 
 SAMPLE_PATH = (
@@ -138,8 +138,8 @@ def _build_valid_rde_xml() -> str:
     return xml
 
 
-class DummyXml(CommonMixin):
-    """Minimal wrapper to exercise CommonMixin.validate_xml()."""
+class DummyXml(BindingMixin):
+    """Minimal wrapper to exercise BindingMixin.validate_xml()."""
 
     def __init__(self, xml: str):
         self._xml = xml

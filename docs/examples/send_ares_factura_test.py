@@ -13,7 +13,7 @@ from pathlib import Path
 from lxml import etree
 
 from kilasifen.engine import TEST
-from kilasifen.engine.assinatura import sign_xml
+from kilasifen.engine.firma import sign_xml
 from kilasifen.engine.sdk.fiscal import (
     build_qr_payload_from_signed_xml,
     calculate_mod11_dv,

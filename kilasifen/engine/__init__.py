@@ -1,7 +1,7 @@
 """Fachada pública estable de PySIFEN."""
 
 from kilasifen import __version__
-from kilasifen.engine.assinatura import sign_xml
+from kilasifen.engine.firma import sign_xml
 from kilasifen.engine.transmissao import (
     ENDPOINTS,
     PRODUCCION,

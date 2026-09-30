@@ -8,7 +8,7 @@ import pytest
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
-from kilasifen.engine.assinatura import sign_xml
+from kilasifen.engine.firma import sign_xml
 from kilasifen.engine.sdk.validation import validate_xml
 from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
 from kilasifen.infrastructure.sifen.typed_xml_builder import build_typed_document_xml

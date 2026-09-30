@@ -130,7 +130,7 @@ Usa `signxml` directamente con RSA-SHA256 y C14N, conforme lo exigido por el SIF
 La función centralizada también está disponible en:
 
 ```python
-from kilasifen.engine.assinatura import sign_xml
+from kilasifen.engine.firma import sign_xml
 
 signed = sign_xml(xml, cert_data, "password", doc_id)
 ```
@@ -332,7 +332,7 @@ client.save_kude_html(rde, "outputs/kude_factura.html")
 | `prot_proces_de_v150` | Protocolo de procesamiento |
 | `xmldsig_core_schema` | Firma digital XML |
 
-### Firma (`kilasifen.engine.assinatura`)
+### Firma (`kilasifen.engine.firma`)
 
 | Función | Descripción |
 |---------|-------------|

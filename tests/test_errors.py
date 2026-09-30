@@ -25,7 +25,7 @@ def test_error_hierarchy_exports():
 
 
 def test_sign_xml_wraps_unexpected_errors(monkeypatch):
-    from kilasifen.engine.assinatura import sign_xml
+    from kilasifen.engine.firma import sign_xml
     from kilasifen.engine.sdk.errors import SifenSignatureError
 
     def boom(*args, **kwargs):

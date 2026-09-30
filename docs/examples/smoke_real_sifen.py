@@ -16,7 +16,7 @@ from pathlib import Path
 from lxml import etree
 
 from kilasifen.engine import TEST
-from kilasifen.engine.assinatura import sign_xml
+from kilasifen.engine.firma import sign_xml
 from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 from kilasifen.engine.sdk.client import SifenClient
 from kilasifen.engine.sdk.fiscal import build_qr_payload, generate_cdc
