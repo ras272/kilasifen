@@ -11,7 +11,6 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock README.md MIT-LICENSE ./
 COPY kilasifen ./kilasifen
-COPY pysifen ./pysifen
 
 RUN uv sync --frozen --no-dev --extra platform --extra transmissao
 
@@ -28,7 +27,6 @@ RUN groupadd --system --gid 10001 kilasifen \
 WORKDIR /app
 COPY --from=builder --chown=kilasifen:kilasifen /app/.venv /app/.venv
 COPY --chown=kilasifen:kilasifen kilasifen ./kilasifen
-COPY --chown=kilasifen:kilasifen pysifen ./pysifen
 COPY --chown=kilasifen:kilasifen alembic ./alembic
 COPY --chown=kilasifen:kilasifen alembic.ini pyproject.toml README.md MIT-LICENSE ./
 

@@ -4,9 +4,9 @@ from unittest.mock import Mock
 import pytest
 
 from kilasifen.domain.sandbox import SandboxOutcome
+from kilasifen.engine.sdk.errors import SifenTimeoutError
 from kilasifen.infrastructure.sandbox.transport import DeterministicSandboxTransport
 from kilasifen.infrastructure.sifen.engine import PysifenEmissionEngine
-from pysifen.sdk.errors import SifenTimeoutError
 
 
 @pytest.mark.parametrize(

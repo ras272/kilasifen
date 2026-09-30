@@ -5,8 +5,8 @@ import pytest
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
+from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.infrastructure.sifen.mapper import PysifenPayloadMapper
-from pysifen.sdk.errors import SifenValidationError
 
 
 def test_mapper_builds_factura_xml_from_typed_payload() -> None:

@@ -1,4 +1,4 @@
-from pysifen import (
+from kilasifen.engine import (
     ENDPOINTS,
     PRODUCCION,
     TEST,

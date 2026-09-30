@@ -91,13 +91,13 @@ test = [
 [tool.setuptools]
 include-package-data = true
 [tool.setuptools.packages.find]
-include = ["pysifen*", "kilasifen*"]
+include = ["kilasifen*"]
 
 [tool.setuptools.dynamic]
-version = {attr = "pysifen.__version__"}
+version = {attr = "kilasifen.__version__"}
 
 [tool.setuptools.package-data]
-"pysifen" = ["de/schemas/**/*.xsd", "de/samples/**/*.xml"]
+"kilasifen.engine" = ["de/schemas/**/*.xsd", "de/samples/**/*.xml"]
 "kilasifen" = ["admin/templates/**/*.html"]
 
 [tool.ruff]
@@ -107,7 +107,7 @@ target-version = "py310"
 select = ["E", "F", "I", "W"]
 
 [tool.ruff.lint.per-file-ignores]
-"pysifen/de/bindings/**" = ["E501"]
+"kilasifen/engine/de/bindings/**" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

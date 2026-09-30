@@ -16,9 +16,9 @@ Add fiscal event workflows over existing documents and persist normalized SIFEN 
   - emitter/document/certificate validations
   - event record creation
   - job creation (`event.submit`)
-  - event submission through `pysifen`
+  - event submission through `kilasifen.engine`
   - normalized success/failure status mapping
-- `pysifen`-backed event gateway
+- `kilasifen.engine`-backed event gateway
 - API contracts and routes for create/get event
 - event transport traces persisted in DB:
   - `sifen_request_xml`

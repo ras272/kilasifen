@@ -23,7 +23,7 @@ pip install -e ".[sign,transmissao,test]"
 
 ```bash
 python -m pytest -q
-python -m ruff check pysifen tests
+python -m ruff check kilasifen.engine tests
 python -m build
 python -m twine check --strict dist/*
 ```
@@ -32,7 +32,7 @@ If a check is not available in your environment, explain it in the PR.
 
 ## Project rules
 
-- Do not edit files under `pysifen/de/bindings/` manually.
+- Do not edit files under `kilasifen/engine/de/bindings/` manually.
 - Keep public API changes backward compatible whenever possible.
 - Add or update tests for behavioral changes.
 - Keep changes focused: one logical change per commit.

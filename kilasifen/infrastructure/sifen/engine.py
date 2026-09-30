@@ -1,4 +1,4 @@
-"""Emission engine adapters built on top of pysifen."""
+"""Emission engine adapters built on top of kilasifen.engine."""
 
 from __future__ import annotations
 
@@ -12,16 +12,16 @@ from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
-from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
-from kilasifen.infrastructure.sifen.mapper import PysifenPayloadMapper
-from pysifen import PRODUCCION, TEST, sign_xml
-from pysifen.sdk.client import SifenClient
-from pysifen.sdk.errors import (
+from kilasifen.engine import PRODUCCION, TEST, sign_xml
+from kilasifen.engine.sdk.client import SifenClient
+from kilasifen.engine.sdk.errors import (
     SifenTimeoutError,
     SifenTransportError,
     SifenValidationError,
 )
-from pysifen.transmissao.de import _build_enviar_de_request_xml
+from kilasifen.engine.transmissao.de import _build_enviar_de_request_xml
+from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
+from kilasifen.infrastructure.sifen.mapper import PysifenPayloadMapper
 
 
 @dataclass(slots=True)
@@ -98,7 +98,7 @@ class DocumentSubmissionTransport(Protocol):
 
 
 class PysifenDocumentTransport:
-    """Live document transport backed by ``pysifen``."""
+    """Live document transport backed by ``kilasifen.engine``."""
 
     def __init__(self) -> None:
         self.serializer = XmlSerializer(
@@ -132,7 +132,7 @@ class PysifenDocumentTransport:
 
 
 class PysifenEmissionEngine:
-    """Concrete emission engine backed by pysifen transport and signing."""
+    """Concrete emission engine backed by kilasifen.engine transport and signing."""
 
     def __init__(
         self,

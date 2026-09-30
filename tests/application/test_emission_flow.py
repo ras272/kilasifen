@@ -11,6 +11,11 @@ from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.domain.webhooks.models import WebhookEndpoint
+from kilasifen.engine.sdk.errors import (
+    SifenRejectionError,
+    SifenTimeoutError,
+    SifenValidationError,
+)
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.models import CertificateModel, EmitterModel
@@ -45,11 +50,6 @@ from kilasifen.infrastructure.sifen.engine import (
 )
 from kilasifen.infrastructure.sifen.query import DocumentQueryOutcome
 from kilasifen.testing.database import managed_test_database_url
-from pysifen.sdk.errors import (
-    SifenRejectionError,
-    SifenTimeoutError,
-    SifenValidationError,
-)
 
 
 def test_process_document_job_persists_emission_artifacts(tmp_path) -> None:

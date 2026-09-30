@@ -6,7 +6,7 @@ pytest.importorskip("requests", reason="requests not installed")
 
 
 def test_error_hierarchy_exports():
-    from pysifen.sdk import (
+    from kilasifen.engine.sdk import (
         SifenError,
         SifenSignatureError,
         SifenTimeoutError,
@@ -25,8 +25,8 @@ def test_error_hierarchy_exports():
 
 
 def test_sign_xml_wraps_unexpected_errors(monkeypatch):
-    from pysifen.assinatura import sign_xml
-    from pysifen.sdk.errors import SifenSignatureError
+    from kilasifen.engine.assinatura import sign_xml
+    from kilasifen.engine.sdk.errors import SifenSignatureError
 
     def boom(*args, **kwargs):
         raise ValueError("invalid")
@@ -45,8 +45,8 @@ def test_sign_xml_wraps_unexpected_errors(monkeypatch):
 def test_transport_wraps_timeout(monkeypatch):
     from requests.exceptions import Timeout
 
-    from pysifen.sdk.errors import SifenTimeoutError
-    from pysifen.transmissao.base import _create_transport
+    from kilasifen.engine.sdk.errors import SifenTimeoutError
+    from kilasifen.engine.transmissao.base import _create_transport
 
     transport = _create_transport("cert.pem", "key.pem")
 
@@ -64,8 +64,8 @@ def test_transport_wraps_timeout(monkeypatch):
 def test_transport_wraps_http_error(monkeypatch):
     from requests.exceptions import HTTPError
 
-    from pysifen.sdk.errors import SifenTransportError
-    from pysifen.transmissao.base import _create_transport
+    from kilasifen.engine.sdk.errors import SifenTransportError
+    from kilasifen.engine.transmissao.base import _create_transport
 
     transport = _create_transport("cert.pem", "key.pem")
 

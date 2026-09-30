@@ -3,12 +3,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pysifen.CommonMixin import CommonMixin
-from pysifen.sdk.validation import resolve_schema_path, validate_xml
+from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.sdk.validation import resolve_schema_path, validate_xml
 
 SAMPLE_PATH = (
     Path(__file__).resolve().parents[1]
-    / "pysifen"
+    / "kilasifen"
+    / "engine"
     / "de"
     / "samples"
     / "v150"

@@ -21,7 +21,7 @@ class TestConfig:
     """Testes de configuração de endpoints."""
 
     def test_ambientes_existem(self):
-        from pysifen.transmissao.config import (
+        from kilasifen.engine.transmissao.config import (
             ENDPOINTS,
             PRODUCCION,
             TEST,
@@ -31,7 +31,7 @@ class TestConfig:
         assert TEST in ENDPOINTS
 
     def test_endpoints_produccion(self):
-        from pysifen.transmissao.config import (
+        from kilasifen.engine.transmissao.config import (
             ENDPOINTS,
             PRODUCCION,
         )
@@ -52,7 +52,7 @@ class TestConfig:
             assert endpoints[servico].startswith("https://")
 
     def test_endpoints_test(self):
-        from pysifen.transmissao.config import (
+        from kilasifen.engine.transmissao.config import (
             ENDPOINTS,
             TEST,
         )
@@ -62,7 +62,7 @@ class TestConfig:
             assert "sifen-test" in url
 
     def test_get_endpoint_produccion(self):
-        from pysifen.transmissao.config import (
+        from kilasifen.engine.transmissao.config import (
             PRODUCCION,
             get_endpoint,
         )
@@ -71,7 +71,7 @@ class TestConfig:
         assert "sifen.set.gov.py" in url
 
     def test_get_endpoint_test(self):
-        from pysifen.transmissao.config import (
+        from kilasifen.engine.transmissao.config import (
             TEST,
             get_endpoint,
         )
@@ -80,27 +80,27 @@ class TestConfig:
         assert "sifen-test" in url
 
     def test_consulta_ruc_endpoint_usa_ruta_oficial(self):
-        from pysifen.transmissao.config import TEST, get_endpoint
+        from kilasifen.engine.transmissao.config import TEST, get_endpoint
 
         assert get_endpoint(TEST, "cons_ruc") == (
             "https://sifen-test.set.gov.py/de/ws/consultas/consulta-ruc.wsdl"
         )
 
     def test_consulta_lote_endpoint_usa_ruta_oficial(self):
-        from pysifen.transmissao.config import TEST, get_endpoint
+        from kilasifen.engine.transmissao.config import TEST, get_endpoint
 
         assert get_endpoint(TEST, "cons_lote") == (
             "https://sifen-test.set.gov.py/de/ws/consultas/consulta-lote.wsdl"
         )
 
     def test_get_endpoint_ambiente_invalido(self):
-        from pysifen.transmissao.config import get_endpoint
+        from kilasifen.engine.transmissao.config import get_endpoint
 
         with pytest.raises(ValueError, match="Ambiente inválido"):
             get_endpoint(99, "recep_de")
 
     def test_get_endpoint_servico_invalido(self):
-        from pysifen.transmissao.config import (
+        from kilasifen.engine.transmissao.config import (
             PRODUCCION,
             get_endpoint,
         )
@@ -116,7 +116,7 @@ class TestImports:
     """Testa que todos os módulos importam corretamente."""
 
     def test_import_transmissao(self):
-        from pysifen.transmissao import (
+        from kilasifen.engine.transmissao import (
             PRODUCCION,
             TEST,
             ConsultaSIFEN,
@@ -131,7 +131,7 @@ class TestImports:
         assert TransmissaoEvento is not None
 
     def test_import_config(self):
-        from pysifen.transmissao.config import (
+        from kilasifen.engine.transmissao.config import (
             ENDPOINTS,
             PRODUCCION,
             TEST,
@@ -144,22 +144,22 @@ class TestImports:
         assert TEST == 2
 
     def test_import_base(self):
-        from pysifen.transmissao.base import TransmissaoBase
+        from kilasifen.engine.transmissao.base import TransmissaoBase
 
         assert TransmissaoBase is not None
 
     def test_import_de(self):
-        from pysifen.transmissao.de import TransmissaoDE
+        from kilasifen.engine.transmissao.de import TransmissaoDE
 
         assert TransmissaoDE is not None
 
     def test_import_consulta(self):
-        from pysifen.transmissao.consulta import ConsultaSIFEN
+        from kilasifen.engine.transmissao.consulta import ConsultaSIFEN
 
         assert ConsultaSIFEN is not None
 
     def test_import_evento(self):
-        from pysifen.transmissao.evento import TransmissaoEvento
+        from kilasifen.engine.transmissao.evento import TransmissaoEvento
 
         assert TransmissaoEvento is not None
 
@@ -171,8 +171,8 @@ class TestTransmissaoDE:
     """Testes de transmissão de DE."""
 
     def _make_transmissao(self):
-        from pysifen.transmissao.config import TEST
-        from pysifen.transmissao.de import TransmissaoDE
+        from kilasifen.engine.transmissao.config import TEST
+        from kilasifen.engine.transmissao.de import TransmissaoDE
 
         return TransmissaoDE(
             ambiente=TEST,
@@ -186,16 +186,16 @@ class TestTransmissaoDE:
         assert t.pkcs12_data == b"fake-cert"
         assert t.pkcs12_password == "fake-pass"
 
-    @patch("pysifen.transmissao.base.TransmissaoBase._sign_xml")
-    @patch("pysifen.transmissao.base.TransmissaoBase._serialize")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._sign_xml")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._serialize")
     def test_enviar_de_mock(self, mock_serialize, mock_sign):
-        from pysifen.de.bindings.v150.prot_proces_de_v150 import (
+        from kilasifen.engine.de.bindings.v150.prot_proces_de_v150 import (
             RProtDe,
         )
-        from pysifen.de.bindings.v150.prot_proces_eventos_v141 import (
+        from kilasifen.engine.de.bindings.v150.prot_proces_eventos_v141 import (
             TgResProc,
         )
-        from pysifen.de.bindings.v150.ws_si_recep_de_v150 import (
+        from kilasifen.engine.de.bindings.v150.ws_si_recep_de_v150 import (
             RRetEnviDe,
         )
 
@@ -248,11 +248,11 @@ class TestTransmissaoDE:
         with pytest.raises(ValueError, match="não pode ser vazia"):
             t.enviar_lote([])
 
-    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
-    @patch("pysifen.transmissao.base.TransmissaoBase._sign_xml")
-    @patch("pysifen.transmissao.base.TransmissaoBase._serialize")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._get_client")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._sign_xml")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._serialize")
     def test_enviar_lote_mock(self, mock_serialize, mock_sign, mock_client):
-        from pysifen.de.bindings.v150.ws_si_recep_lote_de_v141 import (
+        from kilasifen.engine.de.bindings.v150.ws_si_recep_lote_de_v141 import (
             RResEnviLoteDe,
         )
 
@@ -294,13 +294,13 @@ class TestTransmissaoDE:
             patch.object(t, "_sign_xml") as mock_sign,
             patch.object(t, "_serialize") as mock_serialize,
         ):
-            from pysifen.de.bindings.v150.prot_proces_de_v150 import (
+            from kilasifen.engine.de.bindings.v150.prot_proces_de_v150 import (
                 RProtDe,
             )
-            from pysifen.de.bindings.v150.prot_proces_eventos_v141 import (
+            from kilasifen.engine.de.bindings.v150.prot_proces_eventos_v141 import (
                 TgResProc,
             )
-            from pysifen.de.bindings.v150.ws_si_recep_de_v150 import (
+            from kilasifen.engine.de.bindings.v150.ws_si_recep_de_v150 import (
                 RRetEnviDe,
             )
 
@@ -327,8 +327,8 @@ class TestTransmissaoDE:
             assert isinstance(result, RRetEnviDe)
 
     def test_enviar_de_xml_envia_xml_assinado(self):
-        from pysifen.de.bindings.v150.prot_proces_de_v150 import RProtDe
-        from pysifen.de.bindings.v150.ws_si_recep_de_v150 import RRetEnviDe
+        from kilasifen.engine.de.bindings.v150.prot_proces_de_v150 import RProtDe
+        from kilasifen.engine.de.bindings.v150.ws_si_recep_de_v150 import RRetEnviDe
 
         t = self._make_transmissao()
         t._send_raw_xml = MagicMock(
@@ -353,8 +353,8 @@ class TestConsultaSIFEN:
     """Testes de consultas ao SIFEN."""
 
     def _make_consulta(self):
-        from pysifen.transmissao.config import TEST
-        from pysifen.transmissao.consulta import ConsultaSIFEN
+        from kilasifen.engine.transmissao.config import TEST
+        from kilasifen.engine.transmissao.consulta import ConsultaSIFEN
 
         return ConsultaSIFEN(
             ambiente=TEST,
@@ -387,9 +387,9 @@ class TestConsultaSIFEN:
         with pytest.raises(ValueError, match="Formato de RUC invalido"):
             c.consultar_ruc("80024135-")
 
-    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_de_mock(self, mock_client):
-        from pysifen.de.bindings.v150.ws_si_cons_de_v141 import (
+        from kilasifen.engine.de.bindings.v150.ws_si_cons_de_v141 import (
             REnviConsDeResponse,
         )
 
@@ -410,9 +410,9 @@ class TestConsultaSIFEN:
         assert isinstance(result, REnviConsDeResponse)
         assert result.dCodRes == "0422"
 
-    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_lote_mock(self, mock_client):
-        from pysifen.de.bindings.v150.ws_si_cons_lote_v141 import (
+        from kilasifen.engine.de.bindings.v150.ws_si_cons_lote_v141 import (
             RResEnviConsLoteDe,
         )
 
@@ -431,9 +431,9 @@ class TestConsultaSIFEN:
         assert isinstance(result, RResEnviConsLoteDe)
         assert result.dCodResLot == "0362"
 
-    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_ruc_mock(self, mock_client):
-        from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
+        from kilasifen.engine.de.bindings.v150.ws_si_cons_ruc_v141 import (
             RResEnviConsRuc,
             TContenedorRuc,
         )
@@ -460,9 +460,9 @@ class TestConsultaSIFEN:
         assert result.xContRUC.dRazCons == "Empresa Demo S.A."
         assert result.xContRUC.dRUCFactElec == "S"
 
-    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_ruc_normaliza_formato_con_dv(self, mock_client):
-        from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
+        from kilasifen.engine.de.bindings.v150.ws_si_cons_ruc_v141 import (
             RResEnviConsRuc,
         )
 
@@ -481,14 +481,14 @@ class TestConsultaSIFEN:
         sent_request = client_mock.send.call_args.args[0]
         assert sent_request.dRUCCons == "80024135"
 
-    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_ruc_recovers_from_unexpected_sifen_envelope(
         self,
         mock_client,
     ):
         from xsdata.exceptions import ParserError
 
-        from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
+        from kilasifen.engine.de.bindings.v150.ws_si_cons_ruc_v141 import (
             RResEnviConsRuc,
         )
 
@@ -510,7 +510,7 @@ class TestConsultaSIFEN:
         c._send_safe_query.assert_called_once()
 
     def test_safe_query_reconnects_after_mismatched_protocol(self):
-        from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
+        from kilasifen.engine.de.bindings.v150.ws_si_cons_ruc_v141 import (
             REnviConsRuc,
             RResEnviConsRuc,
         )
@@ -538,9 +538,9 @@ class TestConsultaSIFEN:
         assert c._send_raw_xml.call_count == 2
         c._cleanup_transport.assert_called_once_with()
 
-    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_dte_mock(self, mock_client):
-        from pysifen.de.bindings.v150.ws_si_cons_dte import (
+        from kilasifen.engine.de.bindings.v150.ws_si_cons_dte import (
             RConsDteResponse,
         )
 
@@ -560,9 +560,9 @@ class TestConsultaSIFEN:
         assert isinstance(result, RConsDteResponse)
         assert result.dMsgRes == "Consulta exitosa"
 
-    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._get_client")
     def test_consultar_dte_async_mock(self, mock_client):
-        from pysifen.de.bindings.v150.ws_si_cons_dteasync import (
+        from kilasifen.engine.de.bindings.v150.ws_si_cons_dteasync import (
             REnviConsDteAsyncResponse,
         )
 
@@ -591,8 +591,8 @@ class TestTransmissaoEvento:
     """Testes de transmissão de eventos."""
 
     def _make_transmissao(self):
-        from pysifen.transmissao.config import TEST
-        from pysifen.transmissao.evento import TransmissaoEvento
+        from kilasifen.engine.transmissao.config import TEST
+        from kilasifen.engine.transmissao.evento import TransmissaoEvento
 
         return TransmissaoEvento(
             ambiente=TEST,
@@ -600,13 +600,13 @@ class TestTransmissaoEvento:
             pkcs12_password="fake-pass",
         )
 
-    @patch("pysifen.transmissao.base.TransmissaoBase._get_client")
+    @patch("kilasifen.engine.transmissao.base.TransmissaoBase._get_client")
     def test_enviar_evento_mock(self, mock_client):
-        from pysifen.de.bindings.v150.prot_proces_eventos_v141 import (
+        from kilasifen.engine.de.bindings.v150.prot_proces_eventos_v141 import (
             TgResProc,
             TgResProcEve,
         )
-        from pysifen.de.bindings.v150.ws_si_recep_evento_v150 import (
+        from kilasifen.engine.de.bindings.v150.ws_si_recep_evento_v150 import (
             RRetEnviEventoDe,
         )
 
@@ -648,9 +648,9 @@ class TestTransmissaoBase:
     def test_sign_xml_reusa_estado_pkcs12(self, monkeypatch):
         from cryptography.hazmat.primitives.serialization import pkcs12
 
-        from pysifen.sdk import signer as signer_module
-        from pysifen.transmissao.base import TransmissaoBase
-        from pysifen.transmissao.config import TEST
+        from kilasifen.engine.sdk import signer as signer_module
+        from kilasifen.engine.transmissao.base import TransmissaoBase
+        from kilasifen.engine.transmissao.config import TEST
 
         if not os.path.exists(TEST_CERT_PATH):
             pytest.skip("test_cert.pfx not found")
@@ -686,11 +686,11 @@ class TestTransmissaoBase:
         assert len(calls) == 1
 
     def test_serialize(self):
-        from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
+        from kilasifen.engine.de.bindings.v150.ws_si_cons_ruc_v141 import (
             REnviConsRuc,
         )
-        from pysifen.transmissao.base import TransmissaoBase
-        from pysifen.transmissao.config import TEST
+        from kilasifen.engine.transmissao.base import TransmissaoBase
+        from kilasifen.engine.transmissao.config import TEST
 
         t = TransmissaoBase(
             ambiente=TEST,
@@ -704,11 +704,11 @@ class TestTransmissaoBase:
         assert "80069563" in xml
 
     def test_parse(self):
-        from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
+        from kilasifen.engine.de.bindings.v150.ws_si_cons_ruc_v141 import (
             REnviConsRuc,
         )
-        from pysifen.transmissao.base import TransmissaoBase
-        from pysifen.transmissao.config import TEST
+        from kilasifen.engine.transmissao.base import TransmissaoBase
+        from kilasifen.engine.transmissao.config import TEST
 
         t = TransmissaoBase(
             ambiente=TEST,
@@ -723,8 +723,8 @@ class TestTransmissaoBase:
         assert parsed.dRUCCons == "80069563"
 
     def test_cleanup(self):
-        from pysifen.transmissao.base import TransmissaoBase
-        from pysifen.transmissao.config import TEST
+        from kilasifen.engine.transmissao.base import TransmissaoBase
+        from kilasifen.engine.transmissao.config import TEST
 
         t = TransmissaoBase(
             ambiente=TEST,
@@ -736,8 +736,8 @@ class TestTransmissaoBase:
         assert t._cert_files is None
 
     def test_close_idempotente(self, monkeypatch):
-        from pysifen.transmissao.base import TransmissaoBase
-        from pysifen.transmissao.config import TEST
+        from kilasifen.engine.transmissao.base import TransmissaoBase
+        from kilasifen.engine.transmissao.config import TEST
 
         removed = []
 
@@ -760,8 +760,8 @@ class TestTransmissaoBase:
         assert t._cert_files is None
 
     def test_context_manager_close_recursos(self, monkeypatch):
-        from pysifen.transmissao.base import TransmissaoBase
-        from pysifen.transmissao.config import TEST
+        from kilasifen.engine.transmissao.base import TransmissaoBase
+        from kilasifen.engine.transmissao.config import TEST
 
         removed = []
 
@@ -781,9 +781,9 @@ class TestTransmissaoBase:
         assert t._cert_files is None
 
     def test_operacao_pos_close_lanca_erro_tipado(self):
-        from pysifen.sdk.errors import SifenTransportClosedError
-        from pysifen.transmissao.base import TransmissaoBase
-        from pysifen.transmissao.config import TEST
+        from kilasifen.engine.sdk.errors import SifenTransportClosedError
+        from kilasifen.engine.transmissao.base import TransmissaoBase
+        from kilasifen.engine.transmissao.config import TEST
 
         t = TransmissaoBase(
             ambiente=TEST,
@@ -798,7 +798,7 @@ class TestTransmissaoBase:
     def test_transport_reintenta_timeout_y_sucede(self, monkeypatch):
         from requests.exceptions import Timeout
 
-        from pysifen.transmissao.base import _create_transport
+        from kilasifen.engine.transmissao.base import _create_transport
 
         transport = _create_transport(
             "cert.pem",
@@ -832,8 +832,8 @@ class TestTransmissaoBase:
     def test_transport_no_reintenta_http_4xx(self, monkeypatch):
         from requests.exceptions import HTTPError
 
-        from pysifen.sdk.errors import SifenTransportError
-        from pysifen.transmissao.base import _create_transport
+        from kilasifen.engine.sdk.errors import SifenTransportError
+        from kilasifen.engine.transmissao.base import _create_transport
 
         transport = _create_transport(
             "cert.pem",
@@ -866,7 +866,7 @@ class TestTransmissaoBase:
     def test_transport_retorna_body_soap_en_http_400(self, monkeypatch):
         from requests.exceptions import HTTPError
 
-        from pysifen.transmissao.base import _create_transport
+        from kilasifen.engine.transmissao.base import _create_transport
 
         transport = _create_transport(
             "cert.pem",
@@ -898,7 +898,7 @@ class TestTransmissaoBase:
         assert result == b"<rRetEnviDe>rechazado</rRetEnviDe>"
 
     def test_transport_envuelve_request_en_soap_y_extrae_body(self, monkeypatch):
-        from pysifen.transmissao.base import _create_transport
+        from kilasifen.engine.transmissao.base import _create_transport
 
         transport = _create_transport(
             "cert.pem",
@@ -948,12 +948,12 @@ class TestTransmissaoBase:
     def test_get_client_reutiliza_transport_y_cliente(self, monkeypatch):
         from xsdata.formats.dataclass.client import TransportTypes
 
-        from pysifen.de.bindings.v150.ws_si_recep_de_v150 import (
+        from kilasifen.engine.de.bindings.v150.ws_si_recep_de_v150 import (
             REnviDe,
             RRetEnviDe,
         )
-        from pysifen.transmissao.base import TransmissaoBase
-        from pysifen.transmissao.config import TEST
+        from kilasifen.engine.transmissao.base import TransmissaoBase
+        from kilasifen.engine.transmissao.config import TEST
 
         created = []
         create_transport_calls = []
@@ -972,7 +972,7 @@ class TestTransmissaoBase:
             return transport
 
         monkeypatch.setattr(
-            "pysifen.transmissao.base._create_transport",
+            "kilasifen.engine.transmissao.base._create_transport",
             fake_create_transport,
         )
         monkeypatch.setattr(

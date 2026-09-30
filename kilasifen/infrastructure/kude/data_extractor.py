@@ -11,7 +11,7 @@ from xml.etree import ElementTree as ET
 
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
-from pysifen.sdk.errors import SifenValidationError
+from kilasifen.engine.sdk.errors import SifenValidationError
 
 _NS = "http://ekuatia.set.gov.py/sifen/xsd"
 

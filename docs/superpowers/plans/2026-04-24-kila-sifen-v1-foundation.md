@@ -5,9 +5,9 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents are available in the current session) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the first production-shaped version of `Kila SIFEN` as a self-hosted, multi-emitter, async-first fiscal platform on top of the existing `pysifen` engine, with HTTP API as the official contract and enough operational surface to power the author's ERP.
+**Goal:** Build the first production-shaped version of `Kila SIFEN` as a self-hosted, multi-emitter, async-first fiscal platform on top of the existing `kilasifen.engine` engine, with HTTP API as the official contract and enough operational surface to power the author's ERP.
 
-**Architecture:** Keep `pysifen` as the fiscal engine and add a new modular-monolith platform layer above it. The platform should follow `router -> service -> repository` boundaries, persist the full fiscal lifecycle, and run as one deployable application with API, workers, and admin console backed by PostgreSQL and Redis.
+**Architecture:** Keep `kilasifen.engine` as the fiscal engine and add a new modular-monolith platform layer above it. The platform should follow `router -> service -> repository` boundaries, persist the full fiscal lifecycle, and run as one deployable application with API, workers, and admin console backed by PostgreSQL and Redis.
 
 **Tech Stack:** Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2, Alembic, PostgreSQL, Redis, RQ, Jinja2/HTMX for admin console, pytest, httpx, ruff
 
@@ -122,15 +122,15 @@
 - `pyproject.toml`
 - `README.md`
 - `.github/workflows/tests.yml`
-- `pysifen/sdk/client.py`
-- `pysifen/sdk/errors.py`
-- `pysifen/sdk/fiscal.py`
-- `pysifen/sdk/signer.py`
+- `kilasifen/engine/sdk/client.py`
+- `kilasifen/engine/sdk/errors.py`
+- `kilasifen/engine/sdk/fiscal.py`
+- `kilasifen/engine/sdk/signer.py`
 - `docs/architecture/public-api.md`
 
 ### Existing assets to preserve and reuse
 
-- `pysifen/` as the fiscal engine and protocol adapter base
+- `kilasifen/engine/` as the fiscal engine and protocol adapter base
 - `docs/examples/send_ares_factura_test.py` as real SIFEN TEST evidence
 - current `tests/test_*` coverage around XML generation, signing, and transport
 
@@ -138,7 +138,7 @@
 
 ## Guiding Decisions
 
-- `pysifen` remains the engine for XML generation, signing, and SIFEN transport.
+- `kilasifen.engine` remains the engine for XML generation, signing, and SIFEN transport.
 - The new platform lives in a separate `kilasifen/` package to avoid mixing app concerns into the engine.
 - API contracts must be business-oriented and should not mirror raw SOAP envelopes.
 - All write operations with fiscal impact must support idempotency and persist full traces.
@@ -261,7 +261,7 @@
 
 - [ ] Step 1: Write failing tests for certificate upload, metadata extraction, activation, and read redaction.
 - [ ] Step 2: Implement encrypted storage for `.p12` blobs and passwords using a dedicated storage service.
-- [ ] Step 3: Reuse the current `pysifen` signing/certificate parsing path where practical instead of duplicating certificate logic.
+- [ ] Step 3: Reuse the current `kilasifen.engine` signing/certificate parsing path where practical instead of duplicating certificate logic.
 - [ ] Step 4: Expose only non-sensitive metadata in read APIs, including fingerprint and expiration.
 - [ ] Step 5: Run `pytest tests/api/test_certificates_api.py tests/infrastructure/test_certificate_store.py -v`.
 - [ ] Step 6: Commit with message `feat: add encrypted certificate management`.
@@ -325,25 +325,25 @@
 - [ ] Step 5: Run `pytest tests/infrastructure/test_rq_queue.py tests/api/test_jobs_api.py -v`.
 - [ ] Step 6: Commit with message `feat: add background queue and worker wiring`.
 
-### Task 10: Connect the emission worker to the `pysifen` engine
+### Task 10: Connect the emission worker to the `kilasifen.engine` engine
 
 **Files:**
 - Create: `kilasifen/infrastructure/sifen/engine.py`
 - Create: `kilasifen/infrastructure/sifen/mapper.py`
 - Create: `tests/application/test_emission_flow.py`
-- Modify: `pysifen/sdk/client.py`
-- Modify: `pysifen/sdk/errors.py`
-- Modify: `pysifen/sdk/fiscal.py`
-- Modify: `pysifen/sdk/signer.py`
+- Modify: `kilasifen/engine/sdk/client.py`
+- Modify: `kilasifen/engine/sdk/errors.py`
+- Modify: `kilasifen/engine/sdk/fiscal.py`
+- Modify: `kilasifen/engine/sdk/signer.py`
 
 - [ ] Step 1: Write failing service tests for the end-to-end emission flow using a fake or stub SIFEN adapter.
-- [ ] Step 2: Build an infrastructure adapter that turns stored business payloads into the `pysifen` structures needed for XML generation, signing, and transmission.
+- [ ] Step 2: Build an infrastructure adapter that turns stored business payloads into the `kilasifen.engine` structures needed for XML generation, signing, and transmission.
 - [ ] Step 3: Persist generated XML, signed XML, SIFEN request metadata, raw response snapshots, and normalized result fields.
 - [ ] Step 4: Mark transport failures, fiscal validation failures, and SIFEN rejections as different error categories.
-- [ ] Step 5: Keep any `pysifen` changes narrowly focused on reusable engine concerns that benefit both the SDK and the platform.
+- [ ] Step 5: Keep any `kilasifen.engine` changes narrowly focused on reusable engine concerns that benefit both the SDK and the platform.
 - [ ] Step 6: Run `pytest tests/application/test_emission_flow.py -v`.
 - [ ] Step 7: Re-run the high-value engine regressions: `pytest tests/test_assinatura.py tests/test_ares_de_test_xml.py tests/test_sdk_client.py -v`.
-- [ ] Step 8: Commit with message `feat: process emission jobs through pysifen`.
+- [ ] Step 8: Commit with message `feat: process emission jobs through kilasifen.engine`.
 
 ---
 
@@ -440,7 +440,7 @@
 
 - [ ] Step 1: Write deployment docs for API, worker, PostgreSQL, and Redis in Docker Compose.
 - [ ] Step 2: Add examples showing how an ERP would register a certificate and create a document through the official API.
-- [ ] Step 3: Update the README to explain the relationship between `pysifen` and the new `Kila SIFEN` platform.
+- [ ] Step 3: Update the README to explain the relationship between `kilasifen.engine` and the new `Kila SIFEN` platform.
 - [ ] Step 4: Keep the engine-facing docs and platform-facing docs clearly separated.
 - [ ] Step 5: Smoke-test the Compose stack locally.
 - [ ] Step 6: Commit with message `docs: add platform deployment and integration guidance`.
@@ -470,7 +470,7 @@
 7. Chunk 7
 
 Do not start the admin console before the core API, persistence, and jobs exist.
-Do not let platform code reach directly into low-level `pysifen` modules from routers.
+Do not let platform code reach directly into low-level `kilasifen.engine` modules from routers.
 Do not collapse certificate storage, document persistence, and job state into one service layer blob.
 
 ## Verification Commands
@@ -484,11 +484,11 @@ Do not collapse certificate storage, document persistence, and job state into on
 - `pytest tests/api/test_webhooks_api.py tests/application/test_webhook_delivery.py -v`
 - `pytest tests/test_assinatura.py tests/test_ares_de_test_xml.py tests/test_sdk_client.py -v`
 - `pytest tests -v --tb=short`
-- `ruff check kilasifen/ pysifen/ tests/`
+- `ruff check kilasifen/ kilasifen/engine/ tests/`
 
 ## Notes For Execution
 
-- Treat `pysifen` as the reusable fiscal engine, not as the place to grow platform concerns.
+- Treat `kilasifen.engine` as the reusable fiscal engine, not as the place to grow platform concerns.
 - Prefer additive changes over risky rewrites of existing engine code.
 - Keep all secret material behind config or encrypted storage services.
 - Preserve the proven SIFEN TEST emission path while layering the platform above it.

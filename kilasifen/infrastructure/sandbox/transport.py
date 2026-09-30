@@ -1,8 +1,8 @@
 """Network-free SIFEN transport with deterministic test outcomes."""
 
 from kilasifen.domain.sandbox import SandboxOutcome
+from kilasifen.engine.sdk.errors import SifenTimeoutError
 from kilasifen.infrastructure.sifen.engine import SubmissionOutcome
-from pysifen.sdk.errors import SifenTimeoutError
 
 _OUTCOMES = {
     SandboxOutcome.APPROVED: (

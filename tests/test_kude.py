@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from pysifen.de.bindings.v150.fe_v141 import RDe
-from pysifen.sdk.kude import (
+from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
+from kilasifen.engine.sdk.kude import (
     build_kude_context,
     render_kude_html,
     render_kude_html_from_xml,
@@ -12,7 +12,8 @@ from pysifen.sdk.kude import (
 
 SAMPLES_DIR = (
     Path(__file__).resolve().parents[1]
-    / "pysifen"
+    / "kilasifen"
+    / "engine"
     / "de"
     / "samples"
     / "v150"

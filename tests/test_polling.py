@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from pysifen.sdk.errors import SifenTimeoutError
-from pysifen.sdk.polling import (
+from kilasifen.engine.sdk.errors import SifenTimeoutError
+from kilasifen.engine.sdk.polling import (
     PollingConfig,
     poll_dte_async_status,
     poll_lote_status,

@@ -1,4 +1,4 @@
-"""Fiscal event submission adapters backed by pysifen."""
+"""Fiscal event submission adapters backed by kilasifen.engine."""
 
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ from xsdata.formats.dataclass.serializers.config import SerializerConfig
 from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.events.models import Event
-from pysifen import PRODUCCION, TEST
-from pysifen.sdk.errors import SifenValidationError
-from pysifen.transmissao.evento import TransmissaoEvento, _generate_id
+from kilasifen.engine import PRODUCCION, TEST
+from kilasifen.engine.sdk.errors import SifenValidationError
+from kilasifen.engine.transmissao.evento import TransmissaoEvento, _generate_id
 
 
 @dataclass(slots=True)
@@ -49,7 +49,7 @@ class EventSubmissionGateway(Protocol):
 
 
 class PysifenEventGateway:
-    """Concrete event submission adapter backed by pysifen."""
+    """Concrete event submission adapter backed by kilasifen.engine."""
 
     def __init__(self, deployment_environment: str = "test"):
         self.deployment_environment = deployment_environment

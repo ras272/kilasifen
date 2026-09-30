@@ -30,7 +30,7 @@ jobs:
 
       - name: Lint engine package
         run: |
-          uv run ruff check pysifen/ --select F
+          uv run ruff check kilasifen/engine/ --select F
 
       - name: Run engine regressions
         run: |
@@ -132,7 +132,7 @@ jobs:
       - name: Smoke test top-level public API
         run: |
           python - <<'PY'
-          from pysifen import (
+          from kilasifen.engine import (
               ENDPOINTS,
               PRODUCCION,
               TEST,

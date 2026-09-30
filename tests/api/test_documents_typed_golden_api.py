@@ -13,6 +13,7 @@ from kilasifen.config import get_settings
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
+from kilasifen.engine.assinatura import sign_xml
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
@@ -22,7 +23,6 @@ from kilasifen.testing.typed_contract_scenarios import (
     TypedContractScenario,
     get_typed_contract_scenarios,
 )
-from pysifen.assinatura import sign_xml
 
 API_KEY = "secret-key"
 _GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden"

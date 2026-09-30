@@ -20,6 +20,11 @@ from kilasifen.domain.documents.models import Document
 from kilasifen.domain.events.inutilized_ranges import InutilizedNumberRange
 from kilasifen.domain.events.models import Event
 from kilasifen.domain.jobs.models import Job
+from kilasifen.engine.sdk.errors import (
+    SifenTimeoutError,
+    SifenTransportError,
+    SifenValidationError,
+)
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.sifen.event import EventSubmissionGateway
 from kilasifen.infrastructure.sifen.typed_event_builder import (
@@ -37,11 +42,6 @@ from kilasifen.repositories.inutilized_number_ranges import (
     InutilizedNumberRangeRepository,
 )
 from kilasifen.repositories.jobs import JobRepository
-from pysifen.sdk.errors import (
-    SifenTimeoutError,
-    SifenTransportError,
-    SifenValidationError,
-)
 
 logger = logging.getLogger(__name__)
 

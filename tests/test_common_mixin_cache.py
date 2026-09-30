@@ -9,7 +9,7 @@ from xsdata.formats.dataclass.serializers import XmlSerializer as RealXmlSeriali
 
 
 SAMPLES_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "pysifen", "de", "samples", "v150"
+    os.path.dirname(__file__), "..", "kilasifen", "engine", "de", "samples", "v150"
 )
 
 
@@ -21,7 +21,7 @@ def factura_path():
 def test_common_mixin_reuses_parser_instances(monkeypatch, factura_path):
     """CommonMixin should reuse a single parser instance across calls."""
 
-    common_mixin_module = importlib.import_module("pysifen.CommonMixin")
+    common_mixin_module = importlib.import_module("kilasifen.engine.CommonMixin")
     parser_inits = []
     common_mixin_module._get_xml_parser.cache_clear()
 
@@ -32,7 +32,7 @@ def test_common_mixin_reuses_parser_instances(monkeypatch, factura_path):
 
     monkeypatch.setattr(common_mixin_module, "XmlParser", CountingXmlParser)
 
-    from pysifen.de.bindings.v150.fe_v141 import RDe
+    from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
     rde_from_path = RDe.from_path(factura_path)
     with open(factura_path, encoding="utf-8") as handler:
@@ -47,7 +47,7 @@ def test_common_mixin_reuses_parser_instances(monkeypatch, factura_path):
 def test_common_mixin_reuses_serializer_instances(monkeypatch, factura_path):
     """CommonMixin should reuse serializer instances per pretty-print mode."""
 
-    common_mixin_module = importlib.import_module("pysifen.CommonMixin")
+    common_mixin_module = importlib.import_module("kilasifen.engine.CommonMixin")
     serializer_inits = []
     common_mixin_module._get_xml_serializer.cache_clear()
 
@@ -58,7 +58,7 @@ def test_common_mixin_reuses_serializer_instances(monkeypatch, factura_path):
 
     monkeypatch.setattr(common_mixin_module, "XmlSerializer", CountingXmlSerializer)
 
-    from pysifen.de.bindings.v150.fe_v141 import RDe
+    from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
     rde = RDe.from_path(factura_path)
     pretty_first = rde.to_xml(pretty_print=True)

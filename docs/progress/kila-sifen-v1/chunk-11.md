@@ -26,5 +26,5 @@ regression protection at signed XML level.
 - `tests/infrastructure/test_typed_xml_builder_golden.py`
 - `tests/api/test_documents_typed_golden_api.py`
 - `tests/golden/*.xml`
-- `pysifen/sdk/signer.py`
+- `kilasifen/engine/sdk/signer.py`
 - `tests/test_assinatura.py`

@@ -50,7 +50,7 @@ pip install -e ".[sign,test]"
 ### Fachada pública estable
 
 ```python
-from pysifen import (
+from kilasifen.engine import (
     ConsultaSIFEN,
     PRODUCCION,
     TEST,
@@ -72,7 +72,7 @@ Estos scripts estan pensados para copiar/ejecutar con un certificado PKCS12 y XM
 
 
 ```python
-from pysifen.de.bindings.v150.fe_v141 import RDe
+from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
 # Leer desde archivo
 rde = RDe.from_path("factura.xml")
@@ -130,7 +130,7 @@ Usa `signxml` directamente con RSA-SHA256 y C14N, conforme lo exigido por el SIF
 La función centralizada también está disponible en:
 
 ```python
-from pysifen.assinatura import sign_xml
+from kilasifen.engine.assinatura import sign_xml
 
 signed = sign_xml(xml, cert_data, "password", doc_id)
 ```
@@ -138,7 +138,7 @@ signed = sign_xml(xml, cert_data, "password", doc_id)
 ### Generar CDC (SIFEN v150)
 
 ```python
-from pysifen.sdk import generate_cdc
+from kilasifen.engine.sdk import generate_cdc
 
 cdc = generate_cdc(
     i_tide=1,
@@ -161,7 +161,7 @@ oficial de SET/DNIT.
 ### Generar dCarQR (SIFEN v150)
 
 ```python
-from pysifen.sdk import generate_dcarqr
+from kilasifen.engine.sdk import generate_dcarqr
 
 dcarqr = generate_dcarqr(
     cdc="01444444017001001001452822017012515873260988",
@@ -191,7 +191,7 @@ pip install kilasifen[transmissao]
 #### Enviar DE (síncrono)
 
 ```python
-from pysifen.transmissao import TransmissaoDE, TEST
+from kilasifen.engine.transmissao import TransmissaoDE, TEST
 
 transmissao = TransmissaoDE(
     ambiente=TEST,
@@ -213,7 +213,7 @@ print(resultado.dProtConsLote)  # Protocolo para consulta posterior
 #### Consultar DE por CDC
 
 ```python
-from pysifen.transmissao import ConsultaSIFEN, TEST
+from kilasifen.engine.transmissao import ConsultaSIFEN, TEST
 
 consulta = ConsultaSIFEN(
     ambiente=TEST,
@@ -238,7 +238,7 @@ respuesta_async = consulta.consultar_dte_async(consulta_dte_async)
 protocolo = respuesta_async.dProtConsDTEAsync
 
 # Opcional: esperar estado final con helper de polling
-from pysifen.sdk import PollingConfig, poll_dte_async_status
+from kilasifen.engine.sdk import PollingConfig, poll_dte_async_status
 
 estado_final = poll_dte_async_status(
     fetch_status=mi_funcion_de_estado,  # callback(protocol_id) -> response
@@ -250,7 +250,7 @@ estado_final = poll_dte_async_status(
 #### Enviar eventos (cancelación, inutilización, etc.)
 
 ```python
-from pysifen.transmissao import TransmissaoEvento, TEST
+from kilasifen.engine.transmissao import TransmissaoEvento, TEST
 
 evento_transmissao = TransmissaoEvento(
     ambiente=TEST,
@@ -263,7 +263,7 @@ resultado = evento_transmissao.enviar_evento(evento)
 ### Integración rápida con SifenClient
 
 ```python
-from pysifen.sdk.client import SifenClient
+from kilasifen.engine.sdk.client import SifenClient
 
 client = SifenClient(
     ambiente=TEST,
@@ -288,7 +288,7 @@ solicitud, estado = client.consultar_dte_async_y_esperar(
 ### KuDE HTML (salida imprimible v1)
 
 ```python
-from pysifen.sdk import render_kude_html, save_kude_html
+from kilasifen.engine.sdk import render_kude_html, save_kude_html
 
 html = render_kude_html(rde, title="KuDE Factura")
 save_kude_html(rde, "outputs/kude_factura.html", title="KuDE Factura")
@@ -332,13 +332,13 @@ client.save_kude_html(rde, "outputs/kude_factura.html")
 | `prot_proces_de_v150` | Protocolo de procesamiento |
 | `xmldsig_core_schema` | Firma digital XML |
 
-### Firma (`pysifen.assinatura`)
+### Firma (`kilasifen.engine.assinatura`)
 
 | Función | Descripción |
 |---------|-------------|
 | `sign_xml()` | Firma XML con PKCS12/RSA-SHA256 usando `signxml` |
 
-### Transmisión (`pysifen.transmissao`)
+### Transmisión (`kilasifen.engine.transmissao`)
 
 | Clase | Descripción |
 |-------|-------------|
@@ -381,7 +381,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[sign,test]" "xsdata[cli,lxml]"
 pytest tests/ -v
-ruff check pysifen/ tests/
+ruff check kilasifen/engine/ tests/
 ```
 
 ## Referencias
@@ -396,7 +396,7 @@ ruff check pysifen/ tests/
 
 This repository contains four complementary components:
 
-- `pysifen`: fiscal engine (XML, signature, SOAP transport)
+- `kilasifen.engine`: fiscal engine (XML, signature, SOAP transport)
 - `kilasifen`: headless, multi-consumer API platform for independent SIFEN integrations
 - `sdks/typescript`: official typed client for the HTTP API
 - `apps/docs`: public Fumadocs integration portal

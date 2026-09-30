@@ -4,9 +4,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from pysifen import TEST
-from pysifen.de.bindings.v150.fe_v141 import RDe
-from pysifen.sdk.client import SifenClient
+from kilasifen.engine import TEST
+from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
+from kilasifen.engine.sdk.client import SifenClient
 
 
 def send_factura_sync(

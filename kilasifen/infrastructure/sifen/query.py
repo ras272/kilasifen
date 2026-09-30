@@ -1,4 +1,4 @@
-"""Read-side SIFEN query adapters built on top of pysifen."""
+"""Read-side SIFEN query adapters built on top of kilasifen.engine."""
 
 from __future__ import annotations
 
@@ -10,18 +10,17 @@ from typing import Protocol
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
-from pysifen import ConsultaSIFEN, PRODUCCION, TEST
-from pysifen.de.bindings.v150.ws_si_cons_de_v141 import (
+from kilasifen.domain.emitters.models import Emitter
+from kilasifen.engine import PRODUCCION, TEST, ConsultaSIFEN
+from kilasifen.engine.de.bindings.v150.ws_si_cons_de_v141 import (
     REnviConsDeRequest,
     REnviConsDeResponse,
 )
-from pysifen.de.bindings.v150.ws_si_cons_ruc_v141 import (
+from kilasifen.engine.de.bindings.v150.ws_si_cons_ruc_v141 import (
     REnviConsRuc,
     RResEnviConsRuc,
 )
-
-from kilasifen.domain.emitters.models import Emitter
-from pysifen.sdk.errors import SifenValidationError
+from kilasifen.engine.sdk.errors import SifenValidationError
 
 
 @dataclass(slots=True)
@@ -80,7 +79,7 @@ class SifenQueryGateway(Protocol):
 
 
 class PysifenQueryGateway:
-    """Concrete query gateway backed by pysifen transport."""
+    """Concrete query gateway backed by kilasifen.engine transport."""
 
     def __init__(self, deployment_environment: str = "test"):
         self.deployment_environment = deployment_environment

@@ -11,9 +11,9 @@ from zoneinfo import ZoneInfo
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
-from pysifen.sdk.errors import SifenValidationError
-from pysifen.sdk.fiscal import calculate_mod11_dv, generate_cdc
-from pysifen.sdk.validation import validate_xml
+from kilasifen.engine.sdk.errors import SifenValidationError
+from kilasifen.engine.sdk.fiscal import calculate_mod11_dv, generate_cdc
+from kilasifen.engine.sdk.validation import validate_xml
 
 SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 ET.register_namespace("", SIFEN_NS)

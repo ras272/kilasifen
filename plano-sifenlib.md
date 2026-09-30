@@ -1,4 +1,4 @@
-# Plano de Desenvolvimento: pysifen
+# Plano de Desenvolvimento: kilasifen.engine
 
 **Bindings Python para ler e gerar XML do SIFEN (Paraguay) — usando xsdata, no formato nfelib**
 
@@ -8,7 +8,7 @@
 
 ### O que é
 
-A **pysifen** será uma biblioteca Python que gera automaticamente bindings (dataclasses) a partir dos schemas XSD oficiais do SIFEN (Sistema Integrado de Facturación Electrónica Nacional) do Paraguai, usando a mesma abordagem comprovada da [nfelib](https://github.com/akretion/nfelib) da Akretion.
+A **kilasifen.engine** será uma biblioteca Python que gera automaticamente bindings (dataclasses) a partir dos schemas XSD oficiais do SIFEN (Sistema Integrado de Facturación Electrónica Nacional) do Paraguai, usando a mesma abordagem comprovada da [nfelib](https://github.com/akretion/nfelib) da Akretion.
 
 ### Por que fazer
 
@@ -102,7 +102,7 @@ Todos os schemas usam o namespace: `http://ekuatia.set.gov.py/sifen/xsd`
 ### Estrutura de diretórios
 
 ```
-pysifen/
+kilasifen/engine/
 ├── .xsdata.xml                          # Configuração do xsdata
 ├── .gitignore
 ├── .pre-commit-config.yaml
@@ -111,8 +111,8 @@ pysifen/
 ├── README.md
 ├── MIT-LICENSE
 ├── ext/
-│   └── pysifen.jpg                     # Logo/imagem do projeto
-├── pysifen/
+│   └── kilasifen.engine.jpg                     # Logo/imagem do projeto
+├── kilasifen/engine/
 │   ├── __init__.py                      # __version__ = "0.1.1"
 │   ├── CommonMixin.py                   # Mixin com from_xml, to_xml, from_path, validate_xml, sign_xml
 │   └── de/                              # Documento Electrónico
@@ -186,7 +186,7 @@ Seguindo a nfelib, usar **3 dígitos** para a versão do schema na pasta: `v150`
   </Output>
   <Extensions>
     <Extension type="class" class=".*"
-               import="pysifen.CommonMixin"
+               import="kilasifen.engine.CommonMixin"
                prepend="false" applyIfDerived="false"/>
   </Extensions>
   <Conventions>
@@ -262,7 +262,7 @@ class CommonMixin:
         # Localizar o XSD baseado no módulo da classe
         module = self.__class__.__module__
         parts = module.split(".")
-        # pysifen.de.bindings.v150.de_v150 -> pysifen/de/schemas/v150/
+        # kilasifen.engine.de.bindings.v150.de_v150 -> kilasifen/engine/de/schemas/v150/
         schema_dir = os.path.join(
             os.path.dirname(__file__),
             parts[1],  # "de"
@@ -315,8 +315,8 @@ echo "=== Gerando bindings do SIFEN ==="
 
 # Documento Electrónico v150
 echo "Gerando DE v150..."
-xsdata generate pysifen/de/schemas/v150 \
-    --package pysifen.de.bindings.v150
+xsdata generate kilasifen/engine/de/schemas/v150 \
+    --package kilasifen.engine.de.bindings.v150
 
 echo "=== Bindings gerados com sucesso ==="
 ```
@@ -376,7 +376,7 @@ test = [
 include-package-data = true
 
 [tool.setuptools.dynamic]
-version = {attr = "pysifen.__version__"}
+version = {attr = "kilasifen.engine.__version__"}
 
 [tool.ruff]
 target-version = "py39"
@@ -393,12 +393,12 @@ select = ["E", "F", "I", "W"]
 
 **Objetivo:** Projeto configurado, repositório criado, xsdata instalado.
 
-- [ ] Criar repositório GitHub `pysifen`
+- [ ] Criar repositório GitHub `kilasifen.engine`
 - [ ] Criar estrutura de diretórios conforme seção 3
 - [ ] Configurar `pyproject.toml`, `.gitignore`, `.pre-commit-config.yaml`
 - [ ] Instalar xsdata: `pip install xsdata[cli,lxml]`
 - [ ] Criar `.xsdata.xml` com a configuração da seção 4
-- [ ] Criar `pysifen/__init__.py` com `__version__`
+- [ ] Criar `kilasifen/engine/__init__.py` com `__version__`
 
 **Verificação:** `pip install -e .` funciona sem erros.
 
@@ -410,12 +410,12 @@ select = ["E", "F", "I", "W"]
 
 - [ ] Baixar todos os XSD de `https://ekuatia.set.gov.py/sifen/xsd/`
 - [ ] Baixar o RAR com a estrutura completa da SET
-- [ ] Organizar em `pysifen/de/schemas/v150/`
+- [ ] Organizar em `kilasifen/engine/de/schemas/v150/`
 - [ ] Verificar integridade: todos os `xs:include` e `xs:import` resolvem localmente
 - [ ] **Ajustar schemaLocation** nos XSD para usar caminhos relativos locais (os schemas originais referenciam URLs remotas como `https://ekuatia.set.gov.py/sifen/xsd/...` — precisam ser convertidos para caminhos relativos como `./DE_Types_v150.xsd`)
 - [ ] Commitar os XSD originais (com ajustes de path) no repositório
 
-**Verificação:** `xmllint --schema pysifen/de/schemas/v150/DE_v150.xsd` valida um XML de exemplo.
+**Verificação:** `xmllint --schema kilasifen/engine/de/schemas/v150/DE_v150.xsd` valida um XML de exemplo.
 
 **Atenção:** Este é o passo mais crítico. Os XSD da SET podem ter referências cruzadas complexas que precisam ser resolvidas localmente para o xsdata funcionar.
 
@@ -427,15 +427,15 @@ select = ["E", "F", "I", "W"]
 
 - [ ] Criar o `CommonMixin.py` (seção 5)
 - [ ] Criar `script.sh` (seção 6)
-- [ ] Executar: `xsdata generate pysifen/de/schemas/v150 --package pysifen.de.bindings.v150`
+- [ ] Executar: `xsdata generate kilasifen/engine/de/schemas/v150 --package kilasifen.engine.de.bindings.v150`
 - [ ] Resolver erros de geração (tipos conflitantes, imports circulares, etc.)
 - [ ] Ajustar `Substitutions` no `.xsdata.xml` se necessário
-- [ ] Verificar que os bindings são importáveis: `from pysifen.de.bindings.v150.fe_v141 import RDe`
+- [ ] Verificar que os bindings são importáveis: `from kilasifen.engine.de.bindings.v150.fe_v141 import RDe`
 - [ ] Commitar os bindings gerados
 
 **Verificação:**
 ```python
-from pysifen.de.bindings.v150.fe_v141 import RDe
+from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 print(RDe.__dataclass_fields__.keys())
 ```
 
@@ -462,7 +462,7 @@ print(RDe.__dataclass_fields__.keys())
   - Nota de Débito Electrónica (tipo 6)
   - Nota de Remisión Electrónica (tipo 7)
   - Comprobante de Retención Electrónico (tipo 8)
-- [ ] Salvar em `pysifen/de/samples/v150/`
+- [ ] Salvar em `kilasifen/engine/de/samples/v150/`
 
 **Verificação:** Cada XML valida contra o XSD com `xmllint`.
 
@@ -483,8 +483,8 @@ print(RDe.__dataclass_fields__.keys())
 Exemplo de teste:
 ```python
 def test_read_factura():
-    from pysifen.de.bindings.v150.fe_v141 import RDe
-    rde = RDe.from_path("pysifen/de/samples/v150/factura_electronica.xml")
+    from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
+    rde = RDe.from_path("kilasifen/engine/de/samples/v150/factura_electronica.xml")
     assert rde.DE.gTimb.iTiDE == "1"
     assert rde.DE.gDatGralOpe.gEmis.dRucEm is not None
 ```
@@ -500,7 +500,7 @@ def test_read_factura():
 - [ ] Testar construção de DE do zero:
 
 ```python
-from pysifen.de.bindings.v150.fe_v141 import RDe, TDe, TgCopeDe, TgDaGoc
+from kilasifen.engine.de.bindings.v150.fe_v141 import RDe, TDe, TgCopeDe, TgDaGoc
 rde = RDe(
     dVerFor="150",
     DE=TDe(
@@ -591,7 +591,7 @@ O `DE_v150.xsd` é um schema muito extenso com dezenas de grupos (gOpeDE, gDatGr
 
 ```python
 # === Ler um Documento Electrónico (DE) ===
-from pysifen.de.bindings.v150.fe_v141 import RDe
+from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 rde = RDe.from_path("factura.xml")
 # ou: rde = RDe.from_xml(xml_string)
 
@@ -610,7 +610,7 @@ if not errors:
     print("XML válido!")
 
 # === Construir do zero ===
-from pysifen.de.bindings.v150.fe_v141 import *
+from kilasifen.engine.de.bindings.v150.fe_v141 import *
 de = TDe(
     Id="01800695631001001000000312024112917595714694",
     dDVId=9,

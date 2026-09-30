@@ -15,11 +15,11 @@ from pathlib import Path
 
 from lxml import etree
 
-from pysifen import TEST
-from pysifen.assinatura import sign_xml
-from pysifen.de.bindings.v150.fe_v141 import RDe
-from pysifen.sdk.client import SifenClient
-from pysifen.sdk.fiscal import build_qr_payload, generate_cdc
+from kilasifen.engine import TEST
+from kilasifen.engine.assinatura import sign_xml
+from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
+from kilasifen.engine.sdk.client import SifenClient
+from kilasifen.engine.sdk.fiscal import build_qr_payload, generate_cdc
 
 
 def _read_secret(name: str) -> str:
@@ -112,7 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ruc", default="80024135-5")
     parser.add_argument(
         "--xml",
-        default="pysifen/de/samples/v150/factura_electronica.xml",
+        default="kilasifen/engine/de/samples/v150/factura_electronica.xml",
     )
     parser.add_argument("--timeout", type=float, default=30)
     parser.add_argument("--send-de", action="store_true")

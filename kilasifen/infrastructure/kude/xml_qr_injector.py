@@ -15,8 +15,8 @@ from decimal import Decimal
 from xml.etree import ElementTree as ET
 
 from kilasifen.domain.emitters.models import Emitter
+from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.infrastructure.kude.qr_generator import build_sifen_qr_url
-from pysifen.sdk.errors import SifenValidationError
 
 _SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 _DSIG_NS = "http://www.w3.org/2000/09/xmldsig#"

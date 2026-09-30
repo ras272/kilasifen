@@ -19,6 +19,12 @@ from kilasifen.domain.common.fiscal_states import (
 )
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.jobs.models import Job
+from kilasifen.engine.sdk.errors import (
+    SifenRejectionError,
+    SifenTimeoutError,
+    SifenTransportError,
+    SifenValidationError,
+)
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
@@ -74,12 +80,6 @@ from kilasifen.logging import (
     set_correlation_id,
 )
 from kilasifen.observability import ensure_worker_observability
-from pysifen.sdk.errors import (
-    SifenRejectionError,
-    SifenTimeoutError,
-    SifenTransportError,
-    SifenValidationError,
-)
 
 logger = logging.getLogger(__name__)
 

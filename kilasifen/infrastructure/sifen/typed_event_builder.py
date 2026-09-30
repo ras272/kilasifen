@@ -7,11 +7,11 @@ from xml.etree import ElementTree as ET
 
 from lxml import etree
 
-from pysifen.de.bindings.v150.evento_v150 import TgGroupGesEve
-from pysifen.de.bindings.v150.ws_si_recep_evento_v150 import REnviEventoDe
-from pysifen.sdk.errors import SifenValidationError
-from pysifen.sdk.signer import get_pkcs12_signer
-from pysifen.sdk.validation import validate_xml
+from kilasifen.engine.de.bindings.v150.evento_v150 import TgGroupGesEve
+from kilasifen.engine.de.bindings.v150.ws_si_recep_evento_v150 import REnviEventoDe
+from kilasifen.engine.sdk.errors import SifenValidationError
+from kilasifen.engine.sdk.signer import get_pkcs12_signer
+from kilasifen.engine.sdk.validation import validate_xml
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 

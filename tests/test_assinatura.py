@@ -7,7 +7,7 @@ pytest.importorskip("signxml", reason="signxml not installed")
 pytest.importorskip("cryptography", reason="cryptography not installed")
 
 SAMPLES_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "pysifen", "de", "samples", "v150"
+    os.path.dirname(__file__), "..", "kilasifen", "engine", "de", "samples", "v150"
 )
 
 
@@ -33,7 +33,7 @@ def sample_xml():
 
 @pytest.fixture
 def sample_rde():
-    from pysifen.de.bindings.v150.fe_v141 import RDe
+    from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
     path = os.path.join(SAMPLES_DIR, "factura_electronica.xml")
     return RDe.from_path(path)
@@ -48,8 +48,8 @@ class TestSignXml:
         """Reaproveita o estado PKCS12 para assinaturas repetidas."""
         from cryptography.hazmat.primitives.serialization import pkcs12
 
-        from pysifen.assinatura import sign_xml
-        from pysifen.sdk import signer as signer_module
+        from kilasifen.engine.assinatura import sign_xml
+        from kilasifen.engine.sdk import signer as signer_module
 
         signer_module.clear_pkcs12_signer_cache()
 
@@ -79,7 +79,7 @@ class TestSignXml:
         self, cert_data, sample_rde
     ):
         """Assina XML de amostra e verifica Signature."""
-        from pysifen.assinatura import sign_xml
+        from kilasifen.engine.assinatura import sign_xml
 
         xml = sample_rde.to_xml()
         signed = sign_xml(
@@ -95,7 +95,7 @@ class TestSignXml:
     ):
         from lxml import etree
 
-        from pysifen.assinatura import sign_xml
+        from kilasifen.engine.assinatura import sign_xml
 
         xml = sample_rde.to_xml()
         signed = sign_xml(xml, cert_data, "test1234", sample_rde.DE.Id)
@@ -106,7 +106,7 @@ class TestSignXml:
 
     def test_sign_xml_sha256(self, cert_data, sample_rde):
         """Verifica que usa SHA256 (não SHA1)."""
-        from pysifen.assinatura import sign_xml
+        from kilasifen.engine.assinatura import sign_xml
 
         xml = sample_rde.to_xml()
         signed = sign_xml(
@@ -119,7 +119,7 @@ class TestSignXml:
     def test_sign_xml_uses_exclusive_c14n(
         self, cert_data, sample_rde
     ):
-        from pysifen.assinatura import sign_xml
+        from kilasifen.engine.assinatura import sign_xml
 
         xml = sample_rde.to_xml()
         signed = sign_xml(
@@ -131,7 +131,7 @@ class TestSignXml:
     def test_sign_xml_uses_default_dsig_namespace(
         self, cert_data, sample_rde
     ):
-        from pysifen.assinatura import sign_xml
+        from kilasifen.engine.assinatura import sign_xml
 
         xml = sample_rde.to_xml()
         signed = sign_xml(
@@ -147,7 +147,7 @@ class TestSignXml:
         """Verifica que Reference URI aponta para o CDC."""
         from lxml import etree
 
-        from pysifen.assinatura import sign_xml
+        from kilasifen.engine.assinatura import sign_xml
 
         xml = sample_rde.to_xml()
         doc_id = sample_rde.DE.Id
@@ -165,7 +165,7 @@ class TestSignXml:
         """Assina, parseia de volta, verifica estrutura."""
         from lxml import etree
 
-        from pysifen.assinatura import sign_xml
+        from kilasifen.engine.assinatura import sign_xml
 
         xml = sample_rde.to_xml()
         signed = sign_xml(
@@ -187,7 +187,7 @@ class TestSignXml:
 
     def test_sign_xml_invalid_cert(self, sample_rde):
         """Testa erro com certificado inválido."""
-        from pysifen.assinatura import sign_xml
+        from kilasifen.engine.assinatura import sign_xml
 
         xml = sample_rde.to_xml()
         with pytest.raises(Exception):
@@ -199,7 +199,7 @@ class TestSignXml:
         self, cert_data, sample_rde
     ):
         """Aceita XML como bytes."""
-        from pysifen.assinatura import sign_xml
+        from kilasifen.engine.assinatura import sign_xml
 
         xml = sample_rde.to_xml().encode()
         signed = sign_xml(
@@ -211,7 +211,7 @@ class TestSignXml:
         self, cert_data, sample_rde
     ):
         """Aceita senha como bytes."""
-        from pysifen.assinatura import sign_xml
+        from kilasifen.engine.assinatura import sign_xml
 
         xml = sample_rde.to_xml()
         signed = sign_xml(
@@ -231,7 +231,7 @@ class TestSignXml:
         """Mantiene Signature antes de gCamFuFD para cumplir DE_v150.xsd."""
         from lxml import etree
 
-        from pysifen.assinatura import sign_xml
+        from kilasifen.engine.assinatura import sign_xml
 
         ns = "http://ekuatia.set.gov.py/sifen/xsd"
         doc_id = "01800241355001001000000122026042411234567899"

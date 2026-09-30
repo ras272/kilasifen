@@ -1,4 +1,4 @@
-"""Payload mappers for the pysifen emission bridge."""
+"""Payload mappers for the kilasifen.engine emission bridge."""
 
 from dataclasses import dataclass
 from xml.etree import ElementTree as ET
@@ -6,13 +6,13 @@ from xml.etree import ElementTree as ET
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
+from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.infrastructure.sifen.typed_xml_builder import build_typed_document_xml
-from pysifen.sdk.errors import SifenValidationError
 
 
 @dataclass(slots=True)
 class PysifenEmissionInput:
-    """Minimal emission input for the pysifen bridge."""
+    """Minimal emission input for the kilasifen.engine bridge."""
 
     generated_xml: str | None
     signed_xml: str | None
@@ -20,7 +20,7 @@ class PysifenEmissionInput:
 
 
 class PysifenPayloadMapper:
-    """Map persisted document payloads into pysifen-compatible inputs."""
+    """Map persisted document payloads into kilasifen.engine-compatible inputs."""
 
     def map_document(
         self,

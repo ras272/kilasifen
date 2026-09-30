@@ -2,7 +2,7 @@
 
 ## Scope
 
-`pysifen` is the fiscal engine.
+`kilasifen.engine` is the fiscal engine.
 `kilasifen` is the platform layer for API, persistence, jobs, and operations.
 
 This separation keeps XML/signature transport logic reusable while exposing one

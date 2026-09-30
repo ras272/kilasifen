@@ -12,14 +12,14 @@ from pathlib import Path
 
 from lxml import etree
 
-from pysifen import TEST
-from pysifen.assinatura import sign_xml
-from pysifen.sdk.fiscal import (
+from kilasifen.engine import TEST
+from kilasifen.engine.assinatura import sign_xml
+from kilasifen.engine.sdk.fiscal import (
     build_qr_payload_from_signed_xml,
     calculate_mod11_dv,
     generate_cdc,
 )
-from pysifen.transmissao.de import TransmissaoDE
+from kilasifen.engine.transmissao.de import TransmissaoDE
 
 SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"

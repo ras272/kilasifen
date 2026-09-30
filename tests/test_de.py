@@ -8,7 +8,7 @@ import pytest
 warnings.filterwarnings("ignore")
 
 SAMPLES_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "pysifen", "de", "samples", "v150"
+    os.path.dirname(__file__), "..", "kilasifen", "engine", "de", "samples", "v150"
 )
 
 
@@ -56,20 +56,20 @@ class TestReadFactura:
     """Testes de leitura de Factura Electrónica (tipo 1)."""
 
     def test_parse_factura(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(factura_path)
         assert rde is not None
         assert rde.dVerFor == "150"
 
     def test_factura_tipo(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(factura_path)
         assert rde.DE.gTimb.iTiDE == "1"
 
     def test_factura_emisor(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(factura_path)
         emis = rde.DE.gDatGralOpe.gEmis
@@ -79,7 +79,7 @@ class TestReadFactura:
         assert emis.dEmailE == "demo@empresa.com.py"
 
     def test_factura_receptor(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(factura_path)
         rec = rde.DE.gDatGralOpe.gDatRec
@@ -87,7 +87,7 @@ class TestReadFactura:
         assert rec.dNomRec == "Cliente Demo S.A."
 
     def test_factura_items(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(factura_path)
         items = rde.DE.gDtipDE.gCamItem
@@ -97,7 +97,7 @@ class TestReadFactura:
         assert items[1].dCodInt == "SERV001"
 
     def test_factura_totales(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(factura_path)
         totais = rde.DE.gTotSub
@@ -106,7 +106,7 @@ class TestReadFactura:
         assert totais.dIVA10 == Decimal("104545")
 
     def test_factura_iva(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe, TiAfecIva
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe, TiAfecIva
 
         rde = RDe.from_path(factura_path)
         item = rde.DE.gDtipDE.gCamItem[0]
@@ -114,7 +114,7 @@ class TestReadFactura:
         assert item.gCamIVA.dTasaIVA == Decimal("10")
 
     def test_factura_condicion_pago(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe, TiCondOpe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe, TiCondOpe
 
         rde = RDe.from_path(factura_path)
         cond = rde.DE.gDtipDE.gCamCond
@@ -123,7 +123,7 @@ class TestReadFactura:
         assert cond.gPaConEIni[0].dMonTiPag == Decimal("1150000")
 
     def test_factura_campos_futuro(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(factura_path)
         assert rde.gCamFuFD is not None
@@ -134,20 +134,20 @@ class TestReadNotaCredito:
     """Testes de leitura de Nota de Crédito (tipo 5)."""
 
     def test_parse_nota_credito(self, nota_credito_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(nota_credito_path)
         assert rde.DE.gTimb.iTiDE == "5"
 
     def test_nota_credito_motivo(self, nota_credito_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe, TiMotEmi
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe, TiMotEmi
 
         rde = RDe.from_path(nota_credito_path)
         assert rde.DE.gDtipDE.gCamNCDE is not None
         assert rde.DE.gDtipDE.gCamNCDE.iMotEmi == TiMotEmi.VALUE_1
 
     def test_nota_credito_doc_associado(self, nota_credito_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(nota_credito_path)
         assoc = rde.DE.gCamDEAsoc
@@ -159,7 +159,7 @@ class TestReadFacturaExportacion:
     """Testes de leitura de FE Exportación (tipo 2)."""
 
     def test_parse_factura_exportacion(self, factura_exportacion_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(factura_exportacion_path)
         assert rde.DE.gTimb.iTiDE == "2"
@@ -169,7 +169,7 @@ class TestReadFacturaImportacion:
     """Testes de leitura de FE Importación (tipo 3)."""
 
     def test_parse_factura_importacion(self, factura_importacion_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(factura_importacion_path)
         assert rde.DE.gTimb.iTiDE == "3"
@@ -179,13 +179,13 @@ class TestReadAutofactura:
     """Testes de leitura de Autofactura (tipo 4)."""
 
     def test_parse_autofactura(self, autofactura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(autofactura_path)
         assert rde.DE.gTimb.iTiDE == "4"
 
     def test_autofactura_campos(self, autofactura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(autofactura_path)
         ae = rde.DE.gDtipDE.gCamAE
@@ -197,13 +197,13 @@ class TestReadNotaRemision:
     """Testes de leitura de Nota de Remisión (tipo 7)."""
 
     def test_parse_nota_remision(self, nota_remision_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(nota_remision_path)
         assert rde.DE.gTimb.iTiDE == "7"
 
     def test_nota_remision_motivo(self, nota_remision_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(nota_remision_path)
         nre = rde.DE.gDtipDE.gCamNRE
@@ -220,7 +220,7 @@ class TestReadNotaDebito:
     """Testes de leitura de Nota de Débito (tipo 6)."""
 
     def test_parse_nota_debito(self, nota_debito_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(nota_debito_path)
         assert rde.DE.gTimb.iTiDE == "6"
@@ -232,7 +232,7 @@ class TestReadComprobanteRetencion:
     def test_parse_comprobante_retencion(
         self, comprobante_retencion_path
     ):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(comprobante_retencion_path)
         assert rde.DE.gTimb.iTiDE == "8"
@@ -242,7 +242,7 @@ class TestFromXml:
     """Testes de from_xml (string)."""
 
     def test_from_xml_string(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         with open(factura_path) as f:
             xml_string = f.read()
@@ -254,7 +254,7 @@ class TestSerialization:
     """Testes de serialização (to_xml) e round-trip."""
 
     def test_to_xml(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(factura_path)
         xml = rde.to_xml()
@@ -263,7 +263,7 @@ class TestSerialization:
         assert "Empresa Demo" in xml
 
     def test_round_trip(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde1 = RDe.from_path(factura_path)
         xml = rde1.to_xml()
@@ -277,7 +277,7 @@ class TestSerialization:
         assert rde1.DE.gTotSub.dTotGralOpe == rde2.DE.gTotSub.dTotGralOpe
 
     def test_round_trip_all_samples(self):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         for filename in os.listdir(SAMPLES_DIR):
             if not filename.endswith(".xml"):
@@ -289,7 +289,7 @@ class TestSerialization:
             assert rde1.DE.Id == rde2.DE.Id, f"Round-trip failed for {filename}"
 
     def test_samples_cover_de_types_1_to_8(self):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         tipos = set()
         for filename in os.listdir(SAMPLES_DIR):
@@ -302,7 +302,7 @@ class TestSerialization:
         assert tipos == {"1", "2", "3", "4", "5", "6", "7", "8"}
 
     def test_to_xml_compact(self, factura_path):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         rde = RDe.from_path(factura_path)
         xml_pretty = rde.to_xml(pretty_print=True)
@@ -314,7 +314,7 @@ class TestCommonMixin:
     """Testes do CommonMixin."""
 
     def test_mixin_methods_exist(self):
-        from pysifen.de.bindings.v150.fe_v141 import RDe
+        from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
         assert hasattr(RDe, "from_xml")
         assert hasattr(RDe, "from_path")
@@ -323,7 +323,7 @@ class TestCommonMixin:
         assert hasattr(RDe, "sign_xml")
 
     def test_mixin_on_sub_classes(self):
-        from pysifen.de.bindings.v150.fe_v141 import TgEmis
+        from kilasifen.engine.de.bindings.v150.fe_v141 import TgEmis
 
         assert hasattr(TgEmis, "from_xml")
         assert hasattr(TgEmis, "to_xml")
