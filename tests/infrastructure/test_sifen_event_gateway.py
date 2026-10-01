@@ -22,8 +22,8 @@ def test_normalize_response_accepts_event_shape_payload() -> None:
     <dEstRes>Aprobado</dEstRes>
     <dProtAut>123456789</dProtAut>
     <gResProc>
-      <dCodRes>0300</dCodRes>
-      <dMsgRes>Evento aprobado</dMsgRes>
+      <dCodRes>0600</dCodRes>
+      <dMsgRes>Evento registrado correctamente</dMsgRes>
     </gResProc>
   </gResProcEVe>
 </rRetEnviEventoDe>
@@ -31,10 +31,38 @@ def test_normalize_response_accepts_event_shape_payload() -> None:
 
     result_code, result_message, status, protocol = _normalize_response(response_raw)
 
-    assert result_code == "0300"
-    assert result_message == "Evento aprobado"
+    assert result_code == "0600"
+    assert result_message == "Evento registrado correctamente"
     assert status == "approved"
     assert protocol == "123456789"
+
+
+@pytest.mark.parametrize("foreign_code", ["0260", "0300"])
+def test_only_0600_registers_an_event(foreign_code: str) -> None:
+    # MT v150 §12.3.6.3 BU01 (p. 158); 0260 (§12.3.1.3) and 0300 (§12.3.2.3)
+    # belong to other services (DECISIONES F70).
+    response_raw = (
+        '<rRetEnviEventoDe xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+        "<gResProcEVe><dEstRes>Aprobado</dEstRes>"
+        f"<gResProc><dCodRes>{foreign_code}</dCodRes><dMsgRes>x</dMsgRes>"
+        "</gResProc></gResProcEVe></rRetEnviEventoDe>"
+    )
+
+    _code, _message, status, _protocol = _normalize_response(response_raw)
+
+    assert status == "rejected"
+
+
+def test_an_event_answer_without_code_stays_pending() -> None:
+    response_raw = (
+        '<rRetEnviEventoDe xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+        "<gResProcEVe><dEstRes>Aprobado</dEstRes></gResProcEVe>"
+        "</rRetEnviEventoDe>"
+    )
+
+    _code, _message, status, _protocol = _normalize_response(response_raw)
+
+    assert status == "submitted"
 
 
 def test_normalize_response_treats_0600_as_approved() -> None:

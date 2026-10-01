@@ -18,6 +18,7 @@ from signxml import InvalidSignature, XMLVerifier
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
+from kilasifen.domain.common.sifen_results import EVENT_REGISTERED_CODE
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.events.models import Event
 from kilasifen.engine import PRODUCCION, TEST
@@ -161,25 +162,38 @@ def _normalize_response(response) -> tuple[str | None, str | None, str, str | No
     status = "submitted"
     protocol = None
 
+    state_text = None
     g_res_proc = []
     if getattr(response, "gResProcEVe", None):
         first_group = response.gResProcEVe[0]
         g_res_proc = getattr(first_group, "gResProc", [])
         protocol = str(getattr(first_group, "dProtAut", "") or "").strip() or None
-        if getattr(first_group, "dEstRes", None):
-            raw_status = str(first_group.dEstRes).strip().lower()
-            status = "approved" if "aprob" in raw_status else "rejected"
+        state_text = getattr(first_group, "dEstRes", None)
 
     if g_res_proc:
         result_code = getattr(g_res_proc[0], "dCodRes", None)
         result_message = getattr(g_res_proc[0], "dMsgRes", None)
 
-    if result_code in {"0260", "0300", "0600"}:
-        status = "approved"
-    elif result_code is not None and status != "approved":
-        status = "rejected"
-
+    status = _event_status(result_code, state_text)
     return result_code, result_message, status, protocol
+
+
+def _event_status(result_code: str | None, state_text: str | None) -> str:
+    """Read an event answer: only 0600 registers it (DECISIONES F70).
+
+    "Evento registrado correctamente" is 0600 (MT v150 §12.3.6.3 BU01,
+    p. 158; dProtAut comes with it, §9.5.3 p. 53). 0260 and 0300 belong to
+    the DE and lot reception services. Any other code is a rejection; an
+    answer without code is not classified and stays pending.
+    """
+
+    if result_code == EVENT_REGISTERED_CODE:
+        return "approved"
+    if result_code is not None:
+        return "rejected"
+    if "rechaz" in str(state_text or "").strip().lower():
+        return "rejected"
+    return "submitted"
 
 
 def _submit_event_raw(
@@ -316,19 +330,7 @@ def _normalize_response_raw_xml(
     result_code = _find_text(root, "dCodRes")
     result_message = _find_text(root, "dMsgRes")
     protocol = _find_text(root, "dProtAut")
-    status_text = (_find_text(root, "dEstRes") or "").strip().lower()
-
-    status = "submitted"
-    if "aprob" in status_text:
-        status = "approved"
-    elif "rechaz" in status_text:
-        status = "rejected"
-
-    if result_code in {"0260", "0300", "0600"}:
-        status = "approved"
-    elif result_code is not None and status != "approved":
-        status = "rejected"
-
+    status = _event_status(result_code, _find_text(root, "dEstRes"))
     return result_code, result_message, status, protocol
 
 
