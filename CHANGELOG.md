@@ -200,6 +200,13 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   ahora es `SifenUnexpectedResponseError`, resultado incierto, y ya no un
   error de validación que marcaba el evento como `failed`. El reintento de
   un evento incierto sigue reenviándolo, como antes.
+- Plataforma: los workers de RQ y el proceso del outbox configuran el mismo
+  logging JSON que la API (`configure_logging`, nivel de
+  `KILA_SIFEN_LOG_LEVEL`) la primera vez que corre un job o arranca el
+  sweeper. Antes solo inicializaban Sentry y sus `logger.info` se perdían
+  (los errores salían como texto plano por el `lastResort` de Python). Las
+  líneas propias de RQ (`rq.worker`) conservan su formato y ya no se
+  duplican.
 - La firma de un `rDE` ya no se invalida al armar el `rEnviDe` (defecto P3).
   `_build_enviar_de_request_xml` inserta el `rDE` como texto, con sus propias
   declaraciones de namespace y sus prefijos, en lugar de moverlo como árbol

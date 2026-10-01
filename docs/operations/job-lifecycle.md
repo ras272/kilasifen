@@ -103,6 +103,13 @@ Retries re-queue job payload with current DB/crypto settings.
 
 ## Recommended monitoring
 
+Workers (`rq worker`) and the outbox sweeper log one JSON object per line,
+with `correlation_id` when the job carries one, exactly like the API; the level
+comes from `KILA_SIFEN_LOG_LEVEL`. RQ's own lifecycle lines keep RQ's text
+format. Useful events: `worker.document_job.request_not_sent`,
+`worker.document_job.outcome_unknown`, `worker.document_job.outcome_superseded`,
+`events.outcome_unknown` and `jobs.outbox.publish_failed`.
+
 - ratio of `failed` + `retry_scheduled` by job type
 - aging of jobs in `queued`
 - missing workers for any of `documents`, `events`, `webhooks`
