@@ -1,5 +1,6 @@
 """Certificate application service layer."""
 
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -13,6 +14,7 @@ from cryptography.x509.oid import NameOID
 from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.common.errors import ConflictError, NotFoundError
+from kilasifen.engine.sdk.signer import clear_pkcs12_signer_cache
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.repositories.certificates import CertificateRepository
 from kilasifen.repositories.emitters import EmitterRepository
@@ -26,10 +28,12 @@ class CertificateService:
         certificate_repository: CertificateRepository,
         emitter_repository: EmitterRepository,
         certificate_store: EncryptedCertificateStore,
+        evict_cached_signers: Callable[[], None] = clear_pkcs12_signer_cache,
     ):
         self.certificate_repository = certificate_repository
         self.emitter_repository = emitter_repository
         self.certificate_store = certificate_store
+        self.evict_cached_signers = evict_cached_signers
 
     def upload_certificate(
         self,
@@ -96,6 +100,11 @@ class CertificateService:
 
         if activated is None:
             raise ConflictError("certificates.activation_failed")
+        # Activation replaces and deactivates the emitter's other certificates.
+        # Drop the decrypted private keys this process keeps in the PKCS12
+        # signer cache so a retired key does not stay resident in memory. The
+        # cache is per process: worker processes keep their own until evicted.
+        self.evict_cached_signers()
         return activated
 
     def activate_certificate_for_emitter(

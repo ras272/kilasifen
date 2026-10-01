@@ -174,6 +174,11 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   (`documents.raw.generated_xml_*`). El worker vuelve a validar ese XML antes
   de firmarlo e ignora cualquier `signed_xml` del payload: sólo reutiliza el XML
   que la propia plataforma firmó en un intento anterior.
+- Activar un certificado (lo que reemplaza y desactiva los demás del emisor)
+  vacía la caché de firmadores PKCS12 del proceso
+  (`kilasifen.engine.sdk.signer.clear_pkcs12_signer_cache`), para que las
+  claves privadas descifradas no queden residentes en memoria. La caché es por
+  proceso: los workers conservan la suya hasta reiniciar o desalojarla.
 - `SECURITY.md` deja un solo canal para reportar vulnerabilidades: el
   private vulnerability reporting de GitHub. Se quitó el correo del mantenedor
   anterior, que figuraba como segunda opción.
