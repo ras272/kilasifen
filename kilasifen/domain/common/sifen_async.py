@@ -210,9 +210,16 @@ def is_definitive_document_state(state: AsyncState) -> bool:
 
 
 def can_resend_same_cdc(state: AsyncState) -> bool:
-    """Enforce anti-duplicate rule: resend only after definitive SIFEN outcome."""
+    """Tell whether the same CDC may be sent again after ``state``.
 
-    return is_definitive_document_state(state)
+    Only a rejected DE may be corrected and sent again with its CDC (Dto
+    872/2023 Art. 29; MT v150 §6.5 pp. 26-27). A definitive answer is
+    required (Guia de Mejores Practicas DNIT oct-2024 p. 6, punto 5), but an
+    approved CDC must never travel again: SIFEN answers 1001/1002 (MT v150
+    §12.4 val. 2-3 p. 159) while the DTE stays approved.
+    """
+
+    return state is AsyncState.DE_REJECTED
 
 
 _ALLOWED_TRANSITIONS: dict[AsyncState, set[AsyncState]] = {

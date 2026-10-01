@@ -69,3 +69,13 @@ def test_can_resend_same_cdc_only_after_definitive_status() -> None:
     assert can_resend_same_cdc(AsyncState.LOT_PROCESSING) is False
     assert can_resend_same_cdc(AsyncState.DE_NOT_FOUND_OR_NOT_APPROVED) is False
     assert can_resend_same_cdc(AsyncState.DE_REJECTED) is True
+
+
+@pytest.mark.parametrize(
+    "state",
+    [AsyncState.DE_APPROVED, AsyncState.DE_APPROVED_WITH_OBSERVATION],
+)
+def test_an_approved_cdc_is_never_sent_again(state: AsyncState) -> None:
+    # MT v150 §12.4 val. 2-3 (p. 159): SIFEN answers 1001/1002 and the DTE
+    # stays approved.
+    assert can_resend_same_cdc(state) is False
