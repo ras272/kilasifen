@@ -18,6 +18,10 @@ from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Protocol
 
+from kilasifen.application.sifen_submissions import (
+    describe_submission_failure,
+    request_never_left,
+)
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.events.models import Event
 from kilasifen.domain.jobs.models import Job
@@ -25,10 +29,6 @@ from kilasifen.engine.sdk.errors import SifenError
 from kilasifen.infrastructure.sifen.event import (
     EventSubmissionGateway,
     EventSubmissionOutcome,
-)
-from kilasifen.infrastructure.sifen.submission import (
-    describe_submission_failure,
-    request_never_left,
 )
 
 logger = logging.getLogger(__name__)

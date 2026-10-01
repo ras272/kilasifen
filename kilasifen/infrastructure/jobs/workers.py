@@ -18,6 +18,10 @@ from kilasifen.application.events.attempts import (
 from kilasifen.application.events.service import EventService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.sandbox.service import SandboxOutcomePolicy
+from kilasifen.application.sifen_submissions import (
+    describe_submission_failure,
+    request_never_left,
+)
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import Settings, get_settings
 from kilasifen.domain.common.errors import NotFoundError, ServiceUnavailableError
@@ -91,10 +95,6 @@ from kilasifen.infrastructure.sifen.event import (
 from kilasifen.infrastructure.sifen.query import (
     KilaSifenQueryGateway,
     SifenQueryGateway,
-)
-from kilasifen.infrastructure.sifen.submission import (
-    describe_submission_failure,
-    request_never_left,
 )
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy

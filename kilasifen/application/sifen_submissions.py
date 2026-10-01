@@ -1,4 +1,8 @@
-"""Classification of failed SIFEN submissions (documents and events)."""
+"""How the platform reads a failed SIFEN submission (documents and events).
+
+Application policy over the engine error types: it decides whether a failed
+submission may be sent again as is or must be resolved as uncertain.
+"""
 
 from __future__ import annotations
 
