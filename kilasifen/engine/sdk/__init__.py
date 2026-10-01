@@ -3,6 +3,8 @@
 from kilasifen.engine.sdk.client import SifenClient
 from kilasifen.engine.sdk.errors import (
     SifenError,
+    SifenExperimentalWarning,
+    SifenLoteError,
     SifenRequestNotSentError,
     SifenSignatureError,
     SifenTimeoutError,
@@ -27,17 +29,31 @@ from kilasifen.engine.sdk.kude import (
     save_kude_html,
 )
 from kilasifen.engine.sdk.polling import (
+    LoteDocumentResult,
+    LoteResult,
     PollingConfig,
+    classify_lote_response,
+    consulta_de_result,
+    lote_document_results,
     poll_dte_async_status,
     poll_lote_status,
+    require_lote_protocol,
 )
 
 __all__ = [
     "SifenClient",
     "PollingConfig",
+    "LoteResult",
+    "LoteDocumentResult",
     "poll_lote_status",
     "poll_dte_async_status",
+    "require_lote_protocol",
+    "classify_lote_response",
+    "lote_document_results",
+    "consulta_de_result",
     "SifenError",
+    "SifenLoteError",
+    "SifenExperimentalWarning",
     "SifenValidationError",
     "SifenSignatureError",
     "SifenTransportError",

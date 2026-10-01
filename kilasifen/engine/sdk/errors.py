@@ -1,4 +1,4 @@
-"""Errores tipados del SDK de KilaSifen."""
+"""Errores y avisos tipados del SDK de KilaSifen."""
 
 from __future__ import annotations
 
@@ -97,6 +97,42 @@ class SifenRejectionError(SifenError):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class SifenLoteError(SifenError):
+    """La consulta de un lote termino en un estado que no se puede seguir.
+
+    Cubre los codigos de error de la consulta de lote (0360, 0363, 0340 y
+    0320), un codigo no documentado y una recepcion ``0300`` sin numero de
+    lote. Tambien se lanza cuando la consulta del lote ya no esta disponible
+    (0364 o mas de 48 h) y no se indico como consultar cada CDC.
+
+    Attributes:
+        code: ``dCodResLot`` (o ``dCodRes`` de la recepcion) que lo causo, si
+            lo hay.
+        message: descripcion del problema.
+        response: respuesta del SIFEN que lo causo, si la hay.
+    """
+
+    def __init__(
+        self,
+        code: str | None,
+        message: str,
+        response: object | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.response = response
+
+
+class SifenExperimentalWarning(UserWarning):
+    """Aviso de uso de un servicio sin respaldo en la documentacion oficial.
+
+    Lo emite la consulta DTE sincronica y asincronica: la SET publica sus XSD,
+    pero ni el Manual Tecnico v150 ni las Notas Tecnicas ni la Guia de
+    mejores practicas documentan su direccion, sus codigos o sus plazos.
+    """
 
 
 def _recortar_cuerpo(cuerpo: bytes | str | None) -> str | None:
