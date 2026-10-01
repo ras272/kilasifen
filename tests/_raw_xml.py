@@ -34,6 +34,17 @@ def unsigned_rde(scenario: str = "factura_b2b_iva10") -> tuple[str, str]:
     return etree.tostring(root, encoding="unicode"), de.get("Id")
 
 
+def unsigned_rde_with_extra_child(
+    child_xml: str, scenario: str = "factura_b2b_iva10"
+) -> str:
+    """Return a golden unsigned ``rDE`` with ``child_xml`` appended to it."""
+
+    generated_xml, _doc_id = unsigned_rde(scenario)
+    root = etree.fromstring(generated_xml.encode("utf-8"))
+    root.append(etree.fromstring(child_xml))
+    return etree.tostring(root, encoding="unicode")
+
+
 def raw_document_payload(scenario: str = "factura_b2b_iva10") -> dict[str, str]:
     """Return a raw-route ``payload`` with ``generated_xml`` and ``doc_id``."""
 

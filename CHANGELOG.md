@@ -171,9 +171,21 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   ajeno: rechaza `signed_xml` (también dentro de `typed_contract`) con
   `422 documents.raw.signed_xml_not_allowed` y exige que `generated_xml` sea un
   `rDE` sin `DOCTYPE` que valide contra el XSD oficial
-  (`documents.raw.generated_xml_*`). El worker vuelve a validar ese XML antes
-  de firmarlo e ignora cualquier `signed_xml` del payload: sólo reutiliza el XML
-  que la propia plataforma firmó en un intento anterior.
+  (`documents.raw.generated_xml_*`). Los hijos del `rDE` tienen que ser, en
+  orden, `dVerFor`, un solo `DE`, una `Signature` opcional (la plataforma la
+  reemplaza al firmar) y `gCamFuFD`, sin ningún otro elemento
+  (`documents.raw.generated_xml_unexpected_element`). La validación usa una
+  copia con una `Signature` de relleno, para que libxml2 valide también lo que
+  sigue al `DE`. La firma referencia siempre el `Id` de ese `DE`: un `doc_id`
+  distinto se rechaza con `documents.raw.doc_id_mismatch` y, si falta, se toma
+  del `DE`. El worker vuelve a aplicar la misma política antes de firmar e
+  ignora cualquier `signed_xml` del payload: sólo reutiliza el XML que la propia
+  plataforma firmó en un intento anterior.
+  - Antes de desplegar, listar los documentos raw `queued` o `processing` cuyo
+    `payload_snapshot` traiga `signed_xml` y ninguno firmado por la plataforma
+    (`documents.signed_xml` vacío): el worker ahora los marca `failed`
+    (`fiscal_validation`). Si alguno pudo llegar al SIFEN (una caída entre el
+    envío y el commit), consultar su CDC en el SIFEN antes de desplegar.
 - Activar un certificado (lo que reemplaza y desactiva los demás del emisor)
   vacía la caché de firmadores PKCS12 del proceso
   (`kilasifen.engine.sdk.signer.clear_pkcs12_signer_cache`), para que las

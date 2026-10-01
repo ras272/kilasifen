@@ -245,9 +245,12 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   errores esperables (la `Signature` todavía ausente y un defecto conocido del
   XSD en `dEntCont`). No se emite a través del binding `RDe`, que tiene el
   layout v141 (ver «Esquemas XSD»). El `generated_xml` del endpoint raw
-  deprecado pasa por la misma validación (`infrastructure/sifen/mapper.py`) al
-  crearse y otra vez antes de firmar; un `signed_xml` enviado por el caller se
-  rechaza y nunca se transmite.
+  deprecado pasa por `infrastructure/sifen/raw_xml_policy.py` al crearse y
+  otra vez en el mapper antes de firmar: el `rDE` sólo puede tener
+  `dVerFor`, un `DE`, una `Signature` opcional y `gCamFuFD`; se valida una
+  copia con una `Signature` de relleno, sin tolerar su ausencia, y la firma
+  referencia siempre el `Id` de ese `DE`. Un `signed_xml` enviado por el
+  caller se rechaza y nunca se transmite.
 - **Configuración y secretos.** Todo sale de variables `KILA_SIFEN_*`
   (`kilasifen/config.py`, `.env.example`). CSC, PFX y contraseñas se guardan
   cifrados y las respuestas de la API no los devuelven (el emisor expone

@@ -11,9 +11,15 @@ from kilasifen.config import get_settings
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
-from tests._raw_xml import raw_document_payload
+from tests._raw_xml import (
+    raw_document_payload,
+    unsigned_rde,
+    unsigned_rde_with_extra_child,
+)
 
 API_KEY = "secret-key"
+_SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
+_FORGED_DE = f"<DE xmlns='{_SIFEN_NS}' Id='FORGED1'><anything>x</anything></DE>"
 
 
 @pytest.fixture(autouse=True)
@@ -111,12 +117,23 @@ def test_create_document_returns_document_and_job(
         (
             {
                 "generated_xml": (
-                    "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'>"
+                    f"<rDE xmlns='{_SIFEN_NS}'><dVerFor>150</dVerFor>"
                     "<DE Id='A1'/></rDE>"
                 ),
                 "doc_id": "A1",
             },
             "documents.raw.generated_xml_invalid_schema",
+        ),
+        (
+            {
+                "generated_xml": unsigned_rde_with_extra_child(_FORGED_DE),
+                "doc_id": "FORGED1",
+            },
+            "documents.raw.generated_xml_unexpected_element",
+        ),
+        (
+            {"generated_xml": unsigned_rde()[0], "doc_id": "FORGED1"},
+            "documents.raw.doc_id_mismatch",
         ),
         (
             {

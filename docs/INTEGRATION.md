@@ -151,9 +151,14 @@ establecimiento, punto, rango y motivo. Ambas crean un event/job `queued` con
 recibe el webhook terminal. Los endpoints raw `/documents` y `/events` están
 deprecados y son sólo admin. En el raw `/documents`, `payload.generated_xml`
 tiene que ser un `rDE` sin firmar que valide contra el XSD oficial (sin
-`DOCTYPE`); KilaSifen lo firma con el certificado del emisor. Un `signed_xml`
-provisto por el caller se rechaza con `422 documents.raw.signed_xml_not_allowed`:
-la plataforma sólo transmite XML que firmó ella misma.
+`DOCTYPE`), con `dVerFor`, un solo `DE`, una `Signature` opcional y
+`gCamFuFD` como únicos hijos; KilaSifen firma ese `DE` con el certificado del
+emisor. `payload.doc_id` es opcional y, si se envía, tiene que ser el `Id` de
+ese `DE` (`422 documents.raw.doc_id_mismatch`). Un `signed_xml` provisto por
+el caller se rechaza con `422 documents.raw.signed_xml_not_allowed`: la
+plataforma sólo transmite XML que firmó ella misma. Los `details.errors` de
+`documents.raw.generated_xml_invalid_schema` son mensajes del validador XSD y
+pueden citar valores del XML enviado.
 
 Ante timeout o respuesta ambigua de emisión, Kila persiste el CDC, XML firmado y
 request exactos, y consulta SIFEN sin volver a transmitir el DE. Después de

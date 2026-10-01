@@ -23,7 +23,7 @@ from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.application.documents.service import DocumentService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.domain.sandbox import SandboxOutcome
-from kilasifen.infrastructure.sifen.mapper import (
+from kilasifen.infrastructure.sifen.raw_xml_policy import (
     RawDocumentXmlError,
     validate_raw_document_payload,
 )
