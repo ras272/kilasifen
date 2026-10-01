@@ -13,7 +13,13 @@ reconciled through the CDC before anything else (DECISIONES F70):
   sends the stored signed event again when no cancellation is registered;
 - an answer 4002, 4003, 4009 or 4010 can hide an earlier registration
   (which one SIFEN returns is NO DETERMINADO, MT v150 §11.6.1 p. 134), so the
-  CDC is queried before the rejection is believed.
+  CDC is queried before the rejection is believed;
+- a rejection is only believed when the query shows the DTE without a
+  cancellation. 4003 is never believed: SIFEN says the DTE "ya se encuentra
+  con un evento que se esta requiriendo nuevamente (Duplicidad)" (GEC002b),
+  so when ``xContEv`` does not show it, or ``xContenDE`` cannot be read (its
+  form is NO DETERMINADO), the event is left for an operator
+  (``reconciliation_required``) instead of a false ``rejected``.
 
 No service tells whether an inutilization was registered (NO DETERMINADO):
 an answer 4066 to an attempt that follows an uncertain one is left for an
@@ -32,6 +38,7 @@ from kilasifen.application.sifen_submissions import (
     request_never_left,
 )
 from kilasifen.domain.common.sifen_results import (
+    CANCELLATION_DUPLICATE_CODE,
     CANCELLATION_SUSPECT_CODES,
     INUTILIZATION_OVERLAP_CODE,
 )
@@ -434,8 +441,10 @@ def _registered_cancellation(
 ) -> EventAttemptResult | None:
     """Query the CDC and settle the cancellation, if its answer allows.
 
-    Returns ``None`` when SIFEN holds the DTE without a cancellation: the
-    stored event may be sent (``answer is None``) or the rejection believed.
+    Returns ``None`` when the stored event may be sent (``answer is None``)
+    or the rejection ``answer`` believed: SIFEN holds the DTE and
+    ``xContEv`` shows no cancellation. A rejection is never believed when
+    that cannot be read, nor when it is 4003 (DECISIONES F00, F70).
     """
 
     if query_gateway is None:
@@ -467,13 +476,39 @@ def _registered_cancellation(
         )
 
     if query.status == QUERY_FOUND:
-        registered = (
-            query.container.cancellation_for(cdc) if query.container else None
-        )
+        if query.container is None:
+            if answer is None:
+                # xContenDE could not be read (its form is NO DETERMINADO).
+                # The same signed event travels again: 0600 settles it, and
+                # the answer a registered one gets (4003, or another code of
+                # GEC002) comes back here and is never believed.
+                return None
+            return EventUnresolved(
+                message=(
+                    f"SIFEN answered {answer.result_code} and the CDC is a DTE, "
+                    "but xContenDE could not be read (its form is NO "
+                    "DETERMINADO): the cancellation may already be registered"
+                ),
+                query=query,
+                answer=answer,
+            )
+        registered = query.container.cancellation_for(cdc)
         if registered is not None:
             return EventFoundRegistered(
                 query=query,
                 protocol=registered.protocol,
+                answer=answer,
+            )
+        if answer is not None and answer.result_code == CANCELLATION_DUPLICATE_CODE:
+            # GEC002b 4003 (MT v150 §11.6.1 p. 134): SIFEN says the DTE already
+            # holds this event although xContEv does not show it.
+            return EventUnresolved(
+                message=(
+                    "SIFEN answered 4003 (the DTE already holds this event, MT "
+                    "v150 §11.6.1 GEC002b) but siConsDE shows no cancellation "
+                    "in xContEv: the cancellation is not read as rejected"
+                ),
+                query=query,
                 answer=answer,
             )
         return None

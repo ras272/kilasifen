@@ -42,6 +42,12 @@ SERVER_FAILURE_CODES = frozenset({"0161", "0162"})
 #: DETERMINADO, so the CDC is queried before believing any of them.
 CANCELLATION_SUSPECT_CODES = frozenset({"4002", "4003", "4009", "4010"})
 
+#: GEC002b: "El DTE ya se encuentra con un evento que se esta requiriendo
+#: nuevamente (Duplicidad)" (MT v150 §11.6.1, p. 134). SIFEN itself says the
+#: cancellation is already registered, so this answer is never read as a
+#: final rejection.
+CANCELLATION_DUPLICATE_CODE = "4003"
+
 #: Inutilization: "existen numeros de DE ya inutilizados en SIFEN" (MT v150
 #: §11.6.2, p. 135).
 INUTILIZATION_OVERLAP_CODE = "4066"

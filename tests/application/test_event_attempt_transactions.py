@@ -127,10 +127,15 @@ class _Gateway:
 
 @dataclass
 class _Query:
-    """siConsDE double for the cancelled document."""
+    """siConsDE double for the cancelled document.
+
+    ``readable=False`` stands for an ``xContenDE`` the platform could not
+    parse (its form is NO DETERMINADO): 0422 without a container.
+    """
 
     status: str = QUERY_FOUND
     cancellation_registered: bool = False
+    readable: bool = True
     error: Exception | None = None
     calls: int = 0
 
@@ -165,7 +170,7 @@ class _Query:
             container=DocumentContainer(
                 document_xml="<rDE/>", protocol="1", events=events
             )
-            if found
+            if found and self.readable
             else None,
         )
 
@@ -452,17 +457,96 @@ def test_a_suspicious_rejection_hiding_a_registration_is_approved(
     assert document.internal_status == "cancelled"
 
 
+@pytest.mark.parametrize("code", ["4002", "4009", "4010"])
 def test_a_suspicious_rejection_is_believed_when_no_cancellation_is_registered(
     context: _Context,
+    code: str,
 ) -> None:
     query = _Query(status=QUERY_FOUND)
-    payload = _run(context, _Gateway(outcome=_rejection("4009")), query=query)
+    payload = _run(context, _Gateway(outcome=_rejection(code)), query=query)
 
     event, job = _load(context)
     assert query.calls == 1
     assert payload["event_status"] == "rejected"
-    assert event.sifen_result_code == "4009"
+    assert event.sifen_result_code == code
     assert job.error_snapshot["category"] == "sifen_rejection"
+
+
+def test_a_duplicate_answer_is_never_read_as_a_rejection(context: _Context) -> None:
+    """4003 (GEC002b, MT v150 §11.6.1 p. 134): SIFEN says it is registered.
+
+    siConsDE finds the DTE but ``xContEv`` shows no cancellation: the two
+    answers disagree, so the event is left for an operator and the document
+    keeps its state instead of a false ``rejected`` (DECISIONES F00, F70).
+    """
+
+    query = _Query(status=QUERY_FOUND)
+    payload = _run(context, _Gateway(outcome=_rejection("4003")), query=query)
+
+    event, job = _load(context)
+    assert query.calls == 1
+    assert payload["event_status"] == "reconciliation_required"
+    assert event.status == "reconciliation_required"
+    assert event.sifen_result_code == "4003"
+    assert event.sifen_response_raw == _rejection("4003").response_raw
+    assert job.status == "failed"
+    assert job.error_snapshot["category"] == "reconciliation_required"
+    with _session(context) as session:
+        document = SqlAlchemyDocumentRepository(session).get("doc-fe-recent")
+    assert document.internal_status == "approved"
+
+
+@pytest.mark.parametrize("code", ["4002", "4003", "4009", "4010"])
+def test_a_suspicious_rejection_with_an_unreadable_container_is_not_believed(
+    context: _Context,
+    code: str,
+) -> None:
+    """0422 whose ``xContenDE`` cannot be read (form NO DETERMINADO)."""
+
+    query = _Query(status=QUERY_FOUND, readable=False)
+    payload = _run(context, _Gateway(outcome=_rejection(code)), query=query)
+
+    event, job = _load(context)
+    assert query.calls == 1
+    assert payload["event_status"] == "reconciliation_required"
+    assert event.sifen_result_code == code
+    assert job.error_snapshot["category"] == "reconciliation_required"
+
+
+def test_an_unreadable_container_after_an_uncertain_attempt_never_rejects(
+    context: _Context,
+) -> None:
+    """The reviewer's probe: timeout, 0422 unreadable, resend, then 4003."""
+
+    _run(context, _Gateway(submit_error=SifenTimeoutError("timeout de lectura")))
+
+    # The stored event travels again; its 4003 is queried and not believed.
+    query = _Query(status=QUERY_FOUND, readable=False)
+    retry = _Gateway(outcome=_rejection("4003"))
+    payload = _run(context, retry, query=query)
+
+    event, job = _load(context)
+    assert len(retry.submitted_requests) == 1
+    assert query.calls == 2
+    assert payload["event_status"] == "reconciliation_required"
+    assert event.sifen_result_code == "4003"
+    assert job.error_snapshot["category"] == "reconciliation_required"
+
+
+def test_an_unreadable_container_lets_the_stored_event_settle_itself(
+    context: _Context,
+) -> None:
+    """Without a readable ``xContEv`` the resend's own answer decides: 0600."""
+
+    _run(context, _Gateway(submit_error=SifenTimeoutError("timeout de lectura")))
+
+    retry = _Gateway()
+    payload = _run(
+        context, retry, query=_Query(status=QUERY_FOUND, readable=False)
+    )
+
+    assert len(retry.submitted_requests) == 1
+    assert payload["event_status"] == "approved"
 
 
 def test_an_ordinary_rejection_needs_no_query(context: _Context) -> None:
