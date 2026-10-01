@@ -274,7 +274,9 @@ firmar como para la autenticación mTLS. Las tres clases reciben `ambiente`
 `pkcs12_data`, `pkcs12_password` y, de forma opcional, `timeout`,
 `max_retries` (0 por defecto) y `retry_backoff`. El constructor no abre
 conexiones; los recursos (sesión HTTP y PEM temporales) se liberan con
-`close()` o al salir del bloque `with`.
+`close()` o al salir del bloque `with`. La clave privada del PEM temporal
+queda cifrada con una contraseña aleatoria que nunca se escribe en disco, y la
+sesión siempre verifica el certificado del servidor.
 
 **Enviar un DE ya firmado.** Es el camino que usa la plataforma:
 `enviar_de_xml` no vuelve a firmar ni pasa el documento por los bindings;

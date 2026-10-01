@@ -131,6 +131,13 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   - si un ancestro declara un prefijo para el namespace XMLDSig
     (`xmlns:ds`), la `Signature` mantiene su propia declaración por defecto y
     la firma sigue verificando.
+- La transmisión ya no escribe en disco la clave privada del emisor sin
+  cifrar. El PEM temporal del TLS mutuo pasa a ser PKCS#8 cifrado con una
+  contraseña aleatoria por instancia que solo vive en memoria, y se carga con
+  `ssl.SSLContext.load_cert_chain` desde un `HTTPAdapter` propio
+  (`kilasifen.engine.transmision.conexion`). Si el proceso muere antes de
+  borrar el archivo, la clave que queda no se puede usar. La sesión ya no
+  usa `Session.cert` y sigue verificando el certificado del servidor.
 - `SECURITY.md` deja un solo canal para reportar vulnerabilidades: el
   private vulnerability reporting de GitHub. Se quitó el correo del mantenedor
   anterior, que figuraba como segunda opción.

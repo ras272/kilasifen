@@ -3,10 +3,12 @@
 Este modulo reune lo que comparten todas las operaciones:
 
 * :class:`TransmisionBase`: recursos perezosos de una sesion de trabajo
-  (archivos PEM para el TLS mutuo, firmador PKCS12, transporte HTTP y clientes
-  SOAP por servicio) y su liberacion ordenada;
+  (archivos PEM para el TLS mutuo, con la clave privada cifrada, firmador
+  PKCS12, transporte HTTP y clientes SOAP por servicio) y su liberacion
+  ordenada;
 * :class:`RequestsTransport` y :func:`_create_transport`: el transporte HTTP
-  sobre ``requests`` con su politica de reintentos;
+  sobre ``requests`` con su politica de reintentos (la sesion con TLS mutuo
+  sale de :mod:`kilasifen.engine.transmision.conexion`);
 * funciones auxiliares para armar el sobre SOAP de salida y extraer el cuerpo
   util de las respuestas.
 
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import secrets
 import tempfile
 import time
 from functools import lru_cache
@@ -130,6 +133,9 @@ _T = TypeVar("_T", bound="TransmisionBase")
 #: Tope (exclusivo) de los identificadores ``dId`` generados: quince nueves.
 _TOPE_ID = 999_999_999_999_999
 
+#: Bytes aleatorios de la contrasena que cifra la clave privada en disco.
+_BYTES_CONTRASENA_CLAVE = 32
+
 
 # ---------------------------------------------------------------------------
 # Utilidades de modulo
@@ -142,6 +148,12 @@ def _importar_opcional(nombre: str) -> ModuleType:
         return importlib.import_module(nombre)
     except ImportError as exc:
         raise ImportError(_MSG_EXTRA_FALTANTE.format(modulo=nombre)) from exc
+
+
+def _modulo_conexion() -> ModuleType:
+    """Importa :mod:`kilasifen.engine.transmision.conexion` (necesita requests)."""
+    _importar_opcional("requests")
+    return importlib.import_module("kilasifen.engine.transmision.conexion")
 
 
 def _validar_max_retries(max_retries: Any) -> None:
@@ -440,17 +452,19 @@ def _create_transport(
     timeout: float = 30.0,
     max_retries: int = 2,
     backoff_factor: float = 0.2,
+    *,
+    key_password: bytes | None = None,
 ) -> RequestsTransport:
     """Crea un transporte con una sesion ``requests`` nueva y TLS mutuo.
 
-    La sesion presenta el certificado cliente ``(cert_path, key_path)`` y
-    valida el certificado del servidor con el almacen por defecto. Los
-    archivos no se leen aqui sino en la primera conexion.
+    La sesion presenta el certificado cliente ``(cert_path, key_path)``,
+    descifrando la clave con ``key_password``, y valida el certificado del
+    servidor (ver :mod:`kilasifen.engine.transmision.conexion`). Los archivos
+    no se leen aqui sino en el primer envio.
     """
-    requests = _importar_opcional("requests")
-    sesion = requests.Session()
-    sesion.cert = (cert_path, key_path)
-    sesion.verify = True
+    sesion = _modulo_conexion().crear_sesion_tls_mutuo(
+        cert_path, key_path, key_password
+    )
     return RequestsTransport(
         sesion,
         timeout=timeout,
@@ -496,6 +510,7 @@ class TransmisionBase:
     ) -> None:
         self._closed = False
         self._cert_files: tuple[str, str] | None = None
+        self._key_password: bytes | None = None
         self._signer: Any = None
         self._transport: Any = None
         self._clients: dict[str, Any] = {}
@@ -548,7 +563,11 @@ class TransmisionBase:
                 pass
 
     def _cleanup_cert_files(self) -> None:
-        """Borra los PEM temporales (primero el certificado, luego la clave)."""
+        """Borra los PEM temporales (primero el certificado, luego la clave).
+
+        Tambien olvida la contrasena con la que se cifro la clave.
+        """
+        self._key_password = None
         archivos = self._cert_files
         if not archivos:
             return
@@ -579,8 +598,11 @@ class TransmisionBase:
         """Devuelve ``(ruta_certificado, ruta_clave)`` en PEM para el TLS mutuo.
 
         La primera vez extrae del PKCS12 el certificado del firmante y su clave
-        privada (sin cifrar) a dos archivos temporales que se borran en
-        :meth:`close`. Los errores de carga del PKCS12 se propagan tal cual.
+        privada a dos archivos temporales que se borran en :meth:`close`. La
+        clave se escribe como PKCS#8 cifrado con una contrasena aleatoria de la
+        instancia que nunca toca el disco (``_key_password``): si el proceso
+        muere antes de borrar el archivo, lo que queda no sirve sin ella. Los
+        errores de carga del PKCS12 se propagan tal cual.
         """
         self._ensure_open()
         if self._cert_files is not None:
@@ -604,11 +626,14 @@ class TransmisionBase:
                 "El PKCS12 no contiene la clave privada y el certificado del firmante"
             )
 
+        contrasena_clave = secrets.token_urlsafe(_BYTES_CONTRASENA_CLAVE).encode(
+            "ascii"
+        )
         certificado_pem = certificado.public_bytes(serializacion.Encoding.PEM)
         clave_pem = clave.private_bytes(
             serializacion.Encoding.PEM,
-            serializacion.PrivateFormat.TraditionalOpenSSL,
-            serializacion.NoEncryption(),
+            serializacion.PrivateFormat.PKCS8,
+            serializacion.BestAvailableEncryption(contrasena_clave),
         )
 
         ruta_certificado = _escribir_pem_temporal(certificado_pem)
@@ -618,6 +643,7 @@ class TransmisionBase:
             _borrar_sin_error(ruta_certificado)
             raise
 
+        self._key_password = contrasena_clave
         self._cert_files = (ruta_certificado, ruta_clave)
         return self._cert_files
 
@@ -669,6 +695,7 @@ class TransmisionBase:
                 timeout=self.timeout,
                 max_retries=self.max_retries,
                 backoff_factor=self.retry_backoff,
+                key_password=self._key_password,
             )
         return self._transport
 

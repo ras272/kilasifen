@@ -56,6 +56,13 @@ temporales, el transporte HTTP con TLS mutuo y los clientes SOAP se crean en
 el primer uso. Se liberan con `close()` (o su sinónimo `cleanup()`) o al salir
 de un bloque `with`. Una instancia no debe compartirse entre hilos.
 
+La clave privada se escribe como PKCS#8 cifrado con una contraseña aleatoria
+propia de la instancia, que solo vive en memoria; si el proceso muere antes de
+borrar el archivo, lo que queda en disco no sirve sin ella. El certificado y la
+clave se cargan en un `ssl.SSLContext` propio
+(`kilasifen.engine.transmision.conexion`) que la sesión `requests` usa para
+`https://`, con la verificación del certificado del servidor activada.
+
 | Clase | Método | Qué hace |
 | --- | --- | --- |
 | `TransmisionDE` | `enviar_de_xml(xml_de)` | Envía un `rDE` ya firmado sin pasarlo por xsdata: lo parsea con lxml, le agrega `xsi:schemaLocation` si no lo tiene y lo inserta en `rEnviDe`. Es el camino que usa la plataforma. |

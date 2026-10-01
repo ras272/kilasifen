@@ -22,6 +22,7 @@ import importlib
 import json
 import os
 import re
+import ssl
 import stat
 import subprocess
 import sys
@@ -111,6 +112,7 @@ etree = pytest.importorskip(
 )
 # El cliente SOAP de xsdata importa ``requests`` al cargarse: va despues del skip.
 cliente_xsdata = importlib.import_module("xsdata.formats.dataclass.client")
+conexion = importlib.import_module("kilasifen.engine.transmision.conexion")
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +122,7 @@ cliente_xsdata = importlib.import_module("xsdata.formats.dataclass.client")
 RAIZ_REPOSITORIO = Path(__file__).resolve().parents[1]
 RUTA_CERTIFICADO_PRUEBA = Path(__file__).with_name("test_cert.pfx")
 CONTRASENA_CERTIFICADO_PRUEBA = "test1234"
+CONTRASENA_CLAVE_FICTICIA = b"contrasena-ficticia-de-la-clave-pem"
 
 NS_SIFEN = "http://ekuatia.set.gov.py/sifen/xsd"
 NS_SOAP11 = "http://schemas.xmlsoap.org/soap/envelope/"
@@ -626,6 +629,7 @@ def fabricas_falsas(monkeypatch: pytest.MonkeyPatch) -> FabricasFalsas:
 
     def rutas_de_certificado(self: TransmisionBase) -> tuple[str, str]:
         fabricas.lecturas_certificado += 1
+        self._key_password = CONTRASENA_CLAVE_FICTICIA
         return ("cert.pem", "key.pem")
 
     monkeypatch.setattr(base, "_create_transport", crear_transporte)
@@ -1147,7 +1151,12 @@ class TestTransmisionBase:
         assert len(fabricas_falsas.llamadas_transporte) == 1
         args, kwargs = fabricas_falsas.llamadas_transporte[0]
         assert args == ("cert.pem", "key.pem")
-        assert kwargs == {"timeout": 12, "max_retries": 4, "backoff_factor": 0.5}
+        assert kwargs == {
+            "timeout": 12,
+            "max_retries": 4,
+            "backoff_factor": 0.5,
+            "key_password": CONTRASENA_CLAVE_FICTICIA,
+        }
         configuracion = primero.config
         assert configuracion.input is REnviDe
         assert configuracion.output is RRetEnviDe
@@ -1299,7 +1308,12 @@ class TestTransmisionBase:
         transmision_base._cleanup_transport()
         transmision_base._get_transport()
         _args, kwargs = fabricas_falsas.llamadas_transporte[1]
-        assert kwargs == {"timeout": 7.5, "max_retries": 3, "backoff_factor": 0.05}
+        assert kwargs == {
+            "timeout": 7.5,
+            "max_retries": 3,
+            "backoff_factor": 0.05,
+            "key_password": CONTRASENA_CLAVE_FICTICIA,
+        }
 
     def test_servicios_distintos_comparten_transporte(
         self, transmision_base: Any, fabricas_falsas: FabricasFalsas
@@ -1364,13 +1378,12 @@ class TestTransmisionBase:
             certificado = Path(ruta_certificado).read_text(encoding="ascii")
             clave = Path(ruta_clave).read_text(encoding="ascii")
             assert "-----BEGIN CERTIFICATE-----" in certificado
-            assert "PRIVATE KEY" in clave
-            assert "-----BEGIN RSA PRIVATE KEY-----" in clave
-            assert "ENCRYPTED" not in clave
+            assert clave.startswith("-----BEGIN ENCRYPTED PRIVATE KEY-----")
             assert transmision._get_cert_files() is rutas
             assert cargas_pkcs12.veces == 1
         assert not Path(ruta_certificado).exists()
         assert not Path(ruta_clave).exists()
+        assert transmision._key_password is None
 
         with TransmisionBase(
             ambiente=TEST,
@@ -1399,6 +1412,75 @@ class TestTransmisionBase:
         ) as transmision:
             for ruta in transmision._get_cert_files():
                 assert stat.S_IMODE(os.stat(ruta).st_mode) == 0o600
+
+    def test_clave_en_disco_solo_se_lee_con_la_contrasena_en_memoria(
+        self, pfx_de_prueba: bytes
+    ) -> None:
+        """La clave PEM queda cifrada; la contrasena no se escribe en disco."""
+        from cryptography.hazmat.primitives.serialization import (
+            load_pem_private_key,
+            pkcs12,
+        )
+
+        original, _certificado, _cadena = pkcs12.load_key_and_certificates(
+            pfx_de_prueba, CONTRASENA_CERTIFICADO_PRUEBA.encode("ascii")
+        )
+        with TransmisionBase(
+            ambiente=TEST,
+            pkcs12_data=pfx_de_prueba,
+            pkcs12_password=CONTRASENA_CERTIFICADO_PRUEBA,
+        ) as transmision:
+            ruta_certificado, ruta_clave = transmision._get_cert_files()
+            contrasena = transmision._key_password
+            clave_pem = Path(ruta_clave).read_bytes()
+
+            assert isinstance(contrasena, bytes)
+            assert len(contrasena) >= 32
+            assert contrasena not in clave_pem
+            assert contrasena not in Path(ruta_certificado).read_bytes()
+            with pytest.raises(TypeError):
+                load_pem_private_key(clave_pem, password=None)
+            with pytest.raises(ValueError):
+                load_pem_private_key(clave_pem, password=b"contrasena-incorrecta")
+            descifrada = load_pem_private_key(clave_pem, password=contrasena)
+            assert descifrada.private_numbers() == original.private_numbers()
+
+            contexto = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            contexto.load_cert_chain(ruta_certificado, ruta_clave, password=contrasena)
+
+    def test_cada_instancia_cifra_la_clave_con_otra_contrasena(
+        self, pfx_de_prueba: bytes
+    ) -> None:
+        contrasenas = []
+        for _ in range(2):
+            with TransmisionBase(
+                ambiente=TEST,
+                pkcs12_data=pfx_de_prueba,
+                pkcs12_password=CONTRASENA_CERTIFICADO_PRUEBA,
+            ) as transmision:
+                transmision._get_cert_files()
+                contrasenas.append(transmision._key_password)
+        assert contrasenas[0] != contrasenas[1]
+
+    def test_transporte_recibe_la_contrasena_de_la_clave(
+        self, pfx_de_prueba: bytes, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        llamadas: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+        def crear_transporte(*args: Any, **kwargs: Any) -> TransporteFalso:
+            llamadas.append((args, kwargs))
+            return TransporteFalso()
+
+        monkeypatch.setattr(base, "_create_transport", crear_transporte)
+        with TransmisionBase(
+            ambiente=TEST,
+            pkcs12_data=pfx_de_prueba,
+            pkcs12_password=CONTRASENA_CERTIFICADO_PRUEBA,
+        ) as transmision:
+            transmision._get_transport()
+            ((args, kwargs),) = llamadas
+            assert args == transmision._cert_files
+            assert kwargs["key_password"] == transmision._key_password
 
     @pytest.mark.parametrize(
         "fabricar",
@@ -1698,8 +1780,13 @@ class TestTransporteSoap:
         """N25."""
         transporte_http = transporte(rutas=("c.pem", "k.pem"), por_defecto=True)
         assert isinstance(transporte_http._session, requests.Session)
-        assert transporte_http._session.cert == ("c.pem", "k.pem")
+        assert transporte_http._session.cert is None
         assert transporte_http._session.verify is True
+        adaptador = transporte_http._session.get_adapter(URL_PRUEBA)
+        assert isinstance(adaptador, conexion.AdaptadorTlsMutuo)
+        assert adaptador._ruta_certificado == "c.pem"
+        assert adaptador._ruta_clave == "k.pem"
+        assert adaptador._contrasena_clave is None
 
         sesion = sesion_programada(
             transporte_http, requests.exceptions.Timeout("lento")
@@ -2015,6 +2102,92 @@ class TestTransporteSoap:
         sesion = sesion_programada(transporte_http, respuesta_http(contenido, 400))
         assert transporte_http.post(URL_PRUEBA, b"<xml />") == contenido
         assert len(sesion.llamadas) == 1
+
+
+# ---------------------------------------------------------------------------
+# Sesion HTTPS con TLS mutuo (``conexion``)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def pem_de_prueba(pfx_de_prueba: bytes) -> Iterator[tuple[str, str, bytes]]:
+    """``(certificado, clave cifrada, contrasena)`` extraidos del PKCS#12."""
+    with TransmisionBase(
+        ambiente=TEST,
+        pkcs12_data=pfx_de_prueba,
+        pkcs12_password=CONTRASENA_CERTIFICADO_PRUEBA,
+    ) as transmision:
+        ruta_certificado, ruta_clave = transmision._get_cert_files()
+        yield ruta_certificado, ruta_clave, transmision._key_password
+
+
+class TestConexionTlsMutuo:
+    def test_sesion_verifica_al_servidor_con_contexto_propio(self) -> None:
+        sesion = conexion.crear_sesion_tls_mutuo("c.pem", "k.pem", b"clave")
+        try:
+            assert sesion.cert is None
+            assert sesion.verify is True
+            adaptador = sesion.get_adapter(get_endpoint(TEST, "recep_de"))
+            assert isinstance(adaptador, conexion.AdaptadorTlsMutuo)
+            contexto = adaptador.contexto_tls
+            assert contexto.verify_mode == ssl.CERT_REQUIRED
+            assert contexto.check_hostname is True
+            assert contexto.get_ca_certs()
+            pool = adaptador.poolmanager.connection_pool_kw
+            assert pool["ssl_context"] is contexto
+            assert sesion.get_adapter("http://example.invalid") is not adaptador
+        finally:
+            sesion.close()
+
+    def test_proxy_usa_el_mismo_contexto(self) -> None:
+        adaptador = conexion.AdaptadorTlsMutuo("c.pem", "k.pem", None)
+        try:
+            gestor = adaptador.proxy_manager_for("http://proxy.invalid:3128")
+            assert gestor.connection_pool_kw["ssl_context"] is adaptador.contexto_tls
+        finally:
+            adaptador.close()
+
+    def test_crear_el_adaptador_no_lee_archivos(self) -> None:
+        adaptador = conexion.AdaptadorTlsMutuo(
+            "no-existe-cert.pem", "no-existe-clave.pem", b"clave"
+        )
+        adaptador.close()
+
+    def test_carga_el_certificado_una_sola_vez_en_el_primer_envio(
+        self,
+        pem_de_prueba: tuple[str, str, bytes],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ruta_certificado, ruta_clave, contrasena = pem_de_prueba
+        envios = Registrador("respuesta-ficticia")
+        monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", envios)
+        adaptador = conexion.AdaptadorTlsMutuo(ruta_certificado, ruta_clave, contrasena)
+        cargas = Registrador(efecto=adaptador.contexto_tls.load_cert_chain)
+        adaptador.contexto_tls.load_cert_chain = cargas
+
+        assert adaptador.send("primera", timeout=3) == "respuesta-ficticia"
+        assert adaptador.send("segunda") == "respuesta-ficticia"
+
+        assert cargas.llamadas == [
+            ((ruta_certificado, ruta_clave), {"password": contrasena})
+        ]
+        # ``Registrador`` no es descriptor: como atributo de clase no recibe self.
+        assert envios.llamadas == [(("primera",), {"timeout": 3}), (("segunda",), {})]
+
+    def test_contrasena_incorrecta_falla_antes_de_conectar(
+        self,
+        pem_de_prueba: tuple[str, str, bytes],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ruta_certificado, ruta_clave, _contrasena = pem_de_prueba
+        envios = Registrador()
+        monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", envios)
+        adaptador = conexion.AdaptadorTlsMutuo(
+            ruta_certificado, ruta_clave, b"contrasena-incorrecta"
+        )
+        with pytest.raises(ssl.SSLError):
+            adaptador.send("solicitud")
+        assert envios.veces == 0
 
 
 # ---------------------------------------------------------------------------

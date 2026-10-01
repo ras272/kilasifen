@@ -70,7 +70,7 @@ kilasifen/
     __init__.py        fachada pública estable
     binding.py         BindingMixin (base de todas las clases generadas)
     firma.py           sign_xml
-    transmision/       base, config, de, consulta, evento
+    transmision/       base, conexion, config, de, consulta, evento
     sdk/               client, fiscal, kude, polling, validation, signer, errors
     de/schemas/v150/   XSD oficiales de la SET
     de/bindings/v150/  bindings generados por xsdata
@@ -222,9 +222,13 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   `TransmisionBase` y `infrastructure/sifen/typed_event_builder.py` piden el
   firmador directamente con `sdk.signer.get_pkcs12_signer`.
 - **Transporte.** `TransmisionBase` arma el cliente SOAP con mTLS; endpoints y
-  ambientes salen de `transmision/config.py`. La plataforma envía el XML ya
-  firmado con `SifenClient.enviar_de_xml` (que delega en
-  `TransmisionDE.enviar_de_xml`), no con `enviar_de(rde)`.
+  ambientes salen de `transmision/config.py`. La sesión HTTPS sale de
+  `transmision/conexion.py`: un `HTTPAdapter` con `ssl.SSLContext` propio
+  carga el certificado del emisor y su clave privada, que se escribe en disco
+  como PKCS#8 cifrado con una contraseña aleatoria que solo vive en memoria.
+  La verificación del certificado del servidor queda siempre activada. La
+  plataforma envía el XML ya firmado con `SifenClient.enviar_de_xml` (que
+  delega en `TransmisionDE.enviar_de_xml`), no con `enviar_de(rde)`.
 
 ## Plataforma
 
