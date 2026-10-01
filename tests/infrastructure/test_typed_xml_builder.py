@@ -7,6 +7,7 @@ from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.infrastructure.sifen.mapper import KilaSifenPayloadMapper
+from kilasifen.infrastructure.sifen.typed_xml_builder import _has_ds_namespace_prefix
 
 
 def test_mapper_builds_factura_xml_from_typed_payload() -> None:
@@ -87,7 +88,8 @@ def test_mapper_builds_nota_credito_xml_from_typed_payload() -> None:
     assert "<iTipTra>" not in emission_input.generated_xml
     assert "<dDesTipTra>" not in emission_input.generated_xml
     assert "<gCamDEAsoc>" in emission_input.generated_xml
-    assert "01800123450001001000000012026010112345678901" in emission_input.generated_xml
+    associated_cdc = "01800123450001001000000012026010112345678901"
+    assert associated_cdc in emission_input.generated_xml
     assert emission_input.doc_id is not None
 
 
@@ -149,6 +151,58 @@ def test_mapper_rejects_receiver_address_without_house_number() -> None:
             emitter=_build_emitter(),
             stamping=_build_stamping(),
         )
+
+
+def test_mapper_accepts_ds_colon_inside_text_content() -> None:
+    mapper = KilaSifenPayloadMapper()
+    document = _build_document(
+        payload_snapshot={
+            "typed_contract": {
+                "contract": "factura_v1",
+                "payload": {
+                    "numero": 1001,
+                    "fecha": "2026-04-25T10:00:00",
+                    "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                    "items": [
+                        {
+                            "codigo": "A-001",
+                            "descripcion": "Brands: zapatillas y cards: regalo",
+                            "cantidad": 1,
+                            "precioUnitario": 100000,
+                            "iva": 10,
+                        }
+                    ],
+                },
+            }
+        }
+    )
+
+    emission_input = mapper.map_document(
+        document,
+        emitter=_build_emitter(),
+        stamping=_build_stamping(),
+    )
+
+    assert emission_input.generated_xml is not None
+    assert "Brands: zapatillas y cards: regalo" in emission_input.generated_xml
+
+
+@pytest.mark.parametrize(
+    "xml_text",
+    [
+        '<rDE><ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"/></rDE>',
+        "<rDE></ds:Signature></rDE>",
+        '<rDE xmlns:ds="http://www.w3.org/2000/09/xmldsig#"/>',
+    ],
+)
+def test_ds_prefix_detection_flags_real_markup(xml_text: str) -> None:
+    assert _has_ds_namespace_prefix(xml_text)
+
+
+def test_ds_prefix_detection_ignores_escaped_text() -> None:
+    xml_text = "<rDE><dDesProSer>Brands: &lt;ds:x&gt; cards: 1</dDesProSer></rDE>"
+
+    assert not _has_ds_namespace_prefix(xml_text)
 
 
 def _build_document(*, payload_snapshot: dict) -> Document:

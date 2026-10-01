@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
@@ -24,6 +25,8 @@ _AMOUNT4_Q = Decimal("0.0001")
 _PERCENT_Q = Decimal("0.00000001")
 _ITEM_TOTAL_Q = Decimal("0.00000001")
 _PY_TZ = ZoneInfo("America/Asuncion")
+#: A qualified ``ds:`` tag (opening or closing) or an ``xmlns:ds`` declaration.
+_DS_PREFIX_PATTERN = re.compile(r"</?ds:|\sxmlns:ds\s*=")
 
 _TRANSACTION_CODE_BY_NAME = {
     "venta_mercaderia": 1,
@@ -2044,7 +2047,7 @@ def _assert_totals_consistency(totals: _Totals) -> None:
 def _finalize_xml(root: ET.Element) -> str:
     xml_bytes = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
     xml_text = xml_bytes.decode("UTF-8")
-    if "ds:" in xml_text:
+    if _has_ds_namespace_prefix(xml_text):
         raise SifenValidationError("documents.signature.namespace_prefix_not_allowed")
     if "<!--" in xml_text:
         raise SifenValidationError("documents.xml.comments_not_allowed")
@@ -2063,6 +2066,16 @@ def _finalize_xml(root: ET.Element) -> str:
     if filtered_errors:
         raise SifenValidationError(f"documents.xml.invalid_schema:{filtered_errors[0]}")
     return xml_text
+
+
+def _has_ds_namespace_prefix(xml_text: str) -> bool:
+    """Tell whether the XML uses a ``ds:`` element or declares that prefix.
+
+    Only markup counts: text content is escaped by the serializer, so a
+    description such as ``"Brands: X"`` never matches.
+    """
+
+    return _DS_PREFIX_PATTERN.search(xml_text) is not None
 
 
 def _assert_no_field_boundary_whitespace(root: ET.Element) -> None:
