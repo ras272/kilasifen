@@ -82,6 +82,47 @@ revisar la guía de migración de esta sección.
   pasa a ser `{ delivery_id }` y se agrega `webhooks.sendTestEvent`. Es un
   cambio de semántica dentro de `/v1` justificado por seguridad (ver la
   sección Security).
+- Plataforma, respuestas del SIFEN y reenvíos (decisiones fiscales F60-F64,
+  con citas en `docs/normativa/matriz.md`):
+  - La respuesta de siRecepDE se clasifica por `dEstRes` normalizado; un
+    «Aprobado con observación» queda `approved_with_observation` y ya no
+    `rejected`, y una respuesta sin `dEstRes` y sin `0260` queda
+    `retry_pending` (`sifen_unclassified`) en lugar de `rejected`.
+  - Política de reenvío: un documento cuyo CDC responde `0420` en la consulta
+    vuelve a `queued` y se reenvía el mismo DE firmado; antes nunca se
+    reenviaba. Un rechazo `1001`/`1002` se confirma por CDC antes de quedar
+    firme y uno `0161`/`0162` se reenvía (`retryable_server_error`).
+  - Todo reenvío viaja en un `rEnviDe` nuevo con `dId` nuevo alrededor del
+    mismo `rDE` firmado; también el de un request que no salió, que antes
+    viajaba idéntico. `DocumentEmissionEngine` suma el método
+    `wrap_signed_document(signed_xml=...)`: quien implemente un motor propio
+    tiene que agregarlo.
+  - La reconciliación ya no reemplaza `signed_xml` por el `xContenDE` de la
+    consulta.
+  - `DocumentQueryOutcome.status` y el `status` de
+    `GET/POST .../queries/documents/{id}` valen `found` (`0422`),
+    `not_found_or_not_approved` (`0420`) o `error`; antes cualquier código sin
+    contenido era `not_found`.
+  - Un evento solo queda `approved` con `0600`; `0260` y `0300` pasan a ser
+    rechazos.
+- Plataforma, cancelación e inutilización (F70-F72):
+  - El plazo de cancelación se cuenta desde `sifen_approved_at` (o una cota
+    inferior) y no desde `updated_at`. Una segunda cancelación con otra
+    pendiente responde `409 events.cancel.already_pending`. Los documentos
+    asociados rechazados, fallidos o en cola ya no bloquean la cancelación.
+  - Inutilizar números con documento `rejected`, `failed` o `queued` abortado
+    ahora está permitido y esos documentos pasan al estado nuevo
+    `inutilized`. Ya no existe el tope de 45 días ni el error
+    `events.inutilize.deadline_exceeded`. El timbrado tiene que ser del
+    emisor (`422 events.inutilize.unknown_timbrado`).
+  - `EventService` deja de recibir `numbering_repository` y recibe
+    `stamping_repository` (obligatorio para inutilizar) y `query_gateway`;
+    `inutilize_numbers` devuelve también la lista de avisos.
+  - `process_event_job` consulta el CDC con un `query_gateway` (por defecto el
+    real) antes de reenviar una cancelación incierta.
+- Plataforma: el timbrado se elige con la fecha de `dFeEmiDE` y no con la del
+  servidor; sin un timbrado activo en esa fecha el documento queda `failed`
+  (validación local) en lugar de abortar el job con `RuntimeError`.
 
 ### Guía de migración
 
@@ -128,6 +169,22 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   respuesta truncada) siguen siendo `SifenTimeoutError` o
   `SifenTransportError`. Un `requests.ConnectTimeout` ahora se informa con
   esta excepción y ya no como `SifenTimeoutError`.
+- Migración `20261001_09` (sobre `20260822_08`): `documents` suma
+  `sifen_approved_at`, `sifen_protocol`, `sifen_messages`,
+  `retryable_server_error` y `timbrado`.
+- Estado de documento `inutilized` y webhooks
+  `document.approved_with_observation`, `document.cancelled` y
+  `document.inutilized` para las transiciones que antes se publicaban como
+  `document.updated`.
+- Avisos de plazo en `error_snapshot.deadline_alerts` del job (72 h desde
+  `dFecFirma`, 720 h desde `dFeEmiDE`) y el log
+  `worker.document_job.transmission_deadline`.
+- Consulta por CDC: la respuesta suma `sifen_protocol`, `cancelled` y
+  `events` (eventos registrados en `xContEv`). La reconciliación detecta una
+  cancelación registrada en el SIFEN.
+- Inutilización: campo `serie` (`dSerieNum`, NT 10 §1.7), `warnings` en la
+  respuesta (`inutilization.extemporaneous`) y los `document_ids` del rango en
+  el webhook `numbering.inutilized`.
 
 ### Changed
 
@@ -293,6 +350,14 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 
 ### Fixed
 
+- Respuestas del SIFEN: `dEstRes` y `dProtAut` se leen tanto de `rProtDe`
+  (XSD) como de `gResProc` (Manual Técnico), y se guardan `dProtAut`,
+  `dFecProc` y todos los `gResProc`. La respuesta cruda se guarda tal como
+  llegó.
+- `sifen_async.can_resend_same_cdc` solo devuelve `True` para un DE
+  rechazado: reenviar un CDC aprobado da `1001`/`1002`.
+- La consulta por CDC guarda para auditoría el request que viajó, con su
+  `dId` real, y lee el contenedor `rContDe` (escapado o embebido).
 - Docker Compose: `worker`, `outbox` y `migrate` deshabilitan el
   `HEALTHCHECK` HTTP (`/v1/health`) que heredaban de la imagen. Ninguno sirve
   HTTP, así que Docker los marcaba `unhealthy` aunque funcionaran. La API lo

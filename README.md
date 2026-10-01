@@ -514,16 +514,30 @@ Hallazgos de una auditoría reciente, que se corregirán a continuación:
   reciben valores ficticios por defecto cuando faltan.
 - El QR de producción siempre usa el parámetro `dRucRec`, incluso cuando el
   receptor se identifica con `dNumIDRec`.
-- Solo el código `0260` (o el estado "Aprobado") cuenta como aprobación;
-  cualquier otro código se clasifica como rechazo, así que nunca se produce
-  `approved_with_observation` a partir de una respuesta real.
-- Un evento (cancelación o inutilización) con resultado incierto se vuelve a
-  enviar en el intento siguiente, sin consultar antes; la regla definitiva
-  depende de cómo trata el SIFEN un evento duplicado.
 - Si el worker muere mientras espera al SIFEN, el job queda `processing` (el
   documento, `submitting`) hasta que un operador lo reencola desde la consola;
   ese reintento consulta el CDC antes de decidir. No hay un proceso que
   detecte esos jobs solo.
+
+Puntos que la normativa deja abiertos (NO DETERMINADO) y la opción que tomó la
+plataforma; el detalle está en `docs/normativa/matriz.md`:
+
+- Un rechazo `0161`/`0162` (falla del servidor del SIFEN) se trata como
+  reenviable: el documento queda `rejected` con `retryable_server_error` y el
+  mismo DE firmado se reenvía dentro de los cinco intentos.
+- Cada reenvío lleva un `dId` nuevo: no hay regla oficial sobre si el `dId`
+  debe ser único.
+- Si el SIFEN responde `0420` al consultar el CDC de un DTE que tenía una
+  cancelación pendiente (no se sabe si un DTE cancelado responde `0420` o
+  `0422`), el evento queda `reconciliation_required` para un operador.
+- Una inutilización que recibe `4066` después de un intento incierto queda
+  `reconciliation_required`: ningún servicio permite saber si la registró el
+  intento anterior.
+- La hora de aprobación de un DE aprobado por consulta no la informa el SIFEN;
+  el plazo de cancelación se cuenta desde una cota inferior (la `dFecFirma` o
+  la creación del documento), así que puede cerrar antes que el del SIFEN.
+- El timbrado de una inutilización se valida contra el emisor, pero el
+  establecimiento y el punto no (la plataforma no los asocia al timbrado).
 
 KilaSifen no certifica conformidad fiscal. Probá cada flujo en el ambiente
 de pruebas de la SET antes de habilitar producción.
