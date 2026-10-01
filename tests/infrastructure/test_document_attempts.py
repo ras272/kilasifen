@@ -314,6 +314,70 @@ def test_a_server_failure_is_a_rejection_that_is_sent_again(code: str) -> None:
     assert is_finished(exhausted.document, requeued) is False
 
 
+def _listed_after(first: str, second: str) -> SubmissionOutcome:
+    """A Rechazado whose ``gResProc`` lists ``second`` after ``first``."""
+
+    return SubmissionOutcome(
+        response_raw="<rRetEnviDe/>",
+        sifen_status="rejected",
+        result_code=first,
+        result_message=f"mensaje {first}",
+        messages=(
+            SifenMessage(code=first, message=f"mensaje {first}"),
+            SifenMessage(code=second, message=f"mensaje {second}"),
+        ),
+    )
+
+
+@pytest.mark.parametrize("code", ["1001", "1002"])
+def test_a_duplicate_code_in_any_message_is_queried_first(code: str) -> None:
+    """The order of ``gResProc`` is NO DETERMINADO (DOSSIER R1 R11)."""
+
+    answered = conclude_attempt(
+        _document(status="submitting"),
+        _job(status="processing", attempts=1),
+        attempt_number=1,
+        result=SifenAnswered(_listed_after("1330", code)),
+    )
+
+    assert answered.document.internal_status == "retry_pending"
+    assert answered.job.error_snapshot["category"] == "duplicate_reconciliation"
+
+    approved = conclude_attempt(
+        answered.document,
+        _job(status="processing", attempts=2),
+        attempt_number=2,
+        result=Reconciled(_query(QUERY_FOUND)),
+    )
+    rejected = conclude_attempt(
+        answered.document,
+        _job(status="processing", attempts=2),
+        attempt_number=2,
+        result=Reconciled(_query(QUERY_NOT_FOUND_OR_NOT_APPROVED)),
+    )
+
+    assert approved.document.internal_status == "approved"
+    assert rejected.document.internal_status == "rejected"
+    # The rejection keeps the first error SIFEN reported (Dto 872 Art. 29).
+    assert rejected.document.sifen_result_code == "1330"
+
+
+@pytest.mark.parametrize("code", ["0161", "0162"])
+def test_a_server_failure_in_any_message_is_sent_again(code: str) -> None:
+    recorded = conclude_attempt(
+        _document(status="submitting"),
+        _job(status="processing", attempts=1),
+        attempt_number=1,
+        result=SifenAnswered(_listed_after("1330", code)),
+    )
+
+    assert recorded.document.internal_status == "rejected"
+    assert recorded.document.retryable_server_error is True
+    assert recorded.document.sifen_result_code == "1330"
+    assert recorded.job.error_snapshot["category"] == "retryable_server_error"
+    assert select_action(recorded.document) is AttemptAction.RESEND
+
+
 def test_a_fiscal_rejection_is_final() -> None:
     recorded = conclude_attempt(
         _document(status="submitting"),

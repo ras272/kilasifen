@@ -60,6 +60,7 @@ from kilasifen.infrastructure.sifen.query import (
     DocumentQueryOutcome,
 )
 from kilasifen.infrastructure.sifen.reconciliation import (
+    answer_codes,
     document_found_at_sifen,
     document_not_approved_at_sifen,
 )
@@ -411,7 +412,10 @@ def conclude_claimed_attempt(
 
 
 def _record_rejection(document: Document, job: Job) -> tuple[Document, Job]:
-    """Record a Rechazado according to its code (first error, Dto 872 Art. 29).
+    """Record a Rechazado according to its codes (first error, Dto 872 Art. 29).
+
+    Every ``gResProc`` code is checked, not only the first one: their order
+    is NO DETERMINADO (DOSSIER R1 R11).
 
     - 1001/1002 only fire when another document is AUTHORIZED (MT v150 §12.4
       val. 2-3, p. 159): the CDC is queried before the rejection is believed
@@ -424,7 +428,8 @@ def _record_rejection(document: Document, job: Job) -> tuple[Document, Job]:
     """
 
     code = document.sifen_result_code
-    if code in DUPLICATE_DOCUMENT_CODES:
+    codes = answer_codes(document)
+    if codes & DUPLICATE_DOCUMENT_CODES:
         pending = replace(
             document, internal_status="retry_pending", sifen_status="retry_pending"
         )
@@ -435,7 +440,7 @@ def _record_rejection(document: Document, job: Job) -> tuple[Document, Job]:
         document,
         internal_status="rejected",
         sifen_status="rejected",
-        retryable_server_error=code in SERVER_FAILURE_CODES,
+        retryable_server_error=bool(codes & SERVER_FAILURE_CODES),
     )
     if rejected.retryable_server_error:
         return rejected, replace(

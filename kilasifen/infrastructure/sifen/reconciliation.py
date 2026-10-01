@@ -77,16 +77,39 @@ def document_not_approved_at_sifen(document: Document) -> Document:
 
 
 def pending_duplicate_rejection(document: Document) -> dict | None:
-    """The 1001/1002 rejection of the last answer, if that was the answer.
+    """The rejection of the last answer, if it lists 1001 or 1002.
 
     MT v150 §12.4 val. 2-3 (p. 159): both codes only fire when another
     document is already AUTHORIZED, so they are believed only after the CDC
-    is queried (DECISIONES F61).
+    is queried (DECISIONES F61). The order of ``gResProc`` is NO
+    DETERMINADO, so every message is checked; the first one, the error
+    SIFEN reports (Dto 872/2023 Art. 29), is returned.
     """
 
-    messages = document.sifen_messages or []
-    if not messages or not isinstance(messages[0], dict):
-        return None
-    if messages[0].get("code") in DUPLICATE_DOCUMENT_CODES:
+    messages = _messages(document)
+    if any(message.get("code") in DUPLICATE_DOCUMENT_CODES for message in messages):
         return messages[0]
     return None
+
+
+def answer_codes(document: Document) -> frozenset[str]:
+    """Every result code of the last siRecepDE answer kept on ``document``.
+
+    The order of ``gResProc`` (0-100, XSD protProcesDE_v150.xsd) is NO
+    DETERMINADO, so a rule that depends on one code checks all of them.
+    """
+
+    codes = {
+        str(message["code"]) for message in _messages(document) if message.get("code")
+    }
+    if document.sifen_result_code:
+        codes.add(document.sifen_result_code)
+    return frozenset(codes)
+
+
+def _messages(document: Document) -> list[dict]:
+    return [
+        message
+        for message in document.sifen_messages or []
+        if isinstance(message, dict)
+    ]
