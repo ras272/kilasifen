@@ -7,7 +7,6 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.events.attempts import (
@@ -26,6 +25,7 @@ from kilasifen.domain.common.errors import (
     NotFoundError,
     UnprocessableEntityError,
 )
+from kilasifen.domain.common.paraguay_time import paraguay_now
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.events.inutilized_ranges import InutilizedNumberRange
 from kilasifen.domain.events.models import Event
@@ -903,7 +903,8 @@ def _event_job_payload(
 
 
 def _now_asuncion() -> datetime:
-    return datetime.now(ZoneInfo("America/Asuncion"))
+    # Ley 7354/2024: UTC-03:00 all year, independent of the host tzdata.
+    return paraguay_now()
 
 
 def _ensure_utc_datetime(value: datetime) -> datetime:

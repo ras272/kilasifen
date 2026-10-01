@@ -7,8 +7,11 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import ROUND_HALF_UP, Decimal
 from xml.etree import ElementTree as ET
-from zoneinfo import ZoneInfo
 
+from kilasifen.domain.common.paraguay_time import (
+    paraguay_now,
+    to_paraguay_wall_time,
+)
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
@@ -24,7 +27,6 @@ _AMOUNT_Q = Decimal("0.00000001")
 _AMOUNT4_Q = Decimal("0.0001")
 _PERCENT_Q = Decimal("0.00000001")
 _ITEM_TOTAL_Q = Decimal("0.00000001")
-_PY_TZ = ZoneInfo("America/Asuncion")
 #: A qualified ``ds:`` tag (opening or closing) or an ``xmlns:ds`` declaration.
 _DS_PREFIX_PATTERN = re.compile(r"</?ds:|\sxmlns:ds\s*=")
 
@@ -1866,7 +1868,7 @@ def _resolve_item_rate(item: dict, *, affectation: int) -> int:
 def _resolve_emission_datetime(payload: dict) -> str:
     raw = _first_non_none(payload, "fecha_emision", "fecha")
     if raw is None:
-        dt = datetime.now(_PY_TZ)
+        dt = paraguay_now()
     else:
         if isinstance(raw, datetime):
             dt = raw
@@ -1886,9 +1888,7 @@ def _resolve_emission_datetime(payload: dict) -> str:
                     raise SifenValidationError(
                         "fecha/fecha_emision has invalid format"
                     ) from exc
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(_PY_TZ).replace(tzinfo=None)
-    return dt.replace(microsecond=0).isoformat()
+    return to_paraguay_wall_time(dt).isoformat()
 
 
 def _resolve_date(raw) -> date:
