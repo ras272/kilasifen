@@ -37,6 +37,7 @@ from kilasifen.domain.common.fiscal_states import (
 )
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.events.inutilization import (
+    ACTIVE_JOB_STATUSES,
     inutilization_deadline,
     is_inutilizable,
 )
@@ -908,10 +909,35 @@ class EventService:
         return marked
 
     def _is_inutilizable(self, document: Document) -> bool:
+        return is_inutilizable(document.internal_status, self._job_status(document))
+
+    def _blocks_parent_cancellation(self, child: Document) -> bool:
+        """A child DTE, one that may be at SIFEN, or one about to travel.
+
+        A child that already holds its signed DE and CDC while its job can
+        still send it (the same DE after a 0420, a request that never left,
+        a rejection 0161/0162 sent again) may become a DTE before the
+        parent is cancelled: Tabla J asks to cancel the associated DTE first
+        and SIFEN rejects a DE whose associated DTE is cancelled (2404, MT
+        v150 H004b). Rejected, locally failed, cancelled, inutilized and
+        queued children that will not travel, or were never built, do not
+        block (MT v150 Tabla J p. 117; Dto 872/2023 Arts. 30 and 40;
+        DECISIONES F71).
+        """
+
+        status = _normalize_status(child.internal_status)
+        if (
+            status in _APPROVED_DOCUMENT_STATUSES
+            or status in _IN_FLIGHT_DOCUMENT_STATUSES
+        ):
+            return True
+        if not (child.signed_xml and child.cdc):
+            return False
+        return self._job_status(child) in ACTIVE_JOB_STATUSES
+
+    def _job_status(self, document: Document) -> str | None:
         job = self.job_repository.get_for_entity("document", document.id)
-        return is_inutilizable(
-            document.internal_status, job.status if job is not None else None
-        )
+        return job.status if job is not None else None
 
     def _require_emitter_timbrado(self, emitter_id: str, timbrado: str) -> None:
         """The timbrado must belong to the emitter (4052, MT v150 §11.6.2)."""
@@ -989,7 +1015,7 @@ class EventService:
         blocking_children = [
             child.cdc or child.id
             for child in children
-            if child.id != document.id and _blocks_parent_cancellation(child)
+            if child.id != document.id and self._blocks_parent_cancellation(child)
         ]
         if blocking_children:
             raise ConflictError(
@@ -1157,19 +1183,6 @@ def _numbered_under(document: Document, timbrado: str) -> bool:
         return document.timbrado == timbrado
     found = read_de_facts(document.signed_xml or document.generated_xml).timbrado
     return found is None or found == timbrado
-
-
-def _blocks_parent_cancellation(child: Document) -> bool:
-    """A child DTE, or one that may be at SIFEN or is about to be sent again.
-
-    Rejected, locally failed, cancelled, inutilized and queued children do
-    not block: they are not DTE (MT v150 Tabla J p. 117; DECISIONES F71).
-    """
-
-    status = _normalize_status(child.internal_status)
-    if status in _APPROVED_DOCUMENT_STATUSES or status in _IN_FLIGHT_DOCUMENT_STATUSES:
-        return True
-    return status == "rejected" and child.retryable_server_error
 
 
 def _generate_short_numeric_event_id() -> str:

@@ -379,6 +379,96 @@ def test_a_child_that_may_be_at_sifen_blocks_the_cancellation(
     ]
 
 
+@pytest.mark.parametrize(
+    ("child_status", "retryable_server_error", "job_status", "blocks"),
+    [
+        # The same signed DE travels again after a 0420 (DECISIONES F63).
+        ("queued", False, "retry_scheduled", True),
+        # A rejection 0161/0162 being sent again (DECISIONES F64).
+        ("rejected", True, "retry_scheduled", True),
+        # Attempts exhausted: only an operator retry would send it.
+        ("rejected", True, "failed", False),
+        ("queued", False, "failed", False),
+    ],
+)
+def test_a_child_about_to_travel_blocks_the_cancellation(
+    client: TestClient,
+    child_status: str,
+    retryable_server_error: bool,
+    job_status: str,
+    blocks: bool,
+) -> None:
+    """MT v150 Tabla J p. 117: the associated DTE are cancelled first."""
+
+    parent_cdc = "01800123450001001000200012026042012345678901"
+    child_cdc = "01800123450001001000200112026042012345678901"
+    with session_scope(_session_factory()) as session:
+        documents = SqlAlchemyDocumentRepository(session)
+        documents.save(
+            _document(
+                id="doc-parent-of-resend",
+                emitter_id="emitter-1",
+                document_type="factura",
+                cdc=parent_cdc,
+                sifen_status="approved",
+                internal_status="approved",
+                updated_at=_now() - timedelta(hours=3),
+            )
+        )
+        documents.save(
+            replace(
+                _document(
+                    id="doc-child-resend",
+                    emitter_id="emitter-1",
+                    document_type="nota_credito",
+                    cdc=child_cdc,
+                    sifen_status=child_status,
+                    internal_status=child_status,
+                    payload_snapshot={
+                        "typed_contract": {
+                            "contract": "nota_credito_v1",
+                            "payload": {"documento_asociado": {"cdc": parent_cdc}},
+                        }
+                    },
+                    updated_at=_now() - timedelta(hours=1),
+                ),
+                retryable_server_error=retryable_server_error,
+            )
+        )
+        SqlAlchemyJobRepository(session).save(
+            Job(
+                id="job-doc-child-resend",
+                emitter_id="emitter-1",
+                related_entity_type="document",
+                related_entity_id="doc-child-resend",
+                job_type="document.emit",
+                status=job_status,
+                attempts=1,
+                error_snapshot=None,
+                scheduled_at=_now(),
+                started_at=_now(),
+                finished_at=None,
+                worker_correlation_id=None,
+                created_at=_now(),
+                updated_at=_now(),
+            )
+        )
+
+    response = client.post(
+        "/v1/emitters/emitter-1/documents/doc-parent-of-resend/cancel",
+        headers={"X-API-Key": API_KEY},
+        json={"motivo": "Hijo por reenviar"},
+    )
+
+    if blocks:
+        assert response.status_code == 409
+        body = response.json()["error"]
+        assert body["code"] == "events.cancel.child_dte_not_cancelled"
+        assert body["details"]["child_cdcs"] == [child_cdc]
+    else:
+        assert response.status_code == 201
+
+
 def test_cancel_cross_emitter_returns_404(client: TestClient) -> None:
     response = client.post(
         "/v1/emitters/emitter-1/documents/doc-emitter-2/cancel",
