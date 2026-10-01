@@ -29,10 +29,14 @@ Jobs are the operational ledger for retries, observability, and support.
      CDC with the document in `submitting`; then it commits;
    - the worker sends that stored request unchanged (or queries the CDC, see
      below);
-   - transaction 2 re-reads document and job with `FOR UPDATE` and records
-     the outcome. A terminal document written meanwhile (for example by the
+   - transaction 2 takes the locks in the same order: the emitter (waiting
+     as long as needed, so an answer is never dropped over a busy emitter),
+     then document and job, re-read with `FOR UPDATE`; then it records the
+     outcome. A terminal document written meanwhile (for example by the
      `reconcile` endpoint) is never moved; a non-final outcome is dropped if
-     a newer attempt already claimed the job.
+     a newer attempt already claimed the job. Status webhooks are published
+     inside a savepoint: a database error while publishing is logged and
+     never discards the recorded outcome.
    If the emitter lock is not granted within 5 s, no attempt is spent: the
    job keeps its status (`queued` or `retry_scheduled`), records the
    `emitter_busy` category and is dispatched again 30 s later, and the RQ job
@@ -75,8 +79,10 @@ fails while the document stays `queued` for a manual retry.
 4. Each attempt mirrors the document flow: transaction 1 locks emitter, event
    and job, counts the attempt and stores the signed event group and the exact
    `rEnviEventoDe` (real `dId`) with the event in `submitting`; the request is
-   sent with nothing held; transaction 2 re-reads event and job `FOR UPDATE`
-   and records the outcome (an `approved`/`rejected` event is never moved).
+   sent with nothing held; transaction 2 locks the emitter (unbounded wait),
+   re-reads event and job `FOR UPDATE` and records the outcome (an
+   `approved`/`rejected` event is never moved). Webhooks of an approved event
+   are published inside a savepoint, as for documents.
 5. A request that provably never left puts the event back to `queued`
    (`transport_not_sent`); any other transport failure, SOAP Fault or
    unreadable answer leaves it `retry_pending` (`transport`). Both use a

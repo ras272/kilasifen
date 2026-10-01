@@ -146,6 +146,17 @@ def test_emitter_lock_reports_its_own_timeout_code() -> None:
         require_active_emitter(repository, "emitter-1")
 
 
+def test_lock_row_waits_without_a_bound_and_ignores_the_status() -> None:
+    session = _FakePostgresSession()
+
+    SqlAlchemyEmitterRepository(session).lock_row("emitter-1")
+
+    [(statement, _params)] = session.statements
+    assert statement.startswith("SELECT emitters.id")
+    assert statement.endswith("FOR UPDATE")
+    assert "lock_timeout" not in statement
+
+
 def test_unlocked_guard_checks_status_without_select_for_update(
     tmp_path: Path,
 ) -> None:

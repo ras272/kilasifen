@@ -8,15 +8,19 @@ the stored signed event again) and the engineering guarantees around it.
 import os
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 from cryptography.fernet import Fernet
-from sqlalchemy import create_engine, update
+from sqlalchemy import create_engine, text, update
 
 import kilasifen.application.events.service as event_service_module
 from kilasifen.application.events.service import EventService
+from kilasifen.application.webhooks.service import WebhookService
+from kilasifen.config import get_settings
 from kilasifen.domain.common.errors import ServiceUnavailableError
+from kilasifen.domain.webhooks.models import WebhookEndpoint
 from kilasifen.engine.sdk.errors import (
     SifenRequestNotSentError,
     SifenTimeoutError,
@@ -43,6 +47,9 @@ from kilasifen.infrastructure.db.repositories.job_outbox import (
     SqlAlchemyJobOutboxRepository,
 )
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
+from kilasifen.infrastructure.db.repositories.webhooks import (
+    SqlAlchemyWebhookRepository,
+)
 from kilasifen.infrastructure.db.session import (
     build_engine,
     build_session_factory,
@@ -146,6 +153,35 @@ def context(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[_Contex
                 motivo="Cancelacion durable de prueba",
             )
         yield _Context(url, encryption_key, job.id, event.id)
+
+
+@pytest.fixture
+def cancellation_webhooks(
+    context: _Context,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    """Publish fiscal event webhooks to one endpoint subscribed to all."""
+
+    with _session(context) as session:
+        SqlAlchemyWebhookRepository(session).save_endpoint(
+            WebhookEndpoint(
+                id="endpoint-1",
+                emitter_id="emitter-1",
+                url="https://erp.example.com/hooks/kila",
+                secret_encrypted=EncryptedCertificateStore(
+                    context.encryption_key
+                ).encrypt_text("top-secret"),
+                event_subscriptions=None,
+                is_active=True,
+                retry_policy=None,
+                created_at=_now(),
+                updated_at=_now(),
+            )
+        )
+    monkeypatch.setenv("KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS", "true")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def test_the_exact_request_is_committed_before_sifen_is_called(
@@ -324,9 +360,83 @@ def test_an_operator_retry_of_a_failed_event_survives_a_busy_emitter(
     assert payload["job_status"] == "succeeded"
 
 
+def test_the_outcome_is_recorded_under_the_shared_lock_order(
+    context: _Context,
+    cancellation_webhooks: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    locks = _record_row_locks(monkeypatch)
+
+    payload = _run(context, _Gateway(during_submit=lambda: locks.append("sifen")))
+
+    assert payload["event_status"] == "approved"
+    # The approved cancellation publishes a webhook, which locks the emitter
+    # again: the recording transaction must already hold it.
+    assert locks == [
+        "emitter",
+        "event",
+        "job",
+        "sifen",
+        "emitter",
+        "event",
+        "job",
+        "emitter",
+    ]
+
+
+def test_a_failed_webhook_publication_does_not_discard_the_outcome(
+    context: _Context,
+    cancellation_webhooks: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(WebhookService, "publish_event", _publish_then_fail)
+
+    payload = _run(context, _Gateway())
+
+    event, job = _load(context)
+    assert payload["event_status"] == "approved"
+    assert event.status == "approved"
+    assert job.status == "succeeded"
+    with _session(context) as session:
+        document = SqlAlchemyDocumentRepository(session).get("doc-fe-recent")
+        deliveries = SqlAlchemyWebhookRepository(session).list_recent_deliveries(
+            limit=10
+        )
+    assert document.internal_status == "cancelled"
+    assert deliveries == []
+
+
 def _busy_emitter(self, emitter_id: str) -> str | None:
     del self, emitter_id
     raise ServiceUnavailableError("emitters.lock_timeout")
+
+
+_ORIGINAL_PUBLISH_EVENT = WebhookService.publish_event
+
+
+def _publish_then_fail(self, **kwargs):
+    """Write the deliveries, then hit a database error (aborts on PostgreSQL)."""
+
+    _ORIGINAL_PUBLISH_EVENT(self, **kwargs)
+    self.job_repository.session.execute(text("SELECT * FROM kila_missing_table"))
+
+
+def _record_row_locks(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    locks: list[str] = []
+    for owner, method, label in (
+        (SqlAlchemyEmitterRepository, "get_status_for_update", "emitter"),
+        (SqlAlchemyEmitterRepository, "lock_row", "emitter"),
+        (SqlAlchemyEventRepository, "get_for_update", "event"),
+        (SqlAlchemyJobRepository, "get_for_update", "job"),
+    ):
+        original = getattr(owner, method)
+
+        def spy(self, row_id, *, _original=original, _label=label):
+            locks.append(_label)
+            return _original(self, row_id)
+
+        monkeypatch.setattr(owner, method, spy)
+    return locks
 
 
 def _run(context: _Context, gateway: _Gateway) -> dict:
@@ -365,3 +475,7 @@ def _outbox_status(context: _Context) -> str | None:
     with _session(context) as session:
         message = SqlAlchemyJobOutboxRepository(session).get_for_job(context.job_id)
     return message.status if message is not None else None
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)

@@ -171,8 +171,13 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   al SIFEN. La primera bloquea emisor, documento y job, cuenta el intento y
   confirma en la base el XML generado, el firmado, el `rEnviDe` exacto que va
   a viajar y el CDC, con el documento en el estado nuevo `submitting`. La
-  segunda relee documento y job con `FOR UPDATE` y registra el resultado sin
-  pisar un estado terminal escrito mientras tanto. Antes todo el job era una
+  segunda toma los bloqueos en el mismo orden (emisor, sin límite de espera
+  para no perder la respuesta del SIFEN; después documento y job, releídos
+  con `FOR UPDATE`) y registra el resultado sin pisar un estado terminal
+  escrito mientras tanto. Los webhooks de estado se publican dentro de un
+  savepoint: un error de base al publicar se registra en el log y ya no
+  puede descartar el resultado (en PostgreSQL, la transacción abortada
+  convertía el `COMMIT` en un `ROLLBACK` silencioso). Antes todo el job era una
   sola transacción confirmada después del SOAP: una caída, un `ParserError`
   o cualquier excepción que no fuera `SifenError` perdía el XML, el CDC y el
   contador de intentos, y el bloqueo del emisor se mantenía durante la
@@ -196,7 +201,8 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   esquema de dos transacciones. El worker guarda el grupo firmado
   (`signed_xml`, antes vacío) y el `rEnviEventoDe` exacto con el evento en
   `submitting` antes de enviarlo, y registra el resultado en una segunda
-  transacción, sin retener el bloqueo del emisor durante la llamada. Un
+  transacción (emisor, evento y job, en ese orden, con los webhooks en un
+  savepoint), sin retener el bloqueo del emisor durante la llamada. Un
   request que no salió deja el evento en `queued` (`transport_not_sent`);
   cualquier otro fallo, en `retry_pending` (`transport`). Una respuesta de
   eventos que no es `rRetEnviEventoDe` (SOAP Fault, HTML, cuerpo truncado)

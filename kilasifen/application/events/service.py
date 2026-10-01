@@ -448,8 +448,15 @@ class EventService:
         Event and job are re-read with ``FOR UPDATE``. An event that already
         carries SIFEN's final word is never moved, and a non-final outcome is
         dropped when a newer attempt claimed the job meanwhile.
+
+        Locks follow the order every writer uses: emitter, then event, then
+        job. An approved event publishes webhooks, which lock the emitter, and
+        taking it last could deadlock with a writer that holds the emitter.
+        The emitter wait is not bounded, so SIFEN's answer is never dropped
+        over a busy emitter.
         """
 
+        self.emitter_repository.lock_row(attempt.emitter.id)
         event = _require_row(self.event_repository.get_for_update(attempt.event_id))
         job = _require_row(self.job_repository.get_for_update(attempt.job_id))
         updated_event, updated_job, protocol = result.apply(event, job)

@@ -97,6 +97,7 @@ from kilasifen.infrastructure.sifen.query import (
     SifenQueryGateway,
 )
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
+from kilasifen.infrastructure.webhooks.publisher import SavepointWebhookPublisher
 from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
 from kilasifen.logging import (
     get_correlation_id,
@@ -380,8 +381,16 @@ def _record_document_attempt(
     result: AttemptResult,
     publish_status: _StatusPublisher,
 ) -> dict[str, str]:
-    """Second transaction: record the SIFEN step on the committed rows."""
+    """Second transaction: record the SIFEN step on the committed rows.
 
+    Locks follow the order every writer uses: emitter, then document, then
+    job. Publishing the status webhook locks the emitter, and taking it last
+    could deadlock with a first transaction or an operator retry, which hold
+    the emitter while they wait on document or job. The emitter wait is not
+    bounded: the answer SIFEN gave must not be dropped over a busy emitter.
+    """
+
+    SqlAlchemyEmitterRepository(session).lock_row(claim.emitter.id)
     document = _require_row(
         SqlAlchemyDocumentRepository(session).get_for_update(claim.document_id)
     )
@@ -663,17 +672,22 @@ def _build_event_service(
     job_repository = SqlAlchemyJobRepository(session)
     webhook_publisher = None
     if settings.document_publish_webhooks:
-        webhook_publisher = WebhookService(
-            webhook_repository=SqlAlchemyWebhookRepository(session),
-            emitter_repository=SqlAlchemyEmitterRepository(session, certificate_store),
-            job_repository=job_repository,
-            secret_store=certificate_store,
-            queue=webhook_queue or _build_webhook_outbox(session),
-            deliverer=WebhookDeliverer(
-                url_policy=WebhookUrlPolicy.for_environment(settings.environment)
+        webhook_publisher = SavepointWebhookPublisher(
+            session,
+            WebhookService(
+                webhook_repository=SqlAlchemyWebhookRepository(session),
+                emitter_repository=SqlAlchemyEmitterRepository(
+                    session, certificate_store
+                ),
+                job_repository=job_repository,
+                secret_store=certificate_store,
+                queue=webhook_queue or _build_webhook_outbox(session),
+                deliverer=WebhookDeliverer(
+                    url_policy=WebhookUrlPolicy.for_environment(settings.environment)
+                ),
+                database_url=database_url,
+                encryption_key=encryption_key,
             ),
-            database_url=database_url,
-            encryption_key=encryption_key,
         )
     return EventService(
         event_repository=SqlAlchemyEventRepository(session),
@@ -820,22 +834,25 @@ def _publish_document_status_webhooks(
         return
 
     queue_adapter = webhook_queue or _build_webhook_outbox(session)
-    service = WebhookService(
-        webhook_repository=SqlAlchemyWebhookRepository(session),
-        emitter_repository=SqlAlchemyEmitterRepository(
-            session, EncryptedCertificateStore(encryption_key)
+    publisher = SavepointWebhookPublisher(
+        session,
+        WebhookService(
+            webhook_repository=SqlAlchemyWebhookRepository(session),
+            emitter_repository=SqlAlchemyEmitterRepository(
+                session, EncryptedCertificateStore(encryption_key)
+            ),
+            job_repository=SqlAlchemyJobRepository(session),
+            secret_store=EncryptedCertificateStore(encryption_key),
+            queue=queue_adapter,
+            deliverer=WebhookDeliverer(
+                url_policy=WebhookUrlPolicy.for_environment(settings.environment)
+            ),
+            database_url=database_url,
+            encryption_key=encryption_key,
         ),
-        job_repository=SqlAlchemyJobRepository(session),
-        secret_store=EncryptedCertificateStore(encryption_key),
-        queue=queue_adapter,
-        deliverer=WebhookDeliverer(
-            url_policy=WebhookUrlPolicy.for_environment(settings.environment)
-        ),
-        database_url=database_url,
-        encryption_key=encryption_key,
     )
     try:
-        service.publish_document_status(document=document)
+        publisher.publish_document_status(document=document)
     except Exception:
         logger.exception(
             "document_webhook_publish_failed",

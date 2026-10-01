@@ -30,6 +30,16 @@ class EmitterRepository(ABC):
         """
 
     @abstractmethod
+    def lock_row(self, emitter_id: str) -> None:
+        """Lock an emitter row whatever its status, waiting as long as needed.
+
+        For writers that must not give up and only need the lock to follow
+        the order every writer shares (emitter, then document or event, then
+        job), such as a worker recording an answer SIFEN already gave. The
+        lock is only ever held by short transactions, so the wait is short.
+        """
+
+    @abstractmethod
     def update_metadata(
         self,
         emitter_id: str,

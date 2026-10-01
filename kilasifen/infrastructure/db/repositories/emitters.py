@@ -86,6 +86,13 @@ class SqlAlchemyEmitterRepository(EmitterRepository):
             error_code="emitters.lock_timeout",
         )
 
+    def lock_row(self, emitter_id: str) -> None:
+        self.session.execute(
+            select(EmitterModel.id)
+            .where(EmitterModel.id == emitter_id)
+            .with_for_update()
+        )
+
     def update_metadata(
         self,
         emitter_id: str,

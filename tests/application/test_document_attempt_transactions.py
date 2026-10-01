@@ -7,15 +7,20 @@ outcome meanwhile.
 """
 
 import os
+import threading
+import time
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, select, text, update
 from xsdata.exceptions import ParserError
 
+from kilasifen.application.webhooks.service import WebhookService
+from kilasifen.config import get_settings
 from kilasifen.domain.common.errors import ServiceUnavailableError
 from kilasifen.engine.sdk.errors import (
     SifenRequestNotSentError,
@@ -40,6 +45,9 @@ from kilasifen.infrastructure.db.repositories.job_outbox import (
     SqlAlchemyJobOutboxRepository,
 )
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
+from kilasifen.infrastructure.db.repositories.webhooks import (
+    SqlAlchemyWebhookRepository,
+)
 from kilasifen.infrastructure.db.session import (
     build_engine,
     build_session_factory,
@@ -57,6 +65,7 @@ from tests.application.test_emission_flow import (
     FakeQueryGateway,
     _fernet_key,
     _seed_emission_context,
+    _seed_webhook_endpoint,
 )
 
 _APPROVED = SubmissionOutcome(
@@ -77,6 +86,23 @@ def database_url(tmp_path):
     with managed_test_database_url(tmp_path=tmp_path, name="attempt_txn") as url:
         _seed_emission_context(url, EncryptedCertificateStore(_fernet_key()))
         yield url
+
+
+@pytest.fixture
+def status_webhooks(
+    database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[None]:
+    """Publish document status webhooks to one subscribed endpoint."""
+
+    _seed_webhook_endpoint(
+        database_url=database_url,
+        store=EncryptedCertificateStore(_fernet_key()),
+    )
+    monkeypatch.setenv("KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS", "true")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def test_submission_is_committed_before_sifen_is_called(database_url: str) -> None:
@@ -440,9 +466,147 @@ def test_an_operator_retry_of_a_failed_document_survives_a_busy_emitter(
     assert payload["job_status"] == "succeeded"
 
 
+def test_the_outcome_is_recorded_under_the_shared_lock_order(
+    database_url: str,
+    status_webhooks: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    locks = _record_row_locks(monkeypatch)
+
+    payload = _run(
+        database_url,
+        FakeEmissionEngine(
+            outcome=_APPROVED,
+            during_submit=lambda: locks.append("sifen"),
+        ),
+    )
+
+    assert payload["document_status"] == "approved"
+    # The status webhook locks the emitter again: the recording transaction
+    # must already hold it, or it waits on the emitter while holding the
+    # document and the job that a first transaction may be waiting for.
+    assert locks == [
+        "emitter",
+        "document",
+        "job",
+        "sifen",
+        "emitter",
+        "document",
+        "job",
+        "emitter",
+    ]
+
+
+def test_a_failed_webhook_publication_does_not_discard_the_outcome(
+    database_url: str,
+    status_webhooks: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(WebhookService, "publish_event", _publish_then_fail)
+
+    payload = _run(database_url, FakeEmissionEngine(outcome=_APPROVED))
+
+    document, job = _load(database_url)
+    assert payload["document_status"] == "approved"
+    assert document.internal_status == "approved"
+    assert document.sifen_response_raw == _APPROVED.response_raw
+    assert job.status == "succeeded"
+    assert _webhook_deliveries(database_url) == []
+
+
+@pytest.mark.requires_postgres
+@pytest.mark.skipif(not _USES_POSTGRES, reason="needs KILA_SIFEN_TEST_DATABASE_URL")
+def test_recording_waits_behind_an_emitter_holder_instead_of_deadlocking(
+    database_url: str,
+    status_webhooks: None,
+) -> None:
+    # An operator retry locks the emitter and then the job. If the recording
+    # transaction locked document and job first and the emitter last, the two
+    # would wait on each other.
+    sifen_answering = threading.Event()
+    emitter_held = threading.Event()
+    outcome: dict = {}
+
+    def hold_sifen_until_the_emitter_is_taken() -> None:
+        sifen_answering.set()
+        assert emitter_held.wait(timeout=10)
+
+    def worker() -> None:
+        outcome["payload"] = _run(
+            database_url,
+            FakeEmissionEngine(
+                outcome=_APPROVED,
+                during_submit=hold_sifen_until_the_emitter_is_taken,
+            ),
+        )
+
+    engine = build_engine(database_url)
+    operator = build_session_factory(engine)()
+    thread = threading.Thread(target=worker)
+    thread.start()
+    try:
+        assert sifen_answering.wait(timeout=10)
+        operator.execute(
+            select(EmitterModel.id)
+            .where(EmitterModel.id == "emitter-1")
+            .with_for_update()
+        )
+        emitter_held.set()
+        time.sleep(0.5)  # the recording transaction now waits on the emitter
+        operator.execute(
+            select(JobModel.id)
+            .where(JobModel.id == "job-1")
+            .with_for_update(nowait=True)
+        )
+        operator.commit()
+    finally:
+        emitter_held.set()
+        operator.rollback()
+        operator.close()
+        thread.join(timeout=30)
+        engine.dispose()
+
+    assert outcome["payload"]["document_status"] == "approved"
+
+
 def _busy_emitter(self, emitter_id: str) -> str | None:
     del self, emitter_id
     raise ServiceUnavailableError("emitters.lock_timeout")
+
+
+_ORIGINAL_PUBLISH_EVENT = WebhookService.publish_event
+
+
+def _publish_then_fail(self, **kwargs):
+    """Write the deliveries, then hit a database error (aborts on PostgreSQL)."""
+
+    _ORIGINAL_PUBLISH_EVENT(self, **kwargs)
+    self.job_repository.session.execute(text("SELECT * FROM kila_missing_table"))
+
+
+def _record_row_locks(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    locks: list[str] = []
+    for owner, method, label in (
+        (SqlAlchemyEmitterRepository, "get_status_for_update", "emitter"),
+        (SqlAlchemyEmitterRepository, "lock_row", "emitter"),
+        (SqlAlchemyDocumentRepository, "get_for_update", "document"),
+        (SqlAlchemyJobRepository, "get_for_update", "job"),
+    ):
+        original = getattr(owner, method)
+
+        def spy(self, row_id, *, _original=original, _label=label):
+            locks.append(_label)
+            return _original(self, row_id)
+
+        monkeypatch.setattr(owner, method, spy)
+    return locks
+
+
+def _webhook_deliveries(database_url: str) -> list:
+    with _session(database_url) as session:
+        return SqlAlchemyWebhookRepository(session).list_recent_deliveries(
+            limit=10
+        )
 
 
 def _run(database_url: str, engine, *, query_gateway=None) -> dict[str, str]:
