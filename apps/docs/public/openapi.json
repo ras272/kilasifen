@@ -6667,7 +6667,7 @@
     },
     "/v1/emitters/{emitter_id}/queries/documents/{document_id}/reconcile": {
       "post": {
-        "description": "Reconcile an uncertain document by CDC without resubmitting it.",
+        "description": "Consulta el CDC y registra la respuesta del SIFEN; no envia nada.\n\nCon 0422 un documento pendiente queda aprobado (o cancelado si hay una\ncancelacion registrada) y uno aprobado con una cancelacion registrada\nqueda cancelado. Con 0420 un documento pendiente que no se esta enviando\nvuelve a la cola: su proximo intento reenvia el mismo DE firmado.",
         "operationId": "reconcile_document_v1_emitters__emitter_id__queries_documents__document_id__reconcile_post",
         "parameters": [
           {

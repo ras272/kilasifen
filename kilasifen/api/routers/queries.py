@@ -11,6 +11,7 @@ from kilasifen.api.errors import ApiError
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.queries import (
     DocumentQueryResponse,
+    RegisteredEventResponse,
     RucQueryResponse,
     TaxpayerResponse,
 )
@@ -86,7 +87,13 @@ def reconcile_document(
     _principal=Depends(require_fiscal_write),
     service: QueryService = Depends(get_query_service),
 ) -> SuccessEnvelope:
-    """Reconcile an uncertain document by CDC without resubmitting it."""
+    """Consulta el CDC y registra la respuesta del SIFEN; no envia nada.
+
+    Con 0422 un documento pendiente queda aprobado (o cancelado si hay una
+    cancelacion registrada) y uno aprobado con una cancelacion registrada
+    queda cancelado. Con 0420 un documento pendiente que no se esta enviando
+    vuelve a la cola: su proximo intento reenvia el mismo DE firmado.
+    """
 
     return _query_document_response(
         emitter_id=emitter_id,
@@ -129,6 +136,18 @@ def _query_document_response(
                 result_message=outcome.result_message,
                 content_xml=outcome.content_xml,
                 processed_at=outcome.processed_at,
+                sifen_protocol=outcome.protocol,
+                cancelled=outcome.cancelled,
+                events=[
+                    RegisteredEventResponse(
+                        kind=event.kind,
+                        cdc=event.cdc,
+                        protocol=event.protocol,
+                    )
+                    for event in (
+                        outcome.container.events if outcome.container else ()
+                    )
+                ],
             ).model_dump(mode="json")
         },
         correlation_id=request.state.correlation_id,

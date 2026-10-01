@@ -33,7 +33,15 @@ from kilasifen.infrastructure.db.session import (
     build_session_factory,
     session_scope,
 )
-from kilasifen.infrastructure.sifen.query import DocumentQueryOutcome
+from kilasifen.infrastructure.sifen.query import (
+    QUERY_FOUND,
+    QUERY_NOT_FOUND_OR_NOT_APPROVED,
+    DocumentQueryOutcome,
+)
+from kilasifen.infrastructure.sifen.responses import (
+    DocumentContainer,
+    RegisteredEvent,
+)
 from kilasifen.testing.database import managed_test_database_url
 
 _CDC = "01800241355001001000000012026042711234567893"
@@ -141,21 +149,143 @@ def test_emitter_row_is_free_while_sifen_is_queried(
         )
 
 
+def test_reconcile_with_0420_queues_the_same_signed_document(
+    database_url: str,
+    store: EncryptedCertificateStore,
+) -> None:
+    """DECISIONES F63: nothing is sent; the next attempt resends it."""
+
+    session_factory = _seed(database_url, store, status="reconciliation_required")
+
+    document, outcome = _query(
+        session_factory,
+        store,
+        _Gateway(status=QUERY_NOT_FOUND_OR_NOT_APPROVED),
+        reconcile=True,
+    )
+
+    assert outcome.status == QUERY_NOT_FOUND_OR_NOT_APPROVED
+    assert document.internal_status == "queued"
+    assert document.signed_xml == "<rDE><Signature/></rDE>"
+    assert document.sifen_result_code == "0420"
+    with session_scope(session_factory) as session:
+        job = SqlAlchemyJobRepository(session).get("job-1")
+    assert job is not None and job.status == "retry_scheduled"
+
+
+def test_reconcile_with_0420_leaves_a_document_being_sent_alone(
+    database_url: str,
+    store: EncryptedCertificateStore,
+) -> None:
+    session_factory = _seed(database_url, store, status="submitting")
+
+    document, _ = _query(
+        session_factory,
+        store,
+        _Gateway(status=QUERY_NOT_FOUND_OR_NOT_APPROVED),
+        reconcile=True,
+    )
+
+    assert document.internal_status == "submitting"
+
+
+def test_reconcile_with_0420_settles_a_duplicate_rejection(
+    database_url: str,
+    store: EncryptedCertificateStore,
+) -> None:
+    """DECISIONES F61: 1002 is final once the CDC answers 0420."""
+
+    session_factory = _seed(database_url, store, status="retry_pending")
+    with session_scope(session_factory) as session:
+        documents = SqlAlchemyDocumentRepository(session)
+        current = documents.get("document-1")
+        assert current is not None
+        documents.save(
+            replace(
+                current,
+                sifen_messages=[{"code": "1002", "message": "Documento duplicado"}],
+            )
+        )
+
+    document, _ = _query(
+        session_factory,
+        store,
+        _Gateway(status=QUERY_NOT_FOUND_OR_NOT_APPROVED),
+        reconcile=True,
+    )
+
+    assert document.internal_status == "rejected"
+    assert document.sifen_result_code == "1002"
+    with session_scope(session_factory) as session:
+        job = SqlAlchemyJobRepository(session).get("job-1")
+    assert job is not None and job.status == "failed"
+    assert job.error_snapshot["category"] == "sifen_rejection"
+
+
+def test_reconcile_detects_a_cancellation_registered_at_sifen(
+    database_url: str,
+    store: EncryptedCertificateStore,
+) -> None:
+    """MT v150 §9.4.3: xContEv holds every event registered on the CDC."""
+
+    session_factory = _seed(database_url, store, status="approved")
+
+    document, outcome = _query(
+        session_factory,
+        store,
+        _Gateway(status=QUERY_FOUND, cancelled=True),
+        reconcile=True,
+    )
+
+    assert outcome.cancelled is True
+    assert document.internal_status == "cancelled"
+    assert document.sifen_status == "cancelled"
+    assert document.signed_xml == "<rDE><Signature/></rDE>"
+
+
+def test_a_plain_query_changes_no_status(
+    database_url: str,
+    store: EncryptedCertificateStore,
+) -> None:
+    session_factory = _seed(database_url, store, status="approved")
+
+    document, _ = _query(
+        session_factory,
+        store,
+        _Gateway(status=QUERY_FOUND, cancelled=True),
+        reconcile=False,
+    )
+
+    assert document.internal_status == "approved"
+    assert document.last_query_response_raw == "<found/>"
+
+
 class _Gateway:
     def __init__(
         self,
         *,
         status: str,
         during_call: Callable[[], None] | None = None,
+        cancelled: bool = False,
     ) -> None:
         self.status = status
         self.during_call = during_call
+        self.cancelled = cancelled
 
     def query_document(self, **kwargs) -> DocumentQueryOutcome:
         del kwargs
         if self.during_call is not None:
             self.during_call()
-        found = self.status == "found"
+        found = self.status == QUERY_FOUND
+        events = (
+            (
+                RegisteredEvent(
+                    kind="cancelacion", cdc=_CDC, protocol="77", state_text="Aprobado"
+                ),
+            )
+            if self.cancelled
+            else ()
+        )
         return DocumentQueryOutcome(
             cdc=_CDC,
             request_xml="<query/>",
@@ -165,6 +295,11 @@ class _Gateway:
             status=self.status,
             content_xml="<rDE/>" if found else None,
             processed_at=None,
+            container=DocumentContainer(
+                document_xml="<rDE/>", protocol="1234567890", events=events
+            )
+            if found
+            else None,
         )
 
 

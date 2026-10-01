@@ -307,14 +307,30 @@ export interface CreatedDocument {
   job: Job;
 }
 
+/** found (0422), not_found_or_not_approved (0420) or error (any other code). */
+export type DocumentQueryStatus =
+  | "found"
+  | "not_found_or_not_approved"
+  | "error";
+
+/** One event SIFEN registered on the CDC (xContEv). */
+export interface RegisteredEvent {
+  kind: string;
+  cdc: string | null;
+  protocol: string | null;
+}
+
 export interface DocumentQuery {
   document_id: string;
   cdc: string;
-  status: string;
+  status: DocumentQueryStatus | string;
   result_code: string | null;
   result_message: string | null;
   content_xml: string | null;
   processed_at: IsoDateTime | null;
+  sifen_protocol: string | null;
+  cancelled: boolean;
+  events: RegisteredEvent[];
 }
 
 export interface ReconciledDocument {
