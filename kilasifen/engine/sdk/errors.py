@@ -21,9 +21,11 @@ class SifenSignatureError(SifenError):
 class SifenTransportError(SifenError):
     """Error al transportar mensajes SOAP.
 
-    Salvo que sea una :class:`SifenRequestNotSentError`, el SIFEN pudo haber
-    recibido y procesado la solicitud: el resultado de un envio con efecto
-    fiscal queda incierto y hay que consultarlo antes de volver a enviar.
+    Salvo que sea una :class:`SifenRequestNotSentError` o una
+    :class:`SifenTransportClosedError` (ambas se lanzan antes de enviar), el
+    SIFEN pudo haber recibido y procesado la solicitud: el resultado de un
+    envio con efecto fiscal queda incierto y hay que consultarlo antes de
+    volver a enviar.
     """
 
 
