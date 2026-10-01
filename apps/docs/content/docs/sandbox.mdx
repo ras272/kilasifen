@@ -27,7 +27,7 @@ Resultados disponibles:
 | `approved` | Aprobación normal. |
 | `approved_with_observation` | Aprobación con observación. |
 | `rejected` | Rechazo fiscal definitivo. |
-| `transport_timeout` | Timeout después de enviar; obliga a consultar el mismo CDC y termina en reconciliación manual si no aparece. |
+| `transport_timeout` | Timeout en cada envío y `0420` en cada consulta: se consulta el CDC, se reenvía el mismo DE firmado y, al agotar los intentos, termina en `reconciliation_required`. |
 | `accepted_but_response_lost` | SIFEN acepta el DE pero se pierde la respuesta; la consulta posterior lo recupera sin reemitir. |
 
 La directiva queda versionada junto a la intención, por lo que el worker produce
@@ -35,10 +35,12 @@ el mismo resultado aunque procese el job más tarde. Un campo `sandbox` enviado
 dentro del JSON del documento se elimina: sólo el header tipado puede activar el
 comportamiento.
 
-Los dos escenarios ambiguos incluyen la misma barrera de producción: una vez
-persistido el request, cualquier intento de llamar `submit` por segunda vez se
-considera un fallo de la prueba. Así podés verificar que tu integración converge
-por consulta y nunca por doble emisión.
+En los dos escenarios ambiguos el intento siguiente consulta el CDC antes de
+hacer nada. En `accepted_but_response_lost` la consulta lo encuentra (`0422`) y
+el documento converge sin un segundo envío. En `transport_timeout` la consulta
+responde `0420`, así que vuelve a viajar el mismo DE firmado (mismo CDC y
+firma, `dId` nuevo), nunca una segunda intención. Así podés verificar que tu
+integración converge por consulta y nunca por doble emisión.
 
 <Callout type="warn" title="Barrera de ambiente">
   En staging o producción el header es rechazado. Además, el worker y el propio
