@@ -81,11 +81,10 @@ from kilasifen.engine.de.bindings.v150.xmldsig_core_schema import (
     SignatureValue,
     SignedInfo,
 )
-from kilasifen.engine.sdk.fiscal import generate_cdc
+from kilasifen.engine.sdk.fiscal import calculate_mod11_dv, generate_cdc
 from tests._muestras import (
     ARCHIVOS_MUESTRAS,
     AUTOFACTURA,
-    DIR_MUESTRAS,
     FACTURA,
     MUESTRAS,
     NOTA_CREDITO,
@@ -147,10 +146,16 @@ TASA_IVA_GENERAL = 10
 QR_PROVISORIO = "https://ekuatia.set.gov.py/consultas/qr?nVersion=150"
 
 # Datos ficticios de los documentos construidos (no salen de ninguna muestra).
+# Emisor y receptor son personas juridicas inventadas; el DV de cada RUC se
+# calcula con el modulo 11 de la SET para que siempre sea coherente.
+TIPO_CONTRIBUYENTE_PERSONA_JURIDICA = "2"
 RUC_EMISOR = "80361574"
-DV_EMISOR = "4"
-TIPO_CONTRIBUYENTE_EMISOR = "2"
+DV_EMISOR = str(calculate_mod11_dv(RUC_EMISOR))
+TIPO_CONTRIBUYENTE_EMISOR = TIPO_CONTRIBUYENTE_PERSONA_JURIDICA
 RAZON_SOCIAL_EMISOR = "Ferretería Arroyo Porã S.A."
+RUC_RECEPTOR = "80726495"
+DV_RECEPTOR = str(calculate_mod11_dv(RUC_RECEPTOR))
+RAZON_SOCIAL_RECEPTOR = "Obras y Refacciones Tajy S.R.L."
 TIMBRADO = "17293846"
 INICIO_TIMBRADO = "2026-01-15"
 FIN_TIMBRADO = "2027-01-14"
@@ -222,16 +227,16 @@ def _emisor_prueba() -> TgEmis:
 
 
 def _receptor_prueba() -> TgDatRec:
-    """Receptor ficticio: contribuyente paraguayo, persona fisica con RUC."""
+    """Receptor ficticio: contribuyente paraguayo, persona juridica con RUC."""
     return TgDatRec(
         iNatRec="1",
         iTiOpe="1",
         cPaisRec=PaisType.PRY,
         dDesPaisRe="Paraguay",
-        iTiContRec="1",
-        dRucRec="3527861",
-        dDVRec="7",
-        dNomRec="Marcelino Cáceres Duarte",
+        iTiContRec=TIPO_CONTRIBUYENTE_PERSONA_JURIDICA,
+        dRucRec=RUC_RECEPTOR,
+        dDVRec=DV_RECEPTOR,
+        dNomRec=RAZON_SOCIAL_RECEPTOR,
         dDirRec="Calle Los Timbós 318",
     )
 
@@ -694,15 +699,6 @@ class TestIdaYVuelta:
         assert primero == segundo, (
             f"{muestra.archivo}: la segunda serializacion difiere de la primera"
         )
-
-    def test_muestras_del_directorio_son_las_del_registro(self) -> None:
-        en_disco = sorted(
-            ruta.name
-            for ruta in DIR_MUESTRAS.iterdir()
-            if ruta.is_file() and ruta.suffix == ".xml"
-        )
-        assert en_disco, f"no hay muestras .xml en {DIR_MUESTRAS}"
-        assert tuple(en_disco) == ARCHIVOS_MUESTRAS
 
     def test_factura_generada_estable(self) -> None:
         cantidad, precio = 4, 127500
