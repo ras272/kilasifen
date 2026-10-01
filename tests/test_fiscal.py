@@ -7,9 +7,9 @@ from kilasifen.engine.sdk.fiscal import (
     build_qr_payload_from_signed_xml,
     calculate_mod11_dv,
     format_cdc_for_kude,
+    generate_cdc,
     generate_dcarqr,
     generate_dcarqr_from_signed_xml,
-    generate_cdc,
 )
 
 

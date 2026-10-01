@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from hashlib import sha256
-import re
 from xml.etree import ElementTree as ET
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")

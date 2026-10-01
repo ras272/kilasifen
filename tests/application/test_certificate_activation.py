@@ -2,15 +2,25 @@ from datetime import UTC, date, datetime
 
 import pytest
 
+from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.common.errors import DomainInvariantError
 from kilasifen.domain.emitters.models import Emitter
-from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.infrastructure.db.base import Base
-from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
-from kilasifen.infrastructure.db.repositories.certificates import SqlAlchemyCertificateRepository
-from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
-from kilasifen.infrastructure.db.repositories.stampings import SqlAlchemyStampingRepository
+from kilasifen.infrastructure.db.repositories.certificates import (
+    SqlAlchemyCertificateRepository,
+)
+from kilasifen.infrastructure.db.repositories.emitters import (
+    SqlAlchemyEmitterRepository,
+)
+from kilasifen.infrastructure.db.repositories.stampings import (
+    SqlAlchemyStampingRepository,
+)
+from kilasifen.infrastructure.db.session import (
+    build_engine,
+    build_session_factory,
+    session_scope,
+)
 from kilasifen.testing.database import managed_test_database_url
 
 

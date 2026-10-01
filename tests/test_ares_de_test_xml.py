@@ -5,7 +5,6 @@ from pathlib import Path
 
 from lxml import etree
 
-
 EXAMPLE_PATH = (
     Path(__file__).resolve().parents[1]
     / "docs"

@@ -3,8 +3,8 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from kilasifen.domain.documents.models import Document
 from kilasifen.domain.common.errors import NotFoundError
+from kilasifen.domain.documents.models import Document
 from kilasifen.domain.jobs.models import Job
 from kilasifen.repositories.documents import DocumentRepository
 from kilasifen.repositories.jobs import JobRepository

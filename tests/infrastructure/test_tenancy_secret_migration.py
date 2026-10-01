@@ -1,10 +1,10 @@
 from pathlib import Path
 
-from alembic import command
 from alembic.config import Config
 from cryptography.fernet import Fernet
 from sqlalchemy import text
 
+from alembic import command
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url

@@ -6,14 +6,14 @@ from datetime import datetime
 from xml.etree import ElementTree as ET
 
 from lxml import etree
+from xsdata.formats.dataclass.serializers import XmlSerializer
+from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
 from kilasifen.engine.de.bindings.v150.evento_v150 import TgGroupGesEve
 from kilasifen.engine.de.bindings.v150.ws_si_recep_evento_v150 import REnviEventoDe
 from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.engine.sdk.signer import get_pkcs12_signer
 from kilasifen.engine.sdk.validation import validate_xml
-from xsdata.formats.dataclass.serializers import XmlSerializer
-from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
 SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 ET.register_namespace("", SIFEN_NS)

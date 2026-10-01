@@ -15,14 +15,19 @@ from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.repositories.document_numbering_sequences import (
     SqlAlchemyDocumentNumberingSequenceRepository,
 )
-from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
+from kilasifen.infrastructure.db.repositories.emitters import (
+    SqlAlchemyEmitterRepository,
+)
 from kilasifen.infrastructure.db.repositories.events import SqlAlchemyEventRepository
 from kilasifen.infrastructure.db.repositories.inutilized_number_ranges import (
     SqlAlchemyInutilizedNumberRangeRepository,
 )
-from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
+from kilasifen.infrastructure.db.session import (
+    build_engine,
+    build_session_factory,
+    session_scope,
+)
 from kilasifen.testing.database import managed_test_database_url
-
 
 pytestmark = pytest.mark.requires_postgres
 

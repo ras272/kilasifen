@@ -11,7 +11,6 @@ from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
 
-
 API_KEY = "secret-key"
 
 
