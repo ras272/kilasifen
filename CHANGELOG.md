@@ -170,6 +170,10 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   falso). Ahora sólo reenvía entregas existentes del mismo emisor, y el evento
   de prueba `webhook.test` tiene `data` fija fuera de los espacios fiscales.
   Las entregas creadas con el contrato anterior quedan almacenadas sin cambios.
+  El endpoint destino tiene que estar suscripto al tipo del evento
+  (`409 webhooks.event_not_subscribed`), con las mismas reglas que al
+  publicarlo, y la documentación pide ordenar por `occurred_at`, que el replay
+  conserva.
 - La ruta raw deprecada `POST /v1/emitters/{emitter_id}/documents` (sólo
   `platform:admin`) ya no funciona como oráculo de firma ni como canal de XML
   ajeno: rechaza `signed_xml` (también dentro de `typed_contract`) con

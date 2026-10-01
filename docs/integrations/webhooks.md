@@ -14,7 +14,14 @@ y `occurred_at` de la original y lleva un `delivery_id` nuevo. El body no
 acepta `event_type` ni `payload` (responde `422 request.validation_failed`),
 así que una credencial con `tenant:write` no puede fabricar un evento fiscal
 firmado. Una entrega de otro emisor responde `404 webhooks.delivery_not_found`;
-una entrega sin snapshot completo, `409 webhooks.delivery_not_replayable`.
+una entrega sin snapshot completo, `409 webhooks.delivery_not_replayable`; un
+endpoint destino que no está suscripto al tipo del evento (las mismas reglas
+que al publicarlo), `409 webhooks.event_not_subscribed`.
+
+Como el replay conserva el `occurred_at` original, puede llegar después de
+eventos más nuevos del mismo documento o evento fiscal. El consumidor ordena
+por `occurred_at` y descarta un evento más viejo que el último estado aplicado,
+en lugar de tomar el orden de llegada.
 
 Para verificar un endpoint recién registrado se usa
 `POST /v1/emitters/{emitter_id}/webhooks/{endpoint_id}/test`, sin body. Envía

@@ -168,7 +168,9 @@ class WebhookService:
         Only events the platform already generated can be replayed: the new
         delivery copies ``type``, ``data`` and ``occurred_at`` from the stored
         source delivery and gets a fresh delivery ID. Callers cannot supply an
-        event type or payload, so a replay can never forge a fiscal event.
+        event type or payload, so a replay can never forge a fiscal event, and
+        the target endpoint must be subscribed to the event type, as it would
+        have to be to receive the event when it was published.
         """
 
         endpoint = self._active_endpoint_for_emitter(
@@ -180,6 +182,8 @@ class WebhookService:
             delivery_id=delivery_id,
         )
         event = _replayable_event(source)
+        if not _supports_event(endpoint=endpoint, event_type=source.event_type):
+            raise ConflictError("webhooks.event_not_subscribed")
 
         saved_delivery, job = self._create_delivery_job(
             endpoint=endpoint,

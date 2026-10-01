@@ -7524,7 +7524,7 @@
     },
     "/v1/emitters/{emitter_id}/webhooks/{endpoint_id}/deliveries/replay": {
       "post": {
-        "description": "Reenvía a este endpoint un evento que KilaSifen ya generó para el emisor, identificado por `delivery_id`. No acepta tipo de evento ni payload del caller.",
+        "description": "Reenvía a este endpoint un evento que KilaSifen ya generó para el emisor, identificado por `delivery_id`. No acepta tipo de evento ni payload del caller, y el endpoint tiene que estar suscripto al tipo del evento (`409 webhooks.event_not_subscribed`).",
         "operationId": "replay_webhook_delivery_v1_emitters__emitter_id__webhooks__endpoint_id__deliveries_replay_post",
         "parameters": [
           {

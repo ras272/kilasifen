@@ -51,4 +51,9 @@ reenvía un evento que KilaSifen ya generó para tu emisor:
 
 La entrega nueva copia `type`, `data` y `occurred_at` de la original con otro
 `delivery_id`. El replay no acepta `event_type` ni `payload`; enviarlos
-devuelve `422`. Una entrega de otro emisor responde `404`.
+devuelve `422`. Una entrega de otro emisor responde `404`, y un endpoint que
+no está suscripto al tipo del evento, `409 webhooks.event_not_subscribed`.
+
+Un replay puede llegar después de eventos más nuevos del mismo documento.
+Ordená por `occurred_at`, que el replay conserva, e ignorá un evento más viejo
+que el último estado que ya aplicaste.

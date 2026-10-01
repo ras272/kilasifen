@@ -305,6 +305,37 @@ def test_replay_cannot_copy_a_delivery_of_another_emitter(
     assert response.json()["error"]["code"] == "webhooks.delivery_not_found"
 
 
+def test_replay_refuses_an_event_the_target_endpoint_is_not_subscribed_to(
+    client: TestClient,
+) -> None:
+    _register_endpoint(client, "emitter-1", "approved-source")
+    source = _publish_event(
+        client,
+        emitter_id="emitter-1",
+        event_type="document.approved",
+        payload={"document_id": "doc-subscribed"},
+    )
+    rejected_only = client.post(
+        "/v1/emitters/emitter-1/webhooks",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": "https://erp.example.com/hooks/rejected-only",
+            "secret": "top-secret-webhook-key-000000000000",
+            "event_subscriptions": ["document.rejected"],
+        },
+    )
+    target_id = rejected_only.json()["data"]["webhook_endpoint"]["id"]
+
+    response = client.post(
+        f"/v1/emitters/emitter-1/webhooks/{target_id}/deliveries/replay",
+        headers={"X-API-Key": API_KEY},
+        json={"delivery_id": source.id},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "webhooks.event_not_subscribed"
+
+
 def test_replay_refuses_a_delivery_without_a_complete_event_snapshot(
     client: TestClient,
 ) -> None:

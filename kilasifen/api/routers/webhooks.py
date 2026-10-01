@@ -107,7 +107,8 @@ def update_webhook_endpoint(
     description=(
         "Reenvía a este endpoint un evento que KilaSifen ya generó para el "
         "emisor, identificado por `delivery_id`. No acepta tipo de evento ni "
-        "payload del caller."
+        "payload del caller, y el endpoint tiene que estar suscripto al tipo "
+        "del evento (`409 webhooks.event_not_subscribed`)."
     ),
 )
 def replay_webhook_delivery(
