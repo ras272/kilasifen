@@ -1,444 +1,533 @@
 # KilaSifen
 
-API fiscal headless para conectar cualquier ERP, comercio o producto con
-**SIFEN Paraguay** sin implementar XML, firma, SOAP, reintentos ni
-reconciliación fiscal dentro del sistema consumidor.
+KilaSifen conecta sistemas de gestión (ERP, puntos de venta, comercios en
+línea) con el **SIFEN**, el sistema de facturación electrónica de la SET de
+Paraguay. El repositorio tiene dos capas:
 
-- contratos tipados para factura, nota de crédito y nota de débito;
-- emisión asíncrona, idempotencia estricta y numeración atómica;
-- cancelación, inutilización, consultas, KuDE y webhooks HMAC;
-- aislamiento por consumidor, secretos cifrados y sandbox determinista;
-- SDK TypeScript oficial en [`sdks/typescript`](sdks/typescript).
+1. **Una API HTTP headless** (FastAPI + PostgreSQL + Redis/RQ + outbox). El
+   sistema integrador manda la operación en JSON y la plataforma se ocupa del
+   resto: numeración, XML v150, firma, transmisión, reintentos,
+   reconciliación, KuDE y webhooks.
+2. **Un motor Python, `kilasifen.engine`**: clases generadas desde los XSD
+   oficiales, firma XMLDSig y cliente SOAP con mTLS. La API está construida
+   sobre él y también se puede usar por separado como librería.
 
-El contrato HTTP y las guías de conexión viven en el portal Fumadocs de
-[`apps/docs`](apps/docs) y en [`docs/INTEGRATION.md`](docs/INTEGRATION.md).
+Si integrás un ERP, lo habitual es consumir la API y no escribir Python. El
+motor sirve cuando necesitás leer, validar, firmar o transmitir XML del SIFEN
+desde tu propio código.
 
-## Motor Python
+## Estado del proyecto
 
-El mismo repositorio incluye los bindings Python que leen, generan, validan,
-firman y transmiten XML SIFEN v150. La API usa ese motor internamente, pero los
-integradores pueden consumirla sin importar código Python ni conocer SOAP.
+- **Alpha, versión 0.2.0.** La API Python del motor todavía puede cambiar. El
+  contrato HTTP `/v1` solo admite cambios aditivos (ver
+  [`docs/INTEGRATION.md`](docs/INTEGRATION.md)).
+- **Sin publicar.** El paquete Python no está en PyPI y el SDK TypeScript no
+  está en npm; ambos se instalan desde este repositorio.
+- **CI sin resultados todavía.** El workflow `.github/workflows/tests.yml` está
+  definido, pero ninguna ejecución llegó a completarse. Hasta que eso cambie, la
+  referencia es correr las pruebas en local.
+- **Python.** El motor funciona con 3.10 o superior. La plataforma usa
+  `datetime.UTC`, así que en la práctica requiere **3.11+**, aunque
+  `pyproject.toml` declare `>=3.10`.
+- **Código reescrito desde cero.** El motor se reescribió en modalidad
+  clean-room y conserva a propósito el comportamiento anterior, defectos
+  incluidos. Esos defectos se van a corregir en commits posteriores y están
+  detallados en [Limitaciones conocidas](#limitaciones-conocidas).
 
-Generados automáticamente a partir de los XSD oficiales de la SET usando [xsdata](https://xsdata.readthedocs.io/), siguiendo el mismo enfoque de [nfelib](https://github.com/akretion/nfelib).
+## Mapa del repositorio
 
-## Instalación
+| Ruta | Contenido |
+| --- | --- |
+| `kilasifen/api`, `application`, `domain`, `infrastructure`, `repositories`, `admin` | Plataforma: rutas HTTP, casos de uso, modelos, workers, outbox y persistencia |
+| `kilasifen/engine` | Motor: bindings, firma, transmisión y utilidades fiscales |
+| `kilasifen/engine/de/schemas/v150` | Esquemas XSD publicados por la SET |
+| `kilasifen/engine/de/bindings/v150` | Clases generadas a partir de esos XSD (no se editan a mano) |
+| `kilasifen/engine/de/samples/v150` | Cinco XML de muestra con datos ficticios |
+| `alembic/` | Migraciones de PostgreSQL |
+| `apps/docs` | Portal de integración (Next.js + Fumadocs) con la referencia OpenAPI |
+| `sdks/typescript` | SDK TypeScript `@kilasifen/sdk` para la API HTTP |
+| `scripts/` | Generación de bindings, exportación del OpenAPI y vista previa de KuDE |
+| `docs/` | Contrato de integración, runbooks, decisiones de arquitectura y normativa |
+| `tests/` | Pruebas del motor y de la plataforma (pytest) |
 
-```bash
-pip install kilasifen
-```
+## La plataforma (API HTTP)
 
-Con firma digital (RSA-SHA256):
+### Funcionalidades actuales
 
-```bash
-pip install kilasifen[sign]
-```
+- Emisión con contratos tipados de **factura electrónica**, **nota de crédito**
+  y **nota de débito** (`POST /v1/emitters/{emitter_id}/documents/facturas`,
+  `.../notas-credito` y `.../notas-debito`). El servidor asigna el número
+  fiscal de forma atómica y arma el XML; el cliente nunca lo envía.
+- Procesamiento asíncrono: la respuesta inicial deja el documento en `queued`
+  y un worker lo firma y lo transmite. El resultado se recibe por webhook o
+  consultando el documento o el job.
+- Idempotencia con `idempotency_key`: repetir la misma intención devuelve el
+  mismo documento.
+- Eventos de **cancelación** e **inutilización**.
+- Consulta de RUC, consulta del estado de un documento y reconciliación
+  explícita sin volver a transmitir un DE cuyo resultado quedó incierto.
+- Descarga del XML firmado, KuDE en PDF y datos del KuDE en JSON.
+- Webhooks firmados con HMAC, con reintentos y defensa contra SSRF.
+- Varios consumidores aislados: cada API key ve solo los emisores de su
+  consumidor, y los certificados, contraseñas y CSC se guardan cifrados.
+- Sandbox determinista: solo con `KILA_SIFEN_ENVIRONMENT=test`, el encabezado
+  `X-Kila-Test-Outcome` fuerza resultados reproducibles (aprobado, rechazado,
+  timeout, respuesta perdida…).
 
-Con transmisión SOAP (envío al SIFEN):
+### Arranque local con Docker Compose
 
-```bash
-pip install kilasifen[transmissao]
-```
-
-Para desarrollo:
-
-```bash
-pip install -e ".[sign,test]"
-```
-
-## Uso
-
-### Fachada pública estable
-
-```python
-from kilasifen.engine import (
-    ConsultaSIFEN,
-    PRODUCCION,
-    TEST,
-    TransmissaoDE,
-    TransmissaoEvento,
-    get_endpoint,
-    sign_xml,
-)
-```
-
-Esta es la forma recomendada de consumir la librería para código de aplicación. La fachada top-level mantiene los imports más usados en un solo lugar y evita depender de la estructura interna del paquete.
-
-### Ejemplos ejecutables
-
-- [Envio sincrono de factura](docs/examples/send_factura_sync.py)
-- [Envio de lote](docs/examples/send_lote.py)
-
-Estos scripts estan pensados para copiar/ejecutar con un certificado PKCS12 y XMLs DE listos.
-
-
-```python
-from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
-
-# Leer desde archivo
-rde = RDe.from_path("factura.xml")
-
-# Leer desde string
-rde = RDe.from_xml(xml_string)
-
-# Navegar los datos
-print(rde.DE.gDatGralOpe.gEmis.dRucEm)       # RUC del emisor
-print(rde.DE.gDatGralOpe.gEmis.dNomEmi)       # Nombre del emisor
-print(rde.DE.gDtipDE.gCamFE.iIndPres)         # Indicador de presencia
-print(len(rde.DE.gDtipDE.gCamItem))            # Cantidad de ítems
-```
-
-### Serializar a XML
-
-```python
-xml = rde.to_xml()
-print(xml)
-```
-
-### Round-trip (leer y escribir)
-
-```python
-rde = RDe.from_path("factura.xml")
-xml = rde.to_xml()
-rde2 = RDe.from_xml(xml)
-assert rde.DE.Id == rde2.DE.Id
-```
-
-### Validar contra XSD
-
-```python
-errors = rde.validate_xml()
-if not errors:
-    print("XML válido!")
-else:
-    for error in errors:
-        print(error)
-```
-
-### Firmar XML (RSA-SHA256)
+Compose está pensado para desarrollo y no reemplaza una receta de producción.
+Requiere Docker con el plugin Compose.
 
 ```bash
-pip install kilasifen[sign]
+cp .env.example .env
 ```
 
-```python
-with open("certificado.pfx", "rb") as f:
-    cert_data = f.read()
-signed = rde.sign_xml(xml, cert_data, "password", rde.DE.Id)
-```
+Completá en `.env` estos valores (el archivo de ejemplo los deja vacíos a
+propósito):
 
-Usa `signxml` directamente con RSA-SHA256 y C14N, conforme lo exigido por el SIFEN.
-La función centralizada también está disponible en:
+| Variable | Qué poner |
+| --- | --- |
+| `POSTGRES_PASSWORD` | Una contraseña local cualquiera |
+| `KILA_SIFEN_DATABASE_URL` | `postgresql+psycopg://kilasifen:<POSTGRES_PASSWORD>@postgres:5432/kilasifen` |
+| `KILA_SIFEN_ENCRYPTION_KEY` | Una clave Fernet |
+| `KILA_SIFEN_API_KEYS` | Arreglo JSON con la clave de administración inicial, por ejemplo `["<clave>"]` |
 
-```python
-from kilasifen.engine.firma import sign_xml
-
-signed = sign_xml(xml, cert_data, "password", doc_id)
-```
-
-### Generar CDC (SIFEN v150)
-
-```python
-from kilasifen.engine.sdk import generate_cdc
-
-cdc = generate_cdc(
-    i_tide=1,
-    d_ruc_em="44444401",
-    d_dv_emi=7,
-    d_est="001",
-    d_pun_exp="001",
-    d_num_doc="14528",
-    i_tip_cont=2,
-    d_fe_emi_de="2017-01-25T15:58:17",
-    i_tip_emi=1,
-    d_cod_seg="587326098",
-)
-# 01444444017001001001452822017012515873260988
-```
-
-El dígito verificador del CDC se calcula con módulo 11 conforme a la guía
-oficial de SET/DNIT.
-
-### Generar dCarQR (SIFEN v150)
-
-```python
-from kilasifen.engine.sdk import generate_dcarqr
-
-dcarqr = generate_dcarqr(
-    cdc="01444444017001001001452822017012515873260988",
-    d_fe_emi_de="2017-01-25T09:35:17",
-    digest_value="yzGYhUx1/XYYzksWB+fPR3Qc50c=",
-    id_csc="0001",
-    csc="ABCD0000000000000000000000000000",
-    d_ruc_rec="88899990",
-    d_tot_gral_ope="300000",
-    d_tot_iva="27272",
-    c_items=2,
-)
-```
-
-Para insertar en XML con escape HTML (`&amp;`) usa:
-
-```python
-dcarqr_xml = generate_dcarqr(..., xml_escaped=True)
-```
-
-### Transmisión SOAP al SIFEN
+Para generar la clave de administración y la clave Fernet:
 
 ```bash
-pip install kilasifen[transmissao]
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-#### Enviar DE (síncrono)
-
-```python
-from kilasifen.engine.transmissao import TransmissaoDE, TEST
-
-transmissao = TransmissaoDE(
-    ambiente=TEST,
-    pkcs12_data=cert_data,
-    pkcs12_password="password",
-)
-resultado = transmissao.enviar_de(rde)
-print(resultado.rProtDe.dEstRes)      # "Aprobado"
-print(resultado.rProtDe.dProtAut)     # Protocolo de autorización
-```
-
-#### Enviar lote de DEs (asíncrono)
-
-```python
-resultado = transmissao.enviar_lote([rde1, rde2, rde3])
-print(resultado.dProtConsLote)  # Protocolo para consulta posterior
-```
-
-#### Consultar DE por CDC
-
-```python
-from kilasifen.engine.transmissao import ConsultaSIFEN, TEST
-
-consulta = ConsultaSIFEN(
-    ambiente=TEST,
-    pkcs12_data=cert_data,
-    pkcs12_password="password",
-)
-resultado = consulta.consultar_de("01800695631001001000000612024112917595714694")
-```
-
-#### Consultar RUC
-
-```python
-resultado = consulta.consultar_ruc("80069563")
-print(resultado.xContRUC.dRazCons)      # Razón social
-print(resultado.xContRUC.dRUCFactElec)  # "S" = habilitado para FE
-```
-
-#### Consultar DTE async (inicio + polling)
-
-```python
-respuesta_async = consulta.consultar_dte_async(consulta_dte_async)
-protocolo = respuesta_async.dProtConsDTEAsync
-
-# Opcional: esperar estado final con helper de polling
-from kilasifen.engine.sdk import PollingConfig, poll_dte_async_status
-
-estado_final = poll_dte_async_status(
-    fetch_status=mi_funcion_de_estado,  # callback(protocol_id) -> response
-    protocol_id=protocolo,
-    config=PollingConfig(interval_seconds=2, timeout_seconds=120),
-)
-```
-
-#### Enviar eventos (cancelación, inutilización, etc.)
-
-```python
-from kilasifen.engine.transmissao import TransmissaoEvento, TEST
-
-evento_transmissao = TransmissaoEvento(
-    ambiente=TEST,
-    pkcs12_data=cert_data,
-    pkcs12_password="password",
-)
-resultado = evento_transmissao.enviar_evento(evento)
-```
-
-### Integración rápida con SifenClient
-
-```python
-from kilasifen.engine.sdk.client import SifenClient
-
-client = SifenClient(
-    ambiente=TEST,
-    pkcs12_data=cert_data,
-    pkcs12_password="password",
-)
-
-# Wrappers de núcleo fiscal
-cdc = client.generar_cdc(...)
-dcarqr = client.generar_dcarqr(...)
-
-# Envío de lote + espera con polling en una llamada
-estado_lote = client.enviar_lote_y_esperar([rde1, rde2], sign=True)
-
-# Consulta DTE async + espera con polling en una llamada
-solicitud, estado = client.consultar_dte_async_y_esperar(
-    consulta_dte_async=consulta_dte_async,
-    fetch_status=mi_funcion_de_estado,
-)
-```
-
-### KuDE HTML (salida imprimible v1)
-
-```python
-from kilasifen.engine.sdk import render_kude_html, save_kude_html
-
-html = render_kude_html(rde, title="KuDE Factura")
-save_kude_html(rde, "outputs/kude_factura.html", title="KuDE Factura")
-```
-
-Con `SifenClient`:
-
-```python
-html = client.render_kude_html(rde, title="KuDE Factura")
-client.save_kude_html(rde, "outputs/kude_factura.html")
-```
-
-## Tipos de Documento Electrónico
-
-| Tipo | Código | Descripción |
-|------|--------|-------------|
-| Factura Electrónica | 1 | Factura electrónica estándar |
-| FE Exportación | 2 | Factura de exportación |
-| FE Importación | 3 | Factura de importación |
-| Autofactura | 4 | Autofactura |
-| Nota de Crédito | 5 | Nota de crédito electrónica |
-| Nota de Débito | 6 | Nota de débito electrónica |
-| Nota de Remisión | 7 | Nota de remisión electrónica |
-| Comprobante de Retención | 8 | Comprobante de retención |
-
-## Módulos
-
-### Bindings (generados automáticamente)
-
-| Módulo | Descripción |
-|--------|-------------|
-| `fe_v141` | Documento Electrónico principal (RDe, TDe, TgEmis, ...) |
-| `de_v150` | Tipos adicionales del DE v150 |
-| `de_types_v150` | Tipos base (enums, restricciones) |
-| `evento_v150` | Eventos (cancelación, inutilización, conformidad, ...) |
-| `evento_types_v150` | Tipos de eventos |
-| `ws_si_recep_de_v150` | WS Recepción DE |
-| `ws_si_recep_evento_v150` | WS Recepción Evento |
-| `ws_si_cons_de_v141` | WS Consulta DE |
-| `ws_si_cons_ruc_v141` | WS Consulta RUC |
-| `prot_proces_de_v150` | Protocolo de procesamiento |
-| `xmldsig_core_schema` | Firma digital XML |
-
-### Firma (`kilasifen.engine.firma`)
-
-| Función | Descripción |
-|---------|-------------|
-| `sign_xml()` | Firma XML con PKCS12/RSA-SHA256 usando `signxml` |
-
-### Transmisión (`kilasifen.engine.transmissao`)
-
-| Clase | Descripción |
-|-------|-------------|
-| `TransmissaoDE` | Envío de DEs (síncrono y lote) con mTLS |
-| `ConsultaSIFEN` | Consultas (DE por CDC, lote, RUC, DTE) |
-| `TransmissaoEvento` | Envío de eventos (cancelación, inutilización, etc.) |
-| `TransmissaoBase` | Clase base con SOAP client, mTLS y serialización |
-
-### Ambientes
-
-| Constante | Valor | Descripción |
-|-----------|-------|-------------|
-| `PRODUCCION` | 1 | Ambiente de producción (`sifen.set.gov.py`) |
-| `TEST` | 2 | Ambiente de pruebas (`sifen-test.set.gov.py`) |
-
-## Dependencias Opcionales
-
-| Extra | Paquetes | Uso |
-|-------|----------|-----|
-| `sign` | `signxml`, `cryptography`, `lxml` | Firma digital RSA-SHA256 |
-| `transmissao` | `xsdata[soap]`, `signxml`, `cryptography`, `requests`, `lxml` | Transmisión SOAP con mTLS |
-| `soap` | `xsdata[soap]` | Solo cliente SOAP |
-| `test` | `pytest`, `pytest-cov`, `xmldiff`, `lxml` | Tests |
-
-## Regenerar Bindings
-
-Si los XSD se actualizan (los bindings versionados se generaron con xsdata 26.2):
+Después:
 
 ```bash
-pip install "xsdata[cli]==26.2"
-python scripts/generate_bindings.py          # regenera kilasifen/engine/de/bindings/v150
-python scripts/generate_bindings.py --check  # falla si lo versionado no coincide con los XSD
+docker compose config --quiet
+docker compose up -d --build
+curl http://127.0.0.1:8000/v1/health   # el proceso responde
+curl http://127.0.0.1:8000/v1/ready    # PostgreSQL y Redis (workers: solo en staging/production)
 ```
 
-Cada clase generada hereda de `kilasifen.engine.binding.BindingMixin`
-(`from_xml`, `from_path`, `to_xml`, `validate_xml`, `sign_xml`).
+Compose levanta PostgreSQL, Redis, un paso de migración
+(`alembic upgrade head`), la API en `127.0.0.1:8000`, el worker RQ (colas
+`documents`, `events` y `webhooks`) y el despachador del outbox. Todo queda
+publicado solo en loopback. Con `.env.example` el SIFEN apunta al ambiente de
+pruebas. Para apuntar a producción (`KILA_SIFEN_SIFEN_ENVIRONMENT=production`)
+la configuración exige además `KILA_SIFEN_ENVIRONMENT=production` y
+`KILA_SIFEN_ENABLE_PRODUCTION=true`; si falta alguna, la configuración se
+rechaza al iniciar.
 
-## Desarrollo
+`.env.example` deja en `true` `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE` y
+`KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS`. En el código ambos valen `false` por
+defecto: si no los definís, los documentos no se encolan solos y no se
+publican webhooks de documentos.
+
+Con la clave de administración se crean el consumidor, su credencial y el
+emisor (ver `docs/INTEGRATION.md`). La carga de certificado y timbrado está en
+la guía `apps/docs/content/docs/certificados-y-timbrado.mdx` del portal.
+
+### Documentación para integrar
+
+- [`docs/INTEGRATION.md`](docs/INTEGRATION.md): contrato v1 (autenticación y
+  scopes, formato de errores, payloads, estados, reconciliación y sandbox).
+- [`apps/docs`](apps/docs): portal con guías paso a paso y la referencia HTTP
+  generada desde `apps/docs/public/openapi.json`. Requiere Node 22+ y pnpm:
+  `cd apps/docs && pnpm install --frozen-lockfile && pnpm dev`.
+- [`docs/integrations/webhooks.md`](docs/integrations/webhooks.md): firma,
+  verificación y reintentos de webhooks.
+- [`docs/operations/deployment-compose.md`](docs/operations/deployment-compose.md):
+  detalles del stack local, incluido el worker en Windows sin contenedores.
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): runbook de un staging
+  independiente (Railway), con variables obligatorias, red y rollback.
+- [`sdks/typescript`](sdks/typescript): cliente TypeScript de la API. Como no
+  está publicado en npm, se compila desde esa carpeta (`pnpm install && pnpm build`).
+
+## El motor Python (`kilasifen.engine`)
+
+### Instalación
+
+Como el paquete no está en PyPI, se instala desde una copia del repositorio:
 
 ```bash
 git clone https://github.com/ras272/kilasifen.git
 cd kilasifen
 python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[sign,test]" "xsdata[cli,lxml]"
-pytest tests/ -v
-ruff check kilasifen/engine/ tests/
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -e ".[sign]"           # elegí los extras según lo que vayas a usar
 ```
 
-## Referencias
+| Extra | Agrega | Para qué |
+| --- | --- | --- |
+| *(ninguno)* | `xsdata` | Leer, construir y serializar bindings |
+| `sign` | `signxml>=5.1`, `cryptography`, `lxml` | Firmar y validar contra los XSD |
+| `soap` | `xsdata[soap]` | Cliente SOAP genérico de xsdata, sin firma ni mTLS |
+| `transmision` | `xsdata[soap]`, `signxml`, `cryptography`, `requests`, `lxml` | Enviar y consultar al SIFEN con mTLS |
+| `platform` | FastAPI, SQLAlchemy, Alembic, RQ, psycopg y otros | Correr la API (junto con `transmision`) |
+| `test` | pytest, ruff, mypy y las dependencias de la plataforma | Desarrollo |
 
-- [XSD oficiales SIFEN](https://ekuatia.set.gov.py/sifen/xsd/)
-- [Manual Técnico v150](https://www.dnit.gov.py/documents/20123/420592/Manual+T%C3%A9cnico+Versi%C3%B3n+150.pdf)
-- [Portal e-Kuatia](https://ekuatia.set.gov.py)
-- [nfelib (referencia)](https://github.com/akretion/nfelib)
-- [xsdata](https://xsdata.readthedocs.io/)
+`import kilasifen.engine` funciona sin ningún extra: las dependencias pesadas
+se cargan recién cuando firmás, validás o transmitís. Si falta el extra de
+firma, `sign_xml` lanza un `ImportError` que indica qué instalar.
 
-## Kila SIFEN Platform (API)
+La fachada estable reúne lo más usado:
 
-This repository contains four complementary components:
+```python
+from kilasifen.engine import (
+    ENDPOINTS,          # URL de cada servicio, por ambiente
+    PRODUCCION,         # 1
+    TEST,               # 2
+    ConsultaSIFEN,
+    TransmisionDE,
+    TransmisionEvento,
+    get_endpoint,       # get_endpoint(TEST, "recep_de") -> URL
+    sign_xml,
+)
+```
 
-- `kilasifen.engine`: fiscal engine (XML, signature, SOAP transport)
-- `kilasifen`: headless, multi-consumer API platform for independent SIFEN integrations
-- `sdks/typescript`: official typed client for the HTTP API
-- `apps/docs`: public Fumadocs integration portal
+### Leer y escribir un DE
 
-Platform docs:
+Los bindings viven en `kilasifen.engine.de.bindings.v150`, en módulos que
+llevan el nombre del XSD de origen (`fe_v141`, `ws_si_recep_de_v150`…). Cuando
+varios XSD definen el mismo tipo, la clase queda en un solo módulo, así que hay
+menos módulos (26) que esquemas (47). Los atributos conservan el nombre de la
+etiqueta del Manual Técnico (`dRucEm`, `iTiDE`, `gCamItem`…). Todas las clases
+heredan de
+`kilasifen.engine.binding.BindingMixin`, que agrega `from_xml`, `from_path`,
+`to_xml`, `validate_xml` y `sign_xml`. El elemento raíz `rDE` corresponde a
+`RDe`, en el módulo `fe_v141` (ver [Limitaciones conocidas](#limitaciones-conocidas)).
 
-- `docs/architecture/current-scope.md`
-- `docs/architecture/kila-platform.md`
-- `docs/operations/deployment-compose.md`
-- `docs/operations/job-lifecycle.md`
-- `docs/integrations/webhooks.md`
-- `docs/examples/kila_api_register_certificate.py`
-- `docs/examples/kila_api_emit_document.py`
+```python
+from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 
-Current platform scope in one line:
+rde = RDe.from_path("kilasifen/engine/de/samples/v150/factura_electronica.xml")
 
-- consumer-neutral HTTP integration surface
-- multiple isolated consumers and SIFEN emitters
-- strict emitter isolation
-- PDF + JSON KuDE support
-- typed Factura, Nota de Crédito and Nota de Débito builders
-- typed cancel/inutilization events
-- durable outbox, safe reconciliation and deterministic sandbox outcomes
+de = rde.DE
+print(de.Id)                            # CDC de 44 dígitos
+print(de.gTimb.iTiDE, de.gTimb.dNumTim) # tipo de documento y timbrado
+print(de.gDatGralOpe.gEmis.dNomEmi)     # razón social del emisor
+print(de.gDatGralOpe.gDatRec.dNomRec)   # nombre del receptor
+print(de.gTotSub.dTotGralOpe)           # total de la operación (Decimal)
+print(len(de.gDtipDE.gCamItem))         # líneas de detalle
 
-Local platform stack:
+legible = rde.to_xml()                  # con sangría de dos espacios
+compacto = rde.to_xml(pretty_print=False)
+assert RDe.from_xml(compacto).DE.Id == de.Id
+```
+
+Las muestras de `kilasifen/engine/de/samples/v150` son documentos inventados
+(emisor ficticio y firma de relleno). Sirven para probar, no para enviar.
+
+### Validar contra los XSD
+
+```python
+errores = rde.validate_xml()    # lista vacía si el documento es válido
+```
+
+`validate_xml` necesita `lxml` (incluido en el extra `sign`) y elige el XSD
+según el elemento raíz: un `rDE` se valida contra `siRecepDE_v150.xsd`. Para
+validar texto XML que no viene de un binding:
+
+```python
+from kilasifen.engine.sdk.validation import validate_xml
+
+errores = validate_xml(texto_xml)
+```
+
+Ojo: un `RDe` construido con el binding actual siempre reporta al menos la
+falta de `dSisFact`. Es una limitación conocida del binding, no de tu
+documento.
+
+### Firmar
+
+```python
+from pathlib import Path
+
+from kilasifen.engine import sign_xml
+
+pfx = Path("certificado_emisor.p12").read_bytes()
+firmado = sign_xml(xml_rde, pfx, "contraseña-del-pfx", cdc)
+```
+
+- `xml_rde` puede ser `str`, `bytes` o un elemento `lxml`; `cdc` es el valor
+  del atributo `Id` del nodo a firmar (el CDC en un `DE`, el identificador en
+  un evento).
+- Si después vas a transmitirlo, el `rDE` tiene que usar el namespace del
+  SIFEN como namespace por defecto, sin prefijo (ver la segunda limitación del
+  motor).
+- La firma es XMLDSig *enveloped*, RSA-SHA256, con canonicalización exclusiva
+  y digest SHA-256. La `Signature` queda inmediatamente después del nodo
+  firmado y usa el namespace XMLDSig por defecto, sin prefijo `ds:`.
+- El PKCS12 se decodifica una sola vez y queda cacheado en el proceso.
+- Si el certificado o el documento no permiten firmar, se lanza
+  `kilasifen.engine.sdk.errors.SifenSignatureError`.
+
+Desde un binding, `rde.sign_xml(None, pfx, clave, rde.DE.Id)` serializa la
+instancia en forma compacta y la firma. Antes de enviar un XML firmado de esa
+manera, leé la segunda limitación del motor.
+
+### Hablar con el SIFEN
+
+Requiere el extra `transmision` y el PKCS12 del emisor, que se usa tanto para
+firmar como para la autenticación mTLS. Las tres clases reciben `ambiente`
+(`TEST` apunta a `sifen-test.set.gov.py`, `PRODUCCION` a `sifen.set.gov.py`),
+`pkcs12_data`, `pkcs12_password` y, de forma opcional, `timeout`,
+`max_retries` (0 por defecto) y `retry_backoff`. El constructor no abre
+conexiones; los recursos (sesión HTTP y PEM temporales) se liberan con
+`close()` o al salir del bloque `with`.
+
+**Enviar un DE ya firmado.** Es el camino que usa la plataforma:
+`enviar_de_xml` no vuelve a firmar ni pasa el documento por los bindings;
+inserta el `rDE` recibido dentro del `rEnviDe` (le agrega `xsi:schemaLocation`
+si no lo trae) y lo envía al servicio síncrono de recepción.
+
+```python
+from kilasifen.engine import TEST, TransmisionDE
+
+with TransmisionDE(
+    ambiente=TEST, pkcs12_data=pfx, pkcs12_password="contraseña-del-pfx"
+) as transmision:
+    respuesta = transmision.enviar_de_xml(firmado)
+
+protocolo = respuesta.rProtDe
+print(protocolo.dEstRes, protocolo.dProtAut)
+for resultado in protocolo.gResProc:
+    print(resultado.dCodRes, resultado.dMsgRes)
+```
+
+`TransmisionDE.enviar_de(rde)` serializa y firma un binding antes de enviarlo,
+pero hoy produce una firma inválida (ver limitaciones). Dejá `max_retries` en
+0 para cualquier operación con efecto fiscal: si el resultado de un envío es
+incierto, consultá antes de volver a transmitir.
+
+**Consultar.**
+
+```python
+from kilasifen.engine import ConsultaSIFEN
+
+with ConsultaSIFEN(
+    ambiente=TEST, pkcs12_data=pfx, pkcs12_password="contraseña-del-pfx"
+) as consulta:
+    contribuyente = consulta.consultar_ruc("80172649-2")  # acepta RUC-DV
+    if contribuyente.xContRUC is not None:
+        print(contribuyente.xContRUC.dRazCons)
+        print(contribuyente.xContRUC.dRUCFactElec)        # indicador de facturador electrónico
+
+    documento = consulta.consultar_de(cdc)                # 44 dígitos
+    print(documento.dCodRes, documento.dMsgRes)
+```
+
+`ConsultaSIFEN` también ofrece `consultar_lote(protocolo)`,
+`consultar_dte(...)` y `consultar_dte_async(...)`.
+
+**Eventos.** `TransmisionEvento.enviar_evento(grupo)` recibe un
+`TgGroupGesEve` (de `kilasifen.engine.de.bindings.v150.evento_v150`), lo
+envuelve en `rEnviEventoDe` y lo envía. No firma: el evento tiene que llegar
+firmado, y al reserializarse con xsdata una firma calculada sobre otra forma
+textual puede dejar de verificar. Para eventos firmados, la plataforma firma el
+grupo en `kilasifen/infrastructure/sifen/typed_event_builder.py`, arma el
+`rEnviEventoDe` como texto en `kilasifen/infrastructure/sifen/event.py` y lo
+envía sin reserializarlo.
+
+**`SifenClient`** agrupa los tres servicios detrás de un solo objeto:
+
+```python
+from kilasifen.engine.sdk import SifenClient
+
+with SifenClient(
+    ambiente=TEST, pkcs12_data=pfx, pkcs12_password="contraseña-del-pfx"
+) as cliente:
+    respuesta = cliente.enviar_de_xml(firmado)
+    estado = cliente.consultar_de(cdc)
+```
+
+Envíos de DE y eventos siempre usan `max_retries=0`; las consultas usan el
+`max_retries` del cliente (2 por defecto). Además expone atajos para CDC, QR,
+KuDE HTML y espera por polling (`PollingConfig`).
+
+### Utilidades fiscales sin red
+
+```python
+from kilasifen.engine.sdk import calculate_mod11_dv, format_cdc_for_kude, generate_cdc
+
+cdc = generate_cdc(
+    i_tide=1,
+    d_ruc_em="80172649",
+    d_dv_emi=2,
+    d_est="001",
+    d_pun_exp="001",
+    d_num_doc="0000148",
+    i_tip_cont=2,
+    d_fe_emi_de="2026-03-12",
+    i_tip_emi=1,
+    d_cod_seg="482913076",
+)
+# "01801726492001001000014822026031214829130767": el CDC de la muestra de factura
+
+calculate_mod11_dv("80172649")  # 2: dígito verificador por módulo 11
+format_cdc_for_kude(cdc)        # "0180 1726 4920 ..." en grupos de cuatro
+```
+
+- `generate_dcarqr(...)` arma la URL del QR (`dCarQR`) a partir de valores
+  sueltos; `generate_dcarqr_from_signed_xml(signed_xml=..., id_csc=..., csc=...,
+  environment="test")` los toma del propio XML firmado. Con
+  `xml_escaped=True` devuelven la URL lista para insertar en el XML.
+- `render_kude_html(rde)` y `save_kude_html(rde, ruta)` generan una
+  representación imprimible en HTML. El KuDE en PDF lo produce la plataforma.
+
+### Regenerar los bindings
+
+El código de `kilasifen/engine/de/bindings/v150` salió de xsdata 26.2. La
+configuración del generador está en el propio script, sin archivo aparte.
 
 ```bash
-cp .env.example .env
-docker compose up -d --build
+pip install "xsdata[cli]==26.2"
+python scripts/generate_bindings.py           # reescribe kilasifen/engine/de/bindings/v150
+python scripts/generate_bindings.py --check   # falla si lo versionado no coincide con los XSD
 ```
 
-## Comunidad y OSS
+El script procesa los XSD en orden alfabético y, cuando dos esquemas definen
+el mismo nombre, xsdata conserva la última definición. Por eso el orden es
+fijo, y por eso `RDe` termina saliendo de `FE_v141.xsd`. Nunca edites a mano
+los archivos generados: cambiá el XSD o el script y volvé a generar.
 
-- [Contributing](CONTRIBUTING.md)
-- [Changelog](CHANGELOG.md)
-- [Security Policy](SECURITY.md)
+Para saber si la SET publicó esquemas nuevos (consulta su sitio y no envía
+ningún documento):
+
+```bash
+CHECK_SCHEMA_UPDATES=1 python -m pytest tests/test_schema_versions.py::TestSchemaUpdates
+```
+
+## Tipos de documento electrónico (v150)
+
+`DE_Types_v150.xsd` admite `iTiDE` con el patrón `1|[4-7]|9|10`.
+
+| `iTiDE` | Documento | API tipada | Muestra en el repo |
+| --- | --- | --- | --- |
+| 1 | Factura electrónica | Sí | `factura_electronica.xml` |
+| 4 | Autofactura electrónica | No | `autofactura.xml` |
+| 5 | Nota de crédito electrónica | Sí | `nota_credito.xml` |
+| 6 | Nota de débito electrónica | Sí | `nota_debito.xml` |
+| 7 | Nota de remisión electrónica | No | `nota_remision.xml` |
+| 9 | Boleta de venta electrónica | No | No |
+| 10 | Boleta resimple electrónica | No | No |
+
+Los códigos 2 (exportación), 3 (importación) y 8 (comprobante de retención)
+aparecen comentados en el XSD oficial y el patrón de `iTiDE` no los admite. El
+binding del `rDE` no cubre por igual todos los tipos de la tabla (ver
+[Limitaciones conocidas](#limitaciones-conocidas)). El recibo
+electrónico de dinero no tiene endpoint: la razón está en
+[`docs/architecture/adr-0002-recibo-electronico.md`](docs/architecture/adr-0002-recibo-electronico.md).
+
+## Desarrollo y pruebas
+
+Para correr todo, incluida la plataforma, usá Python 3.11 o superior:
+
+```bash
+pip install -e ".[sign,transmision,test]"
+python -m pytest -q
+python -m ruff check kilasifen tests --select F
+```
+
+El workflow de CI corre ruff solo con las reglas `F`. Con el conjunto completo
+de `pyproject.toml` (`E`, `F`, `I`, `W`), hoy quedan avisos `E501` (líneas
+largas) en módulos de la plataforma y en algunas pruebas.
+
+Con [uv](https://docs.astral.sh/uv/),
+`uv sync --frozen --extra sign --extra transmision --extra test` instala el
+entorno fijado en `uv.lock`, igual que el workflow de CI.
+
+- Las pruebas no contactan al SIFEN: la transmisión se prueba con dobles. La
+  verificación de esquemas nuevos, que consulta el sitio de la SET, solo corre
+  si activás `CHECK_SCHEMA_UPDATES=1`.
+- `tests/conftest.py` genera en cada sesión un PKCS12 descartable en
+  `tests/test_cert.pfx` (contraseña `test1234`) y lo borra al terminar. No
+  ejecutes dos sesiones de pytest en paralelo sobre la misma copia del
+  repositorio.
+- Las pruebas de concurrencia contra PostgreSQL se saltean salvo que definas
+  `KILA_SIFEN_TEST_DATABASE_URL`.
+- Hay una prueba marcada `xfail` estricta que documenta el defecto de firma
+  descrito en la segunda limitación del motor; cuando se corrija, va a fallar
+  como aviso para quitar la marca.
+- Si cambiás rutas o schemas de la API, regenerá el contrato con
+  `python scripts/export_openapi.py` (con `--check` solo verifica).
+
+Las reglas para contribuir están en [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Limitaciones conocidas
+
+### Motor
+
+1. **El binding del `rDE` tiene el layout de la versión 1.41.** El único `RDe`
+   generado sale de `FE_v141.xsd`, porque xsdata conserva la última definición
+   en orden alfabético. No conoce elementos exclusivos de v150 como
+   `dSisFact` (el parser los rechaza) y `validate_xml()` siempre informa su
+   ausencia. Su restricción de `iTiDE` es `1|[5-6]` y su enumeración de
+   `dDesTiDE` solo incluye factura, nota de crédito y nota de débito: las
+   muestras de autofactura (4) y remisión (7) se leen y se vuelven a escribir,
+   pero xsdata emite un `ConverterWarning` y deja la descripción como texto.
+   Las boletas (9 y 10) no tienen muestras ni pruebas. En producción, la
+   plataforma no usa este binding: arma el XML con su propio constructor
+   ElementTree (`kilasifen/infrastructure/sifen/typed_xml_builder.py`) y lo
+   valida contra `siRecepDE_v150.xsd` antes de firmar.
+2. **La firma de un `rDE` con prefijo se invalida dentro de `rEnviDe`.**
+   `to_xml()` emite el namespace del SIFEN con prefijo (`ns0:`). Al insertar
+   ese `rDE` firmado en el `rEnviDe`, tanto `enviar_de` como `enviar_de_xml`
+   lo reescriben en el namespace por defecto y la firma deja de verificar. Al
+   XML de la plataforma no le afecta porque se genera sin prefijos. Si
+   necesitás firmar XML producido por un binding, serializalo sin prefijo
+   antes de firmar:
+
+   ```python
+   from xsdata.formats.dataclass.serializers import XmlSerializer
+
+   xml = XmlSerializer().render(
+       rde, ns_map={None: "http://ekuatia.set.gov.py/sifen/xsd"}
+   )
+   ```
+
+3. **`enviar_lote` no respeta el formato del SIFEN.** Codifica el contenido
+   dos veces en base64 y no lo comprime en ZIP. La plataforma no lo usa.
+4. **Los SOAP Fault y las respuestas ilegibles llegan como errores de
+   parseo**, no como errores de transporte con resultado incierto. Tratá
+   cualquier excepción posterior al envío como resultado desconocido y
+   consultá antes de reintentar.
+5. **La protección contra envíos duplicados depende de `max_retries=0`**, el
+   valor por defecto. Subirlo en `TransmisionDE` o `TransmisionEvento` puede
+   duplicar operaciones fiscales.
+6. **`consultar_dte_async` se reintenta como si fuera una consulta de solo
+   lectura** (por ejemplo, con el `max_retries` de `SifenClient`), aunque
+   registra una solicitud en el SIFEN.
+
+### Plataforma
+
+Hallazgos de una auditoría reciente, que se corregirán a continuación:
+
+- Si el payload no trae `codigo_seguridad`, se usa la constante `123456789`.
+- La dirección, el teléfono, el correo y la actividad económica del emisor
+  reciben valores ficticios por defecto cuando faltan.
+- El QR de producción siempre usa el parámetro `dRucRec`, incluso cuando el
+  receptor se identifica con `dNumIDRec`.
+- Solo el código `0260` (o el estado "Aprobado") cuenta como aprobación;
+  cualquier otro código se clasifica como rechazo, así que nunca se produce
+  `approved_with_observation` a partir de una respuesta real.
+- Un documento cuyo envío falló antes de llegar al SIFEN puede quedar
+  bloqueado en `reconciliation_required`.
+
+KilaSifen no certifica conformidad fiscal. Probá cada flujo en el ambiente
+de pruebas de la SET antes de habilitar producción.
+
+## Seguridad
+
+No abras issues públicos por vulnerabilidades. Reportalas en privado mediante
+el [reporte privado de GitHub](https://github.com/ras272/kilasifen/security/advisories/new);
+el procedimiento completo está en [SECURITY.md](SECURITY.md).
+
+No subas al repositorio certificados, contraseñas, CSC, API keys ni archivos
+`.env`. Las muestras y los certificados de las pruebas son ficticios o se
+generan en el momento.
 
 ## Licencia
 
-MIT License - Copyright (c) KMEE
-
+MIT. Copyright (c) The KilaSifen Authors. El texto completo está en
+[MIT-LICENSE](MIT-LICENSE).

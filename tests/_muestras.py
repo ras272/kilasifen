@@ -64,12 +64,14 @@ TIPOS_SIN_MUESTRA: Mapping[str, str] = MappingProxyType(
         "3": "factura de importacion: comentada en DE_Types_v150.xsd",
         "8": "comprobante de retencion: comentado en DE_Types_v150.xsd",
         "9": (
-            "boleta de venta: vigente en v150, pero el binding fe_v141 no la "
-            "representa (iTiDE admite 1|[5-6] y dDesTiDE no la enumera)"
+            "boleta de venta: vigente en v150, sin muestra todavia; el binding "
+            "fe_v141 restringe iTiDE a 1|[5-6] (4 y 7 tambien quedan fuera y "
+            "se leen con ConverterWarning) y no hay datos de referencia"
         ),
         "10": (
-            "boleta resimple: vigente en v150, pero el binding fe_v141 no la "
-            "representa (iTiDE admite 1|[5-6] y dDesTiDE no la enumera)"
+            "boleta resimple: vigente en v150, sin muestra todavia; el binding "
+            "fe_v141 restringe iTiDE a 1|[5-6] (4 y 7 tambien quedan fuera y "
+            "se leen con ConverterWarning) y no hay datos de referencia"
         ),
     }
 )

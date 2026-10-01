@@ -24,7 +24,7 @@ pip install -e ".[sign,transmision,test]"
 
 ```bash
 python -m pytest -q
-python -m ruff check kilasifen tests
+python -m ruff check kilasifen tests --select F  # same gate as CI; E501 debt pending
 python -m build
 python -m twine check --strict dist/*
 ```

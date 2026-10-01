@@ -1,57 +1,55 @@
-# Python
+# --- Secretos y material fiscal: nunca al repositorio ---
+.env
+.env.local
+*.pfx
+*.p12
+
+# --- Artefactos de Python ---
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
-*.egg-info/
 *.egg
-dist/
-build/
+*.egg-info/
 .eggs/
+build/
+dist/
 *.whl
+*.tar.gz
 
-# Virtual environments
+# --- Entornos virtuales ---
 .venv/
 venv/
 env/
 
-# IDE
-.idea/
-.vscode/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Testing
+# --- Tests, cobertura y linters ---
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
+.ruff_cache/
+.mypy_cache/
 
-# Distribution
-*.tar.gz
-
-# Misc
-*.log
-.env
-.env.local
-
-# Node / documentation site
+# --- Portal de documentacion y SDK TypeScript ---
 node_modules/
 .next/
 .source/
 .vercel/
 *.tsbuildinfo
 
-# Local lab / scratch artifacts (not part of the project)
+# --- Editores y sistema operativo ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- Trabajo local (no forma parte del proyecto) ---
+*.log
 tmp/
 tmp_*.xml
 tmp_*.txt
 _external/
 .claude/
-*.p12
-*.pfx

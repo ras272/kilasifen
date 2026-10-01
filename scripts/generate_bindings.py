@@ -2,8 +2,11 @@
 """Regenera los bindings Python del SIFEN a partir de los XSD oficiales.
 
 Toma todos los ``*.xsd`` de ``kilasifen/engine/<familia>/schemas/<version>/``
-y genera, con xsdata, un modulo de dataclasses por cada archivo de esquema en
-el paquete ``kilasifen.engine.<familia>.bindings.<version>``.
+y genera, con xsdata, los modulos de dataclasses del paquete
+``kilasifen.engine.<familia>.bindings.<version>``. Cada modulo toma el nombre
+del XSD que define sus tipos; los esquemas que solo repiten o envuelven tipos
+ya definidos en otro archivo no producen modulo propio (hoy: 47 XSD, 26
+modulos).
 
 Uso (desde cualquier directorio)::
 
