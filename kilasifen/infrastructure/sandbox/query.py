@@ -3,9 +3,12 @@
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.sandbox import SandboxOutcome
 from kilasifen.infrastructure.sifen.query import (
+    QUERY_FOUND,
+    QUERY_NOT_FOUND_OR_NOT_APPROVED,
     DocumentQueryOutcome,
     RucQueryOutcome,
 )
+from kilasifen.infrastructure.sifen.responses import DocumentContainer
 
 
 class DeterministicSandboxQueryGateway:
@@ -40,24 +43,28 @@ class DeterministicSandboxQueryGateway:
             raise ValueError("deterministic sandbox query requires a test emitter")
 
         if self.outcome is SandboxOutcome.ACCEPTED_BUT_RESPONSE_LOST:
+            content = f'<rDE><DE Id="{cdc}"/><Signature/></rDE>'
             return DocumentQueryOutcome(
                 cdc=cdc,
                 request_xml=_query_xml(cdc),
-                response_raw=_response_xml("found", cdc),
+                response_raw=_response_xml(QUERY_FOUND, cdc),
                 result_code="0422",
                 result_message="Sandbox: CDC encontrado y aprobado",
-                status="found",
-                content_xml=f'<rDE><DE Id="{cdc}"/><Signature/></rDE>',
+                status=QUERY_FOUND,
+                content_xml=content,
                 processed_at=None,
+                container=DocumentContainer(
+                    document_xml=content, protocol=None, events=()
+                ),
             )
 
         return DocumentQueryOutcome(
             cdc=cdc,
             request_xml=_query_xml(cdc),
-            response_raw=_response_xml("not_found", cdc),
+            response_raw=_response_xml(QUERY_NOT_FOUND_OR_NOT_APPROVED, cdc),
             result_code="0420",
             result_message="Sandbox: CDC no encontrado o no aprobado",
-            status="not_found",
+            status=QUERY_NOT_FOUND_OR_NOT_APPROVED,
             content_xml=None,
             processed_at=None,
         )

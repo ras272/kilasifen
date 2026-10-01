@@ -1,4 +1,13 @@
-"""Read-side SIFEN query adapters built on top of kilasifen.engine."""
+"""Read-side SIFEN query adapters built on top of kilasifen.engine.
+
+A query by CDC (siConsDE) is read by its code (DECISIONES F62): 0422 means
+the CDC is an approved DTE and ``xContenDE`` carries the container
+``rContDe{rDE, dProtAut, xContEv}`` (MT v150 Tabla G p. 51, Schemas XML 11-12
+pp. 51-52); 0420 means "no existe o no esta aprobado" (Guia de Mejores
+Practicas DNIT oct-2024 p. 12); any other code (0421, 01xx, 0380) is an
+error, never a "not found". The request stored for audit is the exact text
+that travelled, with its real ``dId``.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +19,10 @@ from typing import Protocol
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
+from kilasifen.domain.common.sifen_results import (
+    QUERY_FOUND_CODE,
+    QUERY_NOT_FOUND_OR_NOT_APPROVED_CODE,
+)
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.engine import PRODUCCION, TEST, ConsultaSIFEN
 from kilasifen.engine.de.bindings.v150.ws_si_cons_de_v141 import (
@@ -21,6 +34,17 @@ from kilasifen.engine.de.bindings.v150.ws_si_cons_ruc_v141 import (
     RResEnviConsRuc,
 )
 from kilasifen.engine.sdk.errors import SifenValidationError
+from kilasifen.engine.transmision.consulta import _es_cdc_valido
+from kilasifen.infrastructure.sifen.de_facts import parse_sifen_datetime
+from kilasifen.infrastructure.sifen.responses import (
+    DocumentContainer,
+    read_document_container,
+)
+
+#: ``DocumentQueryOutcome.status`` values.
+QUERY_FOUND = "found"
+QUERY_NOT_FOUND_OR_NOT_APPROVED = "not_found_or_not_approved"
+QUERY_ERROR = "error"
 
 
 @dataclass(slots=True)
@@ -42,7 +66,14 @@ class RucQueryOutcome:
 
 @dataclass(slots=True)
 class DocumentQueryOutcome:
-    """Normalized result from a SIFEN document query."""
+    """Normalized result from a SIFEN document query.
+
+    ``status`` is ``found`` (0422), ``not_found_or_not_approved`` (0420) or
+    ``error``. ``content_xml`` is ``xContenDE`` as received and
+    ``container`` its reading: the DTE, ``dProtAut`` and the registered
+    events (``xContEv``). The DTE in the container never replaces the signed
+    XML the platform keeps.
+    """
 
     cdc: str
     request_xml: str
@@ -52,6 +83,19 @@ class DocumentQueryOutcome:
     status: str
     content_xml: str | None
     processed_at: datetime | None
+    container: DocumentContainer | None = None
+
+    @property
+    def protocol(self) -> str | None:
+        return self.container.protocol if self.container is not None else None
+
+    @property
+    def cancelled(self) -> bool:
+        """Whether ``xContEv`` holds a registered cancellation of the CDC."""
+
+        return self.container is not None and self.container.has_cancellation(
+            self.cdc
+        )
 
 
 class SifenQueryGateway(Protocol):
@@ -129,26 +173,36 @@ class KilaSifenQueryGateway:
         certificate_password: str,
         cdc: str,
     ) -> DocumentQueryOutcome:
+        if not _es_cdc_valido(cdc):
+            raise ValueError("El CDC debe tener exactamente 44 digitos numericos")
         request = REnviConsDeRequest(dId=_generate_query_id(), dCDC=cdc)
-        response = self._run_consulta(
+
+        def send(consulta) -> tuple[str, bytes, REnviConsDeResponse]:
+            request_xml = consulta._serialize(request)
+            body = consulta._send_raw_xml("cons_de", request_xml)
+            return request_xml, body, consulta._como_respuesta(
+                body, REnviConsDeResponse
+            )
+
+        request_xml, body, response = self._run_consulta(
             emitter=emitter,
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
-            operation=lambda consulta: consulta.consultar_de(cdc),
+            operation=send,
         )
-        assert isinstance(response, REnviConsDeResponse)
-        processed_at = None
-        if response.dFecProc:
-            processed_at = datetime.fromisoformat(response.dFecProc)
+        status = _document_query_status(response.dCodRes)
         return DocumentQueryOutcome(
             cdc=cdc,
-            request_xml=self.serializer.render(request),
-            response_raw=self.serializer.render(response),
+            request_xml=request_xml,
+            response_raw=body.decode("utf-8", errors="replace"),
             result_code=response.dCodRes,
             result_message=response.dMsgRes,
-            status="found" if response.xContenDE else "not_found",
+            status=status,
             content_xml=response.xContenDE,
-            processed_at=processed_at,
+            processed_at=parse_sifen_datetime(response.dFecProc),
+            container=read_document_container(body)
+            if status == QUERY_FOUND
+            else None,
         )
 
     def _run_consulta(
@@ -180,6 +234,16 @@ def _normalize_ruc(ruc: str) -> str:
             raise ValueError(f"Formato de RUC invalido: '{ruc}'")
         value = parts[0]
     return value
+
+
+def _document_query_status(code: str | None) -> str:
+    if code == QUERY_FOUND_CODE:
+        return QUERY_FOUND
+    if code == QUERY_NOT_FOUND_OR_NOT_APPROVED_CODE:
+        return QUERY_NOT_FOUND_OR_NOT_APPROVED
+    # 0421 is "RUC Certificado sin permiso" in MT v150 Tabla G (p. 51) and
+    # "CDC encontrado" in §12.3.4.3 (p. 157): NO DETERMINADO, read as error.
+    return QUERY_ERROR
 
 
 def _generate_query_id() -> int:
