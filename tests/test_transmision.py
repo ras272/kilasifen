@@ -3261,6 +3261,53 @@ class TestConsultaSIFEN:
             consulta.consultar_lote("protocolo-ficticio")
         assert cliente_soap_falso.servicios == []
 
+    def test_consultar_lote_por_cdc(
+        self, consulta: Any, cliente_soap_falso: ClienteSoapFalso
+    ) -> None:
+        """Sin numero de lote se consulta con un CDC del lote (XSD
+        WS_SiConsLote_v141.xsd ``dCDC``; Guia oct-2024 p. 6, punto 3)."""
+        cdc = _cdc_ficticio(905)
+        cliente_soap_falso.respuesta = RResEnviConsLoteDe(
+            dFecProc=FECHA_PROCESO,
+            dCodResLot="0361",
+            dMsgResLot="Lote en procesamiento",
+        )
+
+        resultado = consulta.consultar_lote(cdc=cdc)
+
+        assert resultado.dCodResLot == "0361"
+        assert cliente_soap_falso.servicios == ["cons_lote"]
+        (solicitud,) = cliente_soap_falso.envios
+        assert isinstance(solicitud, REnviConsLoteDe)
+        assert solicitud.dCDC == cdc
+        assert solicitud.dProtConsLote is None
+        cable = ET.fromstring(_xml_de_binding(solicitud).encode("utf-8"))
+        assert [hijo.tag.rpartition("}")[2] for hijo in cable] == ["dId", "dCDC"]
+
+    @pytest.mark.parametrize(
+        "argumentos, error",
+        [
+            pytest.param({}, "uno solo de los dos", id="ninguno"),
+            pytest.param(
+                {"prot_lote": 41, "cdc": _cdc_ficticio(906)},
+                "uno solo de los dos",
+                id="ambos",
+            ),
+            pytest.param({"cdc": "123"}, "44 digitos", id="cdc_corto"),
+            pytest.param({"cdc": "7" * 43 + "x"}, "44 digitos", id="cdc_no_numerico"),
+        ],
+    )
+    def test_consultar_lote_exige_numero_o_cdc_validos(
+        self,
+        consulta: Any,
+        cliente_soap_falso: ClienteSoapFalso,
+        argumentos: dict[str, Any],
+        error: str,
+    ) -> None:
+        with pytest.raises(ValueError, match=error):
+            consulta.consultar_lote(**argumentos)
+        assert cliente_soap_falso.servicios == []
+
     @pytest.mark.parametrize(
         "entrada, esperado",
         [

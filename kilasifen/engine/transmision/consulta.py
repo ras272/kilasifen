@@ -91,16 +91,43 @@ class ConsultaSIFEN(TransmisionBase):
         respuesta = self._get_client("cons_de").send(solicitud)
         return self._como_respuesta(respuesta, REnviConsDeResponse)
 
-    def consultar_lote(self, prot_lote: int | Decimal | str) -> RResEnviConsLoteDe:
-        """Consulta el estado de un lote por su numero de protocolo.
+    def consultar_lote(
+        self,
+        prot_lote: int | Decimal | str | None = None,
+        *,
+        cdc: str | None = None,
+    ) -> RResEnviConsLoteDe:
+        """Consulta el estado de un lote por su numero o por un CDC del lote.
+
+        Lo normal es consultar por el numero de lote (``dProtConsLote``) que
+        devolvio la recepcion ``0300`` (MT v150 sec. 9.3.1). Si ese numero no
+        llego (por ejemplo, el envio quedo sin respuesta), el lote se puede
+        consultar con el CDC de uno de sus documentos (``dCDC``, XSD
+        ``WS_SiConsLote_v141.xsd``; Guia de mejores practicas, oct-2024, p. 6,
+        punto 3). Se indica exactamente uno de los dos.
 
         Raises:
+            ValueError: si se indican los dos o ninguno, o si el CDC no tiene
+                exactamente 44 digitos.
             decimal.InvalidOperation: si ``prot_lote`` no es numerico.
         """
-        solicitud = REnviConsLoteDe(
-            dId=_generate_id(),
-            dProtConsLote=Decimal(str(prot_lote)),
-        )
+        if (prot_lote is None) == (cdc is None):
+            raise ValueError(
+                "Para consultar un lote hay que indicar el numero de lote o un "
+                "CDC del lote, uno solo de los dos"
+            )
+        if cdc is not None:
+            if not _es_cdc_valido(cdc):
+                raise ValueError(
+                    f"El CDC debe tener exactamente {_LARGO_CDC} digitos "
+                    f"numericos; se recibio {cdc!r} ({len(cdc)} caracteres)"
+                )
+            solicitud = REnviConsLoteDe(dId=_generate_id(), dCDC=cdc)
+        else:
+            solicitud = REnviConsLoteDe(
+                dId=_generate_id(),
+                dProtConsLote=Decimal(str(prot_lote)),
+            )
         respuesta = self._get_client("cons_lote").send(solicitud)
         return self._como_respuesta(respuesta, RResEnviConsLoteDe)
 
