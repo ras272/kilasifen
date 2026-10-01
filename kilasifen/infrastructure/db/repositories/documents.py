@@ -40,6 +40,11 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
                 establishment=document.establishment,
                 point=document.point,
                 document_number=document.document_number,
+                sifen_approved_at=document.sifen_approved_at,
+                sifen_protocol=document.sifen_protocol,
+                sifen_messages=document.sifen_messages,
+                retryable_server_error=document.retryable_server_error,
+                timbrado=document.timbrado,
                 created_at=document.created_at,
                 updated_at=document.updated_at,
             )
@@ -64,6 +69,11 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             existing.establishment = document.establishment
             existing.point = document.point
             existing.document_number = document.document_number
+            existing.sifen_approved_at = document.sifen_approved_at
+            existing.sifen_protocol = document.sifen_protocol
+            existing.sifen_messages = document.sifen_messages
+            existing.retryable_server_error = document.retryable_server_error
+            existing.timbrado = document.timbrado
             existing.updated_at = document.updated_at
         self.session.flush()
         return document
@@ -208,4 +218,9 @@ def _to_domain(model: DocumentModel) -> Document:
         establishment=model.establishment,
         point=model.point,
         document_number=model.document_number,
+        sifen_approved_at=model.sifen_approved_at,
+        sifen_protocol=model.sifen_protocol,
+        sifen_messages=model.sifen_messages,
+        retryable_server_error=bool(model.retryable_server_error),
+        timbrado=model.timbrado,
     )

@@ -82,3 +82,20 @@ def test_alembic_upgrade_creates_core_tables(
             schema = options.split("search_path=")[-1].split()[0]
         inspector = inspect(build_engine(database_url))
         assert EXPECTED_TABLES.issubset(set(inspector.get_table_names(schema=schema)))
+
+        # Every column the ORM maps on ``documents`` exists after migrating,
+        # including the SIFEN outcome fields of revision 20261001_09.
+        migrated = {
+            column["name"]
+            for column in inspector.get_columns(
+                DocumentModel.__tablename__, schema=schema
+            )
+        }
+        assert set(DocumentModel.__table__.columns.keys()) <= migrated
+        assert {
+            "sifen_approved_at",
+            "sifen_protocol",
+            "sifen_messages",
+            "retryable_server_error",
+            "timbrado",
+        } <= migrated

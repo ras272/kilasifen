@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -182,6 +183,13 @@ class DocumentModel(TimestampMixin, Base):
     establishment: Mapped[str | None] = mapped_column(String(3))
     point: Mapped[str | None] = mapped_column(String(3))
     document_number: Mapped[int | None] = mapped_column(Integer)
+    sifen_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sifen_protocol: Mapped[str | None] = mapped_column(String(32))
+    sifen_messages: Mapped[list | None] = mapped_column(JSON)
+    retryable_server_error: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    timbrado: Mapped[str | None] = mapped_column(String(8))
 
     emitter: Mapped[EmitterModel] = relationship(back_populates="documents")
     events: Mapped[list["EventModel"]] = relationship(back_populates="document")
