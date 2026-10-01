@@ -16,7 +16,10 @@ from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, text, update
 
 import kilasifen.application.events.service as event_service_module
-from kilasifen.application.events.attempts import EVENT_IN_FLIGHT_WINDOW
+from kilasifen.application.events.attempts import (
+    EVENT_IN_FLIGHT_WINDOW,
+    EventAttempt,
+)
 from kilasifen.application.events.service import EventService
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
@@ -550,3 +553,18 @@ def _utc(value: datetime) -> datetime:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def test_an_attempt_repr_never_shows_the_certificate() -> None:
+    attempt = EventAttempt(
+        job_id="job-1",
+        event_id="event-1",
+        attempt_number=1,
+        request_xml="<rEnviEventoDe/>",
+        emitter=None,
+        certificate_bytes=b"pkcs12-bytes",
+        certificate_password="pfx-password",
+    )
+
+    assert "pkcs12-bytes" not in repr(attempt)
+    assert "pfx-password" not in repr(attempt)

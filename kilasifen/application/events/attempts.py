@@ -14,7 +14,7 @@ an uncertain one.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
@@ -51,8 +51,9 @@ class EventAttempt:
     attempt_number: int
     request_xml: str
     emitter: Emitter
-    certificate_bytes: bytes
-    certificate_password: str
+    # Kept out of repr so a log line or error report never carries them.
+    certificate_bytes: bytes = field(repr=False)
+    certificate_password: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)

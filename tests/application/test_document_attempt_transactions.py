@@ -53,7 +53,11 @@ from kilasifen.infrastructure.db.session import (
     build_session_factory,
     session_scope,
 )
-from kilasifen.infrastructure.jobs.workers import process_document_job
+from kilasifen.infrastructure.jobs.document_attempts import AttemptAction
+from kilasifen.infrastructure.jobs.workers import (
+    _ClaimedDocumentAttempt,
+    process_document_job,
+)
 from kilasifen.infrastructure.sifen.engine import (
     KilaSifenEmissionEngine,
     SubmissionOutcome,
@@ -652,3 +656,22 @@ def _outbox_status(database_url: str) -> str | None:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def test_a_claimed_attempt_repr_never_shows_the_certificate() -> None:
+    claim = _ClaimedDocumentAttempt(
+        job_id="job-1",
+        document_id="document-1",
+        attempt_number=1,
+        action=AttemptAction.PREPARE,
+        cdc=None,
+        request_xml=None,
+        emitter=None,
+        certificate_bytes=b"pkcs12-bytes",
+        certificate_password="pfx-password",
+        emission_engine=FakeEmissionEngine(),
+        query_gateway=FakeQueryGateway(),
+    )
+
+    assert "pkcs12-bytes" not in repr(claim)
+    assert "pfx-password" not in repr(claim)

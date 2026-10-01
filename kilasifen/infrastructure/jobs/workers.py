@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import TypeVar
 
@@ -224,8 +224,9 @@ class _ClaimedDocumentAttempt:
     cdc: str | None
     request_xml: str | None
     emitter: Emitter
-    certificate_bytes: bytes
-    certificate_password: str
+    # Kept out of repr so a log line or error report never carries them.
+    certificate_bytes: bytes = field(repr=False)
+    certificate_password: str = field(repr=False)
     emission_engine: DocumentEmissionEngine
     query_gateway: SifenQueryGateway
 
