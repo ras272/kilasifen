@@ -60,7 +60,11 @@ revisar la guía de migración de esta sección.
   `DocumentSubmissionTransport.submit` recibe `request_xml` en lugar de
   `signed_xml`. Se eliminan `EmissionOutcome` y
   `EmissionTransportUncertainError`; aparece `PreparedSubmission`. Solo afecta
-  a quien implemente motores o transportes propios para los workers.
+  a quien implemente motores o transportes propios para los workers. Además,
+  `prepare_document` rechaza con `SifenValidationError` un payload con XML ya
+  firmado del que no se puede obtener el `Id` del DE (el CDC): el documento
+  queda `failed` y no se envía nada. Antes ese XML se enviaba con el CDC
+  vacío, y una respuesta perdida ya no se podía reconciliar.
 - Plataforma: `EventSubmissionGateway.submit_event` se reemplaza por
   `prepare_event` y `submit_prepared(request_xml=...)`; aparece
   `PreparedEventSubmission` y `EventSubmissionOutcome` deja de llevar
@@ -192,11 +196,15 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   (`retry_exhausted`) y el documento `queued`, listo para un reintento
   manual. Cualquier otro fallo (timeout, conexión cortada, SOAP Fault,
   respuesta ilegible, `ParserError`, error de programación) deja el resultado
-  incierto: `retry_pending` y reconciliación por CDC. Ninguna excepción escapa
-  del worker sin registrarse. Un intento incierto que agota el presupuesto
-  pasa a `reconciliation_required` (antes podía quedar `failed` y un
-  reintento manual lo reenviaba). Un documento que quedó en `submitting`
-  porque el worker murió se reconcilia por CDC en el intento siguiente.
+  incierto: `retry_pending` y reconciliación por CDC. Ninguna falla de la
+  llamada al SIFEN escapa del worker sin registrarse; una falla de la base de
+  datos en la primera o en la segunda transacción sí escapa y deja el job
+  `processing` y el documento `submitting`. Un intento incierto que agota el
+  presupuesto pasa a `reconciliation_required` (antes podía quedar `failed` y
+  un reintento manual lo reenviaba). Un documento que quedó en `submitting`
+  (el worker murió, o falló la base al registrar) se reconcilia por CDC en el
+  intento siguiente, que hoy tiene que lanzar un operador desde la consola:
+  ningún proceso retoma esos jobs solo.
 - Plataforma: los eventos (cancelación e inutilización) siguen el mismo
   esquema de dos transacciones. El worker guarda el grupo firmado
   (`signed_xml`, antes vacío) y el `rEnviEventoDe` exacto con el evento en

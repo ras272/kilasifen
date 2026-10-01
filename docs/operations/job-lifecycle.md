@@ -47,7 +47,11 @@ Jobs are the operational ledger for retries, observability, and support.
    - approved/accepted => `job.succeeded`
    - request provably not sent (`SifenRequestNotSentError`) => document back
      to `queued`, `job.retry_scheduled` (`transport_not_sent`); the next
-     attempt resends the stored request
+     attempt resends the stored request unchanged, signed with the
+     certificate that was active when it was prepared. If the emitter
+     certificate was rotated in between, the request travels over mTLS with
+     the new certificate; should SIFEN reject that, the rejection is terminal
+     like any other
    - timeout, dropped connection, SOAP Fault, unreadable answer or any other
      error after sending => document `retry_pending`, `job.retry_scheduled`
      (`transport`); later attempts only query the CDC

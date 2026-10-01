@@ -23,13 +23,20 @@ icon: RefreshCcw
 
 Antes de llamar a SIFEN, KilaSifen guarda y confirma en la base el CDC, el XML
 firmado y el request exacto que va a viajar (con su `dId` real), y deja el
-documento en `submitting`. Ante timeout, conexión cortada, SOAP Fault,
-respuesta ilegible o caída del worker durante el envío:
+documento en `submitting`. Ante timeout, conexión cortada, SOAP Fault o
+respuesta ilegible, el documento pasa a `retry_pending` y los intentos
+siguientes:
 
-1. consulta el documento por CDC;
-2. converge al resultado si SIFEN ya lo conoce;
-3. si no puede confirmar el resultado, pasa a `reconciliation_required`;
-4. nunca retransmite el DE ni genera otro CDC para la misma intención.
+1. consultan el documento por CDC;
+2. convergen al resultado si SIFEN ya lo conoce;
+3. si no pueden confirmar el resultado al agotar los intentos, lo pasan a
+   `reconciliation_required`;
+4. nunca retransmiten el DE ni generan otro CDC para la misma intención.
+
+Si el worker se cae durante el envío, el documento queda en `submitting` y el
+job en `processing`, y nada los retoma de forma automática: un operador tiene
+que reintentar el job desde la consola de administración. Ese reintento sigue
+la misma regla y consulta por CDC antes de decidir.
 
 Los reintentos internos sólo consultan. El ERP no debe crear una segunda
 intención para “destrabar” un documento ni reencolar el job esperando otro
