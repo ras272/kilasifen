@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Protocol
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -32,15 +32,24 @@ from kilasifen.domain.common.errors import (
 )
 from kilasifen.domain.common.fiscal_states import (
     DOCUMENT_APPROVED_STATUSES,
+    DOCUMENT_INUTILIZED_STATUS,
     DOCUMENT_POSSIBLY_RECEIVED_STATUSES,
 )
 from kilasifen.domain.documents.models import Document
+from kilasifen.domain.events.inutilization import (
+    inutilization_deadline,
+    is_inutilizable,
+)
 from kilasifen.domain.events.inutilized_ranges import InutilizedNumberRange
 from kilasifen.domain.events.models import Event
 from kilasifen.domain.jobs.models import Job
 from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
-from kilasifen.infrastructure.sifen.de_facts import approval_lower_bound
+from kilasifen.infrastructure.sifen.de_facts import (
+    PARAGUAY_TZ,
+    approval_lower_bound,
+    paraguay_today,
+)
 from kilasifen.infrastructure.sifen.event import EventSubmissionGateway
 from kilasifen.infrastructure.sifen.query import (
     DocumentQueryOutcome,
@@ -51,9 +60,6 @@ from kilasifen.infrastructure.sifen.typed_event_builder import (
     build_signed_inutilization_event_group_xml,
 )
 from kilasifen.repositories.certificates import CertificateRepository
-from kilasifen.repositories.document_numbering_sequences import (
-    DocumentNumberingSequenceRepository,
-)
 from kilasifen.repositories.documents import DocumentRepository
 from kilasifen.repositories.emitters import EmitterRepository
 from kilasifen.repositories.events import EventRepository
@@ -61,6 +67,7 @@ from kilasifen.repositories.inutilized_number_ranges import (
     InutilizedNumberRangeRepository,
 )
 from kilasifen.repositories.jobs import JobRepository
+from kilasifen.repositories.stampings import StampingRepository
 
 logger = logging.getLogger(__name__)
 
@@ -143,8 +150,8 @@ class EventService:
         job_repository: JobRepository,
         certificate_store: EncryptedCertificateStore,
         submission_gateway: EventSubmissionGateway,
-        numbering_repository: DocumentNumberingSequenceRepository | None = None,
         inutilized_range_repository: InutilizedNumberRangeRepository | None = None,
+        stamping_repository: StampingRepository | None = None,
         webhook_publisher: WebhookPublisher | None = None,
         queue: EventJobQueue | None = None,
         database_url: str | None = None,
@@ -159,8 +166,8 @@ class EventService:
         self.job_service = JobService(job_repository)
         self.certificate_store = certificate_store
         self.submission_gateway = submission_gateway
-        self.numbering_repository = numbering_repository
         self.inutilized_range_repository = inutilized_range_repository
+        self.stamping_repository = stamping_repository
         self.webhook_publisher = webhook_publisher
         self.queue = queue
         self.database_url = database_url
@@ -250,12 +257,23 @@ class EventService:
         numero_desde: int,
         numero_hasta: int,
         motivo: str,
-    ) -> tuple[Event, Job, InutilizedNumberRange]:
+        serie: str | None = None,
+    ) -> tuple[Event, Job, InutilizedNumberRange, list[str]]:
+        """Inutilize a range of numbers of one timbrado (DECISIONES F72).
+
+        Returns the event, its job, the range and the warnings (today only
+        ``inutilization.extemporaneous``: past day 15 of the month after
+        the earliest number in the range was consumed; SIFEN has no
+        rejection for it, so it is never refused).
+        """
+
         emitter, _certificate, certificate_bytes, certificate_password = (
             self._resolve_emitter_and_active_certificate(emitter_id)
         )
         if self.inutilized_range_repository is None:
             raise RuntimeError("inutilized_range_repository is required")
+        normalized_timbrado = str(timbrado).strip()
+        self._require_emitter_timbrado(emitter_id, normalized_timbrado)
 
         normalized_document_type = str(document_type).strip().lower()
         i_tide = _DOC_TYPE_TO_ITIDE.get(normalized_document_type)
@@ -271,26 +289,32 @@ class EventService:
         if size > 1000:
             raise UnprocessableEntityError("events.inutilize.range_too_large")
 
-        self._validate_inutilization_deadline(
-            emitter_id=emitter_id,
-            document_type=normalized_document_type,
-            establishment=normalized_est,
-            point=normalized_point,
-            numero_hasta=numero_hasta,
-        )
-
-        used_numbers = self.document_repository.list_numbers_in_range(
+        numbered = self.document_repository.list_in_number_range(
             emitter_id=emitter_id,
             document_type=normalized_document_type,
             establishment=normalized_est,
             point=normalized_point,
             number_from=numero_desde,
             number_to=numero_hasta,
+            timbrado=normalized_timbrado,
         )
-        if used_numbers:
+        blocking = [
+            document for document in numbered if not self._is_inutilizable(document)
+        ]
+        if blocking:
             raise ConflictError(
                 "events.inutilize.range_already_used",
-                details={"collisions": used_numbers},
+                details={
+                    "collisions": [document.document_number for document in blocking],
+                    "documents": [
+                        {
+                            "document_id": document.id,
+                            "numero": document.document_number,
+                            "status": document.internal_status,
+                        }
+                        for document in blocking
+                    ],
+                },
             )
 
         overlapping_ranges = self.inutilized_range_repository.list_overlapping(
@@ -301,6 +325,7 @@ class EventService:
             number_from=numero_desde,
             number_to=numero_hasta,
             approved_only=True,
+            timbrado=normalized_timbrado,
         )
         if overlapping_ranges:
             raise ConflictError(
@@ -313,8 +338,10 @@ class EventService:
                 },
             )
 
+        deadline = _range_deadline(numbered)
+        extemporaneous = deadline is not None and paraguay_today() > deadline
         event_xml = build_signed_inutilization_event_group_xml(
-            timbrado=timbrado,
+            timbrado=normalized_timbrado,
             i_tide=i_tide,
             establishment=normalized_est,
             point=normalized_point,
@@ -325,13 +352,14 @@ class EventService:
             event_id=_generate_short_numeric_event_id(),
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
+            serie=serie,
         )
         payload = {
             "event_xml": event_xml,
             "typed_contract": {
                 "contract": "inutilize_numbers_v1",
                 "payload": {
-                    "timbrado": timbrado,
+                    "timbrado": normalized_timbrado,
                     "document_type": normalized_document_type,
                     "establishment": normalized_est,
                     "point": normalized_point,
@@ -339,6 +367,10 @@ class EventService:
                     "numero_hasta": numero_hasta,
                     "motivo": motivo,
                     "i_tide": i_tide,
+                    "serie": serie,
+                    "document_ids": [document.id for document in numbered],
+                    "deadline": deadline.isoformat() if deadline else None,
+                    "extemporaneous": extemporaneous,
                 },
             },
         }
@@ -361,7 +393,7 @@ class EventService:
             point=normalized_point,
             numero_desde=numero_desde,
             numero_hasta=numero_hasta,
-            timbrado=str(timbrado).strip(),
+            timbrado=normalized_timbrado,
             event_id=event.id,
             sifen_protocol=protocol if event.status == "approved" else None,
             created_at=timestamp,
@@ -371,7 +403,18 @@ class EventService:
 
         if event.status == "approved":
             self._apply_approved_event(event=event, protocol=protocol)
-        return event, job, saved_range
+        warnings = []
+        if extemporaneous:
+            warnings.append("inutilization.extemporaneous")
+            logger.warning(
+                "events.inutilize.extemporaneous",
+                extra={
+                    "event_id": event.id,
+                    "emitter_id": emitter_id,
+                    "deadline": deadline.isoformat() if deadline else None,
+                },
+            )
+        return event, job, saved_range, warnings
 
     def get_event(self, event_id: str) -> tuple[Event, Job | None]:
         event = self.event_repository.get(event_id)
@@ -797,6 +840,7 @@ class EventService:
         range_item = self.inutilized_range_repository.save(
             replace(range_item, sifen_protocol=protocol, updated_at=_now())
         )
+        inutilized = self._mark_documents_inutilized(range_item)
         self._publish_webhook_event(
             emitter_id=event.emitter_id,
             event_type="numbering.inutilized",
@@ -809,8 +853,69 @@ class EventService:
                 "numero_hasta": range_item.numero_hasta,
                 "timbrado": range_item.timbrado,
                 "sifen_protocol": protocol,
+                "document_ids": [document.id for document in inutilized],
             },
         )
+
+    def _mark_documents_inutilized(
+        self, range_item: InutilizedNumberRange
+    ) -> list[Document]:
+        """Move the documents of an inutilized range to ``inutilized``.
+
+        Only those still inutilizable: one sent again meanwhile is left to
+        its job and logged, since SIFEN will reject it with 1109 (MT v150
+        §12.4 C007 p. 161).
+        """
+
+        marked: list[Document] = []
+        for document in self.document_repository.list_in_number_range(
+            emitter_id=range_item.emitter_id,
+            document_type=range_item.document_type,
+            establishment=range_item.establishment,
+            point=range_item.point,
+            number_from=range_item.numero_desde,
+            number_to=range_item.numero_hasta,
+            timbrado=range_item.timbrado,
+        ):
+            if not self._is_inutilizable(document):
+                logger.warning(
+                    "events.inutilize.document_changed",
+                    extra={
+                        "document_id": document.id,
+                        "document_status": document.internal_status,
+                        "event_id": range_item.event_id,
+                    },
+                )
+                continue
+            marked.append(
+                self.document_repository.save(
+                    replace(
+                        document,
+                        internal_status=DOCUMENT_INUTILIZED_STATUS,
+                        sifen_status=DOCUMENT_INUTILIZED_STATUS,
+                        updated_at=_now(),
+                    )
+                )
+            )
+        return marked
+
+    def _is_inutilizable(self, document: Document) -> bool:
+        job = self.job_repository.get_for_entity("document", document.id)
+        return is_inutilizable(
+            document.internal_status, job.status if job is not None else None
+        )
+
+    def _require_emitter_timbrado(self, emitter_id: str, timbrado: str) -> None:
+        """The timbrado must belong to the emitter (4052, MT v150 §11.6.2)."""
+
+        if self.stamping_repository is None:
+            raise RuntimeError("stamping_repository is required")
+        numbers = {
+            stamping.number
+            for stamping in self.stamping_repository.list_for_emitter(emitter_id)
+        }
+        if timbrado not in numbers:
+            raise UnprocessableEntityError("events.inutilize.unknown_timbrado")
 
     def _resolve_emitter_and_active_certificate(self, emitter_id: str):
         require_active_emitter(self.emitter_repository, emitter_id)
@@ -912,37 +1017,6 @@ class EventService:
                 },
             )
 
-    def _validate_inutilization_deadline(
-        self,
-        *,
-        emitter_id: str,
-        document_type: str,
-        establishment: str,
-        point: str,
-        numero_hasta: int,
-    ) -> None:
-        if self.numbering_repository is None:
-            return
-        current = self.numbering_repository.get_current(
-            emitter_id=emitter_id,
-            document_type=document_type,
-            establishment=establishment,
-            point=point,
-        )
-        if current is None:
-            return
-        if numero_hasta > current.last_number:
-            return
-        sequence_updated_at = _ensure_utc_datetime(current.updated_at)
-        if _now() - sequence_updated_at > timedelta(days=45):
-            raise ConflictError(
-                "events.inutilize.deadline_exceeded",
-                details={
-                    "sequence_last_number": current.last_number,
-                    "sequence_updated_at": sequence_updated_at.isoformat(),
-                },
-            )
-
     def _publish_webhook_event(
         self,
         *,
@@ -1021,6 +1095,22 @@ def _normalize_three_digits(value: str) -> str:
             "events.inutilize.invalid_point_or_establishment"
         )
     return f"{parsed:03d}"
+
+
+def _range_deadline(documents: list[Document]) -> date | None:
+    """Deadline of the earliest number of the range that has a document.
+
+    A number without document carries no consumption date: no deadline is
+    computed for it (the platform reserves numbers with their document).
+    """
+
+    if not documents:
+        return None
+    consumed_on = min(
+        _ensure_utc_datetime(document.created_at).astimezone(PARAGUAY_TZ).date()
+        for document in documents
+    )
+    return inutilization_deadline(consumed_on)
 
 
 def _cancel_deadline_hours(document_type: str) -> int:

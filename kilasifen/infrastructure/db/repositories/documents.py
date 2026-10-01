@@ -1,6 +1,6 @@
 """SQLAlchemy implementation of the document repository."""
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from kilasifen.domain.documents.models import Document
@@ -142,7 +142,7 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
                 matched.append(_to_domain(model))
         return matched
 
-    def list_numbers_in_range(
+    def list_in_number_range(
         self,
         *,
         emitter_id: str,
@@ -151,17 +151,26 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
         point: str,
         number_from: int,
         number_to: int,
-    ) -> list[int]:
-        statement = select(DocumentModel.document_number).where(
-            DocumentModel.emitter_id == emitter_id,
-            DocumentModel.document_type == document_type,
-            DocumentModel.establishment == establishment,
-            DocumentModel.point == point,
-            DocumentModel.document_number.is_not(None),
-            DocumentModel.document_number >= number_from,
-            DocumentModel.document_number <= number_to,
+        timbrado: str,
+    ) -> list[Document]:
+        statement = (
+            select(DocumentModel)
+            .where(
+                DocumentModel.emitter_id == emitter_id,
+                DocumentModel.document_type == document_type,
+                DocumentModel.establishment == establishment,
+                DocumentModel.point == point,
+                DocumentModel.document_number.is_not(None),
+                DocumentModel.document_number >= number_from,
+                DocumentModel.document_number <= number_to,
+                or_(
+                    DocumentModel.timbrado == timbrado,
+                    DocumentModel.timbrado.is_(None),
+                ),
+            )
+            .order_by(DocumentModel.document_number.asc())
         )
-        return sorted(int(number) for number in self.session.scalars(statement) if number is not None)
+        return [_to_domain(model) for model in self.session.scalars(statement)]
 
     def list_recent(
         self,

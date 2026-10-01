@@ -89,7 +89,16 @@ def inutilize_numbers(
     _principal=Depends(require_fiscal_write),
     service: EventService = Depends(get_event_service),
 ) -> SuccessEnvelope:
-    event, job, range_item = service.inutilize_numbers(
+    """Inutiliza un rango de numeros de un timbrado del emisor.
+
+    Se pueden inutilizar numeros sin documento, rechazados, fallidos por
+    validacion local o en cola abortados; nunca un DTE aprobado o cancelado ni
+    un documento que pueda estar en el SIFEN. Pasado el dia 15 del mes
+    siguiente al consumo del numero, la respuesta trae el aviso
+    `inutilization.extemporaneous` (el SIFEN no la rechaza por plazo).
+    """
+
+    event, job, range_item, warnings = service.inutilize_numbers(
         emitter_id=emitter_id,
         timbrado=payload.timbrado,
         document_type=payload.document_type,
@@ -98,6 +107,7 @@ def inutilize_numbers(
         numero_desde=payload.numero_desde,
         numero_hasta=payload.numero_hasta,
         motivo=payload.motivo,
+        serie=payload.serie,
     )
     return SuccessEnvelope(
         data={
@@ -106,6 +116,7 @@ def inutilize_numbers(
             "inutilization": InutilizedRangeResponse.model_validate(
                 range_item
             ).model_dump(mode="json"),
+            "warnings": warnings,
         },
         correlation_id=request.state.correlation_id,
     )

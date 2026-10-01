@@ -57,6 +57,7 @@ class SqlAlchemyInutilizedNumberRangeRepository(InutilizedNumberRangeRepository)
         number_from: int,
         number_to: int,
         approved_only: bool = False,
+        timbrado: str | None = None,
     ) -> list[InutilizedNumberRange]:
         statement = (
             select(InutilizedNumberRangeModel)
@@ -73,6 +74,8 @@ class SqlAlchemyInutilizedNumberRangeRepository(InutilizedNumberRangeRepository)
                 InutilizedNumberRangeModel.created_at.asc(),
             )
         )
+        if timbrado is not None:
+            statement = statement.where(InutilizedNumberRangeModel.timbrado == timbrado)
         if approved_only:
             statement = statement.join(
                 EventModel, EventModel.id == InutilizedNumberRangeModel.event_id

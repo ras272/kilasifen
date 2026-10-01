@@ -37,7 +37,7 @@ class DocumentRepository(ABC):
         """List documents that reference the given CDC in typed payloads."""
 
     @abstractmethod
-    def list_numbers_in_range(
+    def list_in_number_range(
         self,
         *,
         emitter_id: str,
@@ -46,8 +46,13 @@ class DocumentRepository(ABC):
         point: str,
         number_from: int,
         number_to: int,
-    ) -> list[int]:
-        """List persisted document numbers inside one numbering range."""
+        timbrado: str,
+    ) -> list[Document]:
+        """List the documents numbered inside one range of one timbrado.
+
+        A document whose timbrado is not known yet (never prepared) counts
+        for every timbrado.
+        """
 
     @abstractmethod
     def list_recent(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from xml.etree import ElementTree as ET
 
@@ -73,8 +74,14 @@ def build_signed_inutilization_event_group_xml(
     event_id: str,
     certificate_bytes: bytes,
     certificate_password: str,
+    serie: str | None = None,
 ) -> str:
-    """Build and sign `gGroupGesEve` for inutilizacion."""
+    """Build and sign `gGroupGesEve` for inutilizacion.
+
+    ``serie`` is the optional ``dSerieNum`` added by NT 10 §1.7 (GEI009,
+    ``[A-Z][A-Z]``, Evento_Types_v150.xsd ``tserieNum``), for a numbering
+    restarted with a series after 9.999.999.
+    """
 
     normalized_timbrado = _normalize_timbrado(timbrado)
     normalized_event_id = _normalize_event_id(event_id)
@@ -105,6 +112,8 @@ def build_signed_inutilization_event_group_xml(
     ET.SubElement(inutilization, _tag("dNumFin")).text = normalized_to
     ET.SubElement(inutilization, _tag("iTiDE")).text = str(i_tide)
     ET.SubElement(inutilization, _tag("mOtEve")).text = normalized_motive
+    if serie is not None:
+        ET.SubElement(inutilization, _tag("dSerieNum")).text = _normalize_serie(serie)
 
     unsigned_xml = ET.tostring(root, encoding="unicode", xml_declaration=True)
     signed_xml = _sign_xml(
@@ -195,6 +204,13 @@ def _normalize_timbrado(timbrado: str) -> str:
     value = str(timbrado).strip()
     if len(value) != 8 or not value.isdigit():
         raise SifenValidationError("events.inutilize.invalid_timbrado")
+    return value
+
+
+def _normalize_serie(serie: str) -> str:
+    value = str(serie).strip()
+    if not re.fullmatch(r"[A-Z]{2}", value):
+        raise SifenValidationError("events.inutilize.invalid_serie")
     return value
 
 

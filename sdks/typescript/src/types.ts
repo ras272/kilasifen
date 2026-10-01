@@ -424,6 +424,8 @@ export interface InutilizeNumbersInput {
   numero_desde: number;
   numero_hasta: number;
   motivo: string;
+  /** Optional dSerieNum (NT 10 §1.7): two capital letters. */
+  serie?: string | null;
 }
 
 export interface InutilizedRange {
@@ -443,6 +445,8 @@ export interface InutilizedRange {
 
 export interface CreatedInutilization extends CreatedEvent {
   inutilization: InutilizedRange;
+  /** "inutilization.extemporaneous" when past day 15 of the next month. */
+  warnings: string[];
 }
 
 export interface WebhookRetryPolicy {

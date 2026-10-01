@@ -1,5 +1,6 @@
 from collections.abc import Iterator
-from datetime import datetime, timedelta, timezone
+from dataclasses import replace
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -15,14 +16,13 @@ from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.events.models import Event
+from kilasifen.domain.jobs.models import Job
+from kilasifen.domain.stampings.models import Stamping
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.models import DocumentNumberingSequenceModel
 from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
-)
-from kilasifen.infrastructure.db.repositories.document_numbering_sequences import (
-    SqlAlchemyDocumentNumberingSequenceRepository,
 )
 from kilasifen.infrastructure.db.repositories.documents import (
     SqlAlchemyDocumentRepository,
@@ -38,6 +38,9 @@ from kilasifen.infrastructure.db.repositories.job_outbox import (
     SqlAlchemyJobOutboxRepository,
 )
 from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepository
+from kilasifen.infrastructure.db.repositories.stampings import (
+    SqlAlchemyStampingRepository,
+)
 from kilasifen.infrastructure.db.session import (
     build_engine,
     build_session_factory,
@@ -110,12 +113,10 @@ def client(
                     job_repository=SqlAlchemyJobRepository(session),
                     certificate_store=EncryptedCertificateStore(encryption_key),
                     submission_gateway=FakeEventGateway(),
-                    numbering_repository=SqlAlchemyDocumentNumberingSequenceRepository(
-                        session
-                    ),
                     inutilized_range_repository=SqlAlchemyInutilizedNumberRangeRepository(
                         session
                     ),
+                    stamping_repository=SqlAlchemyStampingRepository(session),
                     webhook_publisher=FakeWebhookPublisher(published_webhooks),
                 )
 
@@ -533,9 +534,11 @@ def test_inutilization_isolation_between_emitters(client: TestClient) -> None:
     assert second.status_code == 201
 
 
-def test_inutilization_deadline_exceeded_when_sequence_is_too_old(
+def test_an_old_sequence_no_longer_blocks_an_inutilization(
     client: TestClient,
 ) -> None:
+    """DECISIONES F72: there is no 45-day cap; SIFEN has no deadline code."""
+
     response = client.post(
         "/v1/emitters/emitter-1/inutilizations",
         headers={"X-API-Key": API_KEY},
@@ -546,11 +549,119 @@ def test_inutilization_deadline_exceeded_when_sequence_is_too_old(
             "point": "003",
             "numero_desde": 10,
             "numero_hasta": 15,
-            "motivo": "Rango historico fuera de plazo",
+            "motivo": "Rango historico sin documentos",
         },
     )
+    assert response.status_code == 201
+    assert response.json()["data"]["warnings"] == []
+
+
+def _inutilize(client: TestClient, **overrides) -> object:
+    body = {
+        "timbrado": "80024135",
+        "document_type": "factura",
+        "establishment": "002",
+        "point": "001",
+        "numero_desde": 1,
+        "numero_hasta": 5,
+        "motivo": "Numeros que no se van a usar",
+    }
+    body.update(overrides)
+    return client.post(
+        "/v1/emitters/emitter-1/inutilizations",
+        headers={"X-API-Key": API_KEY},
+        json=body,
+    )
+
+
+def test_rejected_failed_and_aborted_numbers_are_inutilized(
+    client: TestClient,
+    published_webhooks: list[dict],
+) -> None:
+    """MT v150 §11.1.1; Dto 872/2023 Arts. 29 and 31 (DECISIONES F72)."""
+
+    response = _inutilize(client)
+
+    assert response.status_code == 201
+    body = response.json()["data"]
+    assert body["event"]["status"] == "approved"
+    payload = body["event"]["input_payload"]["typed_contract"]["payload"]
+    assert sorted(payload["document_ids"]) == [
+        "doc-num-aborted",
+        "doc-num-failed",
+        "doc-num-rejected",
+    ]
+    webhook = next(
+        item
+        for item in published_webhooks
+        if item["event_type"] == "numbering.inutilized"
+    )
+    assert sorted(webhook["payload"]["document_ids"]) == sorted(
+        payload["document_ids"]
+    )
+    with session_scope(_session_factory()) as session:
+        documents = SqlAlchemyDocumentRepository(session)
+        statuses = {
+            document_id: documents.get(document_id).internal_status
+            for document_id in payload["document_ids"]
+        }
+    assert set(statuses.values()) == {"inutilized"}
+
+
+def test_a_late_inutilization_is_flagged_not_refused(client: TestClient) -> None:
+    response = _inutilize(client)
+
+    body = response.json()["data"]
+    payload = body["event"]["input_payload"]["typed_contract"]["payload"]
+    # The earliest number was consumed in January 2026: day 15 of February.
+    assert payload["deadline"] == "2026-02-15"
+    assert payload["extemporaneous"] is True
+    assert body["warnings"] == ["inutilization.extemporaneous"]
+
+
+@pytest.mark.parametrize(
+    ("numero", "status"),
+    [
+        (10, "approved"),
+        (11, "cancelled"),
+        (12, "retry_pending"),
+        (13, "rejected"),
+    ],
+)
+def test_dte_and_documents_that_may_be_at_sifen_block_the_range(
+    client: TestClient,
+    numero: int,
+    status: str,
+) -> None:
+    # 13 is rejected but its job will still send it again.
+    response = _inutilize(client, numero_desde=numero, numero_hasta=numero)
+
     assert response.status_code == 409
-    assert response.json()["error"]["code"] == "events.inutilize.deadline_exceeded"
+    error = response.json()["error"]
+    assert error["code"] == "events.inutilize.range_already_used"
+    assert error["details"]["collisions"] == [numero]
+    assert error["details"]["documents"][0]["status"] == status
+
+
+def test_documents_of_another_timbrado_do_not_collide(client: TestClient) -> None:
+    response = _inutilize(
+        client, timbrado="80024136", numero_desde=10, numero_hasta=10
+    )
+
+    assert response.status_code == 201
+
+
+def test_the_timbrado_must_belong_to_the_emitter(client: TestClient) -> None:
+    response = _inutilize(client, timbrado="12345678")
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "events.inutilize.unknown_timbrado"
+
+
+def test_the_series_must_be_two_capital_letters(client: TestClient) -> None:
+    response = _inutilize(client, serie="a1")
+
+    assert response.status_code == 422
 
 
 def test_cancel_is_queued_then_worker_applies_approved_outcome(
@@ -1064,6 +1175,26 @@ def _seed_event_context(
             )
         )
 
+        for stamping_id, emitter_id, number in (
+            ("stamp-1", "emitter-1", "80024135"),
+            ("stamp-1b", "emitter-1", "80024136"),
+            ("stamp-2", "emitter-2", "90000001"),
+        ):
+            SqlAlchemyStampingRepository(session).save(
+                Stamping(
+                    id=stamping_id,
+                    emitter_id=emitter_id,
+                    number=number,
+                    start_date=date(2024, 1, 1),
+                    end_date=None,
+                    is_active=stamping_id != "stamp-1b",
+                    status="active",
+                    created_at=_now(),
+                    updated_at=_now(),
+                )
+            )
+        _seed_numbered_documents(doc_repo, SqlAlchemyJobRepository(session))
+
         session.add(
             DocumentNumberingSequenceModel(
                 id="seq-old-1",
@@ -1073,6 +1204,67 @@ def _seed_event_context(
                 document_type="factura",
                 last_number=100,
                 updated_at=_now() - timedelta(days=46),
+            )
+        )
+
+
+def _session_factory():
+    return build_session_factory(build_engine(get_settings().database_url))
+
+
+def _seed_numbered_documents(doc_repo, job_repo) -> None:
+    """Numbers 1-5 and 10-13 of 002-001 (timbrado 80024135), for F72."""
+
+    consumed = datetime(2026, 1, 20, 15, 0, tzinfo=timezone.utc)
+    cdc_prefix = "0180012345000200100000"
+    cdc_suffix = "2026012012345678901"
+    rows = (
+        # number, status, job status, cdc
+        (1, "rejected", "failed", f"{cdc_prefix}011{cdc_suffix}"),
+        (2, "failed", "failed", None),
+        (3, "queued", "failed", None),
+        (10, "approved", "succeeded", f"{cdc_prefix}101{cdc_suffix}"),
+        (11, "cancelled", "succeeded", f"{cdc_prefix}111{cdc_suffix}"),
+        (12, "retry_pending", "retry_scheduled", f"{cdc_prefix}121{cdc_suffix}"),
+        (13, "rejected", "retry_scheduled", f"{cdc_prefix}131{cdc_suffix}"),
+    )
+    names = {1: "rejected", 2: "failed", 3: "aborted"}
+    for number, status, job_status, cdc in rows:
+        document_id = f"doc-num-{names.get(number, number)}"
+        doc_repo.save(
+            replace(
+                _document(
+                    id=document_id,
+                    emitter_id="emitter-1",
+                    document_type="factura",
+                    cdc=cdc,
+                    sifen_status=status,
+                    internal_status=status,
+                    establishment="002",
+                    point="001",
+                    document_number=number,
+                    updated_at=consumed + timedelta(days=number),
+                    timbrado="80024135",
+                ),
+                created_at=consumed + timedelta(days=number),
+            )
+        )
+        job_repo.save(
+            Job(
+                id=f"job-{document_id}",
+                emitter_id="emitter-1",
+                related_entity_type="document",
+                related_entity_id=document_id,
+                job_type="document.emit",
+                status=job_status,
+                attempts=1,
+                error_snapshot=None,
+                scheduled_at=consumed,
+                started_at=consumed,
+                finished_at=None,
+                worker_correlation_id=None,
+                created_at=consumed,
+                updated_at=consumed,
             )
         )
 

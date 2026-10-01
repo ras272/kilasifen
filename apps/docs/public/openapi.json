@@ -1710,6 +1710,19 @@
             "title": "Point",
             "type": "string"
           },
+          "serie": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dSerieNum opcional (NT 10 §1.7): serie de la numeracion cuando se reinicio despues de 9.999.999.",
+            "title": "Serie"
+          },
           "timbrado": {
             "pattern": "^\\d{8}$",
             "title": "Timbrado",
@@ -6284,6 +6297,7 @@
     },
     "/v1/emitters/{emitter_id}/inutilizations": {
       "post": {
+        "description": "Inutiliza un rango de numeros de un timbrado del emisor.\n\nSe pueden inutilizar numeros sin documento, rechazados, fallidos por\nvalidacion local o en cola abortados; nunca un DTE aprobado o cancelado ni\nun documento que pueda estar en el SIFEN. Pasado el dia 15 del mes\nsiguiente al consumo del numero, la respuesta trae el aviso\n`inutilization.extemporaneous` (el SIFEN no la rechaza por plazo).",
         "operationId": "inutilize_numbers_v1_emitters__emitter_id__inutilizations_post",
         "parameters": [
           {
