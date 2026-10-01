@@ -19,7 +19,7 @@ from kilasifen.engine.sdk.fiscal import (
     calculate_mod11_dv,
     generate_cdc,
 )
-from kilasifen.engine.transmissao.de import TransmissaoDE
+from kilasifen.engine.transmision.de import TransmisionDE
 
 SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 XSI_NS = "http://www.w3.org/2001/XMLSchema-instance"
@@ -310,7 +310,7 @@ def main() -> int:
     print(xml.decode("utf-8")[:500])
     print("xml_size:", len(xml))
     if args.send:
-        client = TransmissaoDE(
+        client = TransmisionDE(
             ambiente=TEST,
             pkcs12_data=cert_data,
             pkcs12_password=password,

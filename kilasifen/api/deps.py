@@ -56,8 +56,8 @@ from kilasifen.infrastructure.db.repositories.webhooks import (
 from kilasifen.infrastructure.db.session import session_scope
 from kilasifen.infrastructure.jobs.outbox import SqlAlchemyJobOutboxQueue
 from kilasifen.infrastructure.limits.redis import RedisRequestLimiter
-from kilasifen.infrastructure.sifen.event import PysifenEventGateway
-from kilasifen.infrastructure.sifen.query import PysifenQueryGateway
+from kilasifen.infrastructure.sifen.event import KilaSifenEventGateway
+from kilasifen.infrastructure.sifen.query import KilaSifenQueryGateway
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
 from kilasifen.security import (
@@ -364,7 +364,7 @@ def get_query_service(
         document_repository=SqlAlchemyDocumentRepository(session),
         job_repository=SqlAlchemyJobRepository(session),
         certificate_store=EncryptedCertificateStore(settings.encryption_key),
-        query_gateway=PysifenQueryGateway(settings.sifen_environment),
+        query_gateway=KilaSifenQueryGateway(settings.sifen_environment),
     )
 
 
@@ -398,7 +398,7 @@ def get_event_service(
         certificate_repository=SqlAlchemyCertificateRepository(session),
         job_repository=SqlAlchemyJobRepository(session),
         certificate_store=EncryptedCertificateStore(settings.encryption_key),
-        submission_gateway=PysifenEventGateway(settings.sifen_environment),
+        submission_gateway=KilaSifenEventGateway(settings.sifen_environment),
         numbering_repository=SqlAlchemyDocumentNumberingSequenceRepository(session),
         inutilized_range_repository=SqlAlchemyInutilizedNumberRangeRepository(session),
         webhook_publisher=webhook_service,

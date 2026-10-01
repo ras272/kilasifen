@@ -1,4 +1,4 @@
-"""Fachada pública estable de PySIFEN."""
+"""Fachada publica estable del engine fiscal de KilaSifen."""
 
 from kilasifen import __version__
 from kilasifen.engine.firma import sign_xml

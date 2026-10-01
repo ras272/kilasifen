@@ -61,15 +61,15 @@ from kilasifen.infrastructure.sifen.engine import (
     DocumentEmissionEngine,
     EmissionOutcome,
     EmissionTransportUncertainError,
-    PysifenEmissionEngine,
+    KilaSifenEmissionEngine,
 )
 from kilasifen.infrastructure.sifen.event import (
     EventSubmissionGateway,
-    PysifenEventGateway,
+    KilaSifenEventGateway,
 )
 from kilasifen.infrastructure.sifen.query import (
     DocumentQueryOutcome,
-    PysifenQueryGateway,
+    KilaSifenQueryGateway,
     SifenQueryGateway,
 )
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
@@ -135,7 +135,7 @@ def process_document_job(
                         outcome=sandbox_outcome,
                     )
                     if sandbox_outcome is not None
-                    else PysifenQueryGateway(
+                    else KilaSifenQueryGateway(
                         deployment_environment=settings.sifen_environment
                     )
                 )
@@ -148,7 +148,7 @@ def process_document_job(
                     if sandbox_outcome is not None
                     else None
                 )
-                emission_engine = PysifenEmissionEngine(
+                emission_engine = KilaSifenEmissionEngine(
                     deployment_environment=settings.sifen_environment,
                     transport=sandbox_transport,
                 )
@@ -490,7 +490,7 @@ def process_event_job(
     engine = build_engine(database_url)
     session_factory = build_session_factory(engine)
     certificate_store = EncryptedCertificateStore(encryption_key)
-    submission_gateway = submission_gateway or PysifenEventGateway(
+    submission_gateway = submission_gateway or KilaSifenEventGateway(
         settings.sifen_environment
     )
     retryable = False

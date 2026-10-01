@@ -11,7 +11,7 @@ from kilasifen.infrastructure.sifen.typed_xml_builder import build_typed_documen
 
 
 @dataclass(slots=True)
-class PysifenEmissionInput:
+class KilaSifenEmissionInput:
     """Minimal emission input for the kilasifen.engine bridge."""
 
     generated_xml: str | None
@@ -19,7 +19,7 @@ class PysifenEmissionInput:
     doc_id: str | None
 
 
-class PysifenPayloadMapper:
+class KilaSifenPayloadMapper:
     """Map persisted document payloads into kilasifen.engine-compatible inputs."""
 
     def map_document(
@@ -28,7 +28,7 @@ class PysifenPayloadMapper:
         *,
         emitter: Emitter | None = None,
         stamping: Stamping | None = None,
-    ) -> PysifenEmissionInput:
+    ) -> KilaSifenEmissionInput:
         payload = document.payload_snapshot or {}
         generated_xml = payload.get("generated_xml") or document.generated_xml
         signed_xml = payload.get("signed_xml") or document.signed_xml
@@ -58,7 +58,7 @@ class PysifenPayloadMapper:
                 "document payload must include generated_xml or signed_xml"
             )
 
-        return PysifenEmissionInput(
+        return KilaSifenEmissionInput(
             generated_xml=generated_xml,
             signed_xml=signed_xml,
             doc_id=doc_id,

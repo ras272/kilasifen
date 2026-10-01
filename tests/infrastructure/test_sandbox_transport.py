@@ -6,7 +6,7 @@ import pytest
 from kilasifen.domain.sandbox import SandboxOutcome
 from kilasifen.engine.sdk.errors import SifenTimeoutError
 from kilasifen.infrastructure.sandbox.transport import DeterministicSandboxTransport
-from kilasifen.infrastructure.sifen.engine import PysifenEmissionEngine
+from kilasifen.infrastructure.sifen.engine import KilaSifenEmissionEngine
 
 
 @pytest.mark.parametrize(
@@ -32,7 +32,7 @@ def test_sandbox_transport_forces_outcome_without_live_sifen(
         signed_xml='<rDE><DE Id="0180012345"/><Signature/></rDE>',
         doc_id="0180012345",
     )
-    engine = PysifenEmissionEngine(
+    engine = KilaSifenEmissionEngine(
         mapper=mapper,
         deployment_environment="test",
         transport=DeterministicSandboxTransport(

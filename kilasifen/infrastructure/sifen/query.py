@@ -78,7 +78,7 @@ class SifenQueryGateway(Protocol):
         """Query one document by CDC."""
 
 
-class PysifenQueryGateway:
+class KilaSifenQueryGateway:
     """Concrete query gateway backed by kilasifen.engine transport."""
 
     def __init__(self, deployment_environment: str = "test"):

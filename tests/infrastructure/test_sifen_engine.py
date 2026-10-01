@@ -1,7 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 from kilasifen.infrastructure.sifen.engine import (
-    PysifenDocumentTransport,
+    KilaSifenDocumentTransport,
     _normalize_response,
 )
 from kilasifen.infrastructure.sifen.typed_xml_builder import _resolve_emission_datetime
@@ -65,7 +65,7 @@ def test_live_document_transport_disables_automatic_mutation_retries() -> None:
         "kilasifen.infrastructure.sifen.engine.SifenClient",
         return_value=client,
     ) as client_class:
-        transport = PysifenDocumentTransport()
+        transport = KilaSifenDocumentTransport()
         transport.serializer = MagicMock()
         transport.serializer.render.return_value = "<response />"
 

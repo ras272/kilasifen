@@ -21,7 +21,7 @@ from kilasifen.engine.sdk.errors import (
 )
 from kilasifen.engine.transmision.de import _build_enviar_de_request_xml
 from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
-from kilasifen.infrastructure.sifen.mapper import PysifenPayloadMapper
+from kilasifen.infrastructure.sifen.mapper import KilaSifenPayloadMapper
 
 
 @dataclass(slots=True)
@@ -97,7 +97,7 @@ class DocumentSubmissionTransport(Protocol):
         """Submit signed XML and return a normalized SIFEN outcome."""
 
 
-class PysifenDocumentTransport:
+class KilaSifenDocumentTransport:
     """Live document transport backed by ``kilasifen.engine``."""
 
     def __init__(self) -> None:
@@ -131,18 +131,18 @@ class PysifenDocumentTransport:
         )
 
 
-class PysifenEmissionEngine:
+class KilaSifenEmissionEngine:
     """Concrete emission engine backed by kilasifen.engine transport and signing."""
 
     def __init__(
         self,
-        mapper: PysifenPayloadMapper | None = None,
+        mapper: KilaSifenPayloadMapper | None = None,
         deployment_environment: str = "test",
         transport: DocumentSubmissionTransport | None = None,
     ):
-        self.mapper = mapper or PysifenPayloadMapper()
+        self.mapper = mapper or KilaSifenPayloadMapper()
         self.deployment_environment = deployment_environment
-        self.transport = transport or PysifenDocumentTransport()
+        self.transport = transport or KilaSifenDocumentTransport()
 
     def emit_document(
         self,

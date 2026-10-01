@@ -17,7 +17,7 @@ from kilasifen.engine.firma import sign_xml
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
-from kilasifen.infrastructure.sifen.mapper import PysifenPayloadMapper
+from kilasifen.infrastructure.sifen.mapper import KilaSifenPayloadMapper
 from kilasifen.testing.database import managed_test_database_url
 from kilasifen.testing.typed_contract_scenarios import (
     TypedContractScenario,
@@ -221,7 +221,7 @@ def _build_signed_xml_from_api_document(
         created_at=_parse_datetime(emitter["created_at"]),
         updated_at=_parse_datetime(emitter["updated_at"]),
     )
-    mapper = PysifenPayloadMapper()
+    mapper = KilaSifenPayloadMapper()
     emission_input = mapper.map_document(
         document,
         emitter=emitter_obj,

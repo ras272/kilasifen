@@ -6,11 +6,11 @@ from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine.sdk.errors import SifenValidationError
-from kilasifen.infrastructure.sifen.mapper import PysifenPayloadMapper
+from kilasifen.infrastructure.sifen.mapper import KilaSifenPayloadMapper
 
 
 def test_mapper_builds_factura_xml_from_typed_payload() -> None:
-    mapper = PysifenPayloadMapper()
+    mapper = KilaSifenPayloadMapper()
     document = _build_document(
         payload_snapshot={
             "typed_contract": {
@@ -49,7 +49,7 @@ def test_mapper_builds_factura_xml_from_typed_payload() -> None:
 
 
 def test_mapper_builds_nota_credito_xml_from_typed_payload() -> None:
-    mapper = PysifenPayloadMapper()
+    mapper = KilaSifenPayloadMapper()
     document = _build_document(
         payload_snapshot={
             "typed_contract": {
@@ -92,7 +92,7 @@ def test_mapper_builds_nota_credito_xml_from_typed_payload() -> None:
 
 
 def test_mapper_rejects_typed_payload_without_required_fields() -> None:
-    mapper = PysifenPayloadMapper()
+    mapper = KilaSifenPayloadMapper()
     document = _build_document(
         payload_snapshot={
             "typed_contract": {
@@ -111,7 +111,7 @@ def test_mapper_rejects_typed_payload_without_required_fields() -> None:
 
 
 def test_mapper_rejects_receiver_address_without_house_number() -> None:
-    mapper = PysifenPayloadMapper()
+    mapper = KilaSifenPayloadMapper()
     document = _build_document(
         payload_snapshot={
             "typed_contract": {

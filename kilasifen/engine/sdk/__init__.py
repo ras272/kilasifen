@@ -1,4 +1,4 @@
-"""Exports publicos del SDK PySIFEN."""
+"""Exports publicos del SDK de KilaSifen."""
 
 from kilasifen.engine.sdk.client import SifenClient
 from kilasifen.engine.sdk.errors import (

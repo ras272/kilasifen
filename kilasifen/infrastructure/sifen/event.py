@@ -48,7 +48,7 @@ class EventSubmissionGateway(Protocol):
         """Submit one event and return normalized artifacts."""
 
 
-class PysifenEventGateway:
+class KilaSifenEventGateway:
     """Concrete event submission adapter backed by kilasifen.engine."""
 
     def __init__(self, deployment_environment: str = "test"):

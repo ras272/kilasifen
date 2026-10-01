@@ -1,4 +1,4 @@
-"""Errores tipados del SDK PySIFEN."""
+"""Errores tipados del SDK de KilaSifen."""
 
 
 class SifenError(Exception):
