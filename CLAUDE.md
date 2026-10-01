@@ -22,9 +22,11 @@ señalar la contradicción en el commit o PR.
    conocida»); no se suman nuevas.
 5. Clean-room: no vuelve al repositorio nada del import original de terceros
    (ver la sección «Regla clean-room»).
-6. Los envíos de DE y de eventos no se reintentan: `max_retries` queda en `0`.
-   Reenviar un documento cuyo resultado se desconoce puede duplicarlo ante la
-   SET.
+6. Los envíos de DE y de eventos no se reintentan ante un resultado incierto:
+   reenviar un documento cuyo resultado se desconoce puede duplicarlo ante la
+   SET. `TransmisionDE` y `TransmisionEvento` solo repiten una solicitud que
+   no llegó al SIFEN (`SifenRequestNotSentError`), aun con `max_retries > 0`;
+   la plataforma y `SifenClient` igual los usan con `max_retries=0`.
 
 ## Qué es KilaSifen
 
@@ -70,7 +72,7 @@ kilasifen/
     __init__.py        fachada pública estable
     binding.py         BindingMixin (base de todas las clases generadas)
     firma.py           sign_xml
-    transmision/       base, config, de, consulta, evento
+    transmision/       base, conexion, config, de, consulta, evento
     sdk/               client, fiscal, kude, polling, validation, signer, errors
     de/schemas/v150/   XSD oficiales de la SET
     de/bindings/v150/  bindings generados por xsdata
@@ -121,10 +123,11 @@ python -m pytest tests/api tests/application tests/domain tests/infrastructure -
 - Sin `KILA_SIFEN_TEST_DATABASE_URL` los tests de plataforma usan SQLite.
   Apuntándola a PostgreSQL, cada test trabaja en un schema propio; el marcador
   `requires_postgres` identifica los que necesitan ese backend.
-- Referencia medida al escribir esta guía (commit `9c714f3`, Python 3.14, sin
-  `KILA_SIFEN_TEST_DATABASE_URL`): 1092 passed, 6 skipped, 1 xfailed. El
-  xfail es estricto y documenta un defecto conocido (ver «Deuda conocida»).
-  Si el número cambia, que sea por tests agregados o quitados a propósito.
+- Referencia medida tras ordenar los bloqueos de la segunda transacción de
+  los intentos (Python 3.14, sin `KILA_SIFEN_TEST_DATABASE_URL`,
+  `python -m pytest tests/ -q`): 1308 passed, 10 skipped (cuatro de ellos solo
+  corren contra PostgreSQL). Ya no queda ningún xfail. Si el número cambia,
+  que sea por tests agregados o quitados a propósito.
 - Chequeo de versiones nuevas de los XSD en la SET (hace red; se corre a mano
   o desde el job semanal del workflow):
   `CHECK_SCHEMA_UPDATES=1 python -m pytest tests/test_schema_versions.py::TestSchemaUpdates`.
@@ -222,9 +225,14 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   `TransmisionBase` y `infrastructure/sifen/typed_event_builder.py` piden el
   firmador directamente con `sdk.signer.get_pkcs12_signer`.
 - **Transporte.** `TransmisionBase` arma el cliente SOAP con mTLS; endpoints y
-  ambientes salen de `transmision/config.py`. La plataforma envía el XML ya
-  firmado con `SifenClient.enviar_de_xml` (que delega en
-  `TransmisionDE.enviar_de_xml`), no con `enviar_de(rde)`.
+  ambientes salen de `transmision/config.py`. La sesión HTTPS sale de
+  `transmision/conexion.py`: un `HTTPAdapter` con `ssl.SSLContext` propio
+  carga el certificado del emisor y su clave privada, que se escribe en disco
+  como PKCS#8 cifrado con una contraseña aleatoria que solo vive en memoria.
+  La verificación del certificado del servidor queda siempre activada. La
+  plataforma arma el `rEnviDe` con `_build_enviar_de_request_xml` y el `dId`
+  real, lo guarda con el documento y lo envía tal cual con
+  `TransmisionDE._send_raw_xml`, no con `enviar_de(rde)`.
 
 ## Plataforma
 
@@ -349,14 +357,8 @@ el plan del fork escritos por este proyecto. Para no volver atrás:
 Engine (defectos que la reescritura clean-room conservó a propósito para
 mantener el mismo comportamiento; se corrigen en commits posteriores):
 
-- `TransmisionDE.enviar_de(rde)` con un XML prefijado por xsdata produce una
-  firma inválida (es el xfail estricto). La plataforma usa `enviar_de_xml`.
 - `enviar_lote` codifica en base64 dos veces y sin ZIP: no cumple la
   especificación. La plataforma no lo usa.
-- Un SOAP Fault o una respuesta ilegible aparece como error de parseo y no
-  como error de transporte con resultado incierto.
-- La protección contra envíos duplicados depende de `max_retries=0` (valor
-  por defecto).
 - `consultar_dte_async` se reintenta como si fuera una consulta de solo
   lectura.
 - El único binding `RDe` tiene el layout v141 (sin `dSisFact`).
@@ -371,8 +373,12 @@ Plataforma (hallazgos de auditoría pendientes):
   código distinto de `0260` se marca como rechazo salvo que `dEstRes` diga
   «Aprobado» sin más texto; no se produce el estado «aprobado con
   observación».
-- Un documento cuyo envío falló antes de llegar al SIFEN puede quedar trabado
-  en `reconciliation_required`.
+- Un evento con resultado incierto (timeout, respuesta ilegible) se vuelve
+  a enviar en el próximo intento, sin consultar antes. Qué corresponde según
+  la normativa de eventos duplicados está pendiente de definir.
+- Un job cuyo worker muere durante la llamada al SIFEN queda `processing`
+  (documento `submitting`) hasta que un operador lo reencola; no hay reaper
+  que lo detecte solo. El reintento consulta el CDC antes de decidir.
 
 Proyecto:
 

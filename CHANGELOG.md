@@ -49,10 +49,29 @@ revisar la guía de migración de esta sección.
 - Los mensajes de error de `kilasifen.engine.transmision`,
   `kilasifen.engine.firma` y del firmador PKCS12
   (`kilasifen.engine.sdk.signer`) ahora están en español. El código que compare
-  el texto de esos mensajes tiene que ajustarse. Queda una excepción:
-  `SifenUnexpectedResponseError`, que la transmisión lanza pero se define en
-  `kilasifen.engine.sdk.errors`, sigue con su texto en inglés.
+  el texto de esos mensajes tiene que ajustarse. Eso incluye
+  `SifenUnexpectedResponseError` (definida en `kilasifen.engine.sdk.errors`):
+  su mensaje pasa de `Unexpected SIFEN response: expected X, received Y` a
+  `Respuesta inesperada del SIFEN: se esperaba X y se recibio Y`.
 - Los extras `sign` y `transmision` exigen `signxml>=5.1` (antes `>=3.0`).
+- Plataforma: `DocumentEmissionEngine.emit_document` se reemplaza por dos
+  pasos, `prepare_document` (arma, firma y envuelve el `rEnviDe` sin tocar la
+  red) y `submit_prepared(request_xml=...)` (envía ese texto sin cambios).
+  `DocumentSubmissionTransport.submit` recibe `request_xml` en lugar de
+  `signed_xml`. Se eliminan `EmissionOutcome` y
+  `EmissionTransportUncertainError`; aparece `PreparedSubmission`. Solo afecta
+  a quien implemente motores o transportes propios para los workers. Además,
+  `prepare_document` rechaza con `SifenValidationError` un payload con XML ya
+  firmado del que no se puede obtener el `Id` del DE (el CDC): el documento
+  queda `failed` y no se envía nada. Antes ese XML se enviaba con el CDC
+  vacío, y una respuesta perdida ya no se podía reconciliar.
+- Plataforma: `EventSubmissionGateway.submit_event` se reemplaza por
+  `prepare_event` y `submit_prepared(request_xml=...)`; aparece
+  `PreparedEventSubmission` y `EventSubmissionOutcome` deja de llevar
+  `generated_xml`, `signed_xml` y `request_xml`.
+  `EventService.process_queued_event` se reemplaza por
+  `begin_queued_event_attempt` y `record_event_attempt`, que el worker llama
+  en transacciones separadas.
 
 ### Guía de migración
 
@@ -90,6 +109,14 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 - Registro de esquemas determinista para validar contra los XSD.
 - Utilidades de *polling* para lotes y para la consulta asíncrona de DTE.
 - Ejemplos ejecutables en `docs/examples/`.
+- `SifenRequestNotSentError` (subclase de `SifenTransportError`, exportada en
+  `kilasifen.engine.sdk`): el transporte la lanza cuando la falla prueba que
+  la solicitud nunca llegó al SIFEN (DNS, conexión rechazada o inalcanzable,
+  tiempo agotado al conectar, handshake TLS fallido). Los errores que pueden
+  ocurrir después de enviar el cuerpo (timeout de lectura, conexión cortada,
+  respuesta truncada) siguen siendo `SifenTimeoutError` o
+  `SifenTransportError`. Un `requests.ConnectTimeout` ahora se informa con
+  esta excepción y ya no como `SifenTimeoutError`.
 
 ### Changed
 
@@ -111,6 +138,116 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   dígitos Unicode de otros sistemas de escritura.
 - `TransmisionBase` y sus subclases lanzan `ValueError` al construirse si
   `max_retries` es negativo. El valor por defecto sigue siendo `0`.
+- Los envíos con efecto fiscal (`TransmisionDE.enviar_de`, `enviar_de_xml`,
+  `enviar_lote` y los envíos de `TransmisionEvento`) solo se reintentan ante
+  `SifenRequestNotSentError`, aunque `max_retries` sea mayor que `0`: un
+  timeout de lectura, un corte de conexión o un 5xx sin cuerpo XML salen en
+  el primer intento. Antes, con `max_retries > 0`, esos errores provocaban un
+  reenvío que podía duplicar la operación. `ConsultaSIFEN` conserva la
+  política anterior y reintenta también esos errores.
+- Un SOAP Fault (en HTTP 200 o 5xx), el sobre de otra operación, HTML de un
+  proxy o un cuerpo que no se puede leer ya no escapan como `ParserError` o
+  `TypeError` de xsdata: `enviar_de`, `enviar_de_xml`, `enviar_lote`,
+  `enviar_evento` y todas las consultas lanzan
+  `SifenUnexpectedResponseError` (subclase de `SifenTransportError`, es
+  decir, resultado incierto). La excepción gana el atributo `raw_body`, con
+  el comienzo del cuerpo recibido (hasta 4096 caracteres) como texto; no se
+  incluye en el mensaje. Las respuestas se validan por el nombre de su raíz
+  antes de parsearlas, y `consultar_ruc` reabre la conexión ante esta
+  excepción en lugar de ante `ParserError`.
+- Plataforma: la espera por el bloqueo de la fila del emisor (`SELECT ... FOR
+  UPDATE`) queda acotada a 5 segundos en PostgreSQL (`lock_timeout` local a
+  la transacción, restaurado después). Si se agota, la API responde `503`
+  con el código `emitters.lock_timeout`, igual que `numbering.lock_timeout`
+  en la numeración. En los workers, el job conserva su estado (`queued` o
+  `retry_scheduled`), anota la categoría `emitter_busy` y se vuelve a
+  despachar 30 segundos después, sin gastar un intento ni tocar el documento
+  o el evento; así un reintento manual de un documento o evento `failed`, que
+  solo reabre un job `queued`, no se pierde. En SQLite no cambia nada.
+- Plataforma: las consultas de documento y de RUC y el endpoint `reconcile`
+  ya no toman el bloqueo de la fila del emisor, así que no lo retienen
+  mientras esperan al SIFEN. Después de la respuesta, la reconciliación
+  relee el documento con `SELECT ... FOR UPDATE` y decide sobre el estado
+  confirmado: si un worker registró un resultado mientras tanto, ya no se
+  pisa.
+- Plataforma: cada intento de emisión de un documento usa dos
+  transacciones y no retiene ninguna, ni bloqueos de filas, mientras espera
+  al SIFEN. La primera bloquea emisor, documento y job, cuenta el intento y
+  confirma en la base el XML generado, el firmado, el `rEnviDe` exacto que va
+  a viajar y el CDC, con el documento en el estado nuevo `submitting`. La
+  segunda toma los bloqueos en el mismo orden (emisor, sin límite de espera
+  para no perder la respuesta del SIFEN; después documento y job, releídos
+  con `FOR UPDATE`) y registra el resultado sin pisar un estado terminal
+  escrito mientras tanto. Los webhooks de estado se publican dentro de un
+  savepoint: un error de base al publicar se registra en el log y ya no
+  puede descartar el resultado (en PostgreSQL, la transacción abortada
+  convertía el `COMMIT` en un `ROLLBACK` silencioso). Antes todo el job era una
+  sola transacción confirmada después del SOAP: una caída, un `ParserError`
+  o cualquier excepción que no fuera `SifenError` perdía el XML, el CDC y el
+  contador de intentos, y el bloqueo del emisor se mantenía durante la
+  llamada.
+- Plataforma: el `rEnviDe` que se guarda en `sifen_request_xml` es el que se
+  envía, con su `dId` real (antes se guardaba uno armado con `dId` 1 y se
+  enviaba otro).
+- Plataforma: los fallos del envío se clasifican. Si la falla prueba que la
+  solicitud no salió (`SifenRequestNotSentError`, transporte cerrado), el
+  documento vuelve a `queued` y el próximo intento reenvía el mismo request,
+  sin consultar; al agotar los intentos el job queda `failed`
+  (`retry_exhausted`) y el documento `queued`, listo para un reintento
+  manual. Cualquier otro fallo (timeout, conexión cortada, SOAP Fault,
+  respuesta ilegible, `ParserError`, error de programación) deja el resultado
+  incierto: `retry_pending` y reconciliación por CDC. Ninguna falla de la
+  llamada al SIFEN escapa del worker sin registrarse; una falla de la base de
+  datos en la primera o en la segunda transacción sí escapa y deja el job
+  `processing` y el documento `submitting`. Un intento incierto que agota el
+  presupuesto pasa a `reconciliation_required` (antes podía quedar `failed` y
+  un reintento manual lo reenviaba). Un documento que quedó en `submitting`
+  (el worker murió, o falló la base al registrar) se reconcilia por CDC en el
+  intento siguiente, que hoy tiene que lanzar un operador desde la consola:
+  ningún proceso retoma esos jobs solo.
+- Plataforma: los eventos (cancelación e inutilización) siguen el mismo
+  esquema de dos transacciones. El worker guarda el grupo firmado
+  (`signed_xml`, antes vacío) y el `rEnviEventoDe` exacto con el evento en
+  `submitting` antes de enviarlo, y registra el resultado en una segunda
+  transacción (emisor, evento y job, en ese orden, con los webhooks en un
+  savepoint), sin retener el bloqueo del emisor durante la llamada. Un
+  request que no salió deja el evento en `queued` (`transport_not_sent`);
+  cualquier otro fallo, en `retry_pending` (`transport`). Una respuesta de
+  eventos que no es `rRetEnviEventoDe` (SOAP Fault, HTML, cuerpo truncado)
+  ahora es `SifenUnexpectedResponseError`, resultado incierto, y ya no un
+  error de validación que marcaba el evento como `failed`. El reintento de
+  un evento incierto sigue reenviándolo, como antes. Mientras un evento sigue
+  en `submitting` y no pasaron cinco minutos desde que se guardó su request
+  (el intento anterior puede seguir esperando al SIFEN), un intento nuevo
+  del mismo job (reintento manual, despacho duplicado) no firma ni envía
+  nada: el job conserva su estado, anota `attempt_in_flight` y se vuelve a
+  despachar cuando vence esa ventana.
+- Plataforma: el outbox ya no da por publicado un job cuando RQ todavía
+  informa como `started` una ejecución anterior con el mismo id. Antes
+  devolvía ese registro y marcaba la fila como publicada, así que un
+  reintento manual de un job cuyo worker había muerto se perdía en silencio
+  (el job quedaba `queued` y el documento `submitting`). Ahora la publicación
+  se posterga (`jobs.outbox.publish_deferred`) con el backoff habitual del
+  outbox hasta que RQ termina esa ejecución o la marca fallida.
+- Plataforma: los workers de RQ y el proceso del outbox configuran el mismo
+  logging JSON que la API (`configure_logging`, nivel de
+  `KILA_SIFEN_LOG_LEVEL`) la primera vez que corre un job o arranca el
+  sweeper. Antes solo inicializaban Sentry y sus `logger.info` se perdían
+  (los errores salían como texto plano por el `lastResort` de Python). Las
+  líneas propias de RQ (`rq.worker`) conservan su formato y ya no se
+  duplican.
+- La firma de un `rDE` ya no se invalida al armar el `rEnviDe` (defecto P3).
+  `_build_enviar_de_request_xml` inserta el `rDE` como texto, con sus propias
+  declaraciones de namespace y sus prefijos, en lugar de moverlo como árbol
+  lxml (lxml quitaba las declaraciones repetidas en el padre y reexpresaba un
+  `rDE` prefijado en el namespace por defecto). Además, `enviar_de` y
+  `enviar_lote` serializan el binding con el namespace del SIFEN por defecto,
+  sin el prefijo `ns0:`, antes de firmar. La firma verifica dentro del
+  `rEnviDe` tanto con `enviar_de(rde)` como con `enviar_de_xml` de un `rDE`
+  firmado con o sin prefijos. Cambia la forma textual del `rEnviDe`: el `rDE`
+  repite `xmlns="http://ekuatia.set.gov.py/sifen/xsd"` antes de
+  `xmlns:xsi` (la cabecera habitual de un `rDE` del SIFEN), y un `rDE`
+  prefijado conserva su prefijo en lugar de pasar al namespace por defecto.
 - El firmador PKCS12 acepta `bytearray` y `memoryview`, además de `bytes`,
   para el contenido del certificado, la contraseña y el documento a firmar.
 - El autor declarado en los metadatos del paquete es "The KilaSifen Authors".
@@ -131,6 +268,13 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   - si un ancestro declara un prefijo para el namespace XMLDSig
     (`xmlns:ds`), la `Signature` mantiene su propia declaración por defecto y
     la firma sigue verificando.
+- La transmisión ya no escribe en disco la clave privada del emisor sin
+  cifrar. El PEM temporal del TLS mutuo pasa a ser PKCS#8 cifrado con una
+  contraseña aleatoria por instancia que solo vive en memoria, y se carga con
+  `ssl.SSLContext.load_cert_chain` desde un `HTTPAdapter` propio
+  (`kilasifen.engine.transmision.conexion`). Si el proceso muere antes de
+  borrar el archivo, la clave que queda no se puede usar. La sesión ya no
+  usa `Session.cert` y sigue verificando el certificado del servidor.
 - `SECURITY.md` deja un solo canal para reportar vulnerabilidades: el
   private vulnerability reporting de GitHub. Se quitó el correo del mantenedor
   anterior, que figuraba como segunda opción.

@@ -18,8 +18,26 @@ class EmitterRepository(ABC):
         """Load an emitter by id."""
 
     @abstractmethod
+    def get_status(self, emitter_id: str) -> str | None:
+        """Return an emitter status without locking the row or loading secrets."""
+
+    @abstractmethod
     def get_status_for_update(self, emitter_id: str) -> str | None:
-        """Lock an emitter row and return its status without loading secrets."""
+        """Lock an emitter row and return its status without loading secrets.
+
+        The wait for the lock is bounded: when it runs out the implementation
+        raises ``ServiceUnavailableError("emitters.lock_timeout")``.
+        """
+
+    @abstractmethod
+    def lock_row(self, emitter_id: str) -> None:
+        """Lock an emitter row whatever its status, waiting as long as needed.
+
+        For writers that must not give up and only need the lock to follow
+        the order every writer shares (emitter, then document or event, then
+        job), such as a worker recording an answer SIFEN already gave. The
+        lock is only ever held by short transactions, so the wait is short.
+        """
 
     @abstractmethod
     def update_metadata(

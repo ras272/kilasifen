@@ -1,4 +1,17 @@
-"""Emission engine adapters built on top of kilasifen.engine."""
+"""Emission engine adapters built on top of kilasifen.engine.
+
+Emitting a document takes two separate steps so the platform can make the
+exact payload durable before anything reaches SIFEN:
+
+1. :meth:`DocumentEmissionEngine.prepare_document` builds and signs the DE
+   and wraps it in the ``rEnviDe`` request that will travel, with its real
+   ``dId``. It never touches the network.
+2. :meth:`DocumentEmissionEngine.submit_prepared` sends that request
+   unchanged and normalizes the answer.
+
+Between both steps the worker commits the prepared request, so a crash, a
+timeout or an unreadable answer can always be reconciled by CDC.
+"""
 
 from __future__ import annotations
 
@@ -8,34 +21,26 @@ from typing import Protocol
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
-from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
-from kilasifen.engine import PRODUCCION, TEST, sign_xml
-from kilasifen.engine.sdk.client import SifenClient
-from kilasifen.engine.sdk.errors import (
-    SifenTimeoutError,
-    SifenTransportError,
-    SifenValidationError,
-)
+from kilasifen.engine import PRODUCCION, TEST, TransmisionDE, sign_xml
+from kilasifen.engine.de.bindings.v150.ws_si_recep_de_v150 import RRetEnviDe
+from kilasifen.engine.sdk.errors import SifenValidationError
+from kilasifen.engine.transmision.base import _generate_id
 from kilasifen.engine.transmision.de import _build_enviar_de_request_xml
 from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
 from kilasifen.infrastructure.sifen.mapper import KilaSifenPayloadMapper
 
 
-@dataclass(slots=True)
-class EmissionOutcome:
-    """Normalized result from a document emission attempt."""
+@dataclass(frozen=True, slots=True)
+class PreparedSubmission:
+    """Signed document and the exact ``rEnviDe`` request that carries it."""
 
-    generated_xml: str | None
+    generated_xml: str
     signed_xml: str
-    request_xml: str | None
-    response_raw: str | None
-    sifen_status: str
-    result_code: str | None
-    result_message: str | None
-    cdc: str | None = None
+    request_xml: str
+    cdc: str
 
 
 @dataclass(slots=True)
@@ -48,39 +53,38 @@ class SubmissionOutcome:
     result_message: str | None
 
 
-class EmissionTransportUncertainError(RuntimeError):
-    """Transport failed after a stable fiscal payload had been prepared."""
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        generated_xml: str,
-        signed_xml: str,
-        request_xml: str,
-        cdc: str,
-    ) -> None:
-        super().__init__(message)
-        self.generated_xml = generated_xml
-        self.signed_xml = signed_xml
-        self.request_xml = request_xml
-        self.cdc = cdc
-
-
 class DocumentEmissionEngine(Protocol):
     """Contract for document emission engines."""
 
-    def emit_document(
+    def prepare_document(
         self,
         *,
         document: Document,
         emitter: Emitter,
-        certificate: Certificate,
         certificate_bytes: bytes,
         certificate_password: str,
         stamping: Stamping,
-    ) -> EmissionOutcome:
-        """Emit one document and return normalized artifacts."""
+    ) -> PreparedSubmission:
+        """Build, sign and wrap one document without contacting SIFEN.
+
+        Raises:
+            SifenValidationError: if the document cannot be emitted as is.
+        """
+
+    def submit_prepared(
+        self,
+        *,
+        request_xml: str,
+        emitter: Emitter,
+        certificate_bytes: bytes,
+        certificate_password: str,
+    ) -> SubmissionOutcome:
+        """Send a prepared ``rEnviDe`` unchanged and normalize the answer.
+
+        Any exception other than
+        :class:`~kilasifen.engine.sdk.errors.SifenRequestNotSentError` leaves
+        the outcome unknown: SIFEN may have processed the request.
+        """
 
 
 class DocumentSubmissionTransport(Protocol):
@@ -89,12 +93,12 @@ class DocumentSubmissionTransport(Protocol):
     def submit(
         self,
         *,
-        signed_xml: str,
+        request_xml: str,
         tax_environment: str,
         certificate_bytes: bytes,
         certificate_password: str,
     ) -> SubmissionOutcome:
-        """Submit signed XML and return a normalized SIFEN outcome."""
+        """Send a prepared ``rEnviDe`` and return a normalized SIFEN outcome."""
 
 
 class KilaSifenDocumentTransport:
@@ -108,19 +112,22 @@ class KilaSifenDocumentTransport:
     def submit(
         self,
         *,
-        signed_xml: str,
+        request_xml: str,
         tax_environment: str,
         certificate_bytes: bytes,
         certificate_password: str,
     ) -> SubmissionOutcome:
         ambiente = TEST if tax_environment == "test" else PRODUCCION
-        with SifenClient(
+        # The request travels byte for byte as persisted (same dId, same
+        # signature). Only failures that prove nothing left are retried here.
+        with TransmisionDE(
             ambiente=ambiente,
             pkcs12_data=certificate_bytes,
             pkcs12_password=certificate_password,
             max_retries=0,
-        ) as client:
-            response = client.enviar_de_xml(signed_xml)
+        ) as transmision:
+            body = transmision._send_raw_xml("recep_de", request_xml)
+            response = transmision._como_respuesta(body, RRetEnviDe)
 
         result_code, result_message, status = _normalize_response(response)
         return SubmissionOutcome(
@@ -144,17 +151,15 @@ class KilaSifenEmissionEngine:
         self.deployment_environment = deployment_environment
         self.transport = transport or KilaSifenDocumentTransport()
 
-    def emit_document(
+    def prepare_document(
         self,
         *,
         document: Document,
         emitter: Emitter,
-        certificate: Certificate,
         certificate_bytes: bytes,
         certificate_password: str,
         stamping: Stamping,
-    ) -> EmissionOutcome:
-        del certificate
+    ) -> PreparedSubmission:
         _require_deployment_environment(emitter, self.deployment_environment)
         emission_input = self.mapper.map_document(
             document,
@@ -177,34 +182,31 @@ class KilaSifenEmissionEngine:
                 emission_input.doc_id,
             )
             signed_xml = apply_real_qr_to_signed_xml(signed_xml, emitter=emitter)
+        if not emission_input.doc_id:
+            # Without a CDC a lost answer could never be reconciled.
+            raise SifenValidationError("document payload must include doc_id")
 
-        request_xml = _build_enviar_de_request_xml(1, signed_xml).decode("utf-8")
-
-        try:
-            submission = self.transport.submit(
-                signed_xml=signed_xml,
-                tax_environment=emitter.tax_environment,
-                certificate_bytes=certificate_bytes,
-                certificate_password=certificate_password,
-            )
-        except (SifenTimeoutError, SifenTransportError) as exc:
-            raise EmissionTransportUncertainError(
-                str(exc),
-                generated_xml=generated_xml,
-                signed_xml=signed_xml,
-                request_xml=request_xml,
-                cdc=emission_input.doc_id or "",
-            ) from exc
-
-        return EmissionOutcome(
+        request_xml = _build_enviar_de_request_xml(_generate_id(), signed_xml)
+        return PreparedSubmission(
             generated_xml=generated_xml,
             signed_xml=signed_xml,
-            request_xml=request_xml,
-            response_raw=submission.response_raw,
-            sifen_status=submission.sifen_status,
-            result_code=submission.result_code,
-            result_message=submission.result_message,
+            request_xml=request_xml.decode("utf-8"),
             cdc=emission_input.doc_id,
+        )
+
+    def submit_prepared(
+        self,
+        *,
+        request_xml: str,
+        emitter: Emitter,
+        certificate_bytes: bytes,
+        certificate_password: str,
+    ) -> SubmissionOutcome:
+        return self.transport.submit(
+            request_xml=request_xml,
+            tax_environment=emitter.tax_environment,
+            certificate_bytes=certificate_bytes,
+            certificate_password=certificate_password,
         )
 
 

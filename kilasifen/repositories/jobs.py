@@ -17,6 +17,10 @@ class JobRepository(ABC):
         """Load a job by id."""
 
     @abstractmethod
+    def get_for_update(self, job_id: str) -> Job | None:
+        """Lock a job row and load its committed state."""
+
+    @abstractmethod
     def get_for_entity(self, entity_type: str, entity_id: str) -> Job | None:
         """Load the latest job for a related entity."""
 

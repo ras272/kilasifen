@@ -27,6 +27,15 @@ _QUEUE_BY_JOB_TYPE = {
 }
 
 
+class PublicationDeferredError(RuntimeError):
+    """The runtime queue cannot take this job yet; publish it again later.
+
+    Raised by a runtime queue that still holds a running job under the same
+    durable id: publishing then would be dropped as a duplicate, losing a
+    retry the database already asked for.
+    """
+
+
 class SqlAlchemyJobOutboxQueue:
     """Queue-port adapter that stages dispatch in the current DB transaction."""
 
@@ -128,6 +137,13 @@ class JobOutboxDispatcher:
                 )
             self._mark_published(message.id)
             return True
+        except PublicationDeferredError as exc:
+            logger.warning(
+                "jobs.outbox.publish_deferred",
+                extra={"outbox_id": message.id, "job_id": message.job_id},
+            )
+            self._mark_failed(message, exc, reason="job still running in queue")
+            return False
         except Exception as exc:
             logger.error(
                 "jobs.outbox.publish_failed",
@@ -155,11 +171,17 @@ class JobOutboxDispatcher:
             if not updated:
                 raise RuntimeError("outbox lease was lost before confirmation")
 
-    def _mark_failed(self, message: JobOutboxMessage, exc: Exception) -> None:
+    def _mark_failed(
+        self,
+        message: JobOutboxMessage,
+        exc: Exception,
+        *,
+        reason: str = "queue publication failed",
+    ) -> None:
         now = self.clock()
         retry_index = min(max(message.attempts - 1, 0), len(self.retry_delays) - 1)
         delay = self.retry_delays[retry_index]
-        safe_error = f"{type(exc).__name__}: queue publication failed"
+        safe_error = f"{type(exc).__name__}: {reason}"
         with self.session_factory() as session, session.begin():
             SqlAlchemyJobOutboxRepository(session).mark_failed(
                 message_id=message.id,

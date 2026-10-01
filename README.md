@@ -59,8 +59,10 @@ desde tu propio código.
   `.../notas-credito` y `.../notas-debito`). El servidor asigna el número
   fiscal de forma atómica y arma el XML; el cliente nunca lo envía.
 - Procesamiento asíncrono: la respuesta inicial deja el documento en `queued`
-  y un worker lo firma y lo transmite. El resultado se recibe por webhook o
-  consultando el documento o el job.
+  y un worker lo firma y lo transmite. El worker confirma en la base el XML
+  firmado, el request exacto y el CDC antes de llamar al SIFEN y no retiene
+  transacciones ni bloqueos mientras espera la respuesta. El resultado se
+  recibe por webhook o consultando el documento o el job.
 - Idempotencia con `idempotency_key`: repetir la misma intención devuelve el
   mismo documento.
 - Eventos de **cancelación** e **inutilización**.
@@ -252,9 +254,11 @@ firmado = sign_xml(xml_rde, pfx, "contraseña-del-pfx", cdc)
 - `xml_rde` puede ser `str`, `bytes` o un elemento `lxml`; `cdc` es el valor
   del atributo `Id` del nodo a firmar (el CDC en un `DE`, el identificador en
   un evento).
-- Si después vas a transmitirlo, el `rDE` tiene que usar el namespace del
-  SIFEN como namespace por defecto, sin prefijo (ver la segunda limitación del
-  motor).
+- Si después vas a transmitirlo, conviene que el `rDE` use el namespace del
+  SIFEN como namespace por defecto, sin prefijos, como el XML que arma la
+  plataforma. `enviar_de_xml` inserta el `rDE` sin reescribir sus prefijos,
+  así que la firma verifica en los dos casos, pero que el SIFEN acepte un
+  `rDE` con prefijos no está verificado.
 - La firma es XMLDSig *enveloped*, RSA-SHA256, con canonicalización exclusiva
   y digest SHA-256. La `Signature` queda inmediatamente después del nodo
   firmado y usa el namespace XMLDSig por defecto, sin prefijo `ds:`.
@@ -263,8 +267,9 @@ firmado = sign_xml(xml_rde, pfx, "contraseña-del-pfx", cdc)
   `kilasifen.engine.sdk.errors.SifenSignatureError`.
 
 Desde un binding, `rde.sign_xml(None, pfx, clave, rde.DE.Id)` serializa la
-instancia en forma compacta y la firma. Antes de enviar un XML firmado de esa
-manera, leé la segunda limitación del motor.
+instancia en forma compacta (con el prefijo `ns0:` que asigna xsdata) y la
+firma. Para transmitir un binding conviene `TransmisionDE.enviar_de(rde)`, que
+lo serializa sin prefijos antes de firmar.
 
 ### Hablar con el SIFEN
 
@@ -274,7 +279,9 @@ firmar como para la autenticación mTLS. Las tres clases reciben `ambiente`
 `pkcs12_data`, `pkcs12_password` y, de forma opcional, `timeout`,
 `max_retries` (0 por defecto) y `retry_backoff`. El constructor no abre
 conexiones; los recursos (sesión HTTP y PEM temporales) se liberan con
-`close()` o al salir del bloque `with`.
+`close()` o al salir del bloque `with`. La clave privada del PEM temporal
+queda cifrada con una contraseña aleatoria que nunca se escribe en disco, y la
+sesión siempre verifica el certificado del servidor.
 
 **Enviar un DE ya firmado.** Es el camino que usa la plataforma:
 `enviar_de_xml` no vuelve a firmar ni pasa el documento por los bindings;
@@ -295,10 +302,28 @@ for resultado in protocolo.gResProc:
     print(resultado.dCodRes, resultado.dMsgRes)
 ```
 
-`TransmisionDE.enviar_de(rde)` serializa y firma un binding antes de enviarlo,
-pero hoy produce una firma inválida (ver limitaciones). Dejá `max_retries` en
-0 para cualquier operación con efecto fiscal: si el resultado de un envío es
-incierto, consultá antes de volver a transmitir.
+`TransmisionDE.enviar_de(rde)` serializa un binding con el namespace del
+SIFEN por defecto (sin prefijos), lo firma y lo envía; la firma verifica
+dentro del `rEnviDe`. Tené en cuenta que el binding `RDe` tiene el layout
+v1.41 (ver la primera limitación del motor).
+
+En los dos caminos, el `rDE` firmado viaja dentro del `rEnviDe` como texto:
+conserva sus propias declaraciones de namespace y sus prefijos, de modo que
+el `DE` mantiene la forma canónica sobre la que se calculó la firma.
+
+**Errores y reintentos.** Todas las fallas de transporte heredan de
+`SifenTransportError`. `SifenRequestNotSentError` indica que la solicitud no
+llegó al SIFEN (DNS, conexión rechazada, tiempo agotado al conectar o
+handshake TLS fallido) y es seguro volver a enviarla. Cualquier otro error
+(`SifenTimeoutError`, conexión cortada, error HTTP) deja el resultado
+incierto: consultá por CDC antes de volver a transmitir. Lo mismo vale para
+`SifenUnexpectedResponseError`, que se lanza cuando la respuesta es un SOAP
+Fault, el sobre de otra operación, HTML de un proxy o un cuerpo que no se
+puede leer; su atributo `raw_body` trae el comienzo del cuerpo recibido (no
+aparece en el mensaje, porque puede tener datos del contribuyente). Por eso
+`TransmisionDE` y `TransmisionEvento` usan `max_retries` solo para
+`SifenRequestNotSentError`; las consultas de `ConsultaSIFEN` reintentan
+también los timeouts y los cortes.
 
 **Consultar.**
 
@@ -446,9 +471,8 @@ entorno fijado en `uv.lock`, igual que el workflow de CI.
   repositorio.
 - Las pruebas de concurrencia contra PostgreSQL se saltean salvo que definas
   `KILA_SIFEN_TEST_DATABASE_URL`.
-- Hay una prueba marcada `xfail` estricta que documenta el defecto de firma
-  descrito en la segunda limitación del motor; cuando se corrija, va a fallar
-  como aviso para quitar la marca.
+- Las pruebas de transmisión que verifican el handshake TLS abren un socket en
+  `127.0.0.1` (loopback); ningún paquete sale de la máquina.
 - Si cambiás rutas o schemas de la API, regenerá el contrato con
   `python scripts/export_openapi.py` (con `--check` solo verifica).
 
@@ -470,32 +494,9 @@ Las reglas para contribuir están en [CONTRIBUTING.md](CONTRIBUTING.md).
    plataforma no usa este binding: arma el XML con su propio constructor
    ElementTree (`kilasifen/infrastructure/sifen/typed_xml_builder.py`) y lo
    valida contra `siRecepDE_v150.xsd` antes de firmar.
-2. **La firma de un `rDE` con prefijo se invalida dentro de `rEnviDe`.**
-   `to_xml()` emite el namespace del SIFEN con prefijo (`ns0:`). Al insertar
-   ese `rDE` firmado en el `rEnviDe`, tanto `enviar_de` como `enviar_de_xml`
-   lo reescriben en el namespace por defecto y la firma deja de verificar. Al
-   XML de la plataforma no le afecta porque se genera sin prefijos. Si
-   necesitás firmar XML producido por un binding, serializalo sin prefijo
-   antes de firmar:
-
-   ```python
-   from xsdata.formats.dataclass.serializers import XmlSerializer
-
-   xml = XmlSerializer().render(
-       rde, ns_map={None: "http://ekuatia.set.gov.py/sifen/xsd"}
-   )
-   ```
-
-3. **`enviar_lote` no respeta el formato del SIFEN.** Codifica el contenido
+2. **`enviar_lote` no respeta el formato del SIFEN.** Codifica el contenido
    dos veces en base64 y no lo comprime en ZIP. La plataforma no lo usa.
-4. **Los SOAP Fault y las respuestas ilegibles llegan como errores de
-   parseo**, no como errores de transporte con resultado incierto. Tratá
-   cualquier excepción posterior al envío como resultado desconocido y
-   consultá antes de reintentar.
-5. **La protección contra envíos duplicados depende de `max_retries=0`**, el
-   valor por defecto. Subirlo en `TransmisionDE` o `TransmisionEvento` puede
-   duplicar operaciones fiscales.
-6. **`consultar_dte_async` se reintenta como si fuera una consulta de solo
+3. **`consultar_dte_async` se reintenta como si fuera una consulta de solo
    lectura** (por ejemplo, con el `max_retries` de `SifenClient`), aunque
    registra una solicitud en el SIFEN.
 
@@ -511,8 +512,13 @@ Hallazgos de una auditoría reciente, que se corregirán a continuación:
 - Solo el código `0260` (o el estado "Aprobado") cuenta como aprobación;
   cualquier otro código se clasifica como rechazo, así que nunca se produce
   `approved_with_observation` a partir de una respuesta real.
-- Un documento cuyo envío falló antes de llegar al SIFEN puede quedar
-  bloqueado en `reconciliation_required`.
+- Un evento (cancelación o inutilización) con resultado incierto se vuelve a
+  enviar en el intento siguiente, sin consultar antes; la regla definitiva
+  depende de cómo trata el SIFEN un evento duplicado.
+- Si el worker muere mientras espera al SIFEN, el job queda `processing` (el
+  documento, `submitting`) hasta que un operador lo reencola desde la consola;
+  ese reintento consulta el CDC antes de decidir. No hay un proceso que
+  detecte esos jobs solo.
 
 KilaSifen no certifica conformidad fiscal. Probá cada flujo en el ambiente
 de pruebas de la SET antes de habilitar producción.

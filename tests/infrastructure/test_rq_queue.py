@@ -31,7 +31,10 @@ from kilasifen.infrastructure.db.session import (
 )
 from kilasifen.infrastructure.jobs.queue import RqJobQueue
 from kilasifen.infrastructure.jobs.workers import process_document_job
-from kilasifen.infrastructure.sifen.engine import EmissionOutcome
+from kilasifen.infrastructure.sifen.engine import (
+    PreparedSubmission,
+    SubmissionOutcome,
+)
 from kilasifen.logging import reset_correlation_id, set_correlation_id
 from kilasifen.testing.database import managed_test_database_url
 
@@ -213,10 +216,7 @@ def test_process_document_job_hydrates_job_and_document_context(tmp_path) -> Non
             database_url=database_url,
             encryption_key=_fernet_key(),
             emission_engine=FakeEmissionEngine(
-                EmissionOutcome(
-                    generated_xml="<rDE/>",
-                    signed_xml="<rDE><Signature/></rDE>",
-                    request_xml="<soap>request</soap>",
+                SubmissionOutcome(
                     response_raw="<soap>response</soap>",
                     sifen_status="approved",
                     result_code="0260",
@@ -278,9 +278,19 @@ def test_rq_queue_enqueues_webhook_delivery_with_correlation_id() -> None:
 
 @dataclass
 class FakeEmissionEngine:
-    outcome: EmissionOutcome
+    outcome: SubmissionOutcome
 
-    def emit_document(self, **kwargs) -> EmissionOutcome:
+    def prepare_document(self, **kwargs) -> PreparedSubmission:
+        del kwargs
+        return PreparedSubmission(
+            generated_xml="<rDE/>",
+            signed_xml='<rDE><DE Id="0180012345"/><Signature/></rDE>',
+            request_xml="<rEnviDe><dId>1</dId></rEnviDe>",
+            cdc="0180012345",
+        )
+
+    def submit_prepared(self, **kwargs) -> SubmissionOutcome:
+        del kwargs
         return self.outcome
 
 

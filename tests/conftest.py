@@ -16,6 +16,29 @@ _TEST_CERTIFICATE_PASSWORD = b"test1234"
 
 
 @pytest.fixture(scope="session", autouse=True)
+def worker_logging_left_to_pytest() -> Iterator[None]:
+    """Keep worker entry points from reconfiguring the test process logging.
+
+    The first job a worker runs configures JSON logging for the whole process
+    and stops ``rq.worker`` from propagating. In a test run that would rewrite
+    the formatters of pytest's capture handlers and silence ``rq.worker`` for
+    every later test. Tests of that setup reset the flag themselves.
+    """
+
+    try:
+        from kilasifen import observability
+    except ImportError:  # engine-only environment, without the platform extras
+        yield
+        return
+    previous = observability._WORKER_LOGGING_CONFIGURED
+    observability._WORKER_LOGGING_CONFIGURED = True
+    try:
+        yield
+    finally:
+        observability._WORKER_LOGGING_CONFIGURED = previous
+
+
+@pytest.fixture(scope="session", autouse=True)
 def ephemeral_test_certificate() -> Iterator[None]:
     """Generate the repository's fictional PKCS#12 fixture for this test run."""
 

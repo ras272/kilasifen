@@ -22,12 +22,16 @@ import importlib
 import json
 import os
 import re
+import socket
+import ssl
 import stat
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
 from decimal import Decimal
+from http.client import RemoteDisconnected
 from importlib.util import find_spec
 from pathlib import Path
 from types import SimpleNamespace
@@ -39,6 +43,8 @@ from xsdata.exceptions import ParserError
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
+from kilasifen.engine.de.bindings.v150.evento_v150 import TgGroupGesEve
+from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 from kilasifen.engine.de.bindings.v150.prot_proces_de_v150 import RProtDe
 from kilasifen.engine.de.bindings.v150.prot_proces_eventos_v141 import (
     TgResProc,
@@ -78,7 +84,9 @@ from kilasifen.engine.de.bindings.v150.ws_si_recep_lote_de_v141 import (
     RResEnviLoteDe,
 )
 from kilasifen.engine.sdk.errors import (
+    MAX_CUERPO_CRUDO,
     SifenError,
+    SifenRequestNotSentError,
     SifenSignatureError,
     SifenTimeoutError,
     SifenTransportClosedError,
@@ -102,6 +110,7 @@ from kilasifen.engine.transmision.de import (
     _build_enviar_de_request_xml,
 )
 from kilasifen.engine.transmision.evento import TransmisionEvento
+from tests._muestras import FACTURA
 
 requests = pytest.importorskip(
     "requests", reason="las pruebas de transmision requieren el extra 'transmision'"
@@ -111,6 +120,8 @@ etree = pytest.importorskip(
 )
 # El cliente SOAP de xsdata importa ``requests`` al cargarse: va despues del skip.
 cliente_xsdata = importlib.import_module("xsdata.formats.dataclass.client")
+conexion = importlib.import_module("kilasifen.engine.transmision.conexion")
+urllib3_exc = importlib.import_module("urllib3.exceptions")
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +131,7 @@ cliente_xsdata = importlib.import_module("xsdata.formats.dataclass.client")
 RAIZ_REPOSITORIO = Path(__file__).resolve().parents[1]
 RUTA_CERTIFICADO_PRUEBA = Path(__file__).with_name("test_cert.pfx")
 CONTRASENA_CERTIFICADO_PRUEBA = "test1234"
+CONTRASENA_CLAVE_FICTICIA = b"contrasena-ficticia-de-la-clave-pem"
 
 NS_SIFEN = "http://ekuatia.set.gov.py/sifen/xsd"
 NS_SOAP11 = "http://schemas.xmlsoap.org/soap/envelope/"
@@ -350,6 +362,15 @@ def _verificar_firma(rde: Any, certificado_pem: str) -> None:
     )
 
 
+def _verificar_firma_en_solicitud(solicitud: bytes, certificado_pem: str) -> None:
+    """Verifica con signxml la firma sobre los bytes completos de ``rEnviDe``,
+    tal como los recibe el SIFEN (lanza si falla)."""
+    signxml = pytest.importorskip("signxml")
+    signxml.XMLVerifier().verify(
+        solicitud, x509_cert=certificado_pem, id_attribute="Id"
+    )
+
+
 def _rde_dentro_de_solicitud(solicitud: bytes) -> Any:
     """Extrae ``rEnviDe/xDE/rDE`` de los bytes de una solicitud."""
     raiz = etree.fromstring(solicitud)
@@ -540,9 +561,10 @@ class TransporteFalso:
 class ClienteXsdataFalso:
     """Reemplazo de ``xsdata...client.Client``: solo acepta argumentos nombrados."""
 
-    def __init__(self, *, config: Any, transport: Any) -> None:
+    def __init__(self, *, config: Any, transport: Any, parser: Any) -> None:
         self.config = config
         self.transport = transport
+        self.parser = parser
 
     def send(self, request: Any, /) -> Any:
         return None
@@ -626,6 +648,7 @@ def fabricas_falsas(monkeypatch: pytest.MonkeyPatch) -> FabricasFalsas:
 
     def rutas_de_certificado(self: TransmisionBase) -> tuple[str, str]:
         fabricas.lecturas_certificado += 1
+        self._key_password = CONTRASENA_CLAVE_FICTICIA
         return ("cert.pem", "key.pem")
 
     monkeypatch.setattr(base, "_create_transport", crear_transporte)
@@ -642,7 +665,11 @@ def respuesta_http() -> type[RespuestaHttpFalsa]:
 
 @pytest.fixture
 def transporte() -> Iterator[Callable[..., Any]]:
-    """Fabrica de transportes reales; cierra todo lo que crea."""
+    """Fabrica de transportes reales; cierra todo lo que crea.
+
+    Salvo que se pida otra cosa, el transporte reintenta tambien los fallos
+    ambiguos (como el de una consulta), para ejercitar toda la politica.
+    """
     creados: list[Any] = []
 
     def crear(
@@ -652,6 +679,7 @@ def transporte() -> Iterator[Callable[..., Any]]:
         backoff_factor: float = 0.0,
         rutas: tuple[str, str] = ("cert.pem", "key.pem"),
         por_defecto: bool = False,
+        reintentar_ambiguos: bool = True,
     ) -> Any:
         if por_defecto:
             nuevo = base._create_transport(*rutas)
@@ -661,6 +689,7 @@ def transporte() -> Iterator[Callable[..., Any]]:
                 timeout=timeout,
                 max_retries=max_retries,
                 backoff_factor=backoff_factor,
+                reintentar_ambiguos=reintentar_ambiguos,
             )
         creados.append(nuevo)
         return nuevo
@@ -1144,10 +1173,17 @@ class TestTransmisionBase:
 
         assert primero is segundo
         assert primero.transport is fabricas_falsas.transportes[0]
+        assert primero.parser is base._parser_de_respuestas()
         assert len(fabricas_falsas.llamadas_transporte) == 1
         args, kwargs = fabricas_falsas.llamadas_transporte[0]
         assert args == ("cert.pem", "key.pem")
-        assert kwargs == {"timeout": 12, "max_retries": 4, "backoff_factor": 0.5}
+        assert kwargs == {
+            "timeout": 12,
+            "max_retries": 4,
+            "backoff_factor": 0.5,
+            "key_password": CONTRASENA_CLAVE_FICTICIA,
+            "reintentar_ambiguos": False,
+        }
         configuracion = primero.config
         assert configuracion.input is REnviDe
         assert configuracion.output is RRetEnviDe
@@ -1299,7 +1335,13 @@ class TestTransmisionBase:
         transmision_base._cleanup_transport()
         transmision_base._get_transport()
         _args, kwargs = fabricas_falsas.llamadas_transporte[1]
-        assert kwargs == {"timeout": 7.5, "max_retries": 3, "backoff_factor": 0.05}
+        assert kwargs == {
+            "timeout": 7.5,
+            "max_retries": 3,
+            "backoff_factor": 0.05,
+            "key_password": CONTRASENA_CLAVE_FICTICIA,
+            "reintentar_ambiguos": False,
+        }
 
     def test_servicios_distintos_comparten_transporte(
         self, transmision_base: Any, fabricas_falsas: FabricasFalsas
@@ -1364,13 +1406,12 @@ class TestTransmisionBase:
             certificado = Path(ruta_certificado).read_text(encoding="ascii")
             clave = Path(ruta_clave).read_text(encoding="ascii")
             assert "-----BEGIN CERTIFICATE-----" in certificado
-            assert "PRIVATE KEY" in clave
-            assert "-----BEGIN RSA PRIVATE KEY-----" in clave
-            assert "ENCRYPTED" not in clave
+            assert clave.startswith("-----BEGIN ENCRYPTED PRIVATE KEY-----")
             assert transmision._get_cert_files() is rutas
             assert cargas_pkcs12.veces == 1
         assert not Path(ruta_certificado).exists()
         assert not Path(ruta_clave).exists()
+        assert transmision._key_password is None
 
         with TransmisionBase(
             ambiente=TEST,
@@ -1399,6 +1440,75 @@ class TestTransmisionBase:
         ) as transmision:
             for ruta in transmision._get_cert_files():
                 assert stat.S_IMODE(os.stat(ruta).st_mode) == 0o600
+
+    def test_clave_en_disco_solo_se_lee_con_la_contrasena_en_memoria(
+        self, pfx_de_prueba: bytes
+    ) -> None:
+        """La clave PEM queda cifrada; la contrasena no se escribe en disco."""
+        from cryptography.hazmat.primitives.serialization import (
+            load_pem_private_key,
+            pkcs12,
+        )
+
+        original, _certificado, _cadena = pkcs12.load_key_and_certificates(
+            pfx_de_prueba, CONTRASENA_CERTIFICADO_PRUEBA.encode("ascii")
+        )
+        with TransmisionBase(
+            ambiente=TEST,
+            pkcs12_data=pfx_de_prueba,
+            pkcs12_password=CONTRASENA_CERTIFICADO_PRUEBA,
+        ) as transmision:
+            ruta_certificado, ruta_clave = transmision._get_cert_files()
+            contrasena = transmision._key_password
+            clave_pem = Path(ruta_clave).read_bytes()
+
+            assert isinstance(contrasena, bytes)
+            assert len(contrasena) >= 32
+            assert contrasena not in clave_pem
+            assert contrasena not in Path(ruta_certificado).read_bytes()
+            with pytest.raises(TypeError):
+                load_pem_private_key(clave_pem, password=None)
+            with pytest.raises(ValueError):
+                load_pem_private_key(clave_pem, password=b"contrasena-incorrecta")
+            descifrada = load_pem_private_key(clave_pem, password=contrasena)
+            assert descifrada.private_numbers() == original.private_numbers()
+
+            contexto = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            contexto.load_cert_chain(ruta_certificado, ruta_clave, password=contrasena)
+
+    def test_cada_instancia_cifra_la_clave_con_otra_contrasena(
+        self, pfx_de_prueba: bytes
+    ) -> None:
+        contrasenas = []
+        for _ in range(2):
+            with TransmisionBase(
+                ambiente=TEST,
+                pkcs12_data=pfx_de_prueba,
+                pkcs12_password=CONTRASENA_CERTIFICADO_PRUEBA,
+            ) as transmision:
+                transmision._get_cert_files()
+                contrasenas.append(transmision._key_password)
+        assert contrasenas[0] != contrasenas[1]
+
+    def test_transporte_recibe_la_contrasena_de_la_clave(
+        self, pfx_de_prueba: bytes, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        llamadas: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+        def crear_transporte(*args: Any, **kwargs: Any) -> TransporteFalso:
+            llamadas.append((args, kwargs))
+            return TransporteFalso()
+
+        monkeypatch.setattr(base, "_create_transport", crear_transporte)
+        with TransmisionBase(
+            ambiente=TEST,
+            pkcs12_data=pfx_de_prueba,
+            pkcs12_password=CONTRASENA_CERTIFICADO_PRUEBA,
+        ) as transmision:
+            transmision._get_transport()
+            ((args, kwargs),) = llamadas
+            assert args == transmision._cert_files
+            assert kwargs["key_password"] == transmision._key_password
 
     @pytest.mark.parametrize(
         "fabricar",
@@ -1618,21 +1728,28 @@ class TestTransporteSoap:
         assert error.value.__cause__ is falla
 
     @pytest.mark.parametrize(
-        "tipo",
-        [requests.exceptions.Timeout, requests.exceptions.ConnectTimeout],
-        ids=["Timeout", "ConnectTimeout"],
+        "tipo, error_esperado",
+        [
+            (requests.exceptions.Timeout, SifenTimeoutError),
+            (requests.exceptions.ReadTimeout, SifenTimeoutError),
+            # Agotar el tiempo al conectar prueba que nada se envio.
+            (requests.exceptions.ConnectTimeout, SifenRequestNotSentError),
+        ],
+        ids=["Timeout", "ReadTimeout", "ConnectTimeout"],
     )
     def test_transporte_timeout_agotado_lanza_sifen_timeout(
         self,
         transporte: Callable[..., Any],
         sesion_programada: Callable[..., SesionProgramada],
         tipo: type[Exception],
+        error_esperado: type[Exception],
     ) -> None:
         """N22."""
         transporte_http = transporte(max_retries=1)
         sesion = sesion_programada(transporte_http, tipo("sin respuesta"))
-        with pytest.raises(SifenTimeoutError) as error:
+        with pytest.raises(SifenTransportError) as error:
             transporte_http.post(URL_PRUEBA, b"<xml />")
+        assert type(error.value) is error_esperado
         assert isinstance(error.value.__cause__, tipo)
         assert len(sesion.llamadas) == 2
 
@@ -1698,16 +1815,41 @@ class TestTransporteSoap:
         """N25."""
         transporte_http = transporte(rutas=("c.pem", "k.pem"), por_defecto=True)
         assert isinstance(transporte_http._session, requests.Session)
-        assert transporte_http._session.cert == ("c.pem", "k.pem")
+        assert transporte_http._session.cert is None
         assert transporte_http._session.verify is True
+        adaptador = transporte_http._session.get_adapter(URL_PRUEBA)
+        assert isinstance(adaptador, conexion.AdaptadorTlsMutuo)
+        assert adaptador._ruta_certificado == "c.pem"
+        assert adaptador._ruta_clave == "k.pem"
+        assert adaptador._contrasena_clave is None
 
         sesion = sesion_programada(
-            transporte_http, requests.exceptions.Timeout("lento")
+            transporte_http,
+            requests.exceptions.ConnectTimeout("sin conexion"),
+            requests.exceptions.ConnectTimeout("sin conexion"),
+            requests.exceptions.Timeout("lento"),
         )
         with pytest.raises(SifenTimeoutError):
             transporte_http.post(URL_PRUEBA, b"<xml />")
         assert [llamada.timeout for llamada in sesion.llamadas] == [30.0] * 3
         assert esperas == [0.2, 0.4]
+
+    def test_transporte_por_defecto_no_reintenta_fallos_ambiguos(
+        self,
+        transporte: Callable[..., Any],
+        sesion_programada: Callable[..., SesionProgramada],
+        esperas: list[float],
+    ) -> None:
+        """Sin ``reintentar_ambiguos`` un timeout de lectura sale al primer
+        intento, aunque queden reintentos."""
+        transporte_http = transporte(por_defecto=True)
+        sesion = sesion_programada(
+            transporte_http, requests.exceptions.Timeout("lento")
+        )
+        with pytest.raises(SifenTimeoutError):
+            transporte_http.post(URL_PRUEBA, b"<xml />")
+        assert len(sesion.llamadas) == 1
+        assert esperas == []
 
     def test_transporte_crea_sesion_nueva_de_tipo_exacto(
         self, transporte: Callable[..., Any]
@@ -2015,6 +2157,379 @@ class TestTransporteSoap:
         sesion = sesion_programada(transporte_http, respuesta_http(contenido, 400))
         assert transporte_http.post(URL_PRUEBA, b"<xml />") == contenido
         assert len(sesion.llamadas) == 1
+
+
+# ---------------------------------------------------------------------------
+# Sesion HTTPS con TLS mutuo (``conexion``)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def pem_de_prueba(pfx_de_prueba: bytes) -> Iterator[tuple[str, str, bytes]]:
+    """``(certificado, clave cifrada, contrasena)`` extraidos del PKCS#12."""
+    with TransmisionBase(
+        ambiente=TEST,
+        pkcs12_data=pfx_de_prueba,
+        pkcs12_password=CONTRASENA_CERTIFICADO_PRUEBA,
+    ) as transmision:
+        ruta_certificado, ruta_clave = transmision._get_cert_files()
+        yield ruta_certificado, ruta_clave, transmision._key_password
+
+
+class TestConexionTlsMutuo:
+    def test_sesion_verifica_al_servidor_con_contexto_propio(self) -> None:
+        sesion = conexion.crear_sesion_tls_mutuo("c.pem", "k.pem", b"clave")
+        try:
+            assert sesion.cert is None
+            assert sesion.verify is True
+            adaptador = sesion.get_adapter(get_endpoint(TEST, "recep_de"))
+            assert isinstance(adaptador, conexion.AdaptadorTlsMutuo)
+            contexto = adaptador.contexto_tls
+            assert contexto.verify_mode == ssl.CERT_REQUIRED
+            assert contexto.check_hostname is True
+            assert contexto.get_ca_certs()
+            pool = adaptador.poolmanager.connection_pool_kw
+            assert pool["ssl_context"] is contexto
+            assert sesion.get_adapter("http://example.invalid") is not adaptador
+        finally:
+            sesion.close()
+
+    def test_proxy_usa_el_mismo_contexto(self) -> None:
+        adaptador = conexion.AdaptadorTlsMutuo("c.pem", "k.pem", None)
+        try:
+            gestor = adaptador.proxy_manager_for("http://proxy.invalid:3128")
+            assert gestor.connection_pool_kw["ssl_context"] is adaptador.contexto_tls
+        finally:
+            adaptador.close()
+
+    def test_crear_el_adaptador_no_lee_archivos(self) -> None:
+        adaptador = conexion.AdaptadorTlsMutuo(
+            "no-existe-cert.pem", "no-existe-clave.pem", b"clave"
+        )
+        adaptador.close()
+
+    def test_carga_el_certificado_una_sola_vez_en_el_primer_envio(
+        self,
+        pem_de_prueba: tuple[str, str, bytes],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ruta_certificado, ruta_clave, contrasena = pem_de_prueba
+        envios = Registrador("respuesta-ficticia")
+        monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", envios)
+        adaptador = conexion.AdaptadorTlsMutuo(ruta_certificado, ruta_clave, contrasena)
+        cargas = Registrador(efecto=adaptador.contexto_tls.load_cert_chain)
+        adaptador.contexto_tls.load_cert_chain = cargas
+
+        assert adaptador.send("primera", timeout=3) == "respuesta-ficticia"
+        assert adaptador.send("segunda") == "respuesta-ficticia"
+
+        assert cargas.llamadas == [
+            ((ruta_certificado, ruta_clave), {"password": contrasena})
+        ]
+        # ``Registrador`` no es descriptor: como atributo de clase no recibe self.
+        assert envios.llamadas == [(("primera",), {"timeout": 3}), (("segunda",), {})]
+
+    def test_contrasena_incorrecta_falla_antes_de_conectar(
+        self,
+        pem_de_prueba: tuple[str, str, bytes],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        ruta_certificado, ruta_clave, _contrasena = pem_de_prueba
+        envios = Registrador()
+        monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", envios)
+        adaptador = conexion.AdaptadorTlsMutuo(
+            ruta_certificado, ruta_clave, b"contrasena-incorrecta"
+        )
+        with pytest.raises(ssl.SSLError):
+            adaptador.send("solicitud")
+        assert envios.veces == 0
+
+
+# ---------------------------------------------------------------------------
+# Fallos en que la solicitud no llego al SIFEN
+# ---------------------------------------------------------------------------
+
+URL_RECEPCION_PRUEBA = get_endpoint(TEST, "recep_de")
+
+
+def _por_requests(tipo: type[Exception], razon: BaseException) -> Exception:
+    """Envuelve ``razon`` como lo hace ``HTTPAdapter.send`` con un MaxRetryError."""
+    return tipo(urllib3_exc.MaxRetryError(None, URL_RECEPCION_PRUEBA, reason=razon))
+
+
+def _timeout_mientras_se_maneja_un_fallo_de_conexion() -> Exception:
+    """ReadTimeout cuyo ``__context__`` es un fallo de conexion previo y ajeno."""
+    try:
+        raise urllib3_exc.NewConnectionError(None, "fallo de conexion anterior")
+    except urllib3_exc.NewConnectionError:
+        try:
+            raise requests.exceptions.ReadTimeout("lectura agotada")
+        except requests.exceptions.ReadTimeout as exc:
+            return exc
+
+
+def _ssl_error_tras_el_handshake() -> Exception:
+    return _por_requests(
+        requests.exceptions.SSLError,
+        urllib3_exc.SSLError(ssl.SSLError(1, "decryption failed or bad record mac")),
+    )
+
+
+FALLOS_NO_ENVIADOS = [
+    pytest.param(
+        lambda: _por_requests(
+            requests.exceptions.ConnectionError,
+            urllib3_exc.NameResolutionError(
+                "sifen-test.set.gov.py", None, socket.gaierror(11001, "sin DNS")
+            ),
+        ),
+        id="dns",
+    ),
+    pytest.param(
+        lambda: _por_requests(
+            requests.exceptions.ConnectionError,
+            urllib3_exc.NewConnectionError(
+                None, "Failed to establish a new connection: connection refused"
+            ),
+        ),
+        id="conexion_rechazada",
+    ),
+    pytest.param(
+        lambda: _por_requests(
+            requests.exceptions.ConnectionError,
+            urllib3_exc.NewConnectionError(
+                None, "Failed to establish a new connection: network unreachable"
+            ),
+        ),
+        id="red_inalcanzable",
+    ),
+    pytest.param(
+        lambda: _por_requests(
+            requests.exceptions.ConnectTimeout,
+            urllib3_exc.ConnectTimeoutError(None, "connect timeout=30"),
+        ),
+        id="timeout_al_conectar",
+    ),
+    pytest.param(
+        lambda: requests.exceptions.ConnectTimeout("sin detalle"),
+        id="connect_timeout_sin_cadena",
+    ),
+    pytest.param(
+        lambda: _por_requests(
+            requests.exceptions.ProxyError,
+            urllib3_exc.ProxyError(
+                "Unable to connect to proxy",
+                urllib3_exc.NewConnectionError(None, "proxy caido"),
+            ),
+        ),
+        id="proxy_inalcanzable",
+    ),
+]
+
+FALLOS_AMBIGUOS = [
+    pytest.param(
+        lambda: requests.exceptions.ReadTimeout(
+            urllib3_exc.ReadTimeoutError(None, URL_RECEPCION_PRUEBA, "read timeout=30")
+        ),
+        id="timeout_de_lectura",
+    ),
+    pytest.param(
+        lambda: requests.exceptions.ConnectionError(
+            urllib3_exc.ProtocolError(
+                "Connection aborted.", RemoteDisconnected("sin respuesta")
+            )
+        ),
+        id="remote_disconnected",
+    ),
+    pytest.param(
+        lambda: requests.exceptions.ConnectionError(
+            urllib3_exc.ProtocolError(
+                "Connection aborted.", ConnectionResetError(104, "reset")
+            )
+        ),
+        id="conexion_reiniciada",
+    ),
+    pytest.param(_ssl_error_tras_el_handshake, id="ssl_tras_handshake"),
+    pytest.param(
+        lambda: requests.exceptions.ChunkedEncodingError(
+            urllib3_exc.ProtocolError("Response ended prematurely")
+        ),
+        id="respuesta_truncada",
+    ),
+    pytest.param(
+        lambda: requests.exceptions.ConnectionError("sin detalle"),
+        id="connection_error_sin_cadena",
+    ),
+    pytest.param(
+        _timeout_mientras_se_maneja_un_fallo_de_conexion,
+        id="contexto_ajeno_no_cuenta",
+    ),
+]
+
+
+class ServidorLocal:
+    """Oyente TCP en 127.0.0.1 (no sale de la maquina) para probar el handshake.
+
+    Sin ``respuesta`` nadie acepta: el kernel completa la conexion TCP y el
+    handshake TLS del cliente espera hasta agotar su tiempo. Con
+    ``respuesta``, un hilo acepta cada conexion, escribe esos bytes (que no
+    son TLS) y la cierra.
+    """
+
+    def __init__(self, respuesta: bytes | None = None) -> None:
+        self._oyente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._oyente.bind(("127.0.0.1", 0))
+        self._oyente.listen(4)
+        self.url = f"https://127.0.0.1:{self._oyente.getsockname()[1]}/ws"
+        self._hilo: threading.Thread | None = None
+        if respuesta is not None:
+            self._hilo = threading.Thread(
+                target=self._responder, args=(respuesta,), daemon=True
+            )
+            self._hilo.start()
+
+    def _responder(self, respuesta: bytes) -> None:
+        while True:
+            try:
+                conexion_cliente, _origen = self._oyente.accept()
+            except OSError:
+                return
+            with conexion_cliente:
+                conexion_cliente.sendall(respuesta)
+
+    def __enter__(self) -> ServidorLocal:
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        self._oyente.close()
+        if self._hilo is not None:
+            self._hilo.join(timeout=5)
+
+
+def _transporte_local(
+    pem: tuple[str, str, bytes], max_retries: int, timeout: float = 0.3
+) -> Any:
+    ruta_certificado, ruta_clave, contrasena = pem
+    transporte_http = base._create_transport(
+        ruta_certificado,
+        ruta_clave,
+        timeout=timeout,
+        max_retries=max_retries,
+        backoff_factor=0.0,
+        key_password=contrasena,
+    )
+    # Que un proxy del entorno no intercepte la conexion local.
+    transporte_http._session.trust_env = False
+    return transporte_http
+
+
+class TestSolicitudNoEnviada:
+    @pytest.mark.parametrize("fabricar", FALLOS_NO_ENVIADOS)
+    def test_fallos_antes_de_enviar(self, fabricar: Callable[[], Exception]) -> None:
+        assert conexion.solicitud_no_enviada(fabricar()) is True
+
+    @pytest.mark.parametrize("fabricar", FALLOS_AMBIGUOS)
+    def test_fallos_que_pueden_ocurrir_despues_de_enviar(
+        self, fabricar: Callable[[], Exception]
+    ) -> None:
+        assert conexion.solicitud_no_enviada(fabricar()) is False
+
+    def test_error_del_handshake_queda_marcado(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        falla = ssl.SSLCertVerificationError(1, "certificate verify failed")
+
+        def handshake_fallido(self: Any, block: bool = False) -> None:
+            raise falla
+
+        monkeypatch.setattr(ssl.SSLSocket, "do_handshake", handshake_fallido)
+        socket_tls = socket.socket.__new__(conexion._SocketTlsCliente)
+        with pytest.raises(ssl.SSLCertVerificationError) as error:
+            socket_tls.do_handshake()
+        assert error.value is falla
+        envuelto = _por_requests(
+            requests.exceptions.SSLError, urllib3_exc.SSLError(falla)
+        )
+        assert conexion.solicitud_no_enviada(envuelto) is True
+
+    def test_contexto_crea_sockets_que_marcan_el_handshake(self) -> None:
+        adaptador = conexion.AdaptadorTlsMutuo("c.pem", "k.pem", None)
+        try:
+            assert adaptador.contexto_tls.sslsocket_class is conexion._SocketTlsCliente
+        finally:
+            adaptador.close()
+
+    @pytest.mark.parametrize("fabricar", FALLOS_NO_ENVIADOS)
+    def test_transporte_lanza_error_tipado_y_reintenta(
+        self,
+        transporte: Callable[..., Any],
+        sesion_programada: Callable[..., SesionProgramada],
+        fabricar: Callable[[], Exception],
+    ) -> None:
+        transporte_http = transporte(max_retries=2)
+        fallas = [fabricar() for _ in range(3)]
+        sesion = sesion_programada(transporte_http, *fallas)
+        with pytest.raises(SifenRequestNotSentError) as error:
+            transporte_http.post(URL_PRUEBA, b"<xml />")
+        assert len(sesion.llamadas) == 3
+        assert error.value.__cause__ is fallas[-1]
+        assert not isinstance(error.value, SifenTimeoutError)
+
+    def test_transporte_responde_tras_un_fallo_de_conexion(
+        self,
+        transporte: Callable[..., Any],
+        sesion_programada: Callable[..., SesionProgramada],
+        respuesta_http: type[RespuestaHttpFalsa],
+    ) -> None:
+        transporte_http = transporte(max_retries=1)
+        falla = _por_requests(
+            requests.exceptions.ConnectionError,
+            urllib3_exc.NewConnectionError(None, "connection refused"),
+        )
+        sesion_programada(transporte_http, falla, respuesta_http(b"<ok/>"))
+        assert transporte_http.post(URL_PRUEBA, b"<xml />") == b"<ok/>"
+
+    @pytest.mark.parametrize("fabricar", FALLOS_AMBIGUOS)
+    def test_transporte_no_clasifica_ambiguos_como_no_enviados(
+        self,
+        transporte: Callable[..., Any],
+        sesion_programada: Callable[..., SesionProgramada],
+        fabricar: Callable[[], Exception],
+    ) -> None:
+        transporte_http = transporte(max_retries=0)
+        sesion_programada(transporte_http, fabricar())
+        with pytest.raises(SifenTransportError) as error:
+            transporte_http.post(URL_PRUEBA, b"<xml />")
+        assert not isinstance(error.value, SifenRequestNotSentError)
+
+    def test_handshake_sin_respuesta_no_llego_al_sifen(
+        self, pem_de_prueba: tuple[str, str, bytes]
+    ) -> None:
+        """Integracion por loopback: el timeout del handshake TLS llega desde
+        requests como ``ReadTimeout`` y aun asi se reconoce como no enviado."""
+        transporte_http = _transporte_local(pem_de_prueba, max_retries=1)
+        try:
+            with ServidorLocal() as servidor:
+                with pytest.raises(SifenRequestNotSentError) as error:
+                    transporte_http.post(servidor.url, b"<xml />")
+        finally:
+            transporte_http.close()
+        assert isinstance(error.value.__cause__, requests.exceptions.ReadTimeout)
+
+    def test_handshake_rechazado_no_llego_al_sifen(
+        self, pem_de_prueba: tuple[str, str, bytes]
+    ) -> None:
+        """Integracion por loopback: el servidor contesta algo que no es TLS y
+        cierra. Segun la plataforma, requests lo informa como ``SSLError`` o
+        como conexion abortada; en ambos casos el fallo es del handshake."""
+        transporte_http = _transporte_local(pem_de_prueba, max_retries=0, timeout=5)
+        try:
+            with ServidorLocal(b"HTTP/1.1 400 Bad Request\r\n\r\n") as servidor:
+                with pytest.raises(SifenRequestNotSentError) as error:
+                    transporte_http.post(servidor.url, b"<xml />")
+        finally:
+            transporte_http.close()
+        assert isinstance(error.value.__cause__, requests.exceptions.ConnectionError)
 
 
 # ---------------------------------------------------------------------------
@@ -2425,7 +2940,8 @@ class TestConsultaSegura:
         assert orden == ["limpieza", 0.3]
 
     def test_consulta_segura_error_de_parseo_no_reintenta(self, consulta: Any) -> None:
-        """La raiz coincide pero el contenido no es del binding: se propaga."""
+        """La raiz coincide pero el contenido no es del binding: no se reintenta
+        y se informa como respuesta inesperada, no como error de xsdata."""
         consulta.max_retries = 2
         respuesta = (
             f"<rResEnviConsRUC xmlns='{NS_SIFEN}'><dCodRes>0502</dCodRes>"
@@ -2433,9 +2949,21 @@ class TestConsultaSegura:
             "</rResEnviConsRUC>"
         ).encode("utf-8")
         envios = _programar_envios(consulta, respuesta)
-        with pytest.raises(ParserError):
+        with pytest.raises(SifenUnexpectedResponseError) as error:
             consulta._send_safe_query("cons_ruc", _solicitud_ruc(), RResEnviConsRuc)
         assert envios.veces == 1
+        assert error.value.expected_root == error.value.actual_root == "rResEnviConsRUC"
+        assert error.value.code == "0502"
+        assert error.value.raw_body == respuesta.decode("utf-8")
+        assert isinstance(error.value.__cause__, ParserError)
+
+    def test_consulta_segura_error_incluye_el_cuerpo_recibido(
+        self, consulta: Any
+    ) -> None:
+        _programar_envios(consulta, RESPUESTA_AJENA_0160)
+        with pytest.raises(SifenUnexpectedResponseError) as error:
+            consulta._send_safe_query("cons_ruc", _solicitud_ruc(), RResEnviConsRuc)
+        assert error.value.raw_body == RESPUESTA_AJENA_0160.decode("utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -2452,6 +2980,17 @@ SENTINELA_DTE = SimpleNamespace(descripcion="consulta DTE ficticia")
 
 def _respuesta_ruc() -> RResEnviConsRuc:
     return RResEnviConsRuc(dCodRes="0502", dMsgRes="RUC encontrado")
+
+
+def _sobre_de_otra_operacion() -> SifenUnexpectedResponseError:
+    """Lo que lanza el cliente SOAP cuando llega el sobre de otra operacion."""
+    return SifenUnexpectedResponseError(
+        expected_root="rResEnviConsRUC",
+        actual_root="rRetEnviDe",
+        code="0160",
+        response_message="XML Mal Formado.",
+        raw_body=RESPUESTA_AJENA_0160,
+    )
 
 
 RESPUESTAS_POR_SERVICIO = {
@@ -2598,7 +3137,7 @@ class TestConsultaSIFEN:
         self, consulta: Any, cliente_soap_falso: ClienteSoapFalso
     ) -> None:
         """L32."""
-        cliente_soap_falso.error = ParserError("sobre de otra operacion")
+        cliente_soap_falso.error = _sobre_de_otra_operacion()
         limpiezas = _programar_limpieza(consulta)
         recuperada = _respuesta_ruc()
         consulta_segura = Registrador(recuperada)
@@ -2925,7 +3464,7 @@ class TestConsultaSIFEN:
         self, consulta: Any, cliente_soap_falso: ClienteSoapFalso
     ) -> None:
         """N42."""
-        cliente_soap_falso.error = ParserError("sobre de otra operacion")
+        cliente_soap_falso.error = _sobre_de_otra_operacion()
         _programar_limpieza(consulta)
         consulta_segura = Registrador(_respuesta_ruc())
         consulta._send_safe_query = consulta_segura
@@ -2942,7 +3481,7 @@ class TestConsultaSIFEN:
     def test_consultar_ruc_recuperacion_no_normaliza_respuesta(
         self, consulta: Any, cliente_soap_falso: ClienteSoapFalso
     ) -> None:
-        cliente_soap_falso.error = ParserError("sobre de otra operacion")
+        cliente_soap_falso.error = _sobre_de_otra_operacion()
         _programar_limpieza(consulta)
         centinela = object()
         consulta._send_safe_query = Registrador(centinela)
@@ -2984,18 +3523,20 @@ class TestConsultaSIFEN:
             ),
         ],
     )
-    def test_otras_consultas_no_recuperan_parser_error(
+    def test_otras_consultas_no_recuperan_respuesta_inesperada(
         self,
         consulta: Any,
         cliente_soap_falso: ClienteSoapFalso,
         invocar: Callable[[Any], Any],
     ) -> None:
         """N44."""
-        cliente_soap_falso.error = ParserError("respuesta inesperada")
+        falla = _sobre_de_otra_operacion()
+        cliente_soap_falso.error = falla
         consulta_segura = Registrador()
         consulta._send_safe_query = consulta_segura
-        with pytest.raises(ParserError):
+        with pytest.raises(SifenUnexpectedResponseError) as error:
             invocar(consulta)
+        assert error.value is falla
         assert consulta_segura.veces == 0
 
 
@@ -3078,13 +3619,351 @@ class TestIntegracionSinRed:
 
 
 # ---------------------------------------------------------------------------
+# Politica de reintentos: envios con efecto fiscal frente a consultas
+# ---------------------------------------------------------------------------
+
+
+def _fallo_de_conexion_rechazada() -> Exception:
+    return _por_requests(
+        requests.exceptions.ConnectionError,
+        urllib3_exc.NewConnectionError(None, "connection refused"),
+    )
+
+
+FALLOS_AMBIGUOS_DE_RED = [
+    pytest.param(
+        lambda: requests.exceptions.ReadTimeout("sin respuesta"),
+        SifenTimeoutError,
+        id="timeout_de_lectura",
+    ),
+    pytest.param(
+        lambda: requests.exceptions.ConnectionError(
+            urllib3_exc.ProtocolError(
+                "Connection aborted.", RemoteDisconnected("conexion cerrada")
+            )
+        ),
+        SifenTransportError,
+        id="conexion_cortada",
+    ),
+    pytest.param(
+        lambda: RespuestaHttpFalsa(b"", 503), SifenTransportError, id="http_503"
+    ),
+]
+
+
+def _enviar_de_xml(credenciales: dict[str, Any]) -> None:
+    with TransmisionDE(**credenciales) as transmision:
+        transmision.enviar_de_xml(_rde_sifen(_cdc_ficticio(90)))
+
+
+def _enviar_lote(credenciales: dict[str, Any]) -> None:
+    with TransmisionDE(**credenciales) as transmision:
+        documento = REnviConsRuc(dId=91, dRUCCons="4567012")
+        transmision.enviar_lote([documento], lote_id=91, sign=False)
+
+
+def _enviar_evento(credenciales: dict[str, Any]) -> None:
+    with TransmisionEvento(**credenciales) as transmision:
+        transmision.enviar_evento(TgGroupGesEve())
+
+
+def _enviar_evento_crudo(credenciales: dict[str, Any]) -> None:
+    with TransmisionEvento(**credenciales) as transmision:
+        transmision._send_raw_xml(
+            "evento", f"<rEnviEventoDe xmlns='{NS_SIFEN}'><dId>92</dId></rEnviEventoDe>"
+        )
+
+
+ENVIOS_CON_EFECTO_FISCAL = [
+    pytest.param(_enviar_de_xml, id="recepcion_de"),
+    pytest.param(_enviar_lote, id="lote"),
+    pytest.param(_enviar_evento, id="evento"),
+    pytest.param(_enviar_evento_crudo, id="evento_crudo"),
+]
+
+
+class TestPoliticaDeReintentos:
+    def test_solo_las_consultas_reintentan_fallos_ambiguos(self) -> None:
+        assert TransmisionBase._REINTENTA_ERRORES_AMBIGUOS is False
+        assert TransmisionDE._REINTENTA_ERRORES_AMBIGUOS is False
+        assert TransmisionEvento._REINTENTA_ERRORES_AMBIGUOS is False
+        assert ConsultaSIFEN._REINTENTA_ERRORES_AMBIGUOS is True
+
+    @pytest.mark.parametrize("fabricar, tipo_error", FALLOS_AMBIGUOS_DE_RED)
+    @pytest.mark.parametrize("enviar", ENVIOS_CON_EFECTO_FISCAL)
+    def test_envio_fiscal_no_reintenta_un_fallo_ambiguo(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+        esperas: list[float],
+        enviar: Callable[[dict[str, Any]], None],
+        fabricar: Callable[[], Any],
+        tipo_error: type[Exception],
+    ) -> None:
+        """Aun con ``max_retries`` alto, un resultado incierto sale enseguida."""
+        red = red_simulada(fabricar())
+        with pytest.raises(SifenTransportError) as error:
+            enviar({**credenciales_ficticias, "max_retries": 3})
+        assert type(error.value) is tipo_error
+        assert len(red.llamadas) == 1
+        assert esperas == []
+
+    @pytest.mark.parametrize("enviar", ENVIOS_CON_EFECTO_FISCAL)
+    def test_envio_fiscal_reintenta_si_la_solicitud_no_salio(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+        esperas: list[float],
+        enviar: Callable[[dict[str, Any]], None],
+    ) -> None:
+        red = red_simulada(_fallo_de_conexion_rechazada())
+        with pytest.raises(SifenRequestNotSentError):
+            enviar({**credenciales_ficticias, "max_retries": 2, "retry_backoff": 0.5})
+        assert len(red.llamadas) == 3
+        assert esperas == [0.5, 1.0]
+
+    def test_envio_fiscal_sale_tras_conexion_rechazada_y_luego_timeout(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+    ) -> None:
+        """El reintento por conexion rechazada no habilita reintentar despues
+        un timeout de lectura."""
+        red = red_simulada(
+            _fallo_de_conexion_rechazada(),
+            requests.exceptions.ReadTimeout("sin respuesta"),
+            RespuestaHttpFalsa(_sobre_soap12(CUERPO_RET_ENVI_DE_PREFIJADO)),
+        )
+        with pytest.raises(SifenTimeoutError):
+            _enviar_de_xml({**credenciales_ficticias, "max_retries": 5})
+        assert len(red.llamadas) == 2
+
+    @pytest.mark.parametrize("fabricar, tipo_error", FALLOS_AMBIGUOS_DE_RED)
+    def test_consulta_reintenta_fallos_ambiguos(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+        fabricar: Callable[[], Any],
+        tipo_error: type[Exception],
+    ) -> None:
+        red = red_simulada(fabricar())
+        with ConsultaSIFEN(
+            **credenciales_ficticias, max_retries=2, retry_backoff=0
+        ) as consulta_reintentos:
+            with pytest.raises(SifenTransportError) as error:
+                consulta_reintentos.consultar_de(_cdc_ficticio(93))
+        assert type(error.value) is tipo_error
+        assert len(red.llamadas) == 3
+
+
+# ---------------------------------------------------------------------------
+# Respuestas inesperadas: SOAP Fault, HTML de un proxy, cuerpo ilegible
+# ---------------------------------------------------------------------------
+
+MOTIVO_FAULT = "Error interno del servicio ficticio"
+
+FAULT_SOAP12 = (
+    f'<env:Envelope xmlns:env="{NS_SOAP12}"><env:Body><env:Fault>'
+    "<env:Code><env:Value>env:Receiver</env:Value></env:Code>"
+    f'<env:Reason><env:Text xml:lang="es">{MOTIVO_FAULT}</env:Text></env:Reason>'
+    "</env:Fault></env:Body></env:Envelope>"
+).encode("utf-8")
+
+FAULT_SOAP11 = (
+    f'<s:Envelope xmlns:s="{NS_SOAP11}"><s:Body><s:Fault>'
+    f"<faultcode>s:Server</faultcode><faultstring>{MOTIVO_FAULT}</faultstring>"
+    "</s:Fault></s:Body></s:Envelope>"
+).encode("utf-8")
+
+RESPUESTAS_INESPERADAS = [
+    pytest.param(
+        lambda: RespuestaHttpFalsa(FAULT_SOAP12, 500),
+        "Fault",
+        MOTIVO_FAULT,
+        id="fault_soap12_http500",
+    ),
+    pytest.param(
+        lambda: RespuestaHttpFalsa(FAULT_SOAP12, 200),
+        "Fault",
+        MOTIVO_FAULT,
+        id="fault_soap12_http200",
+    ),
+    pytest.param(
+        lambda: RespuestaHttpFalsa(FAULT_SOAP11, 500),
+        "Fault",
+        MOTIVO_FAULT,
+        id="fault_soap11",
+    ),
+    pytest.param(
+        lambda: RespuestaHttpFalsa(b"<html><body>502 Bad Gateway</body></html>"),
+        "html",
+        "502 Bad Gateway",
+        id="html_de_proxy",
+    ),
+    pytest.param(
+        lambda: RespuestaHttpFalsa(b"respuesta cortada <rRetEnviDe"),
+        "invalid_xml",
+        "respuesta cortada",
+        id="no_xml",
+    ),
+    pytest.param(lambda: RespuestaHttpFalsa(b""), "invalid_xml", "", id="vacia"),
+]
+
+
+def _enviar_de_sin_firma(transmision: Any) -> Any:
+    transmision._serialize = lambda *_args, **_kwargs: _rde_sifen(_cdc_ficticio(95))
+    return transmision.enviar_de(SimpleNamespace(DE=None), sign=False)
+
+
+OPERACIONES_CON_RESPUESTA = [
+    pytest.param(
+        TransmisionDE,
+        lambda t: t.enviar_de_xml(_rde_sifen(_cdc_ficticio(94))),
+        "rRetEnviDe",
+        1,
+        id="enviar_de_xml",
+    ),
+    pytest.param(TransmisionDE, _enviar_de_sin_firma, "rRetEnviDe", 1, id="enviar_de"),
+    pytest.param(
+        TransmisionDE,
+        lambda t: t.enviar_lote(
+            [REnviConsRuc(dId=96, dRUCCons="4567012")], lote_id=96, sign=False
+        ),
+        "rResEnviLoteDe",
+        1,
+        id="enviar_lote",
+    ),
+    pytest.param(
+        TransmisionEvento,
+        lambda t: t.enviar_evento(TgGroupGesEve()),
+        "rRetEnviEventoDe",
+        1,
+        id="enviar_evento",
+    ),
+    pytest.param(
+        ConsultaSIFEN,
+        lambda t: t.consultar_de(_cdc_ficticio(97)),
+        "rEnviConsDeResponse",
+        1,
+        id="consultar_de",
+    ),
+    pytest.param(
+        ConsultaSIFEN,
+        lambda t: t.consultar_lote(97),
+        "rResEnviConsLoteDe",
+        1,
+        id="consultar_lote",
+    ),
+    pytest.param(
+        ConsultaSIFEN,
+        lambda t: t.consultar_ruc("80024135-5"),
+        "rResEnviConsRUC",
+        2,  # el sobre inesperado activa la reconexion de consultar_ruc
+        id="consultar_ruc",
+    ),
+    pytest.param(
+        ConsultaSIFEN,
+        lambda t: t.consultar_dte(None),
+        "rConsDteResponse",
+        1,
+        id="consultar_dte",
+    ),
+    pytest.param(
+        ConsultaSIFEN,
+        lambda t: t.consultar_dte_async(None),
+        "rEnviConsDteAsyncResponse",
+        1,
+        id="consultar_dte_async",
+    ),
+]
+
+
+class TestRespuestasInesperadas:
+    @pytest.mark.parametrize("fabricar, raiz, fragmento", RESPUESTAS_INESPERADAS)
+    @pytest.mark.parametrize(
+        "clase, operar, raiz_esperada, envios_esperados", OPERACIONES_CON_RESPUESTA
+    )
+    def test_toda_operacion_informa_respuesta_inesperada(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+        clase: type,
+        operar: Callable[[Any], Any],
+        raiz_esperada: str,
+        envios_esperados: int,
+        fabricar: Callable[[], Any],
+        raiz: str,
+        fragmento: str,
+    ) -> None:
+        red = red_simulada(fabricar())
+        with clase(**credenciales_ficticias) as transmision:
+            with pytest.raises(SifenUnexpectedResponseError) as error:
+                operar(transmision)
+        assert isinstance(error.value, SifenTransportError)
+        assert error.value.expected_root == raiz_esperada
+        assert error.value.actual_root == raiz
+        assert error.value.raw_body is not None
+        assert fragmento in error.value.raw_body
+        assert len(red.llamadas) == envios_esperados
+
+    def test_mensaje_en_espanol_sin_el_cuerpo(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+    ) -> None:
+        red_simulada(RespuestaHttpFalsa(FAULT_SOAP12, 500))
+        with TransmisionDE(**credenciales_ficticias) as transmision:
+            with pytest.raises(SifenUnexpectedResponseError) as error:
+                transmision.enviar_de_xml(_rde_sifen(_cdc_ficticio(98)))
+        assert str(error.value) == (
+            "Respuesta inesperada del SIFEN: se esperaba rRetEnviDe y se recibio Fault"
+        )
+        assert MOTIVO_FAULT not in str(error.value)
+
+    def test_raiz_correcta_sin_campo_obligatorio(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+    ) -> None:
+        cuerpo = f'<rRetEnviDe xmlns="{NS_SIFEN}"/>'
+        red_simulada(RespuestaHttpFalsa(_sobre_soap12(cuerpo)))
+        with TransmisionDE(**credenciales_ficticias) as transmision:
+            with pytest.raises(SifenUnexpectedResponseError) as error:
+                transmision.enviar_de_xml(_rde_sifen(_cdc_ficticio(99)))
+        assert error.value.actual_root == "rRetEnviDe"
+        assert isinstance(error.value.__cause__, TypeError)
+
+    def test_cuerpo_largo_se_recorta(self, transmision_de: Any) -> None:
+        relleno = "x" * (2 * MAX_CUERPO_CRUDO)
+        transmision_de._send_raw_xml = Registrador(f"<html>{relleno}</html>".encode())
+        with pytest.raises(SifenUnexpectedResponseError) as error:
+            transmision_de.enviar_de_xml(_rde_sifen(_cdc_ficticio(100)))
+        assert len(error.value.raw_body) == MAX_CUERPO_CRUDO
+        assert error.value.raw_body.startswith("<html>xxx")
+
+    def test_parser_de_respuestas_sin_clase_delega_en_xsdata(self) -> None:
+        texto = f'<rResEnviConsRUC xmlns="{NS_SIFEN}"><dCodRes>0502</dCodRes>'
+        texto += "<dMsgRes>RUC encontrado</dMsgRes></rResEnviConsRUC>"
+        parser = base._parser_de_respuestas()
+        resultado = parser.from_bytes(texto.encode(), RResEnviConsRuc)
+        assert resultado == _respuesta_ruc()
+        with pytest.raises(ParserError):
+            parser.from_bytes(b"<desconocido/>")
+
+
+# ---------------------------------------------------------------------------
 # Documentos electronicos (TransmisionDE)
 # ---------------------------------------------------------------------------
 
 _DECLARACION_SOLICITUD = b"<?xml version='1.0' encoding='UTF-8'?>\n"
-_RDE_CON_ESQUEMA = (
-    b'<rDE xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+# El rDE conserva su propia declaracion del namespace del SIFEN (aunque
+# rEnviDe tambien la tenga) y recibe xsi:schemaLocation.
+_DECLARACIONES_ESQUEMA = (
+    b'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
     b'xsi:schemaLocation="http://ekuatia.set.gov.py/sifen/xsd siRecepDE_v150.xsd"'
+)
+_RDE_CON_ESQUEMA = (
+    b'<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd" ' + _DECLARACIONES_ESQUEMA
 )
 
 
@@ -3121,7 +4000,8 @@ CASOS_SOLICITUD_DORADOS = [
         '<DE Id="1"/></rDE>',
         _solicitud_esperada(
             b"2",
-            b'<rDE xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+            b'<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd" '
+            b'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
             b'xsi:schemaLocation="custom"><DE Id="1"/></rDE>',
         ),
         id="schema_location_propio",
@@ -3129,8 +4009,13 @@ CASOS_SOLICITUD_DORADOS = [
     pytest.param(
         3,
         f'<ns0:rDE xmlns:ns0="{NS_SIFEN}"><ns0:DE Id="1"/></ns0:rDE>',
-        _solicitud_esperada(b"3", _RDE_CON_ESQUEMA + b'><DE Id="1"/></rDE>'),
-        id="prefijado",
+        _solicitud_esperada(
+            b"3",
+            b'<ns0:rDE xmlns:ns0="http://ekuatia.set.gov.py/sifen/xsd" '
+            + _DECLARACIONES_ESQUEMA
+            + b'><ns0:DE Id="1"/></ns0:rDE>',
+        ),
+        id="prefijado_se_conserva",
     ),
     pytest.param(
         1,
@@ -3147,7 +4032,9 @@ CASOS_SOLICITUD_DORADOS = [
     pytest.param(
         5,
         '<rDE><DE Id="1"/></rDE>',
-        _solicitud_esperada(b"5", _RDE_CON_ESQUEMA + b'><DE Id="1"/></rDE>'),
+        _solicitud_esperada(
+            b"5", b"<rDE " + _DECLARACIONES_ESQUEMA + b'><DE Id="1"/></rDE>'
+        ),
         id="sin_namespace",
     ),
     pytest.param(
@@ -3182,6 +4069,12 @@ CASOS_SOLICITUD_DORADOS = [
         f'<rDE xmlns="{NS_SIFEN}"/>',
         _solicitud_esperada(b"x", _RDE_CON_ESQUEMA + b"/>"),
         id="d_id_no_entero",
+    ),
+    pytest.param(
+        "<&>",
+        f'<rDE xmlns="{NS_SIFEN}"/>',
+        _solicitud_esperada(b"&lt;&amp;&gt;", _RDE_CON_ESQUEMA + b"/>"),
+        id="d_id_se_escapa",
     ),
 ]
 
@@ -3526,12 +4419,17 @@ class TestTransmisionDE:
         assert resultado.rProtDe.gResProc[0].dMsgRes == "Observacion ficticia"
 
     def test_enviar_de_sobre_ajeno_no_reenvia(self, transmision_de: Any) -> None:
-        """N58: un DE nunca se reenvia automaticamente."""
+        """N58: un DE nunca se reenvia automaticamente; el sobre ajeno deja el
+        resultado incierto."""
         envios = Registrador(RESPUESTA_RUC_0502)
         transmision_de._send_raw_xml = envios
-        with pytest.raises(ParserError) as error:
+        with pytest.raises(SifenUnexpectedResponseError) as error:
             transmision_de.enviar_de_xml(_rde_sifen(_cdc_ficticio(58)))
-        assert not isinstance(error.value, SifenTransportError)
+        assert isinstance(error.value, SifenTransportError)
+        assert error.value.expected_root == "rRetEnviDe"
+        assert error.value.actual_root == "rResEnviConsRUC"
+        assert error.value.code == "0502"
+        assert error.value.raw_body == RESPUESTA_RUC_0502.decode("utf-8")
         assert envios.veces == 1
 
     @pytest.mark.parametrize(
@@ -3692,7 +4590,7 @@ class TestTransmisionDE:
         monkeypatch.setattr(
             TransmisionBase,
             "_serialize",
-            Registrador(efecto=lambda rde: f"<rDE><DE Id='{rde.DE.Id}'/></rDE>"),
+            Registrador(efecto=lambda rde, **_kw: f"<rDE><DE Id='{rde.DE.Id}'/></rDE>"),
         )
         identificadores = [_cdc_ficticio(n) for n in (641, 642)]
 
@@ -3744,18 +4642,21 @@ class TestTransmisionDE:
             _rde_dentro_de_solicitud(solicitud), _certificado_pem(pfx_de_prueba)
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Defecto heredado que se conserva (D02, P3 de S1, pregunta abierta 13 "
-            "de S2): el constructor de rEnviDe reexpresa un rDE prefijado en el "
-            "espacio por defecto y la firma deja de verificar."
-        ),
+    @pytest.mark.parametrize(
+        "armar_solicitud",
+        [
+            pytest.param(_solicitud_por_constructor, id="constructor"),
+            pytest.param(_solicitud_por_enviar_de_xml, id="enviar_de_xml"),
+        ],
     )
     def test_firma_de_rde_prefijado_dentro_de_renvide(
-        self, pfx_de_prueba: bytes
+        self,
+        pfx_de_prueba: bytes,
+        transmision_de: Any,
+        armar_solicitud: Callable[[Any, str], bytes],
     ) -> None:
-        """N73."""
+        """N73 (defecto P3 corregido): el rDE prefijado se inserta sin
+        reexpresarlo y la firma sigue verificando."""
         cdc = _cdc_ficticio(73)
         prefijado = (
             f'<s:rDE xmlns:s="{NS_SIFEN}"><s:dVerFor>150</s:dVerFor>'
@@ -3763,11 +4664,78 @@ class TestTransmisionDE:
         )
         firmado = _firmar_con_pfx(pfx_de_prueba, prefijado, cdc)
 
-        solicitud = _build_enviar_de_request_xml(1, firmado)
+        solicitud = armar_solicitud(transmision_de, firmado)
 
-        _verificar_firma(
-            _rde_dentro_de_solicitud(solicitud), _certificado_pem(pfx_de_prueba)
+        rde = _rde_dentro_de_solicitud(solicitud)
+        assert rde.prefix == "s"
+        assert rde.find(f"{{{NS_SIFEN}}}DE").prefix == "s"
+        certificado = _certificado_pem(pfx_de_prueba)
+        _verificar_firma(rde, certificado)
+        _verificar_firma_en_solicitud(solicitud, certificado)
+
+    @pytest.mark.parametrize(
+        "armar_solicitud",
+        [
+            pytest.param(_solicitud_por_constructor, id="constructor"),
+            pytest.param(_solicitud_por_enviar_de_xml, id="enviar_de_xml"),
+        ],
+    )
+    def test_binding_firmado_con_prefijos_xsdata_verifica_en_renvide(
+        self,
+        pfx_de_prueba: bytes,
+        transmision_de: Any,
+        armar_solicitud: Callable[[Any, str], bytes],
+    ) -> None:
+        """``BindingMixin.sign_xml`` firma la serializacion de xsdata, que usa
+        el prefijo ``ns0:``; ese rDE firmado tambien verifica dentro de
+        ``rEnviDe``."""
+        rde_binding = RDe.from_path(FACTURA.ruta)
+        firmado = rde_binding.sign_xml(
+            None, pfx_de_prueba, CONTRASENA_CERTIFICADO_PRUEBA, FACTURA.cdc
         )
+        assert "<ns0:rDE" in firmado
+
+        solicitud = armar_solicitud(transmision_de, firmado)
+
+        certificado = _certificado_pem(pfx_de_prueba)
+        _verificar_firma(_rde_dentro_de_solicitud(solicitud), certificado)
+        _verificar_firma_en_solicitud(solicitud, certificado)
+
+    def test_enviar_de_firma_un_binding_sin_prefijos_y_verifica_en_renvide(
+        self, pfx_de_prueba: bytes
+    ) -> None:
+        """``enviar_de(rde)`` serializa el rDE con el namespace del SIFEN por
+        defecto, lo firma y la firma verifica dentro de ``rEnviDe``."""
+        envios = Registrador(_ret_envi_de_minimo())
+        with TransmisionDE(
+            ambiente=TEST,
+            pkcs12_data=pfx_de_prueba,
+            pkcs12_password=CONTRASENA_CERTIFICADO_PRUEBA,
+        ) as transmision:
+            transmision._send_raw_xml = envios
+            transmision.enviar_de(RDe.from_path(FACTURA.ruta))
+
+        ((servicio, solicitud),) = envios.argumentos
+        assert servicio == "recep_de"
+        assert not re.search(rb"<\w+:", solicitud)
+        rde = _rde_dentro_de_solicitud(solicitud)
+        assert rde.find(f"{{{NS_SIFEN}}}DE").get("Id") == FACTURA.cdc
+        assert len(rde.findall(f"{{{NS_XMLDSIG}}}Signature")) == 1
+        certificado = _certificado_pem(pfx_de_prueba)
+        _verificar_firma(rde, certificado)
+        _verificar_firma_en_solicitud(solicitud, certificado)
+
+    def test_enviar_de_serializa_con_el_namespace_por_defecto(
+        self, transmision_de: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        serializaciones = Registrador(_rde_sifen(_cdc_ficticio(74)))
+        monkeypatch.setattr(TransmisionBase, "_serialize", serializaciones)
+        transmision_de._send_raw_xml = Registrador(_ret_envi_de_minimo())
+        rde = SimpleNamespace(DE=SimpleNamespace(Id=""))
+
+        transmision_de.enviar_de(rde)
+
+        assert serializaciones.llamadas == [((rde,), {"ns_map": {None: NS_SIFEN}})]
 
 
 # ---------------------------------------------------------------------------

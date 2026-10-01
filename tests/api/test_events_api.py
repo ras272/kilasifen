@@ -43,7 +43,10 @@ from kilasifen.infrastructure.db.session import (
     session_scope,
 )
 from kilasifen.infrastructure.jobs.workers import process_event_job
-from kilasifen.infrastructure.sifen.event import EventSubmissionOutcome
+from kilasifen.infrastructure.sifen.event import (
+    EventSubmissionOutcome,
+    PreparedEventSubmission,
+)
 from kilasifen.testing.database import managed_test_database_url
 
 API_KEY = "secret-key"
@@ -615,36 +618,49 @@ def test_event_worker_stages_retry_in_the_same_database_transaction(
 
 
 class FakeEventGateway:
-    def submit_event(self, **kwargs) -> EventSubmissionOutcome:
-        return EventSubmissionOutcome(
-            generated_xml=kwargs["event"].generated_xml,
-            signed_xml=kwargs["event"].generated_xml,
-            request_xml="<event-request/>",
+    """Prepares the stored event as is and answers with ``outcome``."""
+
+    def __init__(self, outcome: EventSubmissionOutcome | None = None) -> None:
+        self.outcome = outcome or EventSubmissionOutcome(
             response_raw="<event-response/>",
             status="approved",
             result_code="0300",
             result_message="Evento procesado",
             protocol="90001234",
         )
+        self.submitted_requests: list[str] = []
+
+    def prepare_event(self, *, event, **kwargs) -> PreparedEventSubmission:
+        del kwargs
+        return PreparedEventSubmission(
+            signed_xml=event.generated_xml,
+            request_xml=f"<event-request id='{event.id}'/>",
+        )
+
+    def submit_prepared(self, *, request_xml: str, **kwargs) -> EventSubmissionOutcome:
+        del kwargs
+        self.submitted_requests.append(request_xml)
+        return self.outcome
 
 
 class NeverCalledEventGateway:
-    def submit_event(self, **kwargs) -> EventSubmissionOutcome:
+    def prepare_event(self, **kwargs) -> PreparedEventSubmission:
         del kwargs
         raise AssertionError("HTTP request must not submit an event to SIFEN")
 
+    submit_prepared = prepare_event
 
-class PendingEventGateway:
-    def submit_event(self, **kwargs) -> EventSubmissionOutcome:
-        return EventSubmissionOutcome(
-            generated_xml=kwargs["event"].generated_xml,
-            signed_xml=kwargs["event"].generated_xml,
-            request_xml="<event-request/>",
-            response_raw="<event-response/>",
-            status="submitted",
-            result_code="0300",
-            result_message="Procesamiento pendiente",
-            protocol=None,
+
+class PendingEventGateway(FakeEventGateway):
+    def __init__(self) -> None:
+        super().__init__(
+            EventSubmissionOutcome(
+                response_raw="<event-response/>",
+                status="submitted",
+                result_code="0300",
+                result_message="Procesamiento pendiente",
+                protocol=None,
+            )
         )
 
 

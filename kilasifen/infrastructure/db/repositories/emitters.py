@@ -9,12 +9,17 @@ from sqlalchemy.orm import Session
 from kilasifen.domain.common.errors import NotFoundError
 from kilasifen.domain.emitters.models import Emitter, EmitterSummary
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
+from kilasifen.infrastructure.db.locks import run_with_lock_timeout
 from kilasifen.infrastructure.db.models import (
     ConsumerEmitterModel,
     ConsumerModel,
     EmitterModel,
 )
 from kilasifen.repositories.emitters import EmitterRepository
+
+#: Longest wait for the emitter row lock before answering a retryable 503.
+#: The lock is only held by short transactions (never across a SIFEN call).
+EMITTER_LOCK_TIMEOUT_MS = 5000
 
 
 class SqlAlchemyEmitterRepository(EmitterRepository):
@@ -64,13 +69,29 @@ class SqlAlchemyEmitterRepository(EmitterRepository):
             return None
         return _to_domain(model, self.secret_store)
 
+    def get_status(self, emitter_id: str) -> str | None:
+        statement = select(EmitterModel.status).where(EmitterModel.id == emitter_id)
+        return self.session.scalar(statement)
+
     def get_status_for_update(self, emitter_id: str) -> str | None:
         statement = (
             select(EmitterModel.status)
             .where(EmitterModel.id == emitter_id)
             .with_for_update()
         )
-        return self.session.scalar(statement)
+        return run_with_lock_timeout(
+            self.session,
+            lambda: self.session.scalar(statement),
+            timeout_ms=EMITTER_LOCK_TIMEOUT_MS,
+            error_code="emitters.lock_timeout",
+        )
+
+    def lock_row(self, emitter_id: str) -> None:
+        self.session.execute(
+            select(EmitterModel.id)
+            .where(EmitterModel.id == emitter_id)
+            .with_for_update()
+        )
 
     def update_metadata(
         self,

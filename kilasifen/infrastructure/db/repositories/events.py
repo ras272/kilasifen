@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from kilasifen.domain.events.models import Event
+from kilasifen.infrastructure.db.locks import locked_fresh
 from kilasifen.infrastructure.db.models import EventModel
 from kilasifen.repositories.events import EventRepository
 
@@ -52,6 +53,13 @@ class SqlAlchemyEventRepository(EventRepository):
 
     def get(self, event_id: str) -> Event | None:
         model = self.session.get(EventModel, event_id)
+        if model is None:
+            return None
+        return _to_domain(model)
+
+    def get_for_update(self, event_id: str) -> Event | None:
+        statement = select(EventModel).where(EventModel.id == event_id)
+        model = self.session.scalar(locked_fresh(statement))
         if model is None:
             return None
         return _to_domain(model)

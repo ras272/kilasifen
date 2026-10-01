@@ -17,6 +17,10 @@ class EventRepository(ABC):
         """Load an event by id."""
 
     @abstractmethod
+    def get_for_update(self, event_id: str) -> Event | None:
+        """Lock an event row and load its committed state."""
+
+    @abstractmethod
     def list_for_document(
         self,
         *,

@@ -20,7 +20,11 @@ __all__ = ["TransmisionEvento"]
 
 
 class TransmisionEvento(TransmisionBase):
-    """Envia eventos de DE al web service de eventos del SIFEN."""
+    """Envia eventos de DE al web service de eventos del SIFEN.
+
+    Un evento tiene efecto fiscal: el transporte solo lo repite ante un
+    :class:`~kilasifen.engine.sdk.errors.SifenRequestNotSentError`.
+    """
 
     def enviar_evento(self, evento: Any) -> RRetEnviEventoDe:
         """Envia un grupo de eventos (``gGroupGesEve``) dentro de ``rEnviEventoDe``.

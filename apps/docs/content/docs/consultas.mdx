@@ -21,9 +21,10 @@ GET /v1/emitters/{emitter_id}/queries/ruc/{ruc}
 ```
 
 El `GET` consulta y registra la respuesta sin forzar una transición. Usá el
-`POST .../reconcile` cuando el documento esté `retry_pending` o
-`reconciliation_required`: si SIFEN reconoce el CDC, documento y job convergen
-atómicamente al estado aprobado. La operación nunca reenvía el DE.
+`POST .../reconcile` cuando el documento esté `submitting`, `submitted`,
+`retry_pending` o `reconciliation_required`: si SIFEN reconoce el CDC,
+documento y job convergen atómicamente al estado aprobado. La operación nunca
+reenvía el DE y no bloquea al emisor mientras espera la respuesta de SIFEN.
 
 La consulta RUC permite comprobar información tributaria expuesta por SIFEN; no
 es una central de riesgo crediticio.

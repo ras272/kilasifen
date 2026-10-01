@@ -8,7 +8,8 @@ icon: RefreshCcw
 
 | Estado | Significado |
 | --- | --- |
-| `queued` | La intención fue persistida y espera worker. |
+| `queued` | La intención fue persistida y espera worker. Nada llegó a SIFEN. |
+| `submitting` | El XML firmado y el request exacto ya están guardados y el worker los está enviando. |
 | `submitted` | SIFEN recibió el request, pero aún no hay resultado definitivo. |
 | `retry_pending` | Existe incertidumbre recuperable; habrá reconciliación. |
 | `reconciliation_required` | Se agotó la reconciliación automática; requiere una consulta explícita por CDC. |
@@ -20,17 +21,36 @@ icon: RefreshCcw
 
 ## Regla ante incertidumbre
 
-KilaSifen persiste el CDC, el XML exacto y el request enviado. Ante timeout o
-respuesta indeterminada:
+Antes de llamar a SIFEN, KilaSifen guarda y confirma en la base el CDC, el XML
+firmado y el request exacto que va a viajar (con su `dId` real), y deja el
+documento en `submitting`. Ante timeout, conexión cortada, SOAP Fault o
+respuesta ilegible, el documento pasa a `retry_pending` y los intentos
+siguientes:
 
-1. consulta el documento por CDC;
-2. converge al resultado si SIFEN ya lo conoce;
-3. si no puede confirmar el resultado, pasa a `reconciliation_required`;
-4. nunca retransmite el DE ni genera otro CDC para la misma intención.
+1. consultan el documento por CDC;
+2. convergen al resultado si SIFEN ya lo conoce;
+3. si no pueden confirmar el resultado al agotar los intentos, lo pasan a
+   `reconciliation_required`;
+4. nunca retransmiten el DE ni generan otro CDC para la misma intención.
+
+Si el worker se cae durante el envío, el documento queda en `submitting` y el
+job en `processing`, y nada los retoma de forma automática: un operador tiene
+que reintentar el job desde la consola de administración. Ese reintento sigue
+la misma regla y consulta por CDC antes de decidir.
 
 Los reintentos internos sólo consultan. El ERP no debe crear una segunda
 intención para “destrabar” un documento ni reencolar el job esperando otro
 envío.
+
+## Cuando el request no salió
+
+Si la falla prueba que nada llegó a SIFEN (DNS, conexión rechazada, timeout al
+conectar, handshake TLS), no hay incertidumbre: el documento vuelve a `queued`
+con su request guardado, el job queda `retry_scheduled` con la categoría
+`transport_not_sent` y el próximo intento reenvía ese mismo request, sin volver
+a firmar. Si SIFEN sigue inalcanzable al agotar los intentos, el job pasa a
+`failed` (`retry_exhausted`) pero el documento sigue `queued`: un reintento
+manual del job vuelve a enviar el mismo XML firmado.
 
 ## Reconciliación explícita
 

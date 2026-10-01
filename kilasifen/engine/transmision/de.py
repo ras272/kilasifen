@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 from typing import Any
+from xml.sax.saxutils import escape
 
 from kilasifen.engine.de.bindings.v150.ws_si_recep_de_v150 import RRetEnviDe
 from kilasifen.engine.de.bindings.v150.ws_si_recep_lote_de_v141 import (
@@ -25,6 +26,15 @@ _NS_SIFEN = "http://ekuatia.set.gov.py/sifen/xsd"
 _NS_XSI = "http://www.w3.org/2001/XMLSchema-instance"
 _ATRIBUTO_SCHEMA_LOCATION = f"{{{_NS_XSI}}}schemaLocation"
 _SCHEMA_LOCATION_RECEPCION = f"{_NS_SIFEN} siRecepDE_v150.xsd"
+
+#: Prefijos con que se serializa un ``rDE``: el namespace del SIFEN queda como
+#: espacio por defecto, sin prefijo, como en el XML que arma la plataforma.
+_NS_MAP_RDE: dict[str | None, str] = {None: _NS_SIFEN}
+
+#: Apertura del request ``rEnviDe``, igual a la que produce lxml.
+_APERTURA_RENVIDE = (
+    f"<?xml version='1.0' encoding='UTF-8'?>\n<rEnviDe xmlns=\"{_NS_SIFEN}\">"
+)
 
 #: Marca de "el binding no tiene atributo DE".
 _SIN_DE = object()
@@ -53,9 +63,13 @@ def _build_enviar_de_request_xml(d_id: int, xml_de: str | bytes) -> bytes:
 
     ``rEnviDe`` declara el espacio de nombres del SIFEN como espacio por
     defecto y sus hijos son ``dId`` (con ``str(d_id)``) y ``xDE``. El ``rDE``
-    se inserta como arbol (no como texto escapado), de modo que una firma
-    calculada sobre un ``rDE`` sin prefijos sigue verificando. La salida
-    depende solo de los argumentos.
+    se serializa aparte, con sus propias declaraciones de namespace y sus
+    prefijos, y se inserta como texto (no escapado). Asi el ``DE`` conserva la
+    forma canonica sobre la que se calculo la firma, use o no prefijos.
+    Insertarlo como arbol no sirve: lxml quita del ``rDE`` las declaraciones
+    que el padre ya tiene y reexpresa un ``rDE`` prefijado en el espacio por
+    defecto, lo que invalida la firma. La salida depende solo de los
+    argumentos.
 
     Returns:
         El request en UTF-8, con declaracion XML.
@@ -65,26 +79,27 @@ def _build_enviar_de_request_xml(d_id: int, xml_de: str | bytes) -> bytes:
     """
     etree = _importar_opcional("lxml.etree")
     documento = _with_schema_location(xml_de)
-
-    solicitud = etree.Element(f"{{{_NS_SIFEN}}}rEnviDe", nsmap={None: _NS_SIFEN})
-    identificador = etree.SubElement(solicitud, f"{{{_NS_SIFEN}}}dId")
-    identificador.text = str(d_id)
-    contenedor = etree.SubElement(solicitud, f"{{{_NS_SIFEN}}}xDE")
-    contenedor.append(documento)
-
-    return etree.tostring(solicitud, encoding="UTF-8", xml_declaration=True)
+    rde = etree.tostring(documento, encoding="unicode", with_tail=False)
+    return (
+        f"{_APERTURA_RENVIDE}<dId>{escape(str(d_id))}</dId><xDE>{rde}</xDE></rEnviDe>"
+    ).encode("utf-8")
 
 
 class TransmisionDE(TransmisionBase):
-    """Envia DE al servicio sincrono de recepcion y lotes al asincrono."""
+    """Envia DE al servicio sincrono de recepcion y lotes al asincrono.
+
+    Ambos envios tienen efecto fiscal: el transporte solo los repite ante un
+    :class:`~kilasifen.engine.sdk.errors.SifenRequestNotSentError`.
+    """
 
     def _xml_para_envio(self, rde: Any, sign: bool) -> str:
         """Serializa ``rde`` y, si corresponde, lo firma con el ``Id`` del DE.
 
+        El namespace del SIFEN queda como espacio por defecto, sin prefijos.
         Sin ``Id`` (binding sin atributo ``DE`` o ``Id`` vacio) el documento
         se envia sin firmar.
         """
-        xml = self._serialize(rde)
+        xml = self._serialize(rde, ns_map=_NS_MAP_RDE)
         if not sign:
             return xml
         de = getattr(rde, "DE", _SIN_DE)
@@ -96,8 +111,9 @@ class TransmisionDE(TransmisionBase):
     def enviar_de(self, rde: Any, sign: bool = True) -> RRetEnviDe:
         """Serializa, firma (si ``sign``) y envia un DE al SIFEN.
 
-        Nunca reenvia por cuenta propia: la cantidad de POST la decide
-        ``max_retries`` (``0`` por defecto).
+        Solo vuelve a enviar (hasta ``max_retries`` veces, ``0`` por defecto)
+        si la solicitud no llego al SIFEN; ante un resultado incierto lanza el
+        error en el primer intento.
         """
         xml = self._xml_para_envio(rde, sign)
         solicitud = _build_enviar_de_request_xml(d_id=_generate_id(), xml_de=xml)
@@ -111,6 +127,9 @@ class TransmisionDE(TransmisionBase):
             UnicodeDecodeError: si ``xml_de`` son bytes que no son UTF-8.
             lxml.etree.XMLSyntaxError: si el XML esta mal formado; en ese caso
                 no se envia nada.
+            SifenUnexpectedResponseError: si la respuesta es un SOAP Fault,
+                el sobre de otra operacion o un cuerpo ilegible (resultado
+                incierto).
         """
         if isinstance(xml_de, bytes):
             xml_de = xml_de.decode("utf-8")

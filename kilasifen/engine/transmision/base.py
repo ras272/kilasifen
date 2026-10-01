@@ -3,10 +3,12 @@
 Este modulo reune lo que comparten todas las operaciones:
 
 * :class:`TransmisionBase`: recursos perezosos de una sesion de trabajo
-  (archivos PEM para el TLS mutuo, firmador PKCS12, transporte HTTP y clientes
-  SOAP por servicio) y su liberacion ordenada;
+  (archivos PEM para el TLS mutuo, con la clave privada cifrada, firmador
+  PKCS12, transporte HTTP y clientes SOAP por servicio) y su liberacion
+  ordenada;
 * :class:`RequestsTransport` y :func:`_create_transport`: el transporte HTTP
-  sobre ``requests`` con su politica de reintentos;
+  sobre ``requests`` con su politica de reintentos (la sesion con TLS mutuo
+  sale de :mod:`kilasifen.engine.transmision.conexion`);
 * funciones auxiliares para armar el sobre SOAP de salida y extraer el cuerpo
   util de las respuestas.
 
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import secrets
 import tempfile
 import time
 from functools import lru_cache
@@ -29,6 +32,7 @@ from types import ModuleType
 from typing import Any, TypeVar
 from xml.etree import ElementTree as ET
 
+from xsdata.exceptions import ParserError
 from xsdata.formats.dataclass.parsers import XmlParser
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
@@ -69,6 +73,7 @@ from kilasifen.engine.de.bindings.v150.ws_si_recep_lote_de_v141 import (
 # Los errores se toman del submodulo y no del paquete ``kilasifen.engine.sdk``:
 # este modulo se importa mientras ese paquete todavia se esta inicializando.
 from kilasifen.engine.sdk.errors import (
+    SifenRequestNotSentError,
     SifenTimeoutError,
     SifenTransportClosedError,
     SifenTransportError,
@@ -105,9 +110,18 @@ _ETIQUETAS_MENSAJE = frozenset({"dMsgRes", "dMsgResLot"})
 #: Raiz informada cuando una respuesta no es XML bien formado.
 _RAIZ_INVALIDA = "invalid_xml"
 
+#: Errores de xsdata al convertir un cuerpo en su binding: ``ParserError``
+#: (elementos desconocidos o XML ilegible), ``TypeError`` (falta un campo
+#: obligatorio) y ``ValueError``/``SyntaxError`` (conversiones, XML mal
+#: formado para lxml).
+_ERRORES_DE_PARSEO = (ParserError, TypeError, ValueError, SyntaxError)
+
 _MSG_CERRADA = "La transmision SIFEN ya esta cerrada; cree una nueva instancia"
 _MSG_TIMEOUT = "Se agoto el tiempo de espera de la solicitud SOAP al SIFEN"
 _MSG_TRANSPORTE = "Error de transporte en la solicitud SOAP al SIFEN"
+_MSG_NO_ENVIADA = (
+    "No se pudo establecer la conexion con el SIFEN; la solicitud SOAP no se envio"
+)
 _MSG_EXTRA_FALTANTE = (
     "La transmision al SIFEN necesita dependencias opcionales que no estan "
     'instaladas ({modulo}). Instala: pip install "kilasifen[transmision]"'
@@ -130,6 +144,9 @@ _T = TypeVar("_T", bound="TransmisionBase")
 #: Tope (exclusivo) de los identificadores ``dId`` generados: quince nueves.
 _TOPE_ID = 999_999_999_999_999
 
+#: Bytes aleatorios de la contrasena que cifra la clave privada en disco.
+_BYTES_CONTRASENA_CLAVE = 32
+
 
 # ---------------------------------------------------------------------------
 # Utilidades de modulo
@@ -142,6 +159,12 @@ def _importar_opcional(nombre: str) -> ModuleType:
         return importlib.import_module(nombre)
     except ImportError as exc:
         raise ImportError(_MSG_EXTRA_FALTANTE.format(modulo=nombre)) from exc
+
+
+def _modulo_conexion() -> ModuleType:
+    """Importa :mod:`kilasifen.engine.transmision.conexion` (necesita requests)."""
+    _importar_opcional("requests")
+    return importlib.import_module("kilasifen.engine.transmision.conexion")
 
 
 def _validar_max_retries(max_retries: Any) -> None:
@@ -325,6 +348,79 @@ def _get_service_models(servicio: str) -> tuple[type, type]:
 
 
 # ---------------------------------------------------------------------------
+# Respuestas
+# ---------------------------------------------------------------------------
+
+
+def _nombre_raiz(clase: type) -> str:
+    """Nombre local del elemento raiz de un binding de respuesta."""
+    meta = getattr(clase, "Meta", None)
+    return getattr(meta, "name", None) or clase.__name__
+
+
+def _respuesta_inesperada(
+    datos: bytes, raiz_esperada: str
+) -> SifenUnexpectedResponseError:
+    """Arma el error para un cuerpo que no es la respuesta esperada."""
+    raiz, codigo, mensaje = _response_identity(datos)
+    return SifenUnexpectedResponseError(
+        expected_root=raiz_esperada,
+        actual_root=raiz,
+        code=codigo,
+        response_message=mensaje,
+        raw_body=datos,
+    )
+
+
+def _parsear_respuesta(respuesta: bytes | str, clase: type) -> Any:
+    """Convierte el cuerpo de una respuesta del SIFEN en una instancia de ``clase``.
+
+    Antes de parsear comprueba que el elemento raiz sea el de ``clase``
+    (xsdata no lo verifica). Un SOAP Fault, el sobre de otra operacion, un
+    cuerpo que no es XML o un XML que el binding no acepta terminan en
+    :class:`SifenUnexpectedResponseError`, con el comienzo del cuerpo en
+    ``raw_body``; nunca en un error de xsdata.
+    """
+    if isinstance(respuesta, str):
+        datos = respuesta.encode("utf-8")
+    else:
+        datos = bytes(respuesta)
+    raiz_esperada = _nombre_raiz(clase)
+    if _response_identity(datos)[0] != raiz_esperada:
+        raise _respuesta_inesperada(datos, raiz_esperada)
+    try:
+        return _parser().from_bytes(datos, clase)
+    except _ERRORES_DE_PARSEO as exc:
+        raise _respuesta_inesperada(datos, raiz_esperada) from exc
+
+
+class _ParserDeRespuestas(XmlParser):
+    """Parser que el cliente SOAP de xsdata usa para leer las respuestas.
+
+    El cliente llama ``from_bytes(respuesta, modelo_de_salida)``; este parser
+    lo resuelve con :func:`_parsear_respuesta`, de modo que las operaciones
+    que pasan por el cliente informan las respuestas inesperadas igual que
+    las que envian XML crudo.
+    """
+
+    def from_bytes(
+        self,
+        source: bytes,
+        clazz: type | None = None,
+        ns_map: dict[str, str] | None = None,
+    ) -> Any:
+        if clazz is None:
+            return super().from_bytes(source, clazz, ns_map)
+        return _parsear_respuesta(source, clazz)
+
+
+@lru_cache(maxsize=1)
+def _parser_de_respuestas() -> _ParserDeRespuestas:
+    """Parser de respuestas compartido por los clientes SOAP del proceso."""
+    return _ParserDeRespuestas()
+
+
+# ---------------------------------------------------------------------------
 # Transporte HTTP
 # ---------------------------------------------------------------------------
 
@@ -343,6 +439,17 @@ class RequestsTransport:
     primer elemento del ``Body`` de la respuesta. Los errores de ``requests``
     se traducen a la jerarquia :class:`SifenTransportError` y conservan la
     excepcion original como causa.
+
+    Args:
+        session: sesion ``requests`` (o un objeto con ``post`` y ``close``).
+        timeout: segundos de espera de cada POST.
+        max_retries: intentos adicionales permitidos.
+        backoff_factor: base en segundos de la espera exponencial.
+        reintentar_ambiguos: si tambien se reintentan los fallos en que el
+            SIFEN pudo haber recibido la solicitud (timeout de lectura,
+            conexion cortada, error 5xx). Solo es seguro para operaciones
+            idempotentes; por defecto se reintentan unicamente los fallos en
+            que la solicitud no salio.
     """
 
     def __init__(
@@ -351,11 +458,14 @@ class RequestsTransport:
         timeout: float,
         max_retries: int = 2,
         backoff_factor: float = 0.2,
+        *,
+        reintentar_ambiguos: bool = False,
     ) -> None:
         self._session = session
         self._timeout = timeout
         self._max_retries = max_retries
         self._backoff_factor = backoff_factor
+        self._reintentar_ambiguos = reintentar_ambiguos
 
     def close(self) -> None:
         """Cierra la sesion HTTP."""
@@ -369,15 +479,21 @@ class RequestsTransport:
     ) -> bytes:
         """Envia ``data`` a ``url`` dentro de un sobre SOAP 1.2.
 
-        Hace hasta ``max_retries + 1`` intentos. Se reintentan los timeouts,
-        los errores de conexion y los errores HTTP sin cuerpo XML que no sean
-        4xx; entre intentos se espera ``backoff_factor * 2**i`` segundos.
+        Hace hasta ``max_retries + 1`` intentos. Siempre se reintentan los
+        fallos en que la solicitud no llego al SIFEN. Con
+        ``reintentar_ambiguos`` tambien los timeouts, los demas errores de
+        conexion y los errores HTTP sin cuerpo XML que no sean 4xx; sin el,
+        esos fallos se informan en el primer intento. Entre intentos se espera
+        ``backoff_factor * 2**i`` segundos.
 
         Returns:
             Los bytes del primer elemento del ``Body`` de la respuesta, o la
             respuesta cruda si no es un sobre SOAP.
 
         Raises:
+            SifenRequestNotSentError: si el ultimo intento fallo antes de
+                enviar la solicitud (DNS, conexion rechazada o inalcanzable,
+                tiempo agotado al conectar, handshake TLS).
             SifenTimeoutError: si se agotaron los intentos por timeout.
             SifenTransportError: ante cualquier otro fallo de ``requests``.
         """
@@ -400,32 +516,33 @@ class RequestsTransport:
                 )
                 respuesta.raise_for_status()
                 return _extract_soap_body(respuesta.content)
-            except excepciones.Timeout as exc:
-                fallo: SifenTransportError = SifenTimeoutError(_MSG_TIMEOUT)
-                causa: BaseException = exc
-                reintentable = True
-            except excepciones.HTTPError as exc:
-                cuerpo_xml = _extract_http_error_xml_body(exc)
-                if cuerpo_xml is not None:
-                    return cuerpo_xml
-                fallo = SifenTransportError(_MSG_TRANSPORTE)
-                causa = exc
-                reintentable = not _es_error_de_cliente(exc)
-            except excepciones.ConnectionError as exc:
-                fallo = SifenTransportError(_MSG_TRANSPORTE)
-                causa = exc
-                reintentable = True
             except excepciones.RequestException as exc:
-                fallo = SifenTransportError(_MSG_TRANSPORTE)
-                causa = exc
-                reintentable = False
-
-            if not reintentable or intento == total_intentos - 1:
-                raise fallo from causa
+                if isinstance(exc, excepciones.HTTPError):
+                    cuerpo_xml = _extract_http_error_xml_body(exc)
+                    if cuerpo_xml is not None:
+                        return cuerpo_xml
+                fallo, reintentable = self._clasificar_fallo(exc)
+                if not reintentable or intento == total_intentos - 1:
+                    raise fallo from exc
             self._esperar_antes_de_reintentar(intento)
 
         # Solo se llega aqui sin ningun intento (``max_retries`` negativo).
         raise SifenTransportError(_MSG_TRANSPORTE)
+
+    def _clasificar_fallo(self, exc: BaseException) -> tuple[SifenTransportError, bool]:
+        """Traduce un error de ``requests`` y dice si admite otro intento."""
+        excepciones = _importar_opcional("requests.exceptions")
+        if _modulo_conexion().solicitud_no_enviada(exc):
+            return SifenRequestNotSentError(_MSG_NO_ENVIADA), True
+        ambiguo = self._reintentar_ambiguos
+        if isinstance(exc, excepciones.Timeout):
+            return SifenTimeoutError(_MSG_TIMEOUT), ambiguo
+        if isinstance(exc, excepciones.HTTPError):
+            reintentable = ambiguo and not _es_error_de_cliente(exc)
+            return SifenTransportError(_MSG_TRANSPORTE), reintentable
+        if isinstance(exc, excepciones.ConnectionError):
+            return SifenTransportError(_MSG_TRANSPORTE), ambiguo
+        return SifenTransportError(_MSG_TRANSPORTE), False
 
     def _esperar_antes_de_reintentar(self, intento_fallido: int) -> None:
         """Espera exponencial tras el intento ``intento_fallido`` (base 0)."""
@@ -440,22 +557,27 @@ def _create_transport(
     timeout: float = 30.0,
     max_retries: int = 2,
     backoff_factor: float = 0.2,
+    *,
+    key_password: bytes | None = None,
+    reintentar_ambiguos: bool = False,
 ) -> RequestsTransport:
     """Crea un transporte con una sesion ``requests`` nueva y TLS mutuo.
 
-    La sesion presenta el certificado cliente ``(cert_path, key_path)`` y
-    valida el certificado del servidor con el almacen por defecto. Los
-    archivos no se leen aqui sino en la primera conexion.
+    La sesion presenta el certificado cliente ``(cert_path, key_path)``,
+    descifrando la clave con ``key_password``, y valida el certificado del
+    servidor (ver :mod:`kilasifen.engine.transmision.conexion`). Los archivos
+    no se leen aqui sino en el primer envio. ``reintentar_ambiguos`` se pasa
+    a :class:`RequestsTransport`.
     """
-    requests = _importar_opcional("requests")
-    sesion = requests.Session()
-    sesion.cert = (cert_path, key_path)
-    sesion.verify = True
+    sesion = _modulo_conexion().crear_sesion_tls_mutuo(
+        cert_path, key_path, key_password
+    )
     return RequestsTransport(
         sesion,
         timeout=timeout,
         max_retries=max_retries,
         backoff_factor=backoff_factor,
+        reintentar_ambiguos=reintentar_ambiguos,
     )
 
 
@@ -477,13 +599,22 @@ class TransmisionBase:
         pkcs12_data: contenido del archivo ``.pfx``/``.p12`` del emisor.
         pkcs12_password: contrasena del PKCS12 (``str`` o ``bytes``).
         timeout: segundos de espera de cada POST.
-        max_retries: reintentos por envio. El valor por defecto ``0`` evita
-            reenviar operaciones con efecto fiscal ante un resultado incierto.
+        max_retries: reintentos por envio (``0`` por defecto). Fuera de las
+            consultas solo se usan para fallos en que la solicitud no llego al
+            SIFEN (ver :attr:`_REINTENTA_ERRORES_AMBIGUOS`): un resultado
+            incierto nunca provoca un reenvio automatico.
         retry_backoff: base en segundos de la espera exponencial.
 
     Raises:
         ValueError: si ``max_retries`` es negativo.
     """
+
+    #: Si el transporte de la instancia reintenta tambien los fallos en que
+    #: el SIFEN pudo haber recibido la solicitud. Falso para los envios con
+    #: efecto fiscal (recepcion de DE, lotes y eventos), donde reenviar ante
+    #: un resultado incierto puede duplicar la operacion; las consultas lo
+    #: activan (ver ``ConsultaSIFEN``).
+    _REINTENTA_ERRORES_AMBIGUOS: bool = False
 
     def __init__(
         self,
@@ -496,6 +627,7 @@ class TransmisionBase:
     ) -> None:
         self._closed = False
         self._cert_files: tuple[str, str] | None = None
+        self._key_password: bytes | None = None
         self._signer: Any = None
         self._transport: Any = None
         self._clients: dict[str, Any] = {}
@@ -548,7 +680,11 @@ class TransmisionBase:
                 pass
 
     def _cleanup_cert_files(self) -> None:
-        """Borra los PEM temporales (primero el certificado, luego la clave)."""
+        """Borra los PEM temporales (primero el certificado, luego la clave).
+
+        Tambien olvida la contrasena con la que se cifro la clave.
+        """
+        self._key_password = None
         archivos = self._cert_files
         if not archivos:
             return
@@ -579,8 +715,11 @@ class TransmisionBase:
         """Devuelve ``(ruta_certificado, ruta_clave)`` en PEM para el TLS mutuo.
 
         La primera vez extrae del PKCS12 el certificado del firmante y su clave
-        privada (sin cifrar) a dos archivos temporales que se borran en
-        :meth:`close`. Los errores de carga del PKCS12 se propagan tal cual.
+        privada a dos archivos temporales que se borran en :meth:`close`. La
+        clave se escribe como PKCS#8 cifrado con una contrasena aleatoria de la
+        instancia que nunca toca el disco (``_key_password``): si el proceso
+        muere antes de borrar el archivo, lo que queda no sirve sin ella. Los
+        errores de carga del PKCS12 se propagan tal cual.
         """
         self._ensure_open()
         if self._cert_files is not None:
@@ -604,11 +743,14 @@ class TransmisionBase:
                 "El PKCS12 no contiene la clave privada y el certificado del firmante"
             )
 
+        contrasena_clave = secrets.token_urlsafe(_BYTES_CONTRASENA_CLAVE).encode(
+            "ascii"
+        )
         certificado_pem = certificado.public_bytes(serializacion.Encoding.PEM)
         clave_pem = clave.private_bytes(
             serializacion.Encoding.PEM,
-            serializacion.PrivateFormat.TraditionalOpenSSL,
-            serializacion.NoEncryption(),
+            serializacion.PrivateFormat.PKCS8,
+            serializacion.BestAvailableEncryption(contrasena_clave),
         )
 
         ruta_certificado = _escribir_pem_temporal(certificado_pem)
@@ -618,6 +760,7 @@ class TransmisionBase:
             _borrar_sin_error(ruta_certificado)
             raise
 
+        self._key_password = contrasena_clave
         self._cert_files = (ruta_certificado, ruta_clave)
         return self._cert_files
 
@@ -636,21 +779,29 @@ class TransmisionBase:
 
     # -- serializacion -----------------------------------------------------
 
-    def _serialize(self, obj: Any) -> str:
-        """Serializa un binding a texto XML con declaracion y sin sangria."""
-        return _serializador().render(obj)
+    def _serialize(self, obj: Any, ns_map: dict[str | None, str] | None = None) -> str:
+        """Serializa un binding a texto XML con declaracion y sin sangria.
+
+        Sin ``ns_map`` xsdata asigna prefijos propios (``ns0:``...); con
+        ``{None: namespace}`` ese namespace queda como espacio por defecto.
+        """
+        return _serializador().render(obj, ns_map=ns_map)
 
     def _parse(self, xml: str, clazz: type) -> Any:
         """Parsea texto XML a una instancia de ``clazz``."""
         return _parser().from_string(xml, clazz)
 
     def _como_respuesta(self, respuesta: Any, clase: type) -> Any:
-        """Normaliza lo devuelto por el transporte o el cliente a ``clase``."""
+        """Normaliza lo devuelto por el transporte o el cliente a ``clase``.
+
+        Raises:
+            SifenUnexpectedResponseError: si el cuerpo no es una respuesta de
+                ``clase`` (SOAP Fault, sobre de otra operacion, cuerpo
+                ilegible).
+        """
         if isinstance(respuesta, clase):
             return respuesta
-        if isinstance(respuesta, str):
-            return self._parse(respuesta, clase)
-        return self._parse(respuesta.decode("utf-8"), clase)
+        return _parsear_respuesta(respuesta, clase)
 
     # -- transporte y clientes SOAP ----------------------------------------
 
@@ -669,13 +820,17 @@ class TransmisionBase:
                 timeout=self.timeout,
                 max_retries=self.max_retries,
                 backoff_factor=self.retry_backoff,
+                key_password=self._key_password,
+                reintentar_ambiguos=self._REINTENTA_ERRORES_AMBIGUOS,
             )
         return self._transport
 
     def _get_client(self, servicio: str) -> Any:
         """Devuelve el cliente SOAP de xsdata para ``servicio`` (cacheado).
 
-        Todos los clientes de la instancia comparten el mismo transporte.
+        Todos los clientes de la instancia comparten el mismo transporte. Las
+        respuestas se leen con :class:`_ParserDeRespuestas`: una respuesta
+        inesperada llega como :class:`SifenUnexpectedResponseError`.
         """
         self._ensure_open()
         if servicio in self._clients:
@@ -695,7 +850,11 @@ class TransmisionBase:
             output=modelo_salida,
             encoding=None,
         )
-        cliente = cliente_xsdata.Client(config=configuracion, transport=transporte)
+        cliente = cliente_xsdata.Client(
+            config=configuracion,
+            transport=transporte,
+            parser=_parser_de_respuestas(),
+        )
         self._clients[servicio] = cliente
         return cliente
 
@@ -718,30 +877,24 @@ class TransmisionBase:
         fiscal, ante esa situacion se abre una conexion nueva y se vuelve a
         enviar el mismo request (mismo ``dId``), hasta ``max_retries + 1``
         veces. Si nunca llega la respuesta esperada se lanza
-        :class:`SifenUnexpectedResponseError`.
+        :class:`SifenUnexpectedResponseError`. Una respuesta con la raiz
+        esperada que el binding no acepta no se reintenta: se informa enseguida
+        con el mismo error.
         """
         _validar_max_retries(self.max_retries)
 
         texto = self._serialize(request)
-        raiz_esperada = response_type.Meta.name
+        raiz_esperada = _nombre_raiz(response_type)
         total_intentos = self.max_retries + 1
 
         for intento in range(total_intentos):
             respuesta = self._send_raw_xml(servicio, texto)
-            raiz, codigo, mensaje = _response_identity(respuesta)
-            if raiz == raiz_esperada:
-                if not isinstance(respuesta, str):
-                    respuesta = respuesta.decode("utf-8")
-                return self._parse(respuesta, response_type)
-
-            error = SifenUnexpectedResponseError(
-                expected_root=raiz_esperada,
-                actual_root=raiz,
-                code=codigo,
-                response_message=mensaje,
-            )
-            if intento == total_intentos - 1:
-                raise error
+            try:
+                return _parsear_respuesta(respuesta, response_type)
+            except SifenUnexpectedResponseError as error:
+                otra_operacion = error.actual_root != raiz_esperada
+                if not otra_operacion or intento == total_intentos - 1:
+                    raise
             self._cleanup_transport()
             espera = self.retry_backoff * 2**intento
             if espera > 0:

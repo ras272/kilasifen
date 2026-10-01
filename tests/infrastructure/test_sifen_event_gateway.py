@@ -1,4 +1,14 @@
+from types import SimpleNamespace
+
+import pytest
+
+from kilasifen.engine.sdk.errors import (
+    SifenUnexpectedResponseError,
+    SifenValidationError,
+)
+from kilasifen.infrastructure.sifen import event as event_module
 from kilasifen.infrastructure.sifen.event import (
+    KilaSifenEventGateway,
     _build_enviar_evento_request_xml,
     _normalize_response,
 )
@@ -134,3 +144,105 @@ def test_event_xml_survives_envelope_wrap() -> None:
     )
 
     assert expected_group_xml in request_xml
+
+
+_GROUP_XML = (
+    '<gGroupGesEve xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+    '<rGesEve><rEve Id="1234567890"/></rGesEve></gGroupGesEve>'
+)
+
+
+def _event(payload: dict | None) -> SimpleNamespace:
+    return SimpleNamespace(input_payload=payload)
+
+
+def _gateway_without_signature_check(monkeypatch, verified: list[str]):
+    monkeypatch.setattr(
+        event_module,
+        "_verify_event_signature_locally",
+        lambda *, request_xml, **_: verified.append(request_xml),
+    )
+    return KilaSifenEventGateway("test")
+
+
+def test_prepare_event_wraps_the_signed_group_with_the_dId_that_travels(
+    monkeypatch,
+) -> None:
+    verified: list[str] = []
+    monkeypatch.setattr(event_module, "_generate_id", lambda: 2604271)
+    gateway = _gateway_without_signature_check(monkeypatch, verified)
+
+    prepared = gateway.prepare_event(
+        event=_event({"event_xml": _GROUP_XML}),
+        emitter=SimpleNamespace(tax_environment="test"),
+        certificate_bytes=b"certificate",
+        certificate_password="password",
+    )
+
+    assert prepared.signed_xml == _GROUP_XML
+    assert "<dId>2604271</dId>" in prepared.request_xml
+    assert verified == [prepared.request_xml]
+
+
+def test_prepare_event_refuses_an_emitter_from_another_environment(
+    monkeypatch,
+) -> None:
+    gateway = _gateway_without_signature_check(monkeypatch, [])
+
+    with pytest.raises(SifenValidationError, match="tax environment"):
+        gateway.prepare_event(
+            event=_event({"event_xml": _GROUP_XML}),
+            emitter=SimpleNamespace(tax_environment="production"),
+            certificate_bytes=b"certificate",
+            certificate_password="password",
+        )
+
+
+def test_submit_prepared_sends_the_stored_request_unchanged(monkeypatch) -> None:
+    sent: list[str] = []
+
+    def fake_raw_submit(*, request_xml: str, **kwargs) -> str:
+        del kwargs
+        sent.append(request_xml)
+        return (
+            '<rRetEnviEventoDe xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+            "<gResProcEVe><dEstRes>Aprobado</dEstRes><dProtAut>77</dProtAut>"
+            "<gResProc><dCodRes>0600</dCodRes><dMsgRes>ok</dMsgRes></gResProc>"
+            "</gResProcEVe></rRetEnviEventoDe>"
+        )
+
+    monkeypatch.setattr(event_module, "_submit_event_raw", fake_raw_submit)
+
+    outcome = KilaSifenEventGateway("test").submit_prepared(
+        request_xml="<rEnviEventoDe><dId>9</dId></rEnviEventoDe>",
+        emitter=SimpleNamespace(tax_environment="test"),
+        certificate_bytes=b"certificate",
+        certificate_password="password",
+    )
+
+    assert sent == ["<rEnviEventoDe><dId>9</dId></rEnviEventoDe>"]
+    assert outcome.status == "approved"
+    assert outcome.protocol == "77"
+
+
+@pytest.mark.parametrize(
+    ("body", "actual_root"),
+    [
+        ("<html><body>502 Bad Gateway</body></html>", "html"),
+        (
+            '<env:Fault xmlns:env="http://www.w3.org/2003/05/soap-envelope">'
+            "<env:Reason>boom</env:Reason></env:Fault>",
+            "Fault",
+        ),
+        ("respuesta truncada <rRetEnviEventoDe", "invalid_xml"),
+    ],
+)
+def test_an_unreadable_event_answer_is_uncertain_not_a_validation_error(
+    body: str,
+    actual_root: str,
+) -> None:
+    with pytest.raises(SifenUnexpectedResponseError) as raised:
+        _normalize_response(body)
+
+    assert raised.value.expected_root == "rRetEnviEventoDe"
+    assert raised.value.actual_root == actual_root

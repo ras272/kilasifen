@@ -1,4 +1,11 @@
-"""Fiscal event submission adapters backed by kilasifen.engine."""
+"""Fiscal event submission adapters backed by kilasifen.engine.
+
+Like documents, an event is submitted in two steps so the platform can make
+the exact request durable before it travels: ``prepare_event`` wraps the
+signed ``gGroupGesEve`` in an ``rEnviEventoDe`` with its real ``dId`` and
+verifies the signature locally, without network; ``submit_prepared`` sends
+that text unchanged and normalizes the answer.
+"""
 
 from __future__ import annotations
 
@@ -11,21 +18,31 @@ from signxml import InvalidSignature, XMLVerifier
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
-from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.events.models import Event
 from kilasifen.engine import PRODUCCION, TEST
-from kilasifen.engine.sdk.errors import SifenValidationError
+from kilasifen.engine.sdk.errors import (
+    SifenUnexpectedResponseError,
+    SifenValidationError,
+)
 from kilasifen.engine.transmision.evento import TransmisionEvento, _generate_id
+
+#: Root element of the answer of the event reception service.
+_EVENT_RESPONSE_ROOT = "rRetEnviEventoDe"
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedEventSubmission:
+    """Signed event group and the exact ``rEnviEventoDe`` that carries it."""
+
+    signed_xml: str
+    request_xml: str
 
 
 @dataclass(slots=True)
 class EventSubmissionOutcome:
-    """Normalized result from one event submission attempt."""
+    """Normalized SIFEN answer to one event submission."""
 
-    generated_xml: str | None
-    signed_xml: str | None
-    request_xml: str
     response_raw: str
     status: str
     result_code: str | None
@@ -36,16 +53,34 @@ class EventSubmissionOutcome:
 class EventSubmissionGateway(Protocol):
     """Contract for event submission adapters."""
 
-    def submit_event(
+    def prepare_event(
         self,
         *,
         event: Event,
         emitter: Emitter,
-        certificate: Certificate,
+        certificate_bytes: bytes,
+        certificate_password: str,
+    ) -> PreparedEventSubmission:
+        """Wrap and verify one signed event without contacting SIFEN.
+
+        Raises:
+            SifenValidationError: if the event cannot be sent as is.
+        """
+
+    def submit_prepared(
+        self,
+        *,
+        request_xml: str,
+        emitter: Emitter,
         certificate_bytes: bytes,
         certificate_password: str,
     ) -> EventSubmissionOutcome:
-        """Submit one event and return normalized artifacts."""
+        """Send a prepared ``rEnviEventoDe`` unchanged and normalize the answer.
+
+        Any exception other than
+        :class:`~kilasifen.engine.sdk.errors.SifenRequestNotSentError` leaves
+        the outcome unknown: SIFEN may have processed the request.
+        """
 
 
 class KilaSifenEventGateway:
@@ -57,15 +92,14 @@ class KilaSifenEventGateway:
             config=SerializerConfig(xml_declaration=True, encoding="UTF-8")
         )
 
-    def submit_event(
+    def prepare_event(
         self,
         *,
         event: Event,
         emitter: Emitter,
-        certificate: Certificate,
         certificate_bytes: bytes,
         certificate_password: str,
-    ) -> EventSubmissionOutcome:
+    ) -> PreparedEventSubmission:
         if emitter.tax_environment != self.deployment_environment:
             raise SifenValidationError(
                 "Emitter tax environment does not match this deployment"
@@ -80,7 +114,16 @@ class KilaSifenEventGateway:
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
         )
+        return PreparedEventSubmission(signed_xml=event_xml, request_xml=request_xml)
 
+    def submit_prepared(
+        self,
+        *,
+        request_xml: str,
+        emitter: Emitter,
+        certificate_bytes: bytes,
+        certificate_password: str,
+    ) -> EventSubmissionOutcome:
         ambiente = TEST if emitter.tax_environment == "test" else PRODUCCION
         response_raw = _submit_event_raw(
             ambiente=ambiente,
@@ -88,14 +131,10 @@ class KilaSifenEventGateway:
             certificate_password=certificate_password,
             request_xml=request_xml,
         )
-        response = response_raw
-
-        result_code, result_message, status, protocol = _normalize_response(response)
-
+        result_code, result_message, status, protocol = _normalize_response(
+            response_raw
+        )
         return EventSubmissionOutcome(
-            generated_xml=event_xml,
-            signed_xml=None,
-            request_xml=request_xml,
             response_raw=response_raw,
             status=status,
             result_code=result_code,
@@ -249,10 +288,30 @@ def _extract_wrapped_event_group_xml(request_xml: str) -> str:
 def _normalize_response_raw_xml(
     response_raw: str,
 ) -> tuple[str | None, str | None, str, str | None]:
+    """Read an event answer; anything but ``rRetEnviEventoDe`` is uncertain.
+
+    A SOAP Fault, an HTML page from a proxy or a truncated body arrive after
+    the request may have been processed, so they raise
+    :class:`SifenUnexpectedResponseError` (outcome unknown) and never a
+    validation error.
+    """
     try:
         root = ET.fromstring(response_raw.encode("utf-8"))
     except ET.ParseError as exc:
-        raise SifenValidationError("events.response.invalid_xml") from exc
+        raise SifenUnexpectedResponseError(
+            expected_root=_EVENT_RESPONSE_ROOT,
+            actual_root="invalid_xml",
+            raw_body=response_raw,
+        ) from exc
+    root_name = root.tag.rsplit("}", 1)[-1]
+    if root_name != _EVENT_RESPONSE_ROOT:
+        raise SifenUnexpectedResponseError(
+            expected_root=_EVENT_RESPONSE_ROOT,
+            actual_root=root_name,
+            code=_find_text(root, "dCodRes"),
+            response_message=_find_text(root, "dMsgRes"),
+            raw_body=response_raw,
+        )
 
     result_code = _find_text(root, "dCodRes")
     result_message = _find_text(root, "dMsgRes")

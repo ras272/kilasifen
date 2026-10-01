@@ -46,7 +46,7 @@ TransmisionDE(
     pkcs12_data,          # contenido del .pfx/.p12 del emisor
     pkcs12_password,      # str, bytes o None
     timeout=30.0,         # segundos por cada POST
-    max_retries=0,        # reintentos por envío; negativo -> ValueError
+    max_retries=0,        # reintentos por envío (ver "Errores de transporte"); negativo -> ValueError
     retry_backoff=0.2,    # base, en segundos, de la espera exponencial
 )
 ```
@@ -56,10 +56,17 @@ temporales, el transporte HTTP con TLS mutuo y los clientes SOAP se crean en
 el primer uso. Se liberan con `close()` (o su sinónimo `cleanup()`) o al salir
 de un bloque `with`. Una instancia no debe compartirse entre hilos.
 
+La clave privada se escribe como PKCS#8 cifrado con una contraseña aleatoria
+propia de la instancia, que solo vive en memoria; si el proceso muere antes de
+borrar el archivo, lo que queda en disco no sirve sin ella. El certificado y la
+clave se cargan en un `ssl.SSLContext` propio
+(`kilasifen.engine.transmision.conexion`) que la sesión `requests` usa para
+`https://`, con la verificación del certificado del servidor activada.
+
 | Clase | Método | Qué hace |
 | --- | --- | --- |
-| `TransmisionDE` | `enviar_de_xml(xml_de)` | Envía un `rDE` ya firmado sin pasarlo por xsdata: lo parsea con lxml, le agrega `xsi:schemaLocation` si no lo tiene y lo inserta en `rEnviDe`. Es el camino que usa la plataforma. |
-| `TransmisionDE` | `enviar_de(rde, sign=True)` | Serializa un binding `RDe`, lo firma con el `Id` de su `DE` y lo envía. Ver [problemas conocidos](#problemas-conocidos). |
+| `TransmisionDE` | `enviar_de_xml(xml_de)` | Envía un `rDE` ya firmado sin pasarlo por xsdata: lo parsea con lxml, le agrega `xsi:schemaLocation` si no lo tiene y lo inserta en `rEnviDe` como texto, con sus propias declaraciones de namespace y sus prefijos, para que la firma siga verificando. Es el camino que usa la plataforma. |
+| `TransmisionDE` | `enviar_de(rde, sign=True)` | Serializa un binding `RDe` con el namespace del SIFEN por defecto (sin prefijos), lo firma con el `Id` de su `DE` y lo envía como `enviar_de_xml`. El binding tiene el layout v141 (ver [Bindings generados](#bindings-generados)). |
 | `TransmisionDE` | `enviar_lote(lista_rde, lote_id=None, sign=True)` | Arma un lote asíncrono de hasta 50 documentos (`MAX_LOTE`). Ver [problemas conocidos](#problemas-conocidos). |
 | `ConsultaSIFEN` | `consultar_de(cdc)` | Consulta un DE por CDC; exige 44 dígitos ASCII. |
 | `ConsultaSIFEN` | `consultar_lote(prot_lote)` | Estado de un lote por número de protocolo. |
@@ -70,6 +77,37 @@ de un bloque `with`. Una instancia no debe compartirse entre hilos.
 
 Las respuestas son instancias de los bindings de cada servicio (por ejemplo,
 `RRetEnviDe` para `enviar_de_xml`).
+
+### Errores de transporte
+
+Todas las fallas de transporte heredan de `SifenTransportError`
+(`kilasifen.engine.sdk.errors`, reexportadas en `kilasifen.engine.sdk`):
+
+| Excepción | Cuándo | ¿El SIFEN pudo recibir la solicitud? |
+| --- | --- | --- |
+| `SifenRequestNotSentError` | No se resolvió el nombre del servidor, la conexión fue rechazada o el destino era inalcanzable, se agotó el tiempo al conectar o falló el handshake TLS. | No: es seguro volver a enviar. |
+| `SifenTimeoutError` | Se agotó el tiempo esperando la respuesta (incluye el timeout de lectura). | Sí: resultado incierto. |
+| `SifenUnexpectedResponseError` | La respuesta no es la de la operación: SOAP Fault (`actual_root == "Fault"`), sobre de otra operación, HTML de un proxy, cuerpo que no es XML (`"invalid_xml"`) o XML que el binding no acepta. Trae `expected_root`, `actual_root`, `code`, `response_message` y `raw_body` (comienzo del cuerpo, hasta 4096 caracteres; no forma parte del mensaje). | Sí: resultado incierto. |
+| `SifenTransportError` | Cualquier otro fallo: conexión cortada a mitad de la respuesta, error HTTP sin cuerpo XML, etc. | Sí: resultado incierto. |
+
+El handshake TLS se reconoce porque los sockets del contexto de
+`kilasifen.engine.transmision.conexion` marcan los errores ocurridos durante
+el handshake; un fallo que llega desde `requests` como `ReadTimeout` o
+`SSLError` solo se clasifica como no enviado si tiene esa marca. Ante un
+resultado incierto, consultar por CDC antes de volver a transmitir.
+
+Política de reintentos (`max_retries` intentos adicionales, con espera
+`retry_backoff * 2**i`):
+
+| Clase | Reintenta `SifenRequestNotSentError` | Reintenta timeouts, cortes y 5xx sin cuerpo XML |
+| --- | --- | --- |
+| `TransmisionDE` (`enviar_de`, `enviar_de_xml`, `enviar_lote`) | Sí | No: el error sale en el primer intento |
+| `TransmisionEvento` (`enviar_evento` y el envío crudo) | Sí | No: el error sale en el primer intento |
+| `ConsultaSIFEN` | Sí | Sí |
+
+Ninguna clase reintenta un 4xx ni un error de `requests` que no sea de red.
+`SifenClient` sigue creando `TransmisionDE` y `TransmisionEvento` con
+`max_retries=0`.
 
 ## Dependencias opcionales
 
@@ -135,17 +173,17 @@ importa del engine (rutas relativas a `kilasifen/`):
 
 | Origen | Qué usa | Dónde |
 | --- | --- | --- |
-| Contrato | `PRODUCCION`, `TEST`, `sign_xml`, `ConsultaSIFEN` | `infrastructure/sifen/engine.py`, `infrastructure/sifen/event.py`, `infrastructure/sifen/query.py` |
+| Contrato | `PRODUCCION`, `TEST`, `sign_xml`, `ConsultaSIFEN`, `TransmisionDE` | `infrastructure/sifen/engine.py`, `infrastructure/sifen/event.py`, `infrastructure/sifen/query.py` |
 | Fuera del contrato | `TransmisionEvento` (desde `kilasifen.engine.transmision.evento`) | `infrastructure/sifen/event.py` |
-| Fuera del contrato | `SifenClient` y su `enviar_de_xml` | `infrastructure/sifen/engine.py` |
-| Fuera del contrato | Excepciones de `kilasifen.engine.sdk.errors` | `infrastructure/sifen/`, `infrastructure/jobs/workers.py`, `infrastructure/kude/`, `infrastructure/sandbox/transport.py`, `application/events/service.py` |
+| Fuera del contrato | Excepciones de `kilasifen.engine.sdk.errors` | `infrastructure/sifen/` (la clasificación enviado/no enviado vive en `application/sifen_submissions.py`), `infrastructure/jobs/workers.py`, `infrastructure/kude/`, `infrastructure/sandbox/transport.py`, `application/events/service.py`, `application/events/attempts.py` |
 | Fuera del contrato | `get_pkcs12_signer`, `validate_xml`, `generate_cdc`, `calculate_mod11_dv` | `infrastructure/sifen/typed_event_builder.py`, `infrastructure/sifen/typed_xml_builder.py` |
-| Generado | `ws_si_cons_de_v141`, `ws_si_cons_ruc_v141`, `evento_v150.TgGroupGesEve`, `ws_si_recep_evento_v150.REnviEventoDe` | `infrastructure/sifen/query.py`, `infrastructure/sifen/typed_event_builder.py` |
-| **Interno** | `_build_enviar_de_request_xml` (de `kilasifen.engine.transmision.de`) | `infrastructure/sifen/engine.py`: arma el `rEnviDe` que se guarda con el documento, también cuando el envío queda incierto. Lo arma con `dId` fijo en `1`, mientras que el que se envía lleva un `dId` generado |
+| Generado | `ws_si_cons_de_v141`, `ws_si_cons_ruc_v141`, `ws_si_recep_de_v150.RRetEnviDe`, `evento_v150.TgGroupGesEve`, `ws_si_recep_evento_v150.REnviEventoDe` | `infrastructure/sifen/engine.py`, `infrastructure/sifen/query.py`, `infrastructure/sifen/typed_event_builder.py` |
+| **Interno** | `_build_enviar_de_request_xml` (de `kilasifen.engine.transmision.de`) y `_generate_id` (de `kilasifen.engine.transmision.base`) | `infrastructure/sifen/engine.py`: arma, antes de enviar, el `rEnviDe` con el `dId` real; la plataforma lo guarda con el documento y envía exactamente ese texto |
+| **Interno** | `TransmisionDE._send_raw_xml("recep_de", ...)` y `TransmisionDE._como_respuesta(..., RRetEnviDe)` | `infrastructure/sifen/engine.py`: envía el `rEnviDe` guardado sin reconstruirlo y lee la respuesta (una respuesta inesperada llega como `SifenUnexpectedResponseError`) |
 | **Interno** | `_generate_id` (de `kilasifen.engine.transmision.evento`) | `infrastructure/sifen/event.py`: genera el `dId` del envío de eventos |
 | **Interno** | `TransmisionEvento._send_raw_xml("evento", ...)` | `infrastructure/sifen/event.py`: envía el `rEnviEventoDe` como texto para no alterar la firma |
 
-Las tres últimas filas son dependencias de la plataforma sobre detalles
+Las filas **Interno** son dependencias de la plataforma sobre detalles
 privados del engine. Cualquier cambio en esos nombres o en su comportamiento
 rompe la emisión o los eventos aunque el contrato siga intacto. Hasta que se
 publiquen como API, un cambio en ellos tiene que ir junto con el ajuste en
@@ -156,23 +194,9 @@ publiquen como API, un cambio en ellos tiene que ir junto con el ajuste en
 Defectos que la reescritura de 0.2.0 conservó a propósito para mantener el
 comportamiento anterior. Están pendientes de corrección:
 
-- `enviar_de(rde)` con `sign=True` envía una firma que no verifica. xsdata
-  serializa el `rDE` con prefijo (`ns0:`), la firma se calcula sobre ese texto
-  y al armar `rEnviDe` el `rDE` se reexpresa con el namespace por defecto.
-  Hay un test `xfail` estricto en `tests/test_transmision.py`. Lo mismo pasa
-  con `enviar_de_xml` si el XML firmado viene de `to_xml()`, que también usa
-  el prefijo. Para enviar, firmar un `rDE` que ya use el namespace del SIFEN
-  por defecto (como el que arma `typed_xml_builder.py`) y pasarlo a
-  `enviar_de_xml`.
 - `enviar_lote` codifica el contenido en base64 dos veces y no lo comprime en
   ZIP, así que no respeta el formato del servicio de lotes. La plataforma no
   lo usa.
-- Una respuesta SOAP Fault o un cuerpo que no se puede parsear llega como
-  `ParserError` de xsdata, no como `SifenTransportError`, que es lo que la
-  plataforma trata como resultado incierto.
-- Lo único que evita reenviar un DE ante un timeout es `max_retries=0`, el
-  valor por defecto. Con reintentos, un envío con efecto fiscal se puede
-  repetir.
 - `SifenClient` pasa su `max_retries` (por defecto `2`) a `ConsultaSIFEN`, y
   eso incluye `consultar_dte_async`, que registra una consulta nueva en el
   SIFEN: ante un timeout se reintenta como si fuera una consulta de solo
@@ -187,8 +211,9 @@ from pathlib import Path
 
 from kilasifen.engine import TEST, TransmisionDE, sign_xml
 
-# xml_rde: texto del rDE con el namespace del SIFEN por defecto, sin
-# prefijos (ver "Problemas conocidos"); cdc: el Id de su elemento DE.
+# xml_rde: texto del rDE, preferentemente con el namespace del SIFEN por
+# defecto y sin prefijos (la forma que usa la plataforma); cdc: el Id de su
+# elemento DE.
 pfx = Path("emisor.pfx").read_bytes()
 xml_firmado = sign_xml(xml_rde, pfx, clave_pfx, doc_id=cdc)
 

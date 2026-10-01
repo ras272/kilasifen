@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 import fakeredis
 import pytest
 from rq import Queue
+from rq.job import Job as RqJob
+from rq.job import JobStatus
 
 from kilasifen.application.jobs.service import JobService
 from kilasifen.infrastructure.db.base import Base
@@ -16,6 +18,7 @@ from kilasifen.infrastructure.db.repositories.jobs import SqlAlchemyJobRepositor
 from kilasifen.infrastructure.db.session import build_engine, build_session_factory
 from kilasifen.infrastructure.jobs.outbox import (
     JobOutboxDispatcher,
+    PublicationDeferredError,
     SqlAlchemyJobOutboxQueue,
 )
 from kilasifen.infrastructure.jobs.queue import RqJobQueue
@@ -220,6 +223,72 @@ def test_rq_publication_is_idempotent_by_job_id() -> None:
     assert second is not None
     assert first.id == second.id == "job-1"
     assert queue.job_ids == ["job-1"]
+
+
+def test_a_started_rq_record_defers_publication_until_it_ends() -> None:
+    queue = Queue("documents", connection=fakeredis.FakeRedis())
+    adapter = RqJobQueue(queue)
+    running = adapter.enqueue_outbox_job(
+        job_id="job-1",
+        job_type="document.emit",
+        correlation_id=None,
+    )
+    running.set_status(JobStatus.STARTED)
+
+    with pytest.raises(PublicationDeferredError):
+        adapter.enqueue_outbox_job(
+            job_id="job-1",
+            job_type="document.emit",
+            correlation_id=None,
+        )
+
+    running.set_status(JobStatus.FAILED)
+    again = adapter.enqueue_outbox_job(
+        job_id="job-1",
+        job_type="document.emit",
+        correlation_id=None,
+    )
+    assert again.get_status(refresh=True) == JobStatus.QUEUED
+    assert queue.job_ids == ["job-1"]
+
+
+def test_an_operator_retry_survives_a_run_rq_still_reports_started(
+    tmp_path,
+) -> None:
+    session_factory = _session_factory(tmp_path, "started_rq_run")
+    clock = _MutableClock(datetime.now(timezone.utc) + timedelta(seconds=1))
+    job_id = _stage_document_job(session_factory)
+    queue = Queue("documents", connection=fakeredis.FakeRedis())
+    dispatcher = JobOutboxDispatcher(
+        session_factory=session_factory,
+        queues={"documents": RqJobQueue(queue)},
+        retry_delays=(5,),
+        clock=clock,
+    )
+    assert dispatcher.dispatch_once() == 1
+    # Its worker died mid-run: RQ keeps the record started until cleanup.
+    RqJob.fetch(job_id, connection=queue.connection).set_status(JobStatus.STARTED)
+
+    with session_factory() as session, session.begin():
+        job = SqlAlchemyJobRepository(session).get(job_id)
+        SqlAlchemyJobOutboxQueue(
+            SqlAlchemyJobOutboxRepository(session)
+        ).enqueue_document_emit(job)
+
+    assert dispatcher.dispatch_once() == 0
+    with session_factory() as session:
+        deferred = SqlAlchemyJobOutboxRepository(session).get_for_job(job_id)
+    assert deferred is not None and deferred.status == "pending"
+    assert deferred.last_error == (
+        "PublicationDeferredError: job still running in queue"
+    )
+
+    RqJob.fetch(job_id, connection=queue.connection).set_status(JobStatus.FAILED)
+    clock.now += timedelta(seconds=5)
+
+    assert dispatcher.dispatch_once() == 1
+    republished = RqJob.fetch(job_id, connection=queue.connection)
+    assert republished.get_status(refresh=True) == JobStatus.QUEUED
 
 
 def test_expired_lease_recovery_does_not_duplicate_rq_publication(tmp_path) -> None:

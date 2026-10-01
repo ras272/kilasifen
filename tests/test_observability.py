@@ -2,9 +2,14 @@ import logging
 import sys
 from types import ModuleType
 
+import kilasifen.observability as observability
 from kilasifen.api.app import create_app
 from kilasifen.config import Settings, get_settings
-from kilasifen.logging import reset_correlation_id, set_correlation_id
+from kilasifen.logging import (
+    JsonLogFormatter,
+    reset_correlation_id,
+    set_correlation_id,
+)
 from kilasifen.observability import (
     _INITIALIZED_COMPONENTS,
     _before_breadcrumb,
@@ -185,6 +190,52 @@ def test_ensure_worker_observability_uses_worker_component(monkeypatch) -> None:
     assert captured["settings"].sentry_environment == "production"
 
 
+def test_worker_processes_configure_json_logging_once(monkeypatch) -> None:
+    monkeypatch.setattr(observability, "_WORKER_LOGGING_CONFIGURED", False)
+    monkeypatch.setattr(
+        observability,
+        "get_settings",
+        lambda: Settings(database_url="sqlite:///./kilasifen.db", log_level="DEBUG"),
+    )
+    monkeypatch.setattr(
+        observability, "initialize_sentry", lambda *, settings, component: False
+    )
+    levels: list[str] = []
+    monkeypatch.setattr(observability, "configure_logging", levels.append)
+
+    ensure_worker_observability()
+    ensure_worker_observability()
+
+    assert levels == ["DEBUG"]
+
+
+def test_worker_logging_does_not_duplicate_rq_lines(monkeypatch) -> None:
+    monkeypatch.setattr(observability, "_WORKER_LOGGING_CONFIGURED", False)
+    monkeypatch.setattr(observability, "configure_logging", lambda level: None)
+    rq_logger = logging.getLogger("rq.worker")
+    rq_handler = logging.NullHandler()
+    rq_logger.addHandler(rq_handler)
+    monkeypatch.setattr(rq_logger, "propagate", True)
+    try:
+        observability._configure_worker_logging("INFO")
+        assert rq_logger.propagate is False
+    finally:
+        rq_logger.removeHandler(rq_handler)
+
+
+def test_worker_records_reach_the_json_formatter(monkeypatch) -> None:
+    root_logger = logging.getLogger()
+    monkeypatch.setattr(observability, "_WORKER_LOGGING_CONFIGURED", False)
+    monkeypatch.setattr(root_logger, "handlers", [])
+    monkeypatch.setattr(root_logger, "level", logging.WARNING)
+
+    observability._configure_worker_logging("INFO")
+
+    assert root_logger.level == logging.INFO
+    assert len(root_logger.handlers) == 1
+    assert isinstance(root_logger.handlers[0].formatter, JsonLogFormatter)
+
+
 def _install_fake_sentry(monkeypatch) -> dict:
     captured: dict = {"tags": []}
 
@@ -226,3 +277,14 @@ def _install_fake_sentry(monkeypatch) -> dict:
         fastapi_module,
     )
     return captured
+
+
+def test_worker_jobs_in_the_test_session_leave_logging_to_pytest() -> None:
+    root_logger = logging.getLogger()
+    formatters = [handler.formatter for handler in root_logger.handlers]
+    rq_propagates = logging.getLogger("rq.worker").propagate
+
+    ensure_worker_observability()
+
+    assert [handler.formatter for handler in root_logger.handlers] == formatters
+    assert logging.getLogger("rq.worker").propagate is rq_propagates

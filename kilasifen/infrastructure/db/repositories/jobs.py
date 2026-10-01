@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from kilasifen.domain.jobs.models import Job
+from kilasifen.infrastructure.db.locks import locked_fresh
 from kilasifen.infrastructure.db.models import JobModel
 from kilasifen.repositories.jobs import JobRepository
 
@@ -51,6 +52,13 @@ class SqlAlchemyJobRepository(JobRepository):
 
     def get(self, job_id: str) -> Job | None:
         model = self.session.get(JobModel, job_id)
+        if model is None:
+            return None
+        return _to_domain(model)
+
+    def get_for_update(self, job_id: str) -> Job | None:
+        statement = select(JobModel).where(JobModel.id == job_id)
+        model = self.session.scalar(locked_fresh(statement))
         if model is None:
             return None
         return _to_domain(model)
