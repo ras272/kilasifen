@@ -137,6 +137,11 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   incluye en el mensaje. Las respuestas se validan por el nombre de su raíz
   antes de parsearlas, y `consultar_ruc` reabre la conexión ante esta
   excepción en lugar de ante `ParserError`.
+- Plataforma: la espera por el bloqueo de la fila del emisor (`SELECT ... FOR
+  UPDATE`) queda acotada a 5 segundos en PostgreSQL (`lock_timeout` local a
+  la transacción, restaurado después). Si se agota, la API responde `503`
+  con el código `emitters.lock_timeout`, igual que `numbering.lock_timeout`
+  en la numeración. En SQLite no cambia nada.
 - La firma de un `rDE` ya no se invalida al armar el `rEnviDe` (defecto P3).
   `_build_enviar_de_request_xml` inserta el `rDE` como texto, con sus propias
   declaraciones de namespace y sus prefijos, en lugar de moverlo como árbol

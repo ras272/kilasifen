@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from kilasifen.domain.common.errors import ServiceUnavailableError
 from kilasifen.domain.documents.numbering import DocumentNumberingSequence
+from kilasifen.infrastructure.db.locks import backend_name, is_lock_timeout
 from kilasifen.infrastructure.db.models import (
     DocumentNumberingSequenceModel,
     EventModel,
@@ -53,7 +54,7 @@ class SqlAlchemyDocumentNumberingSequenceRepository(DocumentNumberingSequenceRep
         point: str,
         document_type: str,
     ) -> int:
-        backend = _backend_name(self.session)
+        backend = backend_name(self.session)
         try:
             self._ensure_row_exists(
                 backend=backend,
@@ -94,7 +95,7 @@ class SqlAlchemyDocumentNumberingSequenceRepository(DocumentNumberingSequenceRep
             self.session.flush()
             return int(model.last_number)
         except OperationalError as exc:
-            if _is_postgres_lock_timeout(exc):
+            if is_lock_timeout(exc):
                 raise ServiceUnavailableError("numbering.lock_timeout") from exc
             raise
 
@@ -183,19 +184,6 @@ class SqlAlchemyDocumentNumberingSequenceRepository(DocumentNumberingSequenceRep
         if value is None:
             return None
         return int(value)
-
-
-def _backend_name(session: Session) -> str:
-    bind = session.get_bind()
-    if bind is None:
-        return ""
-    return bind.dialect.name
-
-
-def _is_postgres_lock_timeout(exc: OperationalError) -> bool:
-    original = getattr(exc, "orig", None)
-    sqlstate = getattr(original, "sqlstate", None) or getattr(original, "pgcode", None)
-    return sqlstate in {"55P03", "57014"}
 
 
 def _to_domain(model: DocumentNumberingSequenceModel) -> DocumentNumberingSequence:

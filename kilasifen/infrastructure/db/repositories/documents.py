@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from kilasifen.domain.documents.models import Document
+from kilasifen.infrastructure.db.locks import locked_fresh
 from kilasifen.infrastructure.db.models import DocumentModel
 from kilasifen.repositories.documents import DocumentRepository
 
@@ -69,6 +70,13 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
 
     def get(self, document_id: str) -> Document | None:
         model = self.session.get(DocumentModel, document_id)
+        if model is None:
+            return None
+        return _to_domain(model)
+
+    def get_for_update(self, document_id: str) -> Document | None:
+        statement = select(DocumentModel).where(DocumentModel.id == document_id)
+        model = self.session.scalar(locked_fresh(statement))
         if model is None:
             return None
         return _to_domain(model)

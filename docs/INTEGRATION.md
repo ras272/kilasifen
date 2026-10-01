@@ -60,7 +60,10 @@ un webhook.
 ```
 
 `401` credencial; `403` scope; `404` inexistente/ajeno; `409` conflicto; `422`
-payload; `429` límite; `503` dependencia. Conservar `correlation_id`.
+payload; `429` límite; `503` dependencia. Conservar `correlation_id`. Un `503`
+`emitters.lock_timeout` o `numbering.lock_timeout` significa que otra operación
+del mismo emisor retuvo el bloqueo más de 5 s: la intención no se registró y se
+reintenta con backoff y la misma `idempotency_key`.
 
 ## Crear factura
 

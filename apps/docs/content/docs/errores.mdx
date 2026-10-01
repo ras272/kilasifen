@@ -26,5 +26,10 @@ icon: CircleAlert
 | `429` | Respetar el límite y aplicar backoff. |
 | `503` | Reintentar con backoff porque una dependencia no está disponible. |
 
+`emitters.lock_timeout` y `numbering.lock_timeout` (ambos `503`) indican que
+otra operación del mismo emisor retuvo el bloqueo más de 5 segundos. La
+operación no se aplicó: reintentala con backoff y, si crea un documento, con la
+misma `idempotency_key`.
+
 Conservá `correlation_id` en logs del ERP y tickets de soporte. Nunca agregues la
 API key, contraseña del PFX, CSC, XML firmado completo ni datos de tarjeta.
