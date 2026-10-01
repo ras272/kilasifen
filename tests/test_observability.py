@@ -277,3 +277,14 @@ def _install_fake_sentry(monkeypatch) -> dict:
         fastapi_module,
     )
     return captured
+
+
+def test_worker_jobs_in_the_test_session_leave_logging_to_pytest() -> None:
+    root_logger = logging.getLogger()
+    formatters = [handler.formatter for handler in root_logger.handlers]
+    rq_propagates = logging.getLogger("rq.worker").propagate
+
+    ensure_worker_observability()
+
+    assert [handler.formatter for handler in root_logger.handlers] == formatters
+    assert logging.getLogger("rq.worker").propagate is rq_propagates
