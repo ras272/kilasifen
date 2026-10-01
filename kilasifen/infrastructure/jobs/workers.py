@@ -1,28 +1,27 @@
 """Worker entrypoints for background jobs."""
 
 import logging
-from dataclasses import replace
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
-from xml.etree import ElementTree as ET
+from typing import TypeVar
 
 from rq import get_current_job
+from sqlalchemy.orm import Session
 
 from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.events.service import EventService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.sandbox.service import SandboxOutcomePolicy
 from kilasifen.application.webhooks.service import WebhookService
-from kilasifen.config import get_settings
-from kilasifen.domain.common.fiscal_states import (
-    DOCUMENT_TERMINAL_STATUSES,
-    job_status_for_document,
-)
+from kilasifen.config import Settings, get_settings
+from kilasifen.domain.common.errors import NotFoundError
 from kilasifen.domain.documents.models import Document
+from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.jobs.models import Job
 from kilasifen.engine.sdk.errors import (
+    SifenError,
     SifenRejectionError,
-    SifenTimeoutError,
-    SifenTransportError,
     SifenValidationError,
 )
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
@@ -54,13 +53,30 @@ from kilasifen.infrastructure.db.session import (
     build_session_factory,
     session_scope,
 )
+from kilasifen.infrastructure.jobs.document_attempts import (
+    AttemptAction,
+    AttemptResult,
+    OutcomeUnknown,
+    PreparationRefused,
+    Reconciled,
+    ReconciliationRefused,
+    ReconciliationUnavailable,
+    RecordedAttempt,
+    RequestNotSent,
+    SifenAnswered,
+    SifenRejected,
+    conclude_attempt,
+    conclude_claimed_attempt,
+    is_finished,
+    mark_submitting,
+    select_action,
+    start_attempt,
+)
 from kilasifen.infrastructure.jobs.outbox import SqlAlchemyJobOutboxQueue
 from kilasifen.infrastructure.sandbox.query import DeterministicSandboxQueryGateway
 from kilasifen.infrastructure.sandbox.transport import DeterministicSandboxTransport
 from kilasifen.infrastructure.sifen.engine import (
     DocumentEmissionEngine,
-    EmissionOutcome,
-    EmissionTransportUncertainError,
     KilaSifenEmissionEngine,
 )
 from kilasifen.infrastructure.sifen.event import (
@@ -68,9 +84,12 @@ from kilasifen.infrastructure.sifen.event import (
     KilaSifenEventGateway,
 )
 from kilasifen.infrastructure.sifen.query import (
-    DocumentQueryOutcome,
     KilaSifenQueryGateway,
     SifenQueryGateway,
+)
+from kilasifen.infrastructure.sifen.submission import (
+    describe_submission_failure,
+    request_never_left,
 )
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
@@ -83,8 +102,8 @@ from kilasifen.observability import ensure_worker_observability
 
 logger = logging.getLogger(__name__)
 
-_MAX_DOCUMENT_ATTEMPTS = 5
-_DOCUMENT_RETRY_DELAYS = (30, 120, 600, 1800)
+_Row = TypeVar("_Row")
+
 _EVENT_RETRY_DELAYS = (30, 120, 600, 1800)
 
 
@@ -98,7 +117,12 @@ def process_document_job(
     current_date: date | None = None,
     webhook_queue=None,
 ) -> dict[str, str]:
-    """Process a document-emission job using the configured engine."""
+    """Run one attempt of a document-emission job.
+
+    The attempt commits the exact submission before calling SIFEN and records
+    the outcome in a second transaction; no transaction or row lock is held
+    while SIFEN answers (see ``document_attempts``).
+    """
 
     settings = get_settings()
     database_url, encryption_key = _worker_runtime_secrets(
@@ -107,299 +131,367 @@ def process_document_job(
     )
     ensure_worker_observability()
     correlation_token, worker_correlation_id = _bind_worker_correlation_id()
-    engine = build_engine(database_url)
-    session_factory = build_session_factory(engine)
+    session_factory = build_session_factory(build_engine(database_url))
     certificate_store = EncryptedCertificateStore(encryption_key)
-    retryable = False
-    payload: dict[str, str]
+
+    def publish_status(document: Document, session: Session) -> None:
+        _publish_document_status_webhooks(
+            document=document,
+            session=session,
+            database_url=database_url,
+            encryption_key=encryption_key,
+            webhook_queue=webhook_queue,
+        )
 
     try:
         with session_scope(session_factory) as session:
-            job_repository = SqlAlchemyJobRepository(session)
-            job_service = JobService(job_repository)
-            document_repository = SqlAlchemyDocumentRepository(session)
-            emitter_repository = SqlAlchemyEmitterRepository(session, certificate_store)
-            certificate_repository = SqlAlchemyCertificateRepository(session)
-            stamping_repository = SqlAlchemyStampingRepository(session)
-            job, document = job_service.get_document_job_context(
+            claim = _claim_document_attempt(
+                session,
                 job_id=job_id,
-                document_repository=document_repository,
-            )
-            sandbox_outcome = SandboxOutcomePolicy(settings.environment).resolve(
-                document.payload_snapshot
-            )
-            if query_gateway is None:
-                query_gateway = (
-                    DeterministicSandboxQueryGateway(
-                        runtime_environment=settings.environment,
-                        outcome=sandbox_outcome,
-                    )
-                    if sandbox_outcome is not None
-                    else KilaSifenQueryGateway(
-                        deployment_environment=settings.sifen_environment
-                    )
-                )
-            if emission_engine is None:
-                sandbox_transport = (
-                    DeterministicSandboxTransport(
-                        runtime_environment=settings.environment,
-                        outcome=sandbox_outcome,
-                    )
-                    if sandbox_outcome is not None
-                    else None
-                )
-                emission_engine = KilaSifenEmissionEngine(
-                    deployment_environment=settings.sifen_environment,
-                    transport=sandbox_transport,
-                )
-            if document.internal_status in DOCUMENT_TERMINAL_STATUSES and not (
-                document.internal_status == "failed" and job.status == "queued"
-            ):
-                return {
-                    "job_id": job.id,
-                    "job_type": job.job_type,
-                    "document_id": document.id,
-                    "document_type": document.document_type,
-                    "job_status": job.status,
-                    "document_status": document.internal_status,
-                }
-            attempt_number = job.attempts + 1
-            job = replace(
-                job,
-                status="processing",
-                attempts=attempt_number,
-                started_at=_now(),
-                finished_at=None,
-                worker_correlation_id=worker_correlation_id,
-                updated_at=_now(),
-            )
-            job_repository.save(job)
-            require_active_emitter(emitter_repository, document.emitter_id)
-            emitter = emitter_repository.get(document.emitter_id)
-            if emitter is None:
-                raise RuntimeError("Emitter not found for document job")
-            certificate = certificate_repository.get_active_for_emitter(
-                document.emitter_id
-            )
-            if certificate is None:
-                raise RuntimeError("Active certificate not configured")
-            logger.info(
-                "worker.document_job.started",
-                extra={
-                    "job_id": job.id,
-                    "document_id": document.id,
-                    "document_type": document.document_type,
-                    "emitter_id": document.emitter_id,
-                },
-            )
-
-            certificate_bytes = certificate_store.decrypt_bytes(
-                certificate.encrypted_p12
-            )
-            certificate_password = certificate_store.decrypt_text(
-                certificate.encrypted_password
-            )
-
-            try:
-                reconciliation = _reconcile_before_resubmission(
-                    document=document,
-                    emitter=emitter,
-                    certificate_bytes=certificate_bytes,
-                    certificate_password=certificate_password,
+                runtime=_DocumentRuntime(
+                    settings=settings,
+                    certificate_store=certificate_store,
+                    emission_engine=emission_engine,
                     query_gateway=query_gateway,
-                )
-                if reconciliation is None:
-                    stamping = stamping_repository.get_active_for_emitter(
-                        document.emitter_id,
-                        on_date=current_date or date.today(),
-                    )
-                    if stamping is None:
-                        raise RuntimeError("Active stamping not configured")
-                    outcome = emission_engine.emit_document(
-                        document=document,
-                        emitter=emitter,
-                        certificate=certificate,
-                        certificate_bytes=certificate_bytes,
-                        certificate_password=certificate_password,
-                        stamping=stamping,
-                    )
-                    updated_document = _apply_emission_outcome(document, outcome)
-                else:
-                    updated_document = _apply_reconciliation_outcome(
-                        document,
-                        reconciliation,
-                    )
-
-                orchestration_status = job_status_for_document(
-                    updated_document.internal_status
-                )
-                if orchestration_status == "failed":
-                    updated_job = replace(
-                        job,
-                        status="failed",
-                        error_snapshot={
-                            "category": "sifen_rejection",
-                            "code": updated_document.sifen_result_code,
-                            "message": updated_document.sifen_result_message,
-                        },
-                        worker_correlation_id=worker_correlation_id,
-                    )
-                elif orchestration_status == "succeeded":
-                    updated_job = replace(
-                        job,
-                        status="succeeded",
-                        error_snapshot=None,
-                        worker_correlation_id=worker_correlation_id,
-                    )
-                else:
-                    retryable = True
-                    pending_category = (
-                        "reconciliation_pending"
-                        if reconciliation is not None
-                        else "sifen_pending"
-                    )
-                    updated_job = replace(
-                        job,
-                        status="retry_scheduled",
-                        error_snapshot={
-                            "category": pending_category,
-                            "code": updated_document.sifen_result_code,
-                            "message": updated_document.sifen_result_message,
-                        },
-                        worker_correlation_id=worker_correlation_id,
-                    )
-            except EmissionTransportUncertainError as exc:
-                retryable = True
-                updated_document = replace(
-                    document,
-                    generated_xml=exc.generated_xml,
-                    signed_xml=exc.signed_xml,
-                    sifen_request_xml=exc.request_xml,
-                    cdc=exc.cdc or document.cdc,
-                    internal_status="retry_pending",
-                    sifen_status="retry_pending",
-                    sifen_result_message=str(exc),
-                )
-                updated_job = replace(
-                    job,
-                    status="retry_scheduled",
-                    error_snapshot={"category": "transport", "message": str(exc)},
+                    current_date=current_date or date.today(),
                     worker_correlation_id=worker_correlation_id,
-                )
-            except SifenValidationError as exc:
-                updated_document = replace(document, internal_status="failed")
-                updated_job = replace(
-                    job,
-                    status="failed",
-                    error_snapshot={
-                        "category": "fiscal_validation",
-                        "message": str(exc),
-                    },
-                    worker_correlation_id=worker_correlation_id,
-                )
-            except (SifenTimeoutError, SifenTransportError) as exc:
-                retryable = True
-                updated_document = replace(document, internal_status="retry_pending")
-                updated_job = replace(
-                    job,
-                    status="retry_scheduled",
-                    error_snapshot={"category": "transport", "message": str(exc)},
-                    worker_correlation_id=worker_correlation_id,
-                )
-            except SifenRejectionError as exc:
-                updated_document = replace(
-                    document,
-                    internal_status="rejected",
-                    sifen_status="rejected",
-                    sifen_result_code=exc.code,
-                    sifen_result_message=exc.message,
-                )
-                updated_job = replace(
-                    job,
-                    status="failed",
-                    error_snapshot={
-                        "category": "sifen_rejection",
-                        "code": exc.code,
-                        "message": exc.message,
-                    },
-                    worker_correlation_id=worker_correlation_id,
-                )
-
-            if retryable and attempt_number >= _MAX_DOCUMENT_ATTEMPTS:
-                retryable = False
-                if _is_reconciliation_pending(updated_job):
-                    updated_document, updated_job = _mark_reconciliation_required(
-                        document=updated_document,
-                        job=updated_job,
-                    )
-                else:
-                    updated_document = replace(
-                        updated_document,
-                        internal_status="failed",
-                        sifen_status="failed",
-                        sifen_result_message="document retry attempts exhausted",
-                    )
-                    updated_job = replace(
-                        updated_job,
-                        status="failed",
-                        error_snapshot={
-                            "category": "retry_exhausted",
-                            "message": "document retry attempts exhausted",
-                        },
-                        finished_at=_now(),
-                        updated_at=_now(),
-                    )
-            elif retryable:
-                updated_job = replace(
-                    updated_job,
-                    scheduled_at=_retry_at(
-                        attempt_number=attempt_number,
-                        delays=_DOCUMENT_RETRY_DELAYS,
-                    ),
-                    updated_at=_now(),
-                )
-            elif updated_job.status in {"succeeded", "failed"}:
-                updated_job = replace(
-                    updated_job,
-                    finished_at=_now(),
-                    updated_at=_now(),
-                )
-
-            document_repository.save(updated_document)
-            job_repository.save(updated_job)
-            if retryable:
-                _stage_retry_outbox(session, updated_job)
-            _publish_document_status_webhooks(
-                document=updated_document,
-                session=session,
-                database_url=database_url,
-                encryption_key=encryption_key,
-                webhook_queue=webhook_queue,
+                ),
+                publish_status=publish_status,
             )
-            logger.info(
-                "worker.document_job.finished",
-                extra={
-                    "job_id": updated_job.id,
-                    "document_id": updated_document.id,
-                    "document_type": updated_document.document_type,
-                    "emitter_id": updated_document.emitter_id,
-                    "job_status": updated_job.status,
-                    "document_status": updated_document.internal_status,
-                },
-            )
+        if isinstance(claim, _DocumentJobFinished):
+            return claim.payload
 
-            payload = {
-                "job_id": updated_job.id,
-                "job_type": updated_job.job_type,
-                "document_id": updated_document.id,
-                "document_type": updated_document.document_type,
-                "job_status": updated_job.status,
-                "document_status": updated_document.internal_status,
-            }
-        return payload
+        # The submission is committed: nothing below holds a transaction or a
+        # row lock until SIFEN has answered (or failed to).
+        result = _run_document_sifen_step(claim)
+
+        with session_scope(session_factory) as session:
+            return _record_document_attempt(
+                session,
+                claim=claim,
+                result=result,
+                publish_status=publish_status,
+            )
     finally:
         if correlation_token is not None:
             reset_correlation_id(correlation_token)
+
+
+_StatusPublisher = Callable[[Document, Session], None]
+
+
+@dataclass(frozen=True, slots=True)
+class _DocumentRuntime:
+    """Collaborators and settings shared by the steps of one document attempt."""
+
+    settings: Settings
+    certificate_store: EncryptedCertificateStore
+    emission_engine: DocumentEmissionEngine | None
+    query_gateway: SifenQueryGateway | None
+    current_date: date
+    worker_correlation_id: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _DocumentJobFinished:
+    """The attempt ended inside its first transaction; nothing goes to SIFEN."""
+
+    payload: dict[str, str]
+
+
+@dataclass(frozen=True, slots=True)
+class _ClaimedDocumentAttempt:
+    """What the first transaction committed for the SIFEN step."""
+
+    job_id: str
+    document_id: str
+    attempt_number: int
+    action: AttemptAction
+    cdc: str | None
+    request_xml: str | None
+    emitter: Emitter
+    certificate_bytes: bytes
+    certificate_password: str
+    emission_engine: DocumentEmissionEngine
+    query_gateway: SifenQueryGateway
+
+
+def _claim_document_attempt(
+    session: Session,
+    *,
+    job_id: str,
+    runtime: _DocumentRuntime,
+    publish_status: _StatusPublisher,
+) -> _ClaimedDocumentAttempt | _DocumentJobFinished:
+    """First transaction: claim the job and make the submission durable."""
+
+    job_repository = SqlAlchemyJobRepository(session)
+    document_repository = SqlAlchemyDocumentRepository(session)
+    emitter_repository = SqlAlchemyEmitterRepository(
+        session, runtime.certificate_store
+    )
+    job, document = JobService(job_repository).get_document_job_context(
+        job_id=job_id,
+        document_repository=document_repository,
+    )
+    if is_finished(document, job):
+        return _DocumentJobFinished(_document_job_payload(job, document))
+
+    # Lock order shared by every writer: emitter, then document, then job.
+    require_active_emitter(emitter_repository, document.emitter_id)
+    document = _require_row(document_repository.get_for_update(document.id))
+    job = _require_row(job_repository.get_for_update(job.id))
+    if is_finished(document, job):
+        return _DocumentJobFinished(_document_job_payload(job, document))
+
+    emitter = emitter_repository.get(document.emitter_id)
+    if emitter is None:
+        raise RuntimeError("Emitter not found for document job")
+    certificate = SqlAlchemyCertificateRepository(session).get_active_for_emitter(
+        document.emitter_id
+    )
+    if certificate is None:
+        raise RuntimeError("Active certificate not configured")
+
+    job = start_attempt(job, worker_correlation_id=runtime.worker_correlation_id)
+    job_repository.save(job)
+    logger.info(
+        "worker.document_job.started",
+        extra=_document_log_fields(job, document),
+    )
+
+    certificate_bytes = runtime.certificate_store.decrypt_bytes(
+        certificate.encrypted_p12
+    )
+    certificate_password = runtime.certificate_store.decrypt_text(
+        certificate.encrypted_password
+    )
+    emission_engine, query_gateway = _document_gateways(runtime, document)
+
+    action = select_action(document)
+    if action is AttemptAction.PREPARE:
+        stamping = SqlAlchemyStampingRepository(session).get_active_for_emitter(
+            document.emitter_id,
+            on_date=runtime.current_date,
+        )
+        if stamping is None:
+            raise RuntimeError("Active stamping not configured")
+        try:
+            prepared = emission_engine.prepare_document(
+                document=document,
+                emitter=emitter,
+                certificate_bytes=certificate_bytes,
+                certificate_password=certificate_password,
+                stamping=stamping,
+            )
+        except SifenValidationError as exc:
+            recorded = conclude_attempt(
+                document,
+                job,
+                attempt_number=job.attempts,
+                result=PreparationRefused(str(exc)),
+            )
+            return _DocumentJobFinished(
+                _persist_document_attempt(session, recorded, publish_status)
+            )
+        document = document_repository.save(mark_submitting(document, prepared))
+    elif action is AttemptAction.RESEND:
+        document = document_repository.save(mark_submitting(document))
+
+    return _ClaimedDocumentAttempt(
+        job_id=job.id,
+        document_id=document.id,
+        attempt_number=job.attempts,
+        action=action,
+        cdc=document.cdc,
+        request_xml=document.sifen_request_xml,
+        emitter=emitter,
+        certificate_bytes=certificate_bytes,
+        certificate_password=certificate_password,
+        emission_engine=emission_engine,
+        query_gateway=query_gateway,
+    )
+
+
+def _run_document_sifen_step(claim: _ClaimedDocumentAttempt) -> AttemptResult:
+    """Talk to SIFEN; every failure becomes a result, none escapes."""
+
+    if claim.action is AttemptAction.RECONCILE:
+        return _query_document_by_cdc(claim)
+    return _submit_document_request(claim)
+
+
+def _submit_document_request(claim: _ClaimedDocumentAttempt) -> AttemptResult:
+    if claim.request_xml is None:
+        raise RuntimeError("A claimed submission must carry its request XML")
+    try:
+        outcome = claim.emission_engine.submit_prepared(
+            request_xml=claim.request_xml,
+            emitter=claim.emitter,
+            certificate_bytes=claim.certificate_bytes,
+            certificate_password=claim.certificate_password,
+        )
+    except SifenRejectionError as exc:
+        return SifenRejected(code=exc.code, message=exc.message)
+    except Exception as exc:  # every failure is recorded by the second transaction
+        message = describe_submission_failure(exc)
+        if request_never_left(exc):
+            _log_sifen_failure("worker.document_job.request_not_sent", claim, exc)
+            return RequestNotSent(message)
+        _log_sifen_failure("worker.document_job.outcome_unknown", claim, exc)
+        return OutcomeUnknown(message)
+    return SifenAnswered(outcome)
+
+
+def _query_document_by_cdc(claim: _ClaimedDocumentAttempt) -> AttemptResult:
+    if claim.cdc is None:
+        raise RuntimeError("A reconciliation attempt must carry the CDC")
+    try:
+        outcome = claim.query_gateway.query_document(
+            emitter=claim.emitter,
+            certificate_bytes=claim.certificate_bytes,
+            certificate_password=claim.certificate_password,
+            cdc=claim.cdc,
+        )
+    except SifenValidationError as exc:
+        return ReconciliationRefused(str(exc))
+    except Exception as exc:  # every failure is recorded by the second transaction
+        _log_sifen_failure("worker.document_job.query_failed", claim, exc)
+        return ReconciliationUnavailable(describe_submission_failure(exc))
+    return Reconciled(outcome)
+
+
+def _record_document_attempt(
+    session: Session,
+    *,
+    claim: _ClaimedDocumentAttempt,
+    result: AttemptResult,
+    publish_status: _StatusPublisher,
+) -> dict[str, str]:
+    """Second transaction: record the SIFEN step on the committed rows."""
+
+    document = _require_row(
+        SqlAlchemyDocumentRepository(session).get_for_update(claim.document_id)
+    )
+    job = _require_row(SqlAlchemyJobRepository(session).get_for_update(claim.job_id))
+    recorded = conclude_claimed_attempt(
+        current_document=document,
+        current_job=job,
+        attempt_number=claim.attempt_number,
+        result=result,
+    )
+    if recorded is None:
+        logger.warning(
+            "worker.document_job.outcome_superseded",
+            extra={
+                **_document_log_fields(job, document),
+                "attempt": claim.attempt_number,
+            },
+        )
+        return _document_job_payload(job, document)
+    return _persist_document_attempt(session, recorded, publish_status)
+
+
+def _persist_document_attempt(
+    session: Session,
+    recorded: RecordedAttempt,
+    publish_status: _StatusPublisher,
+) -> dict[str, str]:
+    SqlAlchemyDocumentRepository(session).save(recorded.document)
+    SqlAlchemyJobRepository(session).save(recorded.job)
+    if recorded.retryable:
+        _stage_retry_outbox(session, recorded.job)
+    if recorded.document_changed:
+        publish_status(recorded.document, session)
+    logger.info(
+        "worker.document_job.finished",
+        extra={
+            **_document_log_fields(recorded.job, recorded.document),
+            "job_status": recorded.job.status,
+            "document_status": recorded.document.internal_status,
+        },
+    )
+    return _document_job_payload(recorded.job, recorded.document)
+
+
+def _document_gateways(
+    runtime: _DocumentRuntime,
+    document: Document,
+) -> tuple[DocumentEmissionEngine, SifenQueryGateway]:
+    settings = runtime.settings
+    sandbox_outcome = SandboxOutcomePolicy(settings.environment).resolve(
+        document.payload_snapshot
+    )
+    query_gateway = runtime.query_gateway
+    if query_gateway is None:
+        query_gateway = (
+            DeterministicSandboxQueryGateway(
+                runtime_environment=settings.environment,
+                outcome=sandbox_outcome,
+            )
+            if sandbox_outcome is not None
+            else KilaSifenQueryGateway(
+                deployment_environment=settings.sifen_environment
+            )
+        )
+    emission_engine = runtime.emission_engine
+    if emission_engine is None:
+        sandbox_transport = (
+            DeterministicSandboxTransport(
+                runtime_environment=settings.environment,
+                outcome=sandbox_outcome,
+            )
+            if sandbox_outcome is not None
+            else None
+        )
+        emission_engine = KilaSifenEmissionEngine(
+            deployment_environment=settings.sifen_environment,
+            transport=sandbox_transport,
+        )
+    return emission_engine, query_gateway
+
+
+def _document_job_payload(job: Job, document: Document) -> dict[str, str]:
+    return {
+        "job_id": job.id,
+        "job_type": job.job_type,
+        "document_id": document.id,
+        "document_type": document.document_type,
+        "job_status": job.status,
+        "document_status": document.internal_status,
+    }
+
+
+def _document_log_fields(job: Job, document: Document) -> dict[str, str]:
+    return {
+        "job_id": job.id,
+        "document_id": document.id,
+        "document_type": document.document_type,
+        "emitter_id": document.emitter_id,
+    }
+
+
+def _log_sifen_failure(
+    event: str,
+    claim: _ClaimedDocumentAttempt,
+    exc: Exception,
+) -> None:
+    logger.warning(
+        event,
+        extra={
+            "job_id": claim.job_id,
+            "document_id": claim.document_id,
+            "attempt": claim.attempt_number,
+            "error_type": type(exc).__name__,
+        },
+        exc_info=not isinstance(exc, SifenError),
+    )
+
+
+def _require_row(row: _Row | None) -> _Row:
+    if row is None:
+        raise NotFoundError("jobs.document_context_not_found")
+    return row
 
 
 def process_webhook_delivery_job(
@@ -589,122 +681,6 @@ class EventSubmissionRetryableError(RuntimeError):
     """Legacy compatibility alias for callers of the former RQ retry path."""
 
 
-def _reconcile_before_resubmission(
-    *,
-    document,
-    emitter,
-    certificate_bytes: bytes,
-    certificate_password: str,
-    query_gateway: SifenQueryGateway,
-) -> DocumentQueryOutcome | None:
-    if (
-        document.internal_status
-        not in {"retry_pending", "submitted", "reconciliation_required"}
-        or not document.cdc
-    ):
-        return None
-
-    return query_gateway.query_document(
-        emitter=emitter,
-        certificate_bytes=certificate_bytes,
-        certificate_password=certificate_password,
-        cdc=document.cdc,
-    )
-
-
-def _apply_emission_outcome(
-    document: Document,
-    outcome: EmissionOutcome,
-) -> Document:
-    return replace(
-        document,
-        generated_xml=outcome.generated_xml,
-        signed_xml=outcome.signed_xml,
-        sifen_request_xml=outcome.request_xml,
-        sifen_response_raw=outcome.response_raw,
-        internal_status=outcome.sifen_status,
-        sifen_status=outcome.sifen_status,
-        sifen_result_code=outcome.result_code,
-        sifen_result_message=outcome.result_message,
-        cdc=outcome.cdc
-        or _extract_cdc(
-            outcome.signed_xml,
-            outcome.generated_xml,
-        ),
-        updated_at=_now(),
-    )
-
-
-def _apply_reconciliation_outcome(
-    document: Document,
-    outcome: DocumentQueryOutcome,
-) -> Document:
-    traced_document = replace(
-        document,
-        last_query_request_xml=outcome.request_xml,
-        last_query_response_raw=outcome.response_raw,
-        last_query_at=_now(),
-        sifen_result_code=outcome.result_code,
-        sifen_result_message=outcome.result_message,
-        updated_at=_now(),
-    )
-    if outcome.status != "found":
-        # SIFEN code 0420 combines "not found" and "not approved". It is not
-        # proof that the previous submission failed, so resending here could
-        # duplicate one fiscal intent. Keep querying the immutable CDC instead.
-        return replace(
-            traced_document,
-            internal_status="retry_pending",
-            sifen_status="retry_pending",
-        )
-
-    signed_xml = outcome.content_xml or document.signed_xml
-    if not signed_xml:
-        raise SifenValidationError("SIFEN returned a document without XML content")
-    return replace(
-        traced_document,
-        signed_xml=signed_xml,
-        internal_status="approved",
-        sifen_status="approved",
-    )
-
-
-def _is_reconciliation_pending(job: Job) -> bool:
-    snapshot = job.error_snapshot or {}
-    return snapshot.get("category") == "reconciliation_pending"
-
-
-def _mark_reconciliation_required(
-    *,
-    document: Document,
-    job: Job,
-) -> tuple[Document, Job]:
-    message = (
-        "automatic reconciliation attempts exhausted; "
-        "the immutable CDC was not resubmitted"
-    )
-    return (
-        replace(
-            document,
-            internal_status="reconciliation_required",
-            sifen_status="reconciliation_required",
-            sifen_result_message=message,
-            updated_at=_now(),
-        ),
-        replace(
-            job,
-            status="failed",
-            error_snapshot={
-                "category": "reconciliation_required",
-                "code": document.sifen_result_code,
-                "message": message,
-            },
-            finished_at=_now(),
-            updated_at=_now(),
-        ),
-    )
-
-
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -796,17 +772,3 @@ def _bind_worker_correlation_id() -> tuple[object | None, str | None]:
     if correlation_id is None:
         return None, None
     return set_correlation_id(correlation_id), correlation_id
-
-
-def _extract_cdc(*xml_candidates: str | None) -> str | None:
-    for xml_text in xml_candidates:
-        if not xml_text:
-            continue
-        try:
-            root = ET.fromstring(xml_text.encode("utf-8"))
-        except ET.ParseError:
-            continue
-        for element in root.iter():
-            if element.tag.endswith("DE"):
-                return element.attrib.get("Id")
-    return None

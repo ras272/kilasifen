@@ -59,8 +59,10 @@ desde tu propio código.
   `.../notas-credito` y `.../notas-debito`). El servidor asigna el número
   fiscal de forma atómica y arma el XML; el cliente nunca lo envía.
 - Procesamiento asíncrono: la respuesta inicial deja el documento en `queued`
-  y un worker lo firma y lo transmite. El resultado se recibe por webhook o
-  consultando el documento o el job.
+  y un worker lo firma y lo transmite. El worker confirma en la base el XML
+  firmado, el request exacto y el CDC antes de llamar al SIFEN y no retiene
+  transacciones ni bloqueos mientras espera la respuesta. El resultado se
+  recibe por webhook o consultando el documento o el job.
 - Idempotencia con `idempotency_key`: repetir la misma intención devuelve el
   mismo documento.
 - Eventos de **cancelación** e **inutilización**.
@@ -510,10 +512,6 @@ Hallazgos de una auditoría reciente, que se corregirán a continuación:
 - Solo el código `0260` (o el estado "Aprobado") cuenta como aprobación;
   cualquier otro código se clasifica como rechazo, así que nunca se produce
   `approved_with_observation` a partir de una respuesta real.
-- Un documento cuyo envío falló antes de llegar al SIFEN puede quedar
-  bloqueado en `reconciliation_required`. El engine ya distingue ese caso
-  (`SifenRequestNotSentError`), pero la plataforma todavía lo trata como
-  resultado incierto.
 
 KilaSifen no certifica conformidad fiscal. Probá cada flujo en el ambiente
 de pruebas de la SET antes de habilitar producción.

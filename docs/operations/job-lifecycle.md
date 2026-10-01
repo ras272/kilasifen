@@ -19,20 +19,42 @@ Jobs are the operational ledger for retries, observability, and support.
    - emitter
    - active certificate
    - active stamping
-3. Worker calls SIFEN engine and persists traces.
+3. Each attempt uses two short transactions and holds no transaction or
+   row lock while SIFEN answers:
+   - transaction 1 locks emitter, document and job (emitter wait bounded to
+     5 s), counts the attempt, builds and signs the DE and stores the
+     generated XML, the signed XML, the exact `rEnviDe` (real `dId`) and the
+     CDC with the document in `submitting`; then it commits;
+   - the worker sends that stored request unchanged (or queries the CDC, see
+     below);
+   - transaction 2 re-reads document and job with `FOR UPDATE` and records
+     the outcome. A terminal document written meanwhile (for example by the
+     `reconcile` endpoint) is never moved; a non-final outcome is dropped if
+     a newer attempt already claimed the job.
 4. Outcomes:
    - approved/accepted => `job.succeeded`
-   - transport timeout/network => `job.retry_scheduled`
+   - request provably not sent (`SifenRequestNotSentError`) => document back
+     to `queued`, `job.retry_scheduled` (`transport_not_sent`); the next
+     attempt resends the stored request
+   - timeout, dropped connection, SOAP Fault, unreadable answer or any other
+     error after sending => document `retry_pending`, `job.retry_scheduled`
+     (`transport`); later attempts only query the CDC
    - fiscal validation/rejection => `job.failed`
 5. Optional webhook fanout:
    - if `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS=true`, document transitions publish
      events like `document.approved`, `document.rejected`, `document.retry_pending`
      to active subscribed webhook endpoints.
 
-If transport becomes uncertain after XML generation, the exact generated/signed
-payload and CDC remain durable. A retry queries SIFEN by CDC first; an existing
-DTE converges to approved without resubmission. The same payload is submitted
-again only after a not-found result. Automatic attempts are bounded to five.
+Because the payload is committed before the call, a worker that dies while
+SIFEN answers leaves the document in `submitting` and the job in `processing`.
+Nothing re-dispatches that job automatically yet: an operator retry (admin
+console) queues it again and the next attempt queries the CDC before deciding
+anything. A document that may have reached SIFEN (`submitting`, `submitted`,
+`retry_pending`, `reconciliation_required`) is only ever queried by CDC: an
+existing DTE converges to approved, a not-found answer (`0420`) keeps it
+pending and is never resent. Automatic attempts are bounded to five; then it
+becomes `reconciliation_required`, or, when SIFEN was never reached, the job
+fails while the document stays `queued` for a manual retry.
 
 ## Fiscal event flow
 

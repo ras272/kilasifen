@@ -97,8 +97,9 @@ mapea el objeto ERP. Reutilizar `idempotency_key` al reintentar la misma intenci
 - contenido incompatible: `409 Conflict`.
 
 La respuesta trae documento `queued` y job; no implica aprobación. Estados de
-documento: `queued`, `submitted`, `retry_pending`, `reconciliation_required`,
-`approved`, `approved_with_observation`, `rejected`, `failed`, `cancelled`.
+documento: `queued`, `submitting`, `submitted`, `retry_pending`,
+`reconciliation_required`, `approved`, `approved_with_observation`, `rejected`,
+`failed`, `cancelled`.
 Jobs: `queued`, `retry_scheduled`, `succeeded`, `failed`.
 
 Cliente, ítems, IVA, descuentos/anticipos, moneda/tipo de cambio y condición de
@@ -139,11 +140,16 @@ establecimiento, punto, rango y motivo. Ambas crean un event/job `queued` con
 recibe el webhook terminal. Los endpoints raw `/documents` y `/events` están
 deprecados y son sólo admin.
 
-Ante timeout o respuesta ambigua de emisión, Kila persiste el CDC, XML firmado y
-request exactos, y consulta SIFEN sin volver a transmitir el DE. Después de
-agotar la reconciliación automática queda `reconciliation_required`; el ERP usa
-el endpoint `reconcile` con la misma intención original. Ni el worker ni una
-recola manual pueden reenviar ese CDC.
+Kila confirma en la base el CDC, el XML firmado y el request exacto (con su
+`dId` real) antes de transmitir, con el documento en `submitting`. Ante
+timeout, respuesta ambigua o caída del worker durante el envío, consulta SIFEN
+por CDC sin volver a transmitir el DE. Después de agotar la reconciliación
+automática queda `reconciliation_required`; el ERP usa el endpoint `reconcile`
+con la misma intención original. Ni el worker ni una recola manual pueden
+reenviar ese CDC. Sólo cuando la falla prueba que el request no salió
+(`transport_not_sent` en el job) el documento vuelve a `queued` y se reenvía el
+mismo request; si se agotan los intentos, el job queda `failed` y el documento
+`queued`, listo para un reintento manual.
 
 ## Sandbox determinístico
 

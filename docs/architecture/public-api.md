@@ -173,17 +173,17 @@ importa del engine (rutas relativas a `kilasifen/`):
 
 | Origen | Qué usa | Dónde |
 | --- | --- | --- |
-| Contrato | `PRODUCCION`, `TEST`, `sign_xml`, `ConsultaSIFEN` | `infrastructure/sifen/engine.py`, `infrastructure/sifen/event.py`, `infrastructure/sifen/query.py` |
+| Contrato | `PRODUCCION`, `TEST`, `sign_xml`, `ConsultaSIFEN`, `TransmisionDE` | `infrastructure/sifen/engine.py`, `infrastructure/sifen/event.py`, `infrastructure/sifen/query.py` |
 | Fuera del contrato | `TransmisionEvento` (desde `kilasifen.engine.transmision.evento`) | `infrastructure/sifen/event.py` |
-| Fuera del contrato | `SifenClient` y su `enviar_de_xml` | `infrastructure/sifen/engine.py` |
-| Fuera del contrato | Excepciones de `kilasifen.engine.sdk.errors` | `infrastructure/sifen/`, `infrastructure/jobs/workers.py`, `infrastructure/kude/`, `infrastructure/sandbox/transport.py`, `application/events/service.py` |
+| Fuera del contrato | Excepciones de `kilasifen.engine.sdk.errors` | `infrastructure/sifen/` (la clasificación enviado/no enviado vive en `infrastructure/sifen/submission.py`), `infrastructure/jobs/workers.py`, `infrastructure/kude/`, `infrastructure/sandbox/transport.py`, `application/events/service.py` |
 | Fuera del contrato | `get_pkcs12_signer`, `validate_xml`, `generate_cdc`, `calculate_mod11_dv` | `infrastructure/sifen/typed_event_builder.py`, `infrastructure/sifen/typed_xml_builder.py` |
-| Generado | `ws_si_cons_de_v141`, `ws_si_cons_ruc_v141`, `evento_v150.TgGroupGesEve`, `ws_si_recep_evento_v150.REnviEventoDe` | `infrastructure/sifen/query.py`, `infrastructure/sifen/typed_event_builder.py` |
-| **Interno** | `_build_enviar_de_request_xml` (de `kilasifen.engine.transmision.de`) | `infrastructure/sifen/engine.py`: arma el `rEnviDe` que se guarda con el documento, también cuando el envío queda incierto. Lo arma con `dId` fijo en `1`, mientras que el que se envía lleva un `dId` generado |
+| Generado | `ws_si_cons_de_v141`, `ws_si_cons_ruc_v141`, `ws_si_recep_de_v150.RRetEnviDe`, `evento_v150.TgGroupGesEve`, `ws_si_recep_evento_v150.REnviEventoDe` | `infrastructure/sifen/engine.py`, `infrastructure/sifen/query.py`, `infrastructure/sifen/typed_event_builder.py` |
+| **Interno** | `_build_enviar_de_request_xml` (de `kilasifen.engine.transmision.de`) y `_generate_id` (de `kilasifen.engine.transmision.base`) | `infrastructure/sifen/engine.py`: arma, antes de enviar, el `rEnviDe` con el `dId` real; la plataforma lo guarda con el documento y envía exactamente ese texto |
+| **Interno** | `TransmisionDE._send_raw_xml("recep_de", ...)` y `TransmisionDE._como_respuesta(..., RRetEnviDe)` | `infrastructure/sifen/engine.py`: envía el `rEnviDe` guardado sin reconstruirlo y lee la respuesta (una respuesta inesperada llega como `SifenUnexpectedResponseError`) |
 | **Interno** | `_generate_id` (de `kilasifen.engine.transmision.evento`) | `infrastructure/sifen/event.py`: genera el `dId` del envío de eventos |
 | **Interno** | `TransmisionEvento._send_raw_xml("evento", ...)` | `infrastructure/sifen/event.py`: envía el `rEnviEventoDe` como texto para no alterar la firma |
 
-Las tres últimas filas son dependencias de la plataforma sobre detalles
+Las filas **Interno** son dependencias de la plataforma sobre detalles
 privados del engine. Cualquier cambio en esos nombres o en su comportamiento
 rompe la emisión o los eventos aunque el contrato siga intacto. Hasta que se
 publiquen como API, un cambio en ellos tiene que ir junto con el ajuste en

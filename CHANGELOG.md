@@ -54,6 +54,13 @@ revisar la guía de migración de esta sección.
   su mensaje pasa de `Unexpected SIFEN response: expected X, received Y` a
   `Respuesta inesperada del SIFEN: se esperaba X y se recibio Y`.
 - Los extras `sign` y `transmision` exigen `signxml>=5.1` (antes `>=3.0`).
+- Plataforma: `DocumentEmissionEngine.emit_document` se reemplaza por dos
+  pasos, `prepare_document` (arma, firma y envuelve el `rEnviDe` sin tocar la
+  red) y `submit_prepared(request_xml=...)` (envía ese texto sin cambios).
+  `DocumentSubmissionTransport.submit` recibe `request_xml` en lugar de
+  `signed_xml`. Se eliminan `EmissionOutcome` y
+  `EmissionTransportUncertainError`; aparece `PreparedSubmission`. Solo afecta
+  a quien implemente motores o transportes propios para los workers.
 
 ### Guía de migración
 
@@ -148,6 +155,32 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   relee el documento con `SELECT ... FOR UPDATE` y decide sobre el estado
   confirmado: si un worker registró un resultado mientras tanto, ya no se
   pisa.
+- Plataforma: cada intento de emisión de un documento usa dos
+  transacciones y no retiene ninguna, ni bloqueos de filas, mientras espera
+  al SIFEN. La primera bloquea emisor, documento y job, cuenta el intento y
+  confirma en la base el XML generado, el firmado, el `rEnviDe` exacto que va
+  a viajar y el CDC, con el documento en el estado nuevo `submitting`. La
+  segunda relee documento y job con `FOR UPDATE` y registra el resultado sin
+  pisar un estado terminal escrito mientras tanto. Antes todo el job era una
+  sola transacción confirmada después del SOAP: una caída, un `ParserError`
+  o cualquier excepción que no fuera `SifenError` perdía el XML, el CDC y el
+  contador de intentos, y el bloqueo del emisor se mantenía durante la
+  llamada.
+- Plataforma: el `rEnviDe` que se guarda en `sifen_request_xml` es el que se
+  envía, con su `dId` real (antes se guardaba uno armado con `dId` 1 y se
+  enviaba otro).
+- Plataforma: los fallos del envío se clasifican. Si la falla prueba que la
+  solicitud no salió (`SifenRequestNotSentError`, transporte cerrado), el
+  documento vuelve a `queued` y el próximo intento reenvía el mismo request,
+  sin consultar; al agotar los intentos el job queda `failed`
+  (`retry_exhausted`) y el documento `queued`, listo para un reintento
+  manual. Cualquier otro fallo (timeout, conexión cortada, SOAP Fault,
+  respuesta ilegible, `ParserError`, error de programación) deja el resultado
+  incierto: `retry_pending` y reconciliación por CDC. Ninguna excepción escapa
+  del worker sin registrarse. Un intento incierto que agota el presupuesto
+  pasa a `reconciliation_required` (antes podía quedar `failed` y un
+  reintento manual lo reenviaba). Un documento que quedó en `submitting`
+  porque el worker murió se reconcilia por CDC en el intento siguiente.
 - La firma de un `rDE` ya no se invalida al armar el `rEnviDe` (defecto P3).
   `_build_enviar_de_request_xml` inserta el `rDE` como texto, con sus propias
   declaraciones de namespace y sus prefijos, en lugar de moverlo como árbol

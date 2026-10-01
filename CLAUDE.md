@@ -229,8 +229,9 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   carga el certificado del emisor y su clave privada, que se escribe en disco
   como PKCS#8 cifrado con una contraseña aleatoria que solo vive en memoria.
   La verificación del certificado del servidor queda siempre activada. La
-  plataforma envía el XML ya firmado con `SifenClient.enviar_de_xml` (que
-  delega en `TransmisionDE.enviar_de_xml`), no con `enviar_de(rde)`.
+  plataforma arma el `rEnviDe` con `_build_enviar_de_request_xml` y el `dId`
+  real, lo guarda con el documento y lo envía tal cual con
+  `TransmisionDE._send_raw_xml`, no con `enviar_de(rde)`.
 
 ## Plataforma
 
@@ -371,10 +372,9 @@ Plataforma (hallazgos de auditoría pendientes):
   código distinto de `0260` se marca como rechazo salvo que `dEstRes` diga
   «Aprobado» sin más texto; no se produce el estado «aprobado con
   observación».
-- Un documento cuyo envío falló antes de llegar al SIFEN puede quedar trabado
-  en `reconciliation_required`. El engine ya lanza `SifenRequestNotSentError`
-  en ese caso; falta que `infrastructure/sifen/engine.py` y los workers lo
-  distingan de un resultado incierto.
+- Un job cuyo worker muere durante la llamada al SIFEN queda `processing`
+  (documento `submitting`) hasta que un operador lo reencola; no hay reaper
+  que lo detecte solo. El reintento consulta el CDC antes de decidir.
 
 Proyecto:
 
