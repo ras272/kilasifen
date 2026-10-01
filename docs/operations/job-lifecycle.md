@@ -5,6 +5,13 @@
 Kila SIFEN is async-first for emission and outgoing integrations.
 Jobs are the operational ledger for retries, observability, and support.
 
+Nothing is pushed to RQ directly. API requests and workers write an
+outbox row in the same database transaction as the job; the outbox
+dispatcher (`python -m kilasifen.infrastructure.jobs.outbox_worker`)
+publishes due rows to the `documents`, `events` or `webhooks` RQ queue.
+Without a running dispatcher no job reaches a worker and scheduled
+retries never fire.
+
 ## Core statuses
 
 - `queued`: created and waiting execution
@@ -14,18 +21,24 @@ Jobs are the operational ledger for retries, observability, and support.
 
 ## Document emission flow
 
-1. API creates `document` + `job` (`document.emit`).
-2. Worker hydrates context:
+1. API creates `document` + `job` (`document.emit`) and, when
+   `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE=true`, its outbox row. The setting
+   defaults to `false` in code: with it off the job stays `queued` and is
+   never dispatched.
+2. The outbox dispatcher publishes the row to the `documents` queue.
+3. Worker hydrates context:
    - emitter
    - active certificate
    - active stamping
-3. Worker calls SIFEN engine and persists traces.
-4. Outcomes:
+4. Worker calls SIFEN engine and persists traces.
+5. Outcomes:
    - approved/accepted => `job.succeeded`
-   - transport timeout/network => `job.retry_scheduled`
+   - transport timeout/network => `job.retry_scheduled`, with the next
+     attempt staged in the outbox for its `scheduled_at`
    - fiscal validation/rejection => `job.failed`
-5. Optional webhook fanout:
-   - if `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS=true`, document transitions publish
+6. Optional webhook fanout:
+   - if `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS=true` (read by the worker;
+     `false` by default in code), document transitions publish
      events like `document.approved`, `document.rejected`, `document.retry_pending`
      to active subscribed webhook endpoints.
 
@@ -47,7 +60,8 @@ again only after a not-found result. Automatic attempts are bounded to five.
 
 ## Webhook delivery flow
 
-1. Endpoint replay/event creates `webhook_delivery` + `job` (`webhook.deliver`).
+1. Endpoint replay/event creates `webhook_delivery` + `job` (`webhook.deliver`)
+   and its outbox row; the dispatcher publishes it to the `webhooks` queue.
 2. Worker signs payload and performs HTTP POST.
 3. Outcomes:
    - `2xx` => `delivery.delivered`, `job.succeeded`
@@ -71,6 +85,8 @@ Retries re-queue job payload with current DB/crypto settings.
 - ratio of `failed` + `retry_scheduled` by job type
 - aging of jobs in `queued`
 - missing workers for any of `documents`, `events`, `webhooks`
+- missing outbox dispatcher: in staging/production `/v1/ready` answers 503
+  with `missing:outbox_dispatcher` when its Redis heartbeat expires
 - webhook failure concentration per endpoint
 - document rejection codes from SIFEN
 

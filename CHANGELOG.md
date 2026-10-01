@@ -139,6 +139,22 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 - CI: el job `docs-site` instala pnpm con `pnpm/action-setup` antes de
   `actions/setup-node`. Con `cache: pnpm`, `setup-node` necesita pnpm ya
   instalado, y el paso `corepack enable` corría después.
+- Runbook de Railway (`docs/DEPLOYMENT.md`):
+  - agrega el servicio `outbox`, que faltaba aunque `/v1/ready` exige su
+    heartbeat en staging y production;
+  - el start command del worker va envuelto en `/bin/sh -c "exec ..."`.
+    Railway corre en forma exec los start commands de servicios con
+    `Dockerfile` y no expande `$KILA_SIFEN_REDIS_URL`. La API deja el start
+    command vacío y usa el `CMD` del `Dockerfile`, que ya expande `$PORT`;
+  - el healthcheck de Railway pasa de `/v1/ready` a `/v1/health`. Railway lo
+    consulta sólo al desplegar, y con `/v1/ready` el primer deploy de la API
+    no terminaba nunca: worker y outbox se crean después;
+  - documenta el orden de despliegue (Railway no ordena los deploys por push),
+    `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` para API y worker (el default es
+    0 s) y la URL `postgresql+psycopg://` armada con las variables `PG*`.
+- `docs/operations`: rotación de la clave Fernet y ciclo de vida de jobs
+  incluyen el outbox y los interruptores `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE` y
+  `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS`.
 
 ### Security
 

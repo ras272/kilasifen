@@ -141,7 +141,9 @@ la guía `apps/docs/content/docs/certificados-y-timbrado.mdx` del portal.
 - [`docs/operations/deployment-compose.md`](docs/operations/deployment-compose.md):
   detalles del stack local, incluido el worker en Windows sin contenedores.
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): runbook de un staging
-  independiente (Railway), con variables obligatorias, red y rollback.
+  independiente (Railway): servicios `api`, `worker` y `outbox`, migración
+  como pre-deploy de la API, start commands, healthcheck, orden de despliegue,
+  variables obligatorias, red y rollback.
 - [`sdks/typescript`](sdks/typescript): cliente TypeScript de la API. Como no
   está publicado en npm, se compila desde esa carpeta (`pnpm install && pnpm build`).
 

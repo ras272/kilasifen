@@ -183,7 +183,17 @@ docker compose up --build
 
 Procesos por separado: `uvicorn kilasifen.api.app:create_app --factory`,
 `rq worker documents events webhooks -u $KILA_SIFEN_REDIS_URL` y
-`python -m kilasifen.infrastructure.jobs.outbox_worker`.
+`python -m kilasifen.infrastructure.jobs.outbox_worker`. Los tres son
+obligatorios: sin el outbox ningún job llega al worker. `.env.example` deja en
+`true` `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE` (lo lee la API) y
+`KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS` (lo lee el worker); en el código valen
+`false`.
+
+Staging en Railway: `docs/DEPLOYMENT.md`. La migración corre como pre-deploy
+de la API, el healthcheck de Railway es `/v1/health` (no `/v1/ready`, que
+exige worker y outbox) y un start command con variables va envuelto en
+`/bin/sh -c "exec ..."`. `tests/test_deployment_artifacts.py` vigila Compose,
+el workflow de CI y ese runbook.
 
 ### Portal y SDK TypeScript
 
