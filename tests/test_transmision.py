@@ -43,6 +43,7 @@ from xsdata.exceptions import ParserError
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
+from kilasifen.engine.de.bindings.v150.evento_v150 import TgGroupGesEve
 from kilasifen.engine.de.bindings.v150.prot_proces_de_v150 import RProtDe
 from kilasifen.engine.de.bindings.v150.prot_proces_eventos_v141 import (
     TgResProc,
@@ -651,7 +652,11 @@ def respuesta_http() -> type[RespuestaHttpFalsa]:
 
 @pytest.fixture
 def transporte() -> Iterator[Callable[..., Any]]:
-    """Fabrica de transportes reales; cierra todo lo que crea."""
+    """Fabrica de transportes reales; cierra todo lo que crea.
+
+    Salvo que se pida otra cosa, el transporte reintenta tambien los fallos
+    ambiguos (como el de una consulta), para ejercitar toda la politica.
+    """
     creados: list[Any] = []
 
     def crear(
@@ -661,6 +666,7 @@ def transporte() -> Iterator[Callable[..., Any]]:
         backoff_factor: float = 0.0,
         rutas: tuple[str, str] = ("cert.pem", "key.pem"),
         por_defecto: bool = False,
+        reintentar_ambiguos: bool = True,
     ) -> Any:
         if por_defecto:
             nuevo = base._create_transport(*rutas)
@@ -670,6 +676,7 @@ def transporte() -> Iterator[Callable[..., Any]]:
                 timeout=timeout,
                 max_retries=max_retries,
                 backoff_factor=backoff_factor,
+                reintentar_ambiguos=reintentar_ambiguos,
             )
         creados.append(nuevo)
         return nuevo
@@ -1161,6 +1168,7 @@ class TestTransmisionBase:
             "max_retries": 4,
             "backoff_factor": 0.5,
             "key_password": CONTRASENA_CLAVE_FICTICIA,
+            "reintentar_ambiguos": False,
         }
         configuracion = primero.config
         assert configuracion.input is REnviDe
@@ -1318,6 +1326,7 @@ class TestTransmisionBase:
             "max_retries": 3,
             "backoff_factor": 0.05,
             "key_password": CONTRASENA_CLAVE_FICTICIA,
+            "reintentar_ambiguos": False,
         }
 
     def test_servicios_distintos_comparten_transporte(
@@ -1801,12 +1810,32 @@ class TestTransporteSoap:
         assert adaptador._contrasena_clave is None
 
         sesion = sesion_programada(
-            transporte_http, requests.exceptions.Timeout("lento")
+            transporte_http,
+            requests.exceptions.ConnectTimeout("sin conexion"),
+            requests.exceptions.ConnectTimeout("sin conexion"),
+            requests.exceptions.Timeout("lento"),
         )
         with pytest.raises(SifenTimeoutError):
             transporte_http.post(URL_PRUEBA, b"<xml />")
         assert [llamada.timeout for llamada in sesion.llamadas] == [30.0] * 3
         assert esperas == [0.2, 0.4]
+
+    def test_transporte_por_defecto_no_reintenta_fallos_ambiguos(
+        self,
+        transporte: Callable[..., Any],
+        sesion_programada: Callable[..., SesionProgramada],
+        esperas: list[float],
+    ) -> None:
+        """Sin ``reintentar_ambiguos`` un timeout de lectura sale al primer
+        intento, aunque queden reintentos."""
+        transporte_http = transporte(por_defecto=True)
+        sesion = sesion_programada(
+            transporte_http, requests.exceptions.Timeout("lento")
+        )
+        with pytest.raises(SifenTimeoutError):
+            transporte_http.post(URL_PRUEBA, b"<xml />")
+        assert len(sesion.llamadas) == 1
+        assert esperas == []
 
     def test_transporte_crea_sesion_nueva_de_tipo_exacto(
         self, transporte: Callable[..., Any]
@@ -3547,6 +3576,144 @@ class TestIntegracionSinRed:
         assert len(red.llamadas) == 4
         identificadores = {_did_enviado(llamada.data) for llamada in red.llamadas}
         assert len(identificadores) == 1
+
+
+# ---------------------------------------------------------------------------
+# Politica de reintentos: envios con efecto fiscal frente a consultas
+# ---------------------------------------------------------------------------
+
+
+def _fallo_de_conexion_rechazada() -> Exception:
+    return _por_requests(
+        requests.exceptions.ConnectionError,
+        urllib3_exc.NewConnectionError(None, "connection refused"),
+    )
+
+
+FALLOS_AMBIGUOS_DE_RED = [
+    pytest.param(
+        lambda: requests.exceptions.ReadTimeout("sin respuesta"),
+        SifenTimeoutError,
+        id="timeout_de_lectura",
+    ),
+    pytest.param(
+        lambda: requests.exceptions.ConnectionError(
+            urllib3_exc.ProtocolError(
+                "Connection aborted.", RemoteDisconnected("conexion cerrada")
+            )
+        ),
+        SifenTransportError,
+        id="conexion_cortada",
+    ),
+    pytest.param(
+        lambda: RespuestaHttpFalsa(b"", 503), SifenTransportError, id="http_503"
+    ),
+]
+
+
+def _enviar_de_xml(credenciales: dict[str, Any]) -> None:
+    with TransmisionDE(**credenciales) as transmision:
+        transmision.enviar_de_xml(_rde_sifen(_cdc_ficticio(90)))
+
+
+def _enviar_lote(credenciales: dict[str, Any]) -> None:
+    with TransmisionDE(**credenciales) as transmision:
+        documento = REnviConsRuc(dId=91, dRUCCons="4567012")
+        transmision.enviar_lote([documento], lote_id=91, sign=False)
+
+
+def _enviar_evento(credenciales: dict[str, Any]) -> None:
+    with TransmisionEvento(**credenciales) as transmision:
+        transmision.enviar_evento(TgGroupGesEve())
+
+
+def _enviar_evento_crudo(credenciales: dict[str, Any]) -> None:
+    with TransmisionEvento(**credenciales) as transmision:
+        transmision._send_raw_xml(
+            "evento", f"<rEnviEventoDe xmlns='{NS_SIFEN}'><dId>92</dId></rEnviEventoDe>"
+        )
+
+
+ENVIOS_CON_EFECTO_FISCAL = [
+    pytest.param(_enviar_de_xml, id="recepcion_de"),
+    pytest.param(_enviar_lote, id="lote"),
+    pytest.param(_enviar_evento, id="evento"),
+    pytest.param(_enviar_evento_crudo, id="evento_crudo"),
+]
+
+
+class TestPoliticaDeReintentos:
+    def test_solo_las_consultas_reintentan_fallos_ambiguos(self) -> None:
+        assert TransmisionBase._REINTENTA_ERRORES_AMBIGUOS is False
+        assert TransmisionDE._REINTENTA_ERRORES_AMBIGUOS is False
+        assert TransmisionEvento._REINTENTA_ERRORES_AMBIGUOS is False
+        assert ConsultaSIFEN._REINTENTA_ERRORES_AMBIGUOS is True
+
+    @pytest.mark.parametrize("fabricar, tipo_error", FALLOS_AMBIGUOS_DE_RED)
+    @pytest.mark.parametrize("enviar", ENVIOS_CON_EFECTO_FISCAL)
+    def test_envio_fiscal_no_reintenta_un_fallo_ambiguo(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+        esperas: list[float],
+        enviar: Callable[[dict[str, Any]], None],
+        fabricar: Callable[[], Any],
+        tipo_error: type[Exception],
+    ) -> None:
+        """Aun con ``max_retries`` alto, un resultado incierto sale enseguida."""
+        red = red_simulada(fabricar())
+        with pytest.raises(SifenTransportError) as error:
+            enviar({**credenciales_ficticias, "max_retries": 3})
+        assert type(error.value) is tipo_error
+        assert len(red.llamadas) == 1
+        assert esperas == []
+
+    @pytest.mark.parametrize("enviar", ENVIOS_CON_EFECTO_FISCAL)
+    def test_envio_fiscal_reintenta_si_la_solicitud_no_salio(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+        esperas: list[float],
+        enviar: Callable[[dict[str, Any]], None],
+    ) -> None:
+        red = red_simulada(_fallo_de_conexion_rechazada())
+        with pytest.raises(SifenRequestNotSentError):
+            enviar({**credenciales_ficticias, "max_retries": 2, "retry_backoff": 0.5})
+        assert len(red.llamadas) == 3
+        assert esperas == [0.5, 1.0]
+
+    def test_envio_fiscal_sale_tras_conexion_rechazada_y_luego_timeout(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+    ) -> None:
+        """El reintento por conexion rechazada no habilita reintentar despues
+        un timeout de lectura."""
+        red = red_simulada(
+            _fallo_de_conexion_rechazada(),
+            requests.exceptions.ReadTimeout("sin respuesta"),
+            RespuestaHttpFalsa(_sobre_soap12(CUERPO_RET_ENVI_DE_PREFIJADO)),
+        )
+        with pytest.raises(SifenTimeoutError):
+            _enviar_de_xml({**credenciales_ficticias, "max_retries": 5})
+        assert len(red.llamadas) == 2
+
+    @pytest.mark.parametrize("fabricar, tipo_error", FALLOS_AMBIGUOS_DE_RED)
+    def test_consulta_reintenta_fallos_ambiguos(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+        fabricar: Callable[[], Any],
+        tipo_error: type[Exception],
+    ) -> None:
+        red = red_simulada(fabricar())
+        with ConsultaSIFEN(
+            **credenciales_ficticias, max_retries=2, retry_backoff=0
+        ) as consulta_reintentos:
+            with pytest.raises(SifenTransportError) as error:
+                consulta_reintentos.consultar_de(_cdc_ficticio(93))
+        assert type(error.value) is tipo_error
+        assert len(red.llamadas) == 3
 
 
 # ---------------------------------------------------------------------------

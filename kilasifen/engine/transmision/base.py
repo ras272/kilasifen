@@ -359,6 +359,17 @@ class RequestsTransport:
     primer elemento del ``Body`` de la respuesta. Los errores de ``requests``
     se traducen a la jerarquia :class:`SifenTransportError` y conservan la
     excepcion original como causa.
+
+    Args:
+        session: sesion ``requests`` (o un objeto con ``post`` y ``close``).
+        timeout: segundos de espera de cada POST.
+        max_retries: intentos adicionales permitidos.
+        backoff_factor: base en segundos de la espera exponencial.
+        reintentar_ambiguos: si tambien se reintentan los fallos en que el
+            SIFEN pudo haber recibido la solicitud (timeout de lectura,
+            conexion cortada, error 5xx). Solo es seguro para operaciones
+            idempotentes; por defecto se reintentan unicamente los fallos en
+            que la solicitud no salio.
     """
 
     def __init__(
@@ -367,11 +378,14 @@ class RequestsTransport:
         timeout: float,
         max_retries: int = 2,
         backoff_factor: float = 0.2,
+        *,
+        reintentar_ambiguos: bool = False,
     ) -> None:
         self._session = session
         self._timeout = timeout
         self._max_retries = max_retries
         self._backoff_factor = backoff_factor
+        self._reintentar_ambiguos = reintentar_ambiguos
 
     def close(self) -> None:
         """Cierra la sesion HTTP."""
@@ -385,10 +399,12 @@ class RequestsTransport:
     ) -> bytes:
         """Envia ``data`` a ``url`` dentro de un sobre SOAP 1.2.
 
-        Hace hasta ``max_retries + 1`` intentos. Se reintentan los fallos en
-        que la solicitud no llego al SIFEN, los timeouts, los demas errores de
-        conexion y los errores HTTP sin cuerpo XML que no sean 4xx; entre
-        intentos se espera ``backoff_factor * 2**i`` segundos.
+        Hace hasta ``max_retries + 1`` intentos. Siempre se reintentan los
+        fallos en que la solicitud no llego al SIFEN. Con
+        ``reintentar_ambiguos`` tambien los timeouts, los demas errores de
+        conexion y los errores HTTP sin cuerpo XML que no sean 4xx; sin el,
+        esos fallos se informan en el primer intento. Entre intentos se espera
+        ``backoff_factor * 2**i`` segundos.
 
         Returns:
             Los bytes del primer elemento del ``Body`` de la respuesta, o la
@@ -438,12 +454,14 @@ class RequestsTransport:
         excepciones = _importar_opcional("requests.exceptions")
         if _modulo_conexion().solicitud_no_enviada(exc):
             return SifenRequestNotSentError(_MSG_NO_ENVIADA), True
+        ambiguo = self._reintentar_ambiguos
         if isinstance(exc, excepciones.Timeout):
-            return SifenTimeoutError(_MSG_TIMEOUT), True
+            return SifenTimeoutError(_MSG_TIMEOUT), ambiguo
         if isinstance(exc, excepciones.HTTPError):
-            return SifenTransportError(_MSG_TRANSPORTE), not _es_error_de_cliente(exc)
+            reintentable = ambiguo and not _es_error_de_cliente(exc)
+            return SifenTransportError(_MSG_TRANSPORTE), reintentable
         if isinstance(exc, excepciones.ConnectionError):
-            return SifenTransportError(_MSG_TRANSPORTE), True
+            return SifenTransportError(_MSG_TRANSPORTE), ambiguo
         return SifenTransportError(_MSG_TRANSPORTE), False
 
     def _esperar_antes_de_reintentar(self, intento_fallido: int) -> None:
@@ -461,13 +479,15 @@ def _create_transport(
     backoff_factor: float = 0.2,
     *,
     key_password: bytes | None = None,
+    reintentar_ambiguos: bool = False,
 ) -> RequestsTransport:
     """Crea un transporte con una sesion ``requests`` nueva y TLS mutuo.
 
     La sesion presenta el certificado cliente ``(cert_path, key_path)``,
     descifrando la clave con ``key_password``, y valida el certificado del
     servidor (ver :mod:`kilasifen.engine.transmision.conexion`). Los archivos
-    no se leen aqui sino en el primer envio.
+    no se leen aqui sino en el primer envio. ``reintentar_ambiguos`` se pasa
+    a :class:`RequestsTransport`.
     """
     sesion = _modulo_conexion().crear_sesion_tls_mutuo(
         cert_path, key_path, key_password
@@ -477,6 +497,7 @@ def _create_transport(
         timeout=timeout,
         max_retries=max_retries,
         backoff_factor=backoff_factor,
+        reintentar_ambiguos=reintentar_ambiguos,
     )
 
 
@@ -498,13 +519,22 @@ class TransmisionBase:
         pkcs12_data: contenido del archivo ``.pfx``/``.p12`` del emisor.
         pkcs12_password: contrasena del PKCS12 (``str`` o ``bytes``).
         timeout: segundos de espera de cada POST.
-        max_retries: reintentos por envio. El valor por defecto ``0`` evita
-            reenviar operaciones con efecto fiscal ante un resultado incierto.
+        max_retries: reintentos por envio (``0`` por defecto). Fuera de las
+            consultas solo se usan para fallos en que la solicitud no llego al
+            SIFEN (ver :attr:`_REINTENTA_ERRORES_AMBIGUOS`): un resultado
+            incierto nunca provoca un reenvio automatico.
         retry_backoff: base en segundos de la espera exponencial.
 
     Raises:
         ValueError: si ``max_retries`` es negativo.
     """
+
+    #: Si el transporte de la instancia reintenta tambien los fallos en que
+    #: el SIFEN pudo haber recibido la solicitud. Falso para los envios con
+    #: efecto fiscal (recepcion de DE, lotes y eventos), donde reenviar ante
+    #: un resultado incierto puede duplicar la operacion; las consultas lo
+    #: activan (ver ``ConsultaSIFEN``).
+    _REINTENTA_ERRORES_AMBIGUOS: bool = False
 
     def __init__(
         self,
@@ -703,6 +733,7 @@ class TransmisionBase:
                 max_retries=self.max_retries,
                 backoff_factor=self.retry_backoff,
                 key_password=self._key_password,
+                reintentar_ambiguos=self._REINTENTA_ERRORES_AMBIGUOS,
             )
         return self._transport
 

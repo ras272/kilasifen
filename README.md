@@ -298,9 +298,17 @@ for resultado in protocolo.gResProc:
 ```
 
 `TransmisionDE.enviar_de(rde)` serializa y firma un binding antes de enviarlo,
-pero hoy produce una firma inválida (ver limitaciones). Dejá `max_retries` en
-0 para cualquier operación con efecto fiscal: si el resultado de un envío es
-incierto, consultá antes de volver a transmitir.
+pero hoy produce una firma inválida (ver limitaciones).
+
+**Errores y reintentos.** Todas las fallas de transporte heredan de
+`SifenTransportError`. `SifenRequestNotSentError` indica que la solicitud no
+llegó al SIFEN (DNS, conexión rechazada, tiempo agotado al conectar o
+handshake TLS fallido) y es seguro volver a enviarla. Cualquier otro error
+(`SifenTimeoutError`, conexión cortada, error HTTP) deja el resultado
+incierto: consultá por CDC antes de volver a transmitir. Por eso
+`TransmisionDE` y `TransmisionEvento` usan `max_retries` solo para
+`SifenRequestNotSentError`; las consultas de `ConsultaSIFEN` reintentan
+también los timeouts y los cortes.
 
 **Consultar.**
 
@@ -494,10 +502,7 @@ Las reglas para contribuir están en [CONTRIBUTING.md](CONTRIBUTING.md).
    parseo**, no como errores de transporte con resultado incierto. Tratá
    cualquier excepción posterior al envío como resultado desconocido y
    consultá antes de reintentar.
-5. **La protección contra envíos duplicados depende de `max_retries=0`**, el
-   valor por defecto. Subirlo en `TransmisionDE` o `TransmisionEvento` puede
-   duplicar operaciones fiscales.
-6. **`consultar_dte_async` se reintenta como si fuera una consulta de solo
+5. **`consultar_dte_async` se reintenta como si fuera una consulta de solo
    lectura** (por ejemplo, con el `max_retries` de `SifenClient`), aunque
    registra una solicitud en el SIFEN.
 

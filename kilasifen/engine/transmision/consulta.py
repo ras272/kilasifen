@@ -68,7 +68,14 @@ def _es_cdc_valido(cdc: str) -> bool:
 
 
 class ConsultaSIFEN(TransmisionBase):
-    """Consultas de solo lectura a los web services del SIFEN."""
+    """Consultas de solo lectura a los web services del SIFEN.
+
+    Como una consulta no tiene efecto fiscal, con ``max_retries > 0`` el
+    transporte tambien reintenta los timeouts, los cortes de conexion y los
+    errores 5xx, no solo los fallos en que la solicitud no salio.
+    """
+
+    _REINTENTA_ERRORES_AMBIGUOS = True
 
     def consultar_de(self, cdc: str) -> REnviConsDeResponse:
         """Consulta un DE por su CDC.

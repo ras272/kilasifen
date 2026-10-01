@@ -46,7 +46,7 @@ TransmisionDE(
     pkcs12_data,          # contenido del .pfx/.p12 del emisor
     pkcs12_password,      # str, bytes o None
     timeout=30.0,         # segundos por cada POST
-    max_retries=0,        # reintentos por envío; negativo -> ValueError
+    max_retries=0,        # reintentos por envío (ver "Errores de transporte"); negativo -> ValueError
     retry_backoff=0.2,    # base, en segundos, de la espera exponencial
 )
 ```
@@ -94,6 +94,19 @@ El handshake TLS se reconoce porque los sockets del contexto de
 el handshake; un fallo que llega desde `requests` como `ReadTimeout` o
 `SSLError` solo se clasifica como no enviado si tiene esa marca. Ante un
 resultado incierto, consultar por CDC antes de volver a transmitir.
+
+Política de reintentos (`max_retries` intentos adicionales, con espera
+`retry_backoff * 2**i`):
+
+| Clase | Reintenta `SifenRequestNotSentError` | Reintenta timeouts, cortes y 5xx sin cuerpo XML |
+| --- | --- | --- |
+| `TransmisionDE` (`enviar_de`, `enviar_de_xml`, `enviar_lote`) | Sí | No: el error sale en el primer intento |
+| `TransmisionEvento` (`enviar_evento` y el envío crudo) | Sí | No: el error sale en el primer intento |
+| `ConsultaSIFEN` | Sí | Sí |
+
+Ninguna clase reintenta un 4xx ni un error de `requests` que no sea de red.
+`SifenClient` sigue creando `TransmisionDE` y `TransmisionEvento` con
+`max_retries=0`.
 
 ## Dependencias opcionales
 
@@ -194,9 +207,6 @@ comportamiento anterior. Están pendientes de corrección:
 - Una respuesta SOAP Fault o un cuerpo que no se puede parsear llega como
   `ParserError` de xsdata, no como `SifenTransportError`, que es lo que la
   plataforma trata como resultado incierto.
-- Lo único que evita reenviar un DE ante un timeout es `max_retries=0`, el
-  valor por defecto. Con reintentos, un envío con efecto fiscal se puede
-  repetir.
 - `SifenClient` pasa su `max_retries` (por defecto `2`) a `ConsultaSIFEN`, y
   eso incluye `consultar_dte_async`, que registra una consulta nueva en el
   SIFEN: ante un timeout se reintenta como si fuera una consulta de solo

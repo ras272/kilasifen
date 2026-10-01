@@ -22,9 +22,11 @@ señalar la contradicción en el commit o PR.
    conocida»); no se suman nuevas.
 5. Clean-room: no vuelve al repositorio nada del import original de terceros
    (ver la sección «Regla clean-room»).
-6. Los envíos de DE y de eventos no se reintentan: `max_retries` queda en `0`.
-   Reenviar un documento cuyo resultado se desconoce puede duplicarlo ante la
-   SET.
+6. Los envíos de DE y de eventos no se reintentan ante un resultado incierto:
+   reenviar un documento cuyo resultado se desconoce puede duplicarlo ante la
+   SET. `TransmisionDE` y `TransmisionEvento` solo repiten una solicitud que
+   no llegó al SIFEN (`SifenRequestNotSentError`), aun con `max_retries > 0`;
+   la plataforma y `SifenClient` igual los usan con `max_retries=0`.
 
 ## Qué es KilaSifen
 
@@ -359,8 +361,6 @@ mantener el mismo comportamiento; se corrigen en commits posteriores):
   especificación. La plataforma no lo usa.
 - Un SOAP Fault o una respuesta ilegible aparece como error de parseo y no
   como error de transporte con resultado incierto.
-- La protección contra envíos duplicados depende de `max_retries=0` (valor
-  por defecto).
 - `consultar_dte_async` se reintenta como si fuera una consulta de solo
   lectura.
 - El único binding `RDe` tiene el layout v141 (sin `dSisFact`).

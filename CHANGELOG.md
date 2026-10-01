@@ -119,6 +119,13 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   dígitos Unicode de otros sistemas de escritura.
 - `TransmisionBase` y sus subclases lanzan `ValueError` al construirse si
   `max_retries` es negativo. El valor por defecto sigue siendo `0`.
+- Los envíos con efecto fiscal (`TransmisionDE.enviar_de`, `enviar_de_xml`,
+  `enviar_lote` y los envíos de `TransmisionEvento`) solo se reintentan ante
+  `SifenRequestNotSentError`, aunque `max_retries` sea mayor que `0`: un
+  timeout de lectura, un corte de conexión o un 5xx sin cuerpo XML salen en
+  el primer intento. Antes, con `max_retries > 0`, esos errores provocaban un
+  reenvío que podía duplicar la operación. `ConsultaSIFEN` conserva la
+  política anterior y reintenta también esos errores.
 - El firmador PKCS12 acepta `bytearray` y `memoryview`, además de `bytes`,
   para el contenido del certificado, la contraseña y el documento a firmar.
 - El autor declarado en los metadatos del paquete es "The KilaSifen Authors".

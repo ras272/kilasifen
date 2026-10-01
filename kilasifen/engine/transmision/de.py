@@ -76,7 +76,11 @@ def _build_enviar_de_request_xml(d_id: int, xml_de: str | bytes) -> bytes:
 
 
 class TransmisionDE(TransmisionBase):
-    """Envia DE al servicio sincrono de recepcion y lotes al asincrono."""
+    """Envia DE al servicio sincrono de recepcion y lotes al asincrono.
+
+    Ambos envios tienen efecto fiscal: el transporte solo los repite ante un
+    :class:`~kilasifen.engine.sdk.errors.SifenRequestNotSentError`.
+    """
 
     def _xml_para_envio(self, rde: Any, sign: bool) -> str:
         """Serializa ``rde`` y, si corresponde, lo firma con el ``Id`` del DE.
@@ -96,8 +100,9 @@ class TransmisionDE(TransmisionBase):
     def enviar_de(self, rde: Any, sign: bool = True) -> RRetEnviDe:
         """Serializa, firma (si ``sign``) y envia un DE al SIFEN.
 
-        Nunca reenvia por cuenta propia: la cantidad de POST la decide
-        ``max_retries`` (``0`` por defecto).
+        Solo vuelve a enviar (hasta ``max_retries`` veces, ``0`` por defecto)
+        si la solicitud no llego al SIFEN; ante un resultado incierto lanza el
+        error en el primer intento.
         """
         xml = self._xml_para_envio(rde, sign)
         solicitud = _build_enviar_de_request_xml(d_id=_generate_id(), xml_de=xml)
