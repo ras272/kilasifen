@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
 
+from kilasifen.domain.emitters.fiscal_profile import EmitterFiscalProfile
 from kilasifen.domain.emitters.models import Emitter, EmitterSummary
 
 
@@ -16,6 +17,10 @@ class EmitterRepository(ABC):
     @abstractmethod
     def get(self, emitter_id: str) -> Emitter | None:
         """Load an emitter by id."""
+
+    @abstractmethod
+    def get_summary(self, emitter_id: str) -> EmitterSummary | None:
+        """Load an emitter, fiscal profile included, without its secrets."""
 
     @abstractmethod
     def get_status(self, emitter_id: str) -> str | None:
@@ -47,8 +52,9 @@ class EmitterRepository(ABC):
         legal_name: str | None,
         tax_environment: str | None,
         updated_at: datetime,
+        fiscal_profile: EmitterFiscalProfile | None = None,
     ) -> EmitterSummary | None:
-        """Update only non-secret emitter columns."""
+        """Update only non-secret emitter columns; ``None`` keeps a value."""
 
     @abstractmethod
     def update_secret(

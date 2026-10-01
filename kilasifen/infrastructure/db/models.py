@@ -70,6 +70,8 @@ class EmitterModel(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     csc: Mapped[str | None] = mapped_column(Text)
     csc_id: Mapped[str | None] = mapped_column(String(16))
+    # Data declared in the RUC (gEmis); NULL until the emitter registers it.
+    fiscal_profile: Mapped[dict | None] = mapped_column(JSON)
 
     certificates: Mapped[list["CertificateModel"]] = relationship(
         back_populates="emitter"

@@ -810,6 +810,31 @@
         "title": "EconomicActivityPayload",
         "type": "object"
       },
+      "EconomicActivityProfile": {
+        "additionalProperties": false,
+        "description": "Actividad económica declarada en el RUC (gActEco, D130-D132).",
+        "properties": {
+          "codigo": {
+            "description": "cActEco (Tabla 3, XSD `tcActEco`).",
+            "pattern": "^[0-9A-Z]{1,8}$",
+            "title": "Codigo",
+            "type": "string"
+          },
+          "descripcion": {
+            "description": "dDesActEco.",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Descripcion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "codigo",
+          "descripcion"
+        ],
+        "title": "EconomicActivityProfile",
+        "type": "object"
+      },
       "EmitterCreateRequest": {
         "description": "Emitter creation payload.",
         "properties": {
@@ -857,6 +882,17 @@
             ],
             "title": "External Id"
           },
+          "fiscal_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmitterFiscalProfileModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Perfil fiscal del RUC. Puede cargarse después, pero sin él no se pueden crear documentos."
+          },
           "legal_name": {
             "description": "Razón social (D105, XSD `tdNombre`, 4-255).",
             "maxLength": 255,
@@ -901,6 +937,79 @@
           "tax_environment"
         ],
         "title": "EmitterCreateRequest",
+        "type": "object"
+      },
+      "EmitterFiscalProfileModel": {
+        "additionalProperties": false,
+        "description": "Datos fiscales del emisor tal como figuran en su RUC (gEmis).\n\nEs la única fuente de `gEmis`: sin este perfil no se puede crear un\ndocumento. Se reemplaza completo en cada actualización.",
+        "properties": {
+          "actividades_economicas": {
+            "description": "gActEco (D130), de 1 a 9.",
+            "items": {
+              "$ref": "#/components/schemas/EconomicActivityProfile"
+            },
+            "maxItems": 9,
+            "minItems": 1,
+            "title": "Actividades Economicas",
+            "type": "array"
+          },
+          "domicilio": {
+            "$ref": "#/components/schemas/FiscalAddressProfile",
+            "description": "Dirección por defecto de los documentos del emisor."
+          },
+          "establecimientos": {
+            "description": "Dirección propia de cada establecimiento que la tenga.",
+            "items": {
+              "$ref": "#/components/schemas/EstablishmentAddressProfile"
+            },
+            "maxItems": 999,
+            "title": "Establecimientos",
+            "type": "array"
+          },
+          "nombre_fantasia": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 4,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dNomFanEmi (D106).",
+            "title": "Nombre Fantasia"
+          },
+          "tipo_contribuyente": {
+            "description": "iTipCont (D103): 1 persona física, 2 persona jurídica.",
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Tipo Contribuyente",
+            "type": "integer"
+          },
+          "tipo_regimen": {
+            "anyOf": [
+              {
+                "maximum": 8.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cTipReg (D104, Tabla 1).",
+            "title": "Tipo Regimen"
+          }
+        },
+        "required": [
+          "tipo_contribuyente",
+          "actividades_economicas",
+          "domicilio"
+        ],
+        "title": "EmitterFiscalProfileModel",
         "type": "object"
       },
       "EmitterPayload": {
@@ -1151,6 +1260,17 @@
             "description": "IdCSC: de 1 a 4 dígitos entre 1 y 9999; se guarda con cuatro dígitos (`1` → `0001`).",
             "title": "Csc Id"
           },
+          "fiscal_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmitterFiscalProfileModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reemplaza el perfil fiscal completo."
+          },
           "legal_name": {
             "anyOf": [
               {
@@ -1236,6 +1356,160 @@
           "correlation_id"
         ],
         "title": "ErrorPayload",
+        "type": "object"
+      },
+      "EstablishmentAddressProfile": {
+        "additionalProperties": false,
+        "description": "Dirección propia de un establecimiento (`dEst`).",
+        "properties": {
+          "ciudad": {
+            "description": "cCiuEmi (D115).",
+            "maximum": 99999.0,
+            "minimum": 1.0,
+            "title": "Ciudad",
+            "type": "integer"
+          },
+          "complemento_1": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complemento 1"
+          },
+          "complemento_2": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complemento 2"
+          },
+          "denominacion_sucursal": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDenSuc (D119).",
+            "title": "Denominacion Sucursal"
+          },
+          "departamento": {
+            "description": "cDepEmi (D111), según `Departamentos_v141.xsd`.",
+            "minimum": 1.0,
+            "title": "Departamento",
+            "type": "integer"
+          },
+          "descripcion_ciudad": {
+            "description": "dDesCiuEmi (D116).",
+            "maxLength": 30,
+            "minLength": 1,
+            "title": "Descripcion Ciudad",
+            "type": "string"
+          },
+          "descripcion_departamento": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 6,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDesDepEmi (D112). Opcional: si se envía tiene que coincidir con el código; se guarda siempre la descripción oficial.",
+            "title": "Descripcion Departamento"
+          },
+          "descripcion_distrito": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDesDisEmi; obligatoria si hay `distrito`.",
+            "title": "Descripcion Distrito"
+          },
+          "direccion": {
+            "description": "dDirEmi (D107).",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Direccion",
+            "type": "string"
+          },
+          "distrito": {
+            "anyOf": [
+              {
+                "maximum": 9999.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cDisEmi.",
+            "title": "Distrito"
+          },
+          "email": {
+            "description": "dEmailE.",
+            "maxLength": 80,
+            "minLength": 3,
+            "pattern": "^[0-9a-zA-Z][0-9a-zA-Z.\\-_]*@([0-9a-zA-Z][0-9a-zA-Z\\-_]*\\.)+[a-zA-Z]{2,9}$",
+            "title": "Email",
+            "type": "string"
+          },
+          "establecimiento": {
+            "description": "Código del establecimiento (C005).",
+            "pattern": "^[0-9]{3}$",
+            "title": "Establecimiento",
+            "type": "string"
+          },
+          "numero_casa": {
+            "description": "dNumCas (D108). `0` solo si la dirección no tiene numeración.",
+            "pattern": "^[0-9]{1,6}$",
+            "title": "Numero Casa",
+            "type": "string"
+          },
+          "telefono": {
+            "description": "dTelEmi (D117), con prefijo.",
+            "maxLength": 15,
+            "minLength": 6,
+            "title": "Telefono",
+            "type": "string"
+          }
+        },
+        "required": [
+          "direccion",
+          "numero_casa",
+          "departamento",
+          "ciudad",
+          "descripcion_ciudad",
+          "telefono",
+          "email",
+          "establecimiento"
+        ],
+        "title": "EstablishmentAddressProfile",
         "type": "object"
       },
       "EventCreateRequest": {
@@ -1593,6 +1867,153 @@
           "factura"
         ],
         "title": "FacturaCreateRequest",
+        "type": "object"
+      },
+      "FiscalAddressProfile": {
+        "additionalProperties": false,
+        "description": "Dirección y contacto del local que emite el DE (D107-D119).",
+        "properties": {
+          "ciudad": {
+            "description": "cCiuEmi (D115).",
+            "maximum": 99999.0,
+            "minimum": 1.0,
+            "title": "Ciudad",
+            "type": "integer"
+          },
+          "complemento_1": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complemento 1"
+          },
+          "complemento_2": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complemento 2"
+          },
+          "denominacion_sucursal": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDenSuc (D119).",
+            "title": "Denominacion Sucursal"
+          },
+          "departamento": {
+            "description": "cDepEmi (D111), según `Departamentos_v141.xsd`.",
+            "minimum": 1.0,
+            "title": "Departamento",
+            "type": "integer"
+          },
+          "descripcion_ciudad": {
+            "description": "dDesCiuEmi (D116).",
+            "maxLength": 30,
+            "minLength": 1,
+            "title": "Descripcion Ciudad",
+            "type": "string"
+          },
+          "descripcion_departamento": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 6,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDesDepEmi (D112). Opcional: si se envía tiene que coincidir con el código; se guarda siempre la descripción oficial.",
+            "title": "Descripcion Departamento"
+          },
+          "descripcion_distrito": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDesDisEmi; obligatoria si hay `distrito`.",
+            "title": "Descripcion Distrito"
+          },
+          "direccion": {
+            "description": "dDirEmi (D107).",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Direccion",
+            "type": "string"
+          },
+          "distrito": {
+            "anyOf": [
+              {
+                "maximum": 9999.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cDisEmi.",
+            "title": "Distrito"
+          },
+          "email": {
+            "description": "dEmailE.",
+            "maxLength": 80,
+            "minLength": 3,
+            "pattern": "^[0-9a-zA-Z][0-9a-zA-Z.\\-_]*@([0-9a-zA-Z][0-9a-zA-Z\\-_]*\\.)+[a-zA-Z]{2,9}$",
+            "title": "Email",
+            "type": "string"
+          },
+          "numero_casa": {
+            "description": "dNumCas (D108). `0` solo si la dirección no tiene numeración.",
+            "pattern": "^[0-9]{1,6}$",
+            "title": "Numero Casa",
+            "type": "string"
+          },
+          "telefono": {
+            "description": "dTelEmi (D117), con prefijo.",
+            "maxLength": 15,
+            "minLength": 6,
+            "title": "Telefono",
+            "type": "string"
+          }
+        },
+        "required": [
+          "direccion",
+          "numero_casa",
+          "departamento",
+          "ciudad",
+          "descripcion_ciudad",
+          "telefono",
+          "email"
+        ],
+        "title": "FiscalAddressProfile",
         "type": "object"
       },
       "GenerationResponsiblePayload": {

@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from kilasifen.application.emitters.fiscal_profile import normalize_fiscal_profile
 from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.emitters.identity import (
     normalize_csc_id,
@@ -15,6 +16,7 @@ from kilasifen.domain.common.errors import (
     NotFoundError,
     UnprocessableEntityError,
 )
+from kilasifen.domain.emitters.fiscal_profile import EmitterFiscalProfile
 from kilasifen.domain.emitters.models import Emitter, EmitterSummary
 from kilasifen.repositories.emitters import EmitterRepository
 
@@ -41,11 +43,14 @@ class EmitterService:
         csc: str | None,
         csc_id: str | None,
         owner_consumer_id: str | None = None,
+        fiscal_profile: EmitterFiscalProfile | None = None,
     ) -> Emitter:
         self._validate_tax_environment(tax_environment)
         validate_tax_id(ruc, dv)
         validate_legal_name(legal_name)
         csc, csc_id = _validated_csc(csc, csc_id)
+        if fiscal_profile is not None:
+            fiscal_profile = normalize_fiscal_profile(fiscal_profile)
         if external_id and self.repository.get_by_external_id(external_id) is not None:
             raise ConflictError("emitters.external_id_conflict")
         if self.repository.get_by_tax_id(ruc, dv) is not None:
@@ -64,6 +69,7 @@ class EmitterService:
             csc_id=csc_id,
             created_at=timestamp,
             updated_at=timestamp,
+            fiscal_profile=fiscal_profile,
         )
         saved = self.repository.save(emitter)
         if owner_consumer_id is not None:
@@ -87,22 +93,33 @@ class EmitterService:
         tax_environment: str | None,
         csc: str | None,
         csc_id: str | None,
+        fiscal_profile: EmitterFiscalProfile | None = None,
     ) -> EmitterSummary:
+        """Update metadata, secrets or the fiscal profile (replaced whole)."""
+
         if tax_environment is not None:
             self._validate_tax_environment(tax_environment)
         if legal_name is not None:
             validate_legal_name(legal_name)
         csc, csc_id = _validated_csc(csc, csc_id)
+        if fiscal_profile is not None:
+            fiscal_profile = normalize_fiscal_profile(fiscal_profile)
         updates_secret = csc is not None or csc_id is not None
+        updates_metadata = (
+            legal_name is not None
+            or tax_environment is not None
+            or fiscal_profile is not None
+        )
         if updates_secret:
             require_active_emitter(self.repository, emitter_id)
         timestamp = _now()
         result: EmitterSummary | None = None
-        if legal_name is not None or tax_environment is not None or not updates_secret:
+        if updates_metadata or not updates_secret:
             result = self.repository.update_metadata(
                 emitter_id,
                 legal_name=legal_name,
                 tax_environment=tax_environment,
+                fiscal_profile=fiscal_profile,
                 updated_at=timestamp,
             )
         if updates_secret:
