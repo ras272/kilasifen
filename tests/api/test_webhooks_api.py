@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from kilasifen.api.deps import get_webhook_service
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
 from kilasifen.domain.emitters.models import Emitter
+from kilasifen.domain.webhooks.models import WebhookDelivery
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.repositories.emitters import (
@@ -163,10 +165,17 @@ def test_update_webhook_endpoint_rotates_secret_and_can_disable_delivery(
     replay = client.post(
         f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
         headers={"X-API-Key": API_KEY},
-        json={"event_type": "document.rejected", "payload": {}},
+        json={"delivery_id": "any-delivery"},
     )
     assert replay.status_code == 409
     assert replay.json()["error"]["code"] == "webhooks.endpoint_inactive"
+
+    ping = client.post(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/test",
+        headers={"X-API-Key": API_KEY},
+    )
+    assert ping.status_code == 409
+    assert ping.json()["error"]["code"] == "webhooks.endpoint_inactive"
 
 
 @pytest.mark.parametrize(
@@ -201,58 +210,169 @@ def test_update_webhook_endpoint_rejects_invalid_changes(
     assert response.status_code == 422
 
 
-def test_replay_creates_delivery_and_job(client: TestClient) -> None:
-    create_response = client.post(
-        "/v1/emitters/emitter-1/webhooks",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "url": "https://erp.example.com/hooks/kila",
-            "secret": "top-secret-webhook-key-000000000000",
-            "event_subscriptions": ["document.approved"],
-            "retry_policy": {"max_attempts": 3},
-        },
+def test_replay_redelivers_an_existing_event_with_a_new_delivery_id(
+    client: TestClient,
+) -> None:
+    endpoint_id = _register_endpoint(client, "emitter-1", "replay")
+    source = _publish_event(
+        client,
+        emitter_id="emitter-1",
+        event_type="document.approved",
+        payload={"document_id": "doc-1", "internal_status": "approved"},
     )
-    endpoint_id = create_response.json()["data"]["webhook_endpoint"]["id"]
 
     replay_response = client.post(
         f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
         headers={"X-API-Key": API_KEY},
-        json={
-            "event_type": "document.approved",
-            "payload": {"document_id": "doc-1", "status": "approved"},
-        },
+        json={"delivery_id": source.id},
     )
 
     assert replay_response.status_code == 201
     data = replay_response.json()["data"]
-    assert data["delivery"]["webhook_endpoint_id"] == endpoint_id
-    assert data["delivery"]["event_type"] == "document.approved"
-    assert data["delivery"]["final_status"] == "pending"
+    delivery = data["delivery"]
+    assert delivery["id"] != source.id
+    assert delivery["webhook_endpoint_id"] == endpoint_id
+    assert delivery["event_type"] == "document.approved"
+    assert delivery["final_status"] == "pending"
+    assert delivery["payload_snapshot"] == {
+        "type": "document.approved",
+        "delivery_id": delivery["id"],
+        "occurred_at": source.payload_snapshot["occurred_at"],
+        "data": {"document_id": "doc-1", "internal_status": "approved"},
+    }
     assert data["job"]["job_type"] == "webhook.deliver"
     assert data["job"]["status"] == "queued"
 
 
-def test_get_webhook_delivery_returns_delivery_and_job(client: TestClient) -> None:
-    create_response = client.post(
-        "/v1/emitters/emitter-1/webhooks",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "url": "https://erp.example.com/hooks/kila",
-            "secret": "top-secret-webhook-key-000000000000",
-            "event_subscriptions": ["document.approved"],
-            "retry_policy": {"max_attempts": 3},
-        },
-    )
-    endpoint_id = create_response.json()["data"]["webhook_endpoint"]["id"]
-    replay_response = client.post(
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"event_type": "document.approved", "payload": {"document_id": "forged"}},
+        {"delivery_id": "x", "event_type": "document.approved"},
+        {"delivery_id": "x", "payload": {"document_id": "forged"}},
+        {},
+    ],
+)
+def test_replay_rejects_caller_supplied_event_content(
+    client: TestClient,
+    body: dict,
+) -> None:
+    endpoint_id = _register_endpoint(client, "emitter-1", "forgery")
+
+    response = client.post(
         f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
         headers={"X-API-Key": API_KEY},
-        json={
-            "event_type": "document.approved",
-            "payload": {"document_id": "doc-detail"},
-        },
+        json=body,
     )
-    delivery_id = replay_response.json()["data"]["delivery"]["id"]
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "request.validation_failed"
+
+
+def test_replay_returns_not_found_for_unknown_delivery(client: TestClient) -> None:
+    endpoint_id = _register_endpoint(client, "emitter-1", "unknown-delivery")
+
+    response = client.post(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
+        headers={"X-API-Key": API_KEY},
+        json={"delivery_id": "does-not-exist"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "webhooks.delivery_not_found"
+
+
+def test_replay_cannot_copy_a_delivery_of_another_emitter(
+    client: TestClient,
+) -> None:
+    second_emitter = _create_emitter(client, "erp-replay-foreign", "80444444", "3")
+    _register_endpoint(client, second_emitter, "foreign-source")
+    foreign = _publish_event(
+        client,
+        emitter_id=second_emitter,
+        event_type="document.approved",
+        payload={"document_id": "foreign-doc"},
+    )
+    endpoint_id = _register_endpoint(client, "emitter-1", "own-target")
+
+    response = client.post(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
+        headers={"X-API-Key": API_KEY},
+        json={"delivery_id": foreign.id},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "webhooks.delivery_not_found"
+
+
+def test_replay_refuses_a_delivery_without_a_complete_event_snapshot(
+    client: TestClient,
+) -> None:
+    endpoint_id = _register_endpoint(client, "emitter-1", "legacy")
+    source = _publish_event(
+        client,
+        emitter_id="emitter-1",
+        event_type="document.approved",
+        payload={"document_id": "doc-legacy"},
+    )
+    with session_scope(client.app.state.session_factory) as session:
+        SqlAlchemyWebhookRepository(session).save_delivery(
+            replace(source, payload_snapshot=None)
+        )
+
+    response = client.post(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
+        headers={"X-API-Key": API_KEY},
+        json={"delivery_id": source.id},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "webhooks.delivery_not_replayable"
+
+
+def test_send_test_event_delivers_a_marked_synthetic_event(
+    client: TestClient,
+) -> None:
+    endpoint_id = _register_endpoint(client, "emitter-1", "ping")
+
+    response = client.post(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/test",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 201
+    data = response.json()["data"]
+    assert data["delivery"]["event_type"] == "webhook.test"
+    assert data["delivery"]["payload_snapshot"]["data"] == {
+        "test": True,
+        "endpoint_id": endpoint_id,
+    }
+    assert data["job"]["job_type"] == "webhook.deliver"
+
+
+def test_send_test_event_returns_not_found_for_other_emitter_endpoint(
+    client: TestClient,
+) -> None:
+    second_emitter = _create_emitter(client, "erp-ping-foreign", "80555555", "4")
+    endpoint_id = _register_endpoint(client, second_emitter, "foreign-ping")
+
+    response = client.post(
+        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/test",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "webhooks.endpoint_not_found"
+
+
+def test_get_webhook_delivery_returns_delivery_and_job(client: TestClient) -> None:
+    _register_endpoint(client, "emitter-1", "detail")
+    delivery_id = _publish_event(
+        client,
+        emitter_id="emitter-1",
+        event_type="document.approved",
+        payload={"document_id": "doc-detail"},
+    ).id
 
     response = client.get(
         f"/v1/emitters/emitter-1/webhook-deliveries/{delivery_id}",
@@ -269,38 +389,13 @@ def test_get_webhook_delivery_returns_delivery_and_job(client: TestClient) -> No
 def test_replay_webhook_delivery_returns_not_found_for_other_emitter(
     client: TestClient,
 ) -> None:
-    second_emitter = client.post(
-        "/v1/emitters",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "external_id": "erp-c",
-            "ruc": "80222222",
-            "dv": "1",
-            "legal_name": "EMITTER C SA",
-            "tax_environment": "test",
-            "csc": None,
-            "csc_id": None,
-        },
-    ).json()["data"]["emitter"]["id"]
-    create_response = client.post(
-        f"/v1/emitters/{second_emitter}/webhooks",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "url": "https://erp.example.com/hooks/foreign",
-            "secret": "top-secret-webhook-key-000000000000",
-            "event_subscriptions": ["document.approved"],
-            "retry_policy": {"max_attempts": 3},
-        },
-    )
-    endpoint_id = create_response.json()["data"]["webhook_endpoint"]["id"]
+    second_emitter = _create_emitter(client, "erp-c", "80222222", "1")
+    endpoint_id = _register_endpoint(client, second_emitter, "foreign")
 
     response = client.post(
         f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
         headers={"X-API-Key": API_KEY},
-        json={
-            "event_type": "document.approved",
-            "payload": {"document_id": "doc-other"},
-        },
+        json={"delivery_id": "any-delivery"},
     )
 
     assert response.status_code == 404
@@ -308,25 +403,12 @@ def test_replay_webhook_delivery_returns_not_found_for_other_emitter(
 
 
 def test_replay_webhook_delivery_requires_valid_api_key(client: TestClient) -> None:
-    create_response = client.post(
-        "/v1/emitters/emitter-1/webhooks",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "url": "https://erp.example.com/hooks/auth",
-            "secret": "top-secret-webhook-key-000000000000",
-            "event_subscriptions": ["document.approved"],
-            "retry_policy": {"max_attempts": 3},
-        },
-    )
-    endpoint_id = create_response.json()["data"]["webhook_endpoint"]["id"]
+    endpoint_id = _register_endpoint(client, "emitter-1", "auth")
 
     response = client.post(
         f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
         headers={"X-API-Key": "wrong-key"},
-        json={
-            "event_type": "document.approved",
-            "payload": {"document_id": "doc-auth"},
-        },
+        json={"delivery_id": "any-delivery"},
     )
 
     assert response.status_code == 401
@@ -336,39 +418,14 @@ def test_replay_webhook_delivery_requires_valid_api_key(client: TestClient) -> N
 def test_get_webhook_delivery_returns_not_found_for_other_emitter(
     client: TestClient,
 ) -> None:
-    second_emitter = client.post(
-        "/v1/emitters",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "external_id": "erp-d",
-            "ruc": "80333333",
-            "dv": "2",
-            "legal_name": "EMITTER D SA",
-            "tax_environment": "test",
-            "csc": None,
-            "csc_id": None,
-        },
-    ).json()["data"]["emitter"]["id"]
-    create_response = client.post(
-        f"/v1/emitters/{second_emitter}/webhooks",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "url": "https://erp.example.com/hooks/foreign-detail",
-            "secret": "top-secret-webhook-key-000000000000",
-            "event_subscriptions": ["document.approved"],
-            "retry_policy": {"max_attempts": 3},
-        },
-    )
-    endpoint_id = create_response.json()["data"]["webhook_endpoint"]["id"]
-    replay_response = client.post(
-        f"/v1/emitters/{second_emitter}/webhooks/{endpoint_id}/deliveries/replay",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "event_type": "document.approved",
-            "payload": {"document_id": "doc-foreign-detail"},
-        },
-    )
-    delivery_id = replay_response.json()["data"]["delivery"]["id"]
+    second_emitter = _create_emitter(client, "erp-d", "80333333", "2")
+    _register_endpoint(client, second_emitter, "foreign-detail")
+    delivery_id = _publish_event(
+        client,
+        emitter_id=second_emitter,
+        event_type="document.approved",
+        payload={"document_id": "doc-foreign-detail"},
+    ).id
 
     response = client.get(
         f"/v1/emitters/emitter-1/webhook-deliveries/{delivery_id}",
@@ -380,26 +437,13 @@ def test_get_webhook_delivery_returns_not_found_for_other_emitter(
 
 
 def test_get_webhook_delivery_requires_valid_api_key(client: TestClient) -> None:
-    create_response = client.post(
-        "/v1/emitters/emitter-1/webhooks",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "url": "https://erp.example.com/hooks/auth-detail",
-            "secret": "top-secret-webhook-key-000000000000",
-            "event_subscriptions": ["document.approved"],
-            "retry_policy": {"max_attempts": 3},
-        },
-    )
-    endpoint_id = create_response.json()["data"]["webhook_endpoint"]["id"]
-    replay_response = client.post(
-        f"/v1/emitters/emitter-1/webhooks/{endpoint_id}/deliveries/replay",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "event_type": "document.approved",
-            "payload": {"document_id": "doc-auth-detail"},
-        },
-    )
-    delivery_id = replay_response.json()["data"]["delivery"]["id"]
+    _register_endpoint(client, "emitter-1", "auth-detail")
+    delivery_id = _publish_event(
+        client,
+        emitter_id="emitter-1",
+        event_type="document.approved",
+        payload={"document_id": "doc-auth-detail"},
+    ).id
 
     response = client.get(
         f"/v1/emitters/emitter-1/webhook-deliveries/{delivery_id}",
@@ -411,57 +455,20 @@ def test_get_webhook_delivery_requires_valid_api_key(client: TestClient) -> None
 
 
 def test_list_webhook_deliveries_can_filter_by_emitter(client: TestClient) -> None:
-    create_a = client.post(
-        "/v1/emitters/emitter-1/webhooks",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "url": "https://erp.example.com/hooks/a",
-            "secret": "top-secret-webhook-key-000000000000",
-            "event_subscriptions": ["document.approved"],
-            "retry_policy": {"max_attempts": 3},
-        },
+    _register_endpoint(client, "emitter-1", "a")
+    _publish_event(
+        client,
+        emitter_id="emitter-1",
+        event_type="document.approved",
+        payload={"document_id": "doc-a"},
     )
-    endpoint_a = create_a.json()["data"]["webhook_endpoint"]["id"]
-    client.post(
-        f"/v1/emitters/emitter-1/webhooks/{endpoint_a}/deliveries/replay",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "event_type": "document.approved",
-            "payload": {"document_id": "doc-a"},
-        },
-    )
-
-    second_emitter = client.post(
-        "/v1/emitters",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "external_id": "erp-b",
-            "ruc": "80111111",
-            "dv": "9",
-            "legal_name": "EMITTER B SA",
-            "tax_environment": "test",
-            "csc": None,
-            "csc_id": None,
-        },
-    ).json()["data"]["emitter"]["id"]
-    create_b = client.post(
-        f"/v1/emitters/{second_emitter}/webhooks",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "url": "https://erp.example.com/hooks/b",
-            "secret": "top-secret-webhook-key-000000000000",
-            "event_subscriptions": ["document.approved"],
-            "retry_policy": {"max_attempts": 3},
-        },
-    )
-    endpoint_b = create_b.json()["data"]["webhook_endpoint"]["id"]
-    client.post(
-        f"/v1/emitters/{second_emitter}/webhooks/{endpoint_b}/deliveries/replay",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "event_type": "document.approved",
-            "payload": {"document_id": "doc-b"},
-        },
+    second_emitter = _create_emitter(client, "erp-b", "80111111", "9")
+    _register_endpoint(client, second_emitter, "b")
+    _publish_event(
+        client,
+        emitter_id=second_emitter,
+        event_type="document.approved",
+        payload={"document_id": "doc-b"},
     )
 
     listed = client.get(
@@ -478,57 +485,20 @@ def test_list_webhook_deliveries_can_filter_by_emitter(client: TestClient) -> No
 def test_list_webhook_deliveries_without_emitter_filter_returns_system_wide_data(
     client: TestClient,
 ) -> None:
-    create_a = client.post(
-        "/v1/emitters/emitter-1/webhooks",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "url": "https://erp.example.com/hooks/a-global",
-            "secret": "top-secret-webhook-key-000000000000",
-            "event_subscriptions": ["document.approved"],
-            "retry_policy": {"max_attempts": 3},
-        },
+    _register_endpoint(client, "emitter-1", "a-global")
+    _publish_event(
+        client,
+        emitter_id="emitter-1",
+        event_type="document.approved",
+        payload={"document_id": "doc-a-global"},
     )
-    endpoint_a = create_a.json()["data"]["webhook_endpoint"]["id"]
-    client.post(
-        f"/v1/emitters/emitter-1/webhooks/{endpoint_a}/deliveries/replay",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "event_type": "document.approved",
-            "payload": {"document_id": "doc-a-global"},
-        },
-    )
-
-    second_emitter = client.post(
-        "/v1/emitters",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "external_id": "erp-b-global",
-            "ruc": "80111111",
-            "dv": "9",
-            "legal_name": "EMITTER B SA",
-            "tax_environment": "test",
-            "csc": None,
-            "csc_id": None,
-        },
-    ).json()["data"]["emitter"]["id"]
-    create_b = client.post(
-        f"/v1/emitters/{second_emitter}/webhooks",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "url": "https://erp.example.com/hooks/b-global",
-            "secret": "top-secret-webhook-key-000000000000",
-            "event_subscriptions": ["document.approved"],
-            "retry_policy": {"max_attempts": 3},
-        },
-    )
-    endpoint_b = create_b.json()["data"]["webhook_endpoint"]["id"]
-    client.post(
-        f"/v1/emitters/{second_emitter}/webhooks/{endpoint_b}/deliveries/replay",
-        headers={"X-API-Key": API_KEY},
-        json={
-            "event_type": "document.approved",
-            "payload": {"document_id": "doc-b-global"},
-        },
+    second_emitter = _create_emitter(client, "erp-b-global", "80111111", "9")
+    _register_endpoint(client, second_emitter, "b-global")
+    _publish_event(
+        client,
+        emitter_id=second_emitter,
+        event_type="document.approved",
+        payload={"document_id": "doc-b-global"},
     )
 
     listed = client.get(
@@ -559,6 +529,81 @@ def test_list_webhook_deliveries_rejects_unbounded_pagination(
     )
 
     assert response.status_code == 422
+
+
+def _create_emitter(client: TestClient, external_id: str, ruc: str, dv: str) -> str:
+    response = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": external_id,
+            "ruc": ruc,
+            "dv": dv,
+            "legal_name": f"EMITTER {external_id.upper()} SA",
+            "tax_environment": "test",
+            "csc": None,
+            "csc_id": None,
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["data"]["emitter"]["id"]
+
+
+def _register_endpoint(client: TestClient, emitter_id: str, name: str) -> str:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/webhooks",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "url": f"https://erp.example.com/hooks/{name}",
+            "secret": "top-secret-webhook-key-000000000000",
+            "event_subscriptions": ["document.approved"],
+            "retry_policy": {"max_attempts": 3},
+        },
+    )
+    assert response.status_code == 201
+    return response.json()["data"]["webhook_endpoint"]["id"]
+
+
+def _publish_event(
+    client: TestClient,
+    *,
+    emitter_id: str,
+    event_type: str,
+    payload: dict,
+) -> WebhookDelivery:
+    """Generate a delivery the way the platform does, outside the public API."""
+
+    encryption_key = get_settings().encryption_key
+    with session_scope(client.app.state.session_factory) as session:
+        service = WebhookService(
+            webhook_repository=SqlAlchemyWebhookRepository(session),
+            emitter_repository=SqlAlchemyEmitterRepository(
+                session,
+                EncryptedCertificateStore(encryption_key),
+            ),
+            job_repository=SqlAlchemyJobRepository(session),
+            secret_store=EncryptedCertificateStore(encryption_key),
+            queue=_NoopWebhookQueue(),
+            deliverer=WebhookDeliverer(
+                sender=lambda *_args, **_kwargs: None,
+                url_policy=WebhookUrlPolicy(
+                    resolver=lambda _host, _port: ["93.184.216.34"]
+                ),
+            ),
+        )
+        published = service.publish_event(
+            emitter_id=emitter_id,
+            event_type=event_type,
+            payload=payload,
+        )
+    assert len(published) == 1
+    return published[0][0]
+
+
+class _NoopWebhookQueue:
+    def enqueue_webhook_delivery(self, *args, **kwargs):
+        del args, kwargs
+        return None
 
 
 def _seed_emitter(session_factory, encryption_key: str) -> None:

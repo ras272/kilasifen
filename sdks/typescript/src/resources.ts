@@ -257,6 +257,18 @@ export class WebhooksResource {
     );
   }
 
+  /** Sends a signed synthetic `webhook.test` event to verify an endpoint. */
+  sendTestEvent(
+    emitterId: string,
+    endpointId: string,
+    options: RequestOptions = {},
+  ): Promise<KilaResponse<{ delivery: WebhookDelivery; job: Job }>> {
+    return this.http.json<{ delivery: WebhookDelivery; job: Job }>(
+      `/v1/emitters/${segment(emitterId, "emitterId")}/webhooks/${segment(endpointId, "endpointId")}/test`,
+      { method: "POST", ...requestFields(options) },
+    );
+  }
+
   getDelivery(
     emitterId: string,
     deliveryId: string,

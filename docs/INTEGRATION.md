@@ -184,6 +184,12 @@ Registrar URL HTTPS pública, secreto aleatorio ≥32 caracteres, suscripciones 
 `secret_configured`. Firma exacta, replay y backoff:
 [integrations/webhooks.md](integrations/webhooks.md).
 
+`POST .../webhooks/{endpoint_id}/test` envía un evento sintético
+`webhook.test` para verificar el endpoint. El replay
+(`POST .../webhooks/{endpoint_id}/deliveries/replay`) recibe sólo
+`{"delivery_id": "..."}` y reenvía un evento ya generado para el mismo emisor;
+desde 0.2.0 ya no acepta `event_type` ni `payload` del caller (`422`).
+
 El ERP actualiza por webhook y usa polling de documento/job como recuperación.
 
 ## Compatibilidad

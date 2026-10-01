@@ -53,6 +53,16 @@ revisar la guía de migración de esta sección.
   `SifenUnexpectedResponseError`, que la transmisión lanza pero se define en
   `kilasifen.engine.sdk.errors`, sigue con su texto en inglés.
 - Los extras `sign` y `transmision` exigen `signxml>=5.1` (antes `>=3.0`).
+- API de webhooks: `POST /v1/emitters/{emitter_id}/webhooks/{endpoint_id}/deliveries/replay`
+  recibe sólo `{"delivery_id": "..."}` y reenvía una entrega que la plataforma
+  ya generó para el mismo emisor (mismo `type`, `data` y `occurred_at`, con
+  `delivery_id` nuevo). Los campos `event_type` y `payload` se rechazan con
+  `422`. Para probar un endpoint existe
+  `POST /v1/emitters/{emitter_id}/webhooks/{endpoint_id}/test`, que envía el
+  evento sintético `webhook.test`. En el SDK TypeScript, `WebhookReplayInput`
+  pasa a ser `{ delivery_id }` y se agrega `webhooks.sendTestEvent`. Es un
+  cambio de semántica dentro de `/v1` justificado por seguridad (ver la
+  sección Security).
 
 ### Guía de migración
 
@@ -77,6 +87,7 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 | Valores fijos copiados de las muestras anteriores (CDC, RUC, totales) | Leerlos de las muestras nuevas; los tests del repositorio los declaran en `tests/_muestras.py` |
 | Comparar el texto de un mensaje de error del engine | Comparar por tipo de excepción; los textos cambiaron |
 | `signxml>=3.0` | `signxml>=5.1` |
+| `POST .../deliveries/replay` con `{"event_type", "payload"}` (o `webhooks.replay(..., { event_type, payload })` en el SDK) | `POST .../webhooks/{endpoint_id}/test` (`webhooks.sendTestEvent`) para probar el endpoint; `{"delivery_id": "..."}` para reenviar una entrega existente |
 
 ### Added
 
@@ -149,6 +160,12 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   - si un ancestro declara un prefijo para el namespace XMLDSig
     (`xmlns:ds`), la `Signature` mantiene su propia declaración por defecto y
     la firma sigue verificando.
+- El replay de webhooks ya no permite forjar eventos: antes, una credencial
+  con sólo `tenant:write` podía enviar cualquier `event_type` y `payload`
+  firmados con el HMAC del endpoint (por ejemplo, un `document.approved`
+  falso). Ahora sólo reenvía entregas existentes del mismo emisor, y el evento
+  de prueba `webhook.test` tiene `data` fija fuera de los espacios fiscales.
+  Las entregas creadas con el contrato anterior quedan almacenadas sin cambios.
 - `SECURITY.md` deja un solo canal para reportar vulnerabilidades: el
   private vulnerability reporting de GitHub. Se quitó el correo del mantenedor
   anterior, que figuraba como segunda opción.

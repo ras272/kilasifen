@@ -2970,29 +2970,19 @@
         "type": "object"
       },
       "WebhookReplayRequest": {
-        "description": "Replay request payload.",
+        "additionalProperties": false,
+        "description": "Replay of an existing delivery; the event content is never caller-made.",
         "properties": {
-          "event_type": {
+          "delivery_id": {
+            "description": "ID de una entrega ya generada para un endpoint de este emisor. Se reenvían su tipo, data y occurred_at con un delivery ID nuevo.",
             "maxLength": 64,
             "minLength": 1,
-            "title": "Event Type",
+            "title": "Delivery Id",
             "type": "string"
-          },
-          "payload": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payload"
           }
         },
         "required": [
-          "event_type"
+          "delivery_id"
         ],
         "title": "WebhookReplayRequest",
         "type": "object"
@@ -7245,6 +7235,7 @@
     },
     "/v1/emitters/{emitter_id}/webhooks/{endpoint_id}/deliveries/replay": {
       "post": {
+        "description": "Reenvía a este endpoint un evento que KilaSifen ya generó para el emisor, identificado por `delivery_id`. No acepta tipo de evento ni payload del caller.",
         "operationId": "replay_webhook_delivery_v1_emitters__emitter_id__webhooks__endpoint_id__deliveries_replay_post",
         "parameters": [
           {
@@ -7364,6 +7355,123 @@
           }
         ],
         "summary": "Reprocesar entrega de webhook",
+        "tags": [
+          "webhooks"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/webhooks/{endpoint_id}/test": {
+      "post": {
+        "description": "Envía un evento sintético `webhook.test`, firmado como cualquier entrega, para verificar conectividad y firma. Su `data` es fija y nunca representa un cambio de estado fiscal.",
+        "operationId": "send_webhook_test_event_v1_emitters__emitter_id__webhooks__endpoint_id__test_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "endpoint_id",
+            "required": true,
+            "schema": {
+              "title": "Endpoint Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Missing or invalid API key."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "The credential lacks the required scope."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Resource not found or owned by another tenant."
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Resource conflict or state that does not allow the operation."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request validation failed; the request was not processed."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "A dependency is temporarily unavailable; retry with backoff."
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Enviar evento de prueba al webhook",
         "tags": [
           "webhooks"
         ]

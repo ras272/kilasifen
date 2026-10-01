@@ -18,7 +18,8 @@ from kilasifen.api.schemas.webhooks import (
     WebhookReplayRequest,
 )
 from kilasifen.application.webhooks.service import WebhookService
-from kilasifen.domain.webhooks.models import WebhookEndpoint
+from kilasifen.domain.jobs.models import Job
+from kilasifen.domain.webhooks.models import WebhookDelivery, WebhookEndpoint
 
 router = APIRouter(tags=["webhooks"])
 
@@ -103,6 +104,11 @@ def update_webhook_endpoint(
     "/emitters/{emitter_id}/webhooks/{endpoint_id}/deliveries/replay",
     response_model=SuccessEnvelope,
     status_code=status.HTTP_201_CREATED,
+    description=(
+        "Reenvía a este endpoint un evento que KilaSifen ya generó para el "
+        "emisor, identificado por `delivery_id`. No acepta tipo de evento ni "
+        "payload del caller."
+    ),
 )
 def replay_webhook_delivery(
     emitter_id: str,
@@ -115,18 +121,33 @@ def replay_webhook_delivery(
     delivery, job = service.replay_delivery_for_emitter(
         emitter_id=emitter_id,
         endpoint_id=endpoint_id,
-        event_type=payload.event_type,
-        payload=payload.payload,
+        delivery_id=payload.delivery_id,
     )
-    return SuccessEnvelope(
-        data={
-            "delivery": WebhookDeliveryResponse.model_validate(delivery).model_dump(
-                mode="json"
-            ),
-            "job": JobResponse.model_validate(job).model_dump(mode="json"),
-        },
-        correlation_id=request.state.correlation_id,
+    return _delivery_envelope(request, delivery, job)
+
+
+@router.post(
+    "/emitters/{emitter_id}/webhooks/{endpoint_id}/test",
+    response_model=SuccessEnvelope,
+    status_code=status.HTTP_201_CREATED,
+    description=(
+        "Envía un evento sintético `webhook.test`, firmado como cualquier "
+        "entrega, para verificar conectividad y firma. Su `data` es fija y "
+        "nunca representa un cambio de estado fiscal."
+    ),
+)
+def send_webhook_test_event(
+    emitter_id: str,
+    endpoint_id: str,
+    request: Request,
+    _principal=Depends(require_emitter_write),
+    service: WebhookService = Depends(get_webhook_service),
+) -> SuccessEnvelope:
+    delivery, job = service.send_test_event_for_emitter(
+        emitter_id=emitter_id,
+        endpoint_id=endpoint_id,
     )
+    return _delivery_envelope(request, delivery, job)
 
 
 @router.get(
@@ -183,6 +204,22 @@ def list_webhook_deliveries(
                 for delivery in deliveries
             ],
             "pagination": {"limit": limit, "offset": offset, "count": len(deliveries)},
+        },
+        correlation_id=request.state.correlation_id,
+    )
+
+
+def _delivery_envelope(
+    request: Request,
+    delivery: WebhookDelivery,
+    job: Job,
+) -> SuccessEnvelope:
+    return SuccessEnvelope(
+        data={
+            "delivery": WebhookDeliveryResponse.model_validate(delivery).model_dump(
+                mode="json"
+            ),
+            "job": JobResponse.model_validate(job).model_dump(mode="json"),
         },
         correlation_id=request.state.correlation_id,
     )

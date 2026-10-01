@@ -5,6 +5,29 @@ KilaSifen entrega un `POST` JSON por evento. Una entrega conserva el mismo
 acción de replay solicitada por API crea una entrega nueva y, por lo tanto, un ID
 nuevo.
 
+## Replay y evento de prueba
+
+`POST /v1/emitters/{emitter_id}/webhooks/{endpoint_id}/deliveries/replay`
+recibe sólo `{"delivery_id": "..."}`: el ID de una entrega que KilaSifen ya
+generó para un endpoint del mismo emisor. La entrega nueva copia `type`, `data`
+y `occurred_at` de la original y lleva un `delivery_id` nuevo. El body no
+acepta `event_type` ni `payload` (responde `422 request.validation_failed`),
+así que una credencial con `tenant:write` no puede fabricar un evento fiscal
+firmado. Una entrega de otro emisor responde `404 webhooks.delivery_not_found`;
+una entrega sin snapshot completo, `409 webhooks.delivery_not_replayable`.
+
+Para verificar un endpoint recién registrado se usa
+`POST /v1/emitters/{emitter_id}/webhooks/{endpoint_id}/test`, sin body. Envía
+un evento sintético `webhook.test`, firmado igual que cualquier entrega, con
+`data` fija: `{"test": true, "endpoint_id": "..."}`. El tipo queda fuera de los
+espacios `document.*` y `event.*`, no depende de las suscripciones del endpoint
+y nunca representa un cambio de estado fiscal: el consumidor debe responder
+`2xx` sin efecto de negocio.
+
+Las entregas creadas con el contrato anterior de replay (que aceptaba
+`event_type` y `payload` del caller) siguen almacenadas tal cual; conviene
+revisar su `payload_snapshot` antes de reenviarlas.
+
 ## Firma y verificación
 
 Cada request incluye:

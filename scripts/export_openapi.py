@@ -66,6 +66,7 @@ SUMMARY_TRANSLATIONS = {
     "Register Webhook Endpoint": "Registrar webhook",
     "List Webhook Endpoints": "Listar webhooks",
     "Replay Webhook Delivery": "Reprocesar entrega de webhook",
+    "Send Webhook Test Event": "Enviar evento de prueba al webhook",
     "Get Webhook Delivery": "Obtener entrega de webhook",
     "List Webhook Deliveries": "Listar entregas de webhook",
     "Create Consumer": "Crear consumidor",

@@ -475,7 +475,10 @@ export interface WebhookDelivery {
   updated_at: IsoDateTime;
 }
 
+/**
+ * Re-delivers an event KilaSifen already generated for this emitter. The new
+ * delivery copies its type, data and occurred_at and gets a new delivery ID.
+ */
 export interface WebhookReplayInput {
-  event_type: string;
-  payload?: Record<string, JsonValue> | null;
+  delivery_id: string;
 }
