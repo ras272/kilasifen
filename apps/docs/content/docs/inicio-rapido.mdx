@@ -28,6 +28,8 @@ emisor configurado por un administrador de la plataforma.
   ```
 
   La clave sólo puede acceder a emisores pertenecientes a su consumidor.
+  Verificá que `fiscal_profile_complete` sea `true`: sin el perfil fiscal
+  (ver [Emisores](/docs/emisores)) la factura responde `422`.
   </Step>
 
   <Step>
@@ -47,10 +49,10 @@ emisor configurado por un administrador de la plataforma.
     "factura": {
       "establecimiento": "001",
       "punto": "001",
-      "fecha_emision": "2026-08-22T09:30:00-03:00",
       "moneda": "PYG",
       "cliente": {
-        "ruc": "80000000-0",
+        "ruc": "80025298-5",
+        "tipo_contribuyente": 2,
         "razon_social": "Cliente de prueba"
       },
       "items": [

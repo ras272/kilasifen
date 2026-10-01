@@ -265,7 +265,12 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   (`engine.sdk.validation`) antes de firmar; la validación descarta dos
   errores esperables (la `Signature` todavía ausente y un defecto conocido del
   XSD en `dEntCont`). No se emite a través del binding `RDe`, que tiene el
-  layout v141 (ver «Esquemas XSD»). El `generated_xml` del endpoint raw
+  layout v141 (ver «Esquemas XSD»). `gEmis` sale sólo del emisor y de su
+  perfil fiscal persistido (`domain/emitters/fiscal_profile.py`); `gDatRec`,
+  de `domain/documents/receiver.py`, que también usa la API; `dCodSeg` se
+  elige al crear el documento (`documents.security_code`) y `dFecFirma` es
+  la hora de la firma. Las reglas y sus fuentes están en
+  `docs/normativa/matriz.md`. El `generated_xml` del endpoint raw
   deprecado pasa por `infrastructure/sifen/raw_xml_policy.py` al crearse
   (`DocumentService.create_raw_document`, con la política inyectada desde
   `api/deps.py` y aplicada después de la búsqueda idempotente)
@@ -387,9 +392,15 @@ mantener el mismo comportamiento; se corrigen en commits posteriores):
 
 Plataforma (hallazgos de auditoría pendientes):
 
-- `codigo_seguridad` toma por defecto la constante `123456789`.
-- Dirección, teléfono, email y actividad del emisor reciben valores ficticios
-  si faltan en el payload.
+- `KilaSifenEmissionEngine` sin `mapper` lee
+  `KILA_SIFEN_TEST_EMITTER_NAME_LITERAL` con `get_settings()`; los workers
+  deberían pasar el literal explícito. El literal correcto del ambiente de
+  pruebas (MT 1263 frente a la Guía de Pruebas 2026) sigue NO DETERMINADO.
+- `infrastructure/sifen/typed_event_builder.py` todavía rechaza cualquier
+  texto que contenga «ds:» (el builder de documentos ya sólo rechaza markup
+  `ds:` real).
+- El timbrado se elige con la fecha del servidor y no con `dFeEmiDE`
+  (1103/1104), y `establecimiento`/`punto` siguen con default `001`.
 - El QR de producción usa siempre el parámetro `dRucRec`.
 - Al clasificar la respuesta de un DE (`infrastructure/sifen/engine.py`), un
   código distinto de `0260` se marca como rechazo salvo que `dEstRes` diga

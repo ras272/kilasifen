@@ -24,12 +24,41 @@ El RUC es una identidad global de plataforma. Por eso sólo una credencial con
 POST /v1/emitters
 {
   "owner_consumer_id": "consumer_uuid",
-  "ruc": "80024135",
-  "dv": "5",
+  "ruc": "44444401",
+  "dv": "7",
   "legal_name": "Empresa SA",
-  "tax_environment": "test"
+  "tax_environment": "test",
+  "fiscal_profile": {
+    "tipo_contribuyente": 2,
+    "actividades_economicas": [
+      {"codigo": "62010", "descripcion": "ACTIVIDADES DE PROGRAMACION INFORMATICA"}
+    ],
+    "domicilio": {
+      "direccion": "CALLE EJEMPLO",
+      "numero_casa": "123",
+      "departamento": 1,
+      "ciudad": 1,
+      "descripcion_ciudad": "ASUNCION (DISTRITO)",
+      "telefono": "021123456",
+      "email": "facturacion@example.com"
+    },
+    "establecimientos": []
+  }
 }
 ```
+
+El RUC tiene 3-8 caracteres (`tRuc`), `dv` es el módulo 11 del RUC,
+`legal_name` tiene 4-255, el CSC 32 caracteres alfanuméricos y `csc_id` 1-9999
+(se guarda con cuatro dígitos). Un dato inválido responde `422`.
+
+`fiscal_profile` es la única fuente de `gEmis`: tipo de contribuyente, régimen
+y nombre de fantasía opcionales, de 1 a 9 actividades económicas y el domicilio
+del RUC (`numero_casa` `0` si no tiene numeración; el departamento se valida
+contra el XSD de departamentos y su descripción se completa sola). Cada
+establecimiento con otra dirección se agrega en `establecimientos` con su
+código `dEst`. Puede cargarse después con `PATCH /v1/emitters/{id}`, que lo
+reemplaza completo; mientras falte, `fiscal_profile_complete` es `false` y
+crear un documento tipado responde `422 emitters.fiscal_profile_required`.
 
 Compatibilidad: la ruta y el resto del payload no cambian; si
 `owner_consumer_id` se omite, el emisor queda asignado al consumidor de la clave
@@ -96,9 +125,13 @@ X-API-Key: ...
   "factura": {
     "establecimiento": "001",
     "punto": "001",
-    "fecha_emision": "2026-08-16T15:30:00-03:00",
+    "fecha_emision": "2026-10-01T15:30:00-03:00",
     "moneda": "PYG",
-    "cliente": {"ruc": "80000000-0", "razon_social": "Cliente prueba"},
+    "cliente": {
+      "ruc": "80025298-5",
+      "tipo_contribuyente": 2,
+      "razon_social": "Cliente prueba"
+    },
     "items": [{"descripcion": "Servicio", "cantidad": 1, "precio_unitario": 1000}]
   }
 }
@@ -123,6 +156,29 @@ Cliente, ítems, IVA, descuentos/anticipos, moneda/tipo de cambio y condición d
 pago se validan de forma anidada antes de reservar el job. Un `422` significa que
 la intención no ingresó a la cola. Los aliases históricos `razonSocial`,
 `precioUnitario` e `iva` se normalizan a `snake_case` para compatibilidad.
+
+Reglas fiscales que se validan al crear (fuentes en `docs/normativa/matriz.md`):
+
+- `emisor` es opcional y sólo puede repetir la identidad del emisor
+  (`ruc`, `dv`, `razon_social`, y `tipo_contribuyente` en la raíz); si no
+  coincide responde `422 documents.emisor.identity_mismatch`. Sus campos de
+  dirección, contacto y actividad están obsoletos y se ignoran.
+- `cliente` con RUC exige `tipo_contribuyente` y un DV correcto (`RUC-DV` o
+  `dv`). Un no contribuyente sólo puede ser B2C o B2F, y siempre envía
+  `tipo_documento_identidad` y `numero_documento_identidad` (con 9, además
+  `descripcion_tipo_documento`). B2F exige `pais_codigo` distinto de `PRY` y
+  `direccion` con `numero_casa`; fuera de B2F, una dirección exige
+  `departamento`, `ciudad` y `descripcion_ciudad`. `compras_publicas` es
+  opcional en B2G.
+- Innominado (`tipo_documento_identidad` 5): sólo en facturas B2C; se escribe
+  con número `0` y nombre `Sin Nombre`, y el worker lo rechaza desde 7.000.000
+  Gs (salvo muestras médicas).
+- `codigo_seguridad` es opcional: si se omite, KilaSifen genera uno aleatorio y
+  lo conserva en todos los reintentos. No puede ser `0` ni igual al número.
+- `fecha_emision` tiene que estar entre 720 h antes y 120 h después de ahora
+  (hora oficial de Paraguay, UTC−3). Si queda a más de 120 h, el documento se
+  crea igual pero `fiscal_warnings` avisa que el SIFEN lo aprobará con la
+  observación 1005 (transmisión extemporánea).
 
 ## Nota de crédito
 
@@ -215,5 +271,7 @@ El ERP actualiza por webhook y usa polling de documento/job como recuperación.
 ## Compatibilidad
 
 Dentro de `/v1`, cambios son aditivos. Remover/renombrar o cambiar semántica exige
-`/v2` y guía de migración. Clientes ignoran campos desconocidos; requests tipados
+`/v2` y guía de migración. La excepción son las correcciones exigidas por la
+normativa fiscal (por ejemplo el perfil fiscal del emisor o las reglas del
+receptor de 0.2.0): se documentan en el CHANGELOG con su guía de migración. Clientes ignoran campos desconocidos; requests tipados
 se validan estrictamente. No existe integración con FacturaSend.

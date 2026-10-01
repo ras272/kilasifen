@@ -19,7 +19,9 @@ Antes de activarlo, KilaSifen comprueba:
 - estructura PKCS#12 y contraseña;
 - presencia de clave privada RSA de al menos 2048 bits;
 - vigencia temporal del certificado;
-- RUC detectado contra el RUC del emisor;
+- RUC detectado contra el RUC del emisor: se lee del SubjectAlternativeName
+  (certificado de persona física) o del Subject (persona jurídica), y con el
+  formato `RUC<número>-<DV>` el dígito verificador tiene que ser válido;
 - tamaño máximo configurado para el upload.
 
 Los bytes del PFX y su contraseña se cifran antes de persistir. Ninguna

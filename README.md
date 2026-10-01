@@ -65,6 +65,15 @@ desde tu propio código.
   recibe por webhook o consultando el documento o el job.
 - Idempotencia con `idempotency_key`: repetir la misma intención devuelve el
   mismo documento.
+- Perfil fiscal por emisor (`fiscal_profile`): tipo de contribuyente,
+  actividades económicas, domicilio y contacto declarados en el RUC, con
+  dirección propia por establecimiento. Es la única fuente de `gEmis`; sin
+  él no se crean documentos.
+- Reglas fiscales locales antes de emitir: `dCodSeg` aleatorio y persistido,
+  `dFecFirma` con la hora real de la firma, ventana de `dFeEmiDE`, receptor
+  según las notas técnicas vigentes (innominado, B2F, dirección) y RUC del
+  certificado leído también del SubjectAlternativeName. Detalle y fuentes en
+  `docs/normativa/matriz.md`.
 - Eventos de **cancelación** e **inutilización**.
 - Consulta de RUC, consulta del estado de un documento y reconciliación
   explícita sin volver a transmitir un DE cuyo resultado quedó incierto.
@@ -509,9 +518,13 @@ Las reglas para contribuir están en [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Hallazgos de una auditoría reciente, que se corregirán a continuación:
 
-- Si el payload no trae `codigo_seguridad`, se usa la constante `123456789`.
-- La dirección, el teléfono, el correo y la actividad económica del emisor
-  reciben valores ficticios por defecto cuando faltan.
+- El literal de `dNomEmi` que acepta el ambiente de pruebas no está
+  determinado (el Manual Técnico y la Guía de Pruebas 2026 piden textos
+  distintos): `KILA_SIFEN_TEST_EMITTER_NAME_LITERAL` lo configura y por
+  defecto se usa la razón social.
+- Distrito y ciudad del emisor y del receptor llegan con código y
+  descripción del caller: las tablas oficiales 2.1/2.2 no están en los XSD y
+  no se validan localmente.
 - El QR de producción siempre usa el parámetro `dRucRec`, incluso cuando el
   receptor se identifica con `dNumIDRec`.
 - Solo el código `0260` (o el estado "Aprobado") cuenta como aprobación;

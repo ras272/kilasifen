@@ -82,6 +82,46 @@ revisar la guía de migración de esta sección.
   pasa a ser `{ delivery_id }` y se agrega `webhooks.sendTestEvent`. Es un
   cambio de semántica dentro de `/v1` justificado por seguridad (ver la
   sección Security).
+- Correcciones fiscales del emisor, el receptor y las fechas (cambios de
+  semántica dentro de `/v1` justificados por la normativa vigente; fuentes en
+  `docs/normativa/matriz.md`):
+  - Un emisor necesita un **perfil fiscal** (`fiscal_profile`: tipo de
+    contribuyente, 1 a 9 actividades económicas, domicilio con departamento,
+    ciudad, teléfono y email, overrides por establecimiento) para crear
+    documentos tipados: sin él la creación responde
+    `422 emitters.fiscal_profile_required`. Los emisores existentes migran
+    con el perfil vacío. `gEmis` y el CDC salen sólo del emisor y su perfil.
+  - `POST/PATCH /v1/emitters` validan la identidad: RUC de 3-8 caracteres con
+    el patrón `tRuc`, `dv` igual al módulo 11, `legal_name` de 4-255, CSC de
+    32 alfanuméricos e IdCSC de 1-9999 (se guarda con 4 dígitos).
+  - En los documentos, `emisor.ruc`, `emisor.dv`, `emisor.razon_social` y
+    `tipo_contribuyente` sólo se aceptan si coinciden con el emisor
+    (`422 documents.emisor.identity_mismatch`); los campos de dirección,
+    contacto y actividad de `emisor` quedan obsoletos y se ignoran.
+  - `cliente`: con RUC son obligatorios `tipo_contribuyente` y un DV válido
+    (como `RUC-DV` o `dv`); un no contribuyente sólo puede ser B2C o B2F y
+    siempre informa su documento (también en B2F); el innominado sólo vale
+    en facturas B2C, se escribe con `0` y `Sin Nombre` y se rechaza desde
+    7.000.000 Gs; la dirección es obligatoria en B2F y opcional en B2C, y con
+    dirección fuera de B2F se exigen `departamento`, `ciudad` y
+    `descripcion_ciudad`; `pais_descripcion` se toma del XSD;
+    `compras_publicas` pasa a ser opcional en B2G.
+  - `responsable_generacion.tipo_documento` es obligatorio y admite 1-4 o 9
+    (este último con `descripcion_tipo_documento`); `cargo` de 4-100.
+  - `codigo_seguridad` ya no toma la constante `123456789`: si se omite se
+    genera uno aleatorio al crear el documento; `0` o un valor igual al
+    número asignado responden `422`.
+  - `fecha_emision` fuera de la ventana del SIFEN (más de 720 h atrás, más de
+    120 h adelante o antes del 2018-11-22) responde `422`; una fecha a más de
+    120 h de la transmisión crea el documento con un aviso en el nuevo campo
+    `fiscal_warnings`.
+  - `dFecFirma` pasa a ser la hora real de la firma y no la fecha de emisión.
+- Plataforma: `KilaSifenPayloadMapper.map_document` y
+  `build_typed_document_xml` aceptan `signed_at` (y el builder
+  `test_emitter_name_literal`); `KilaSifenEmissionEngine` acepta `clock`.
+  `Emitter`, `EmitterSummary` y `Document` suman campos con valor por
+  defecto (`fiscal_profile`, `security_code`, `fiscal_warnings`) y
+  `EmitterRepository` suma `get_summary`.
 
 ### Guía de migración
 
@@ -107,6 +147,11 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 | Comparar el texto de un mensaje de error del engine | Comparar por tipo de excepción; los textos cambiaron |
 | `signxml>=3.0` | `signxml>=5.1` |
 | `POST .../deliveries/replay` con `{"event_type", "payload"}` (o `webhooks.replay(..., { event_type, payload })` en el SDK) | `POST .../webhooks/{endpoint_id}/test` (`webhooks.sendTestEvent`) para probar el endpoint; `{"delivery_id": "..."}` para reenviar una entrega existente |
+| Emisor sin datos fiscales; dirección, teléfono, email y actividad enviados en `factura.emisor` | Cargar una vez `fiscal_profile` con `PATCH /v1/emitters/{emitter_id}` con los datos del RUC (Marangatu); dejar de enviarlos en cada documento |
+| `cliente` con RUC sin `tipo_contribuyente` (se asumía 2) ni DV | Enviar `tipo_contribuyente` y el RUC como `RUC-DV` (o `dv`) |
+| Consumidor innominado con `nombre` y dirección inventados | `{"naturaleza": 2, "tipo_operacion": 2, "tipo_documento_identidad": 5}`; nombre y número los pone la plataforma |
+| `codigo_seguridad` fijo en cada documento | Omitirlo (la plataforma genera uno aleatorio) o enviar un valor aleatorio distinto por documento |
+| `responsable_generacion` sin `tipo_documento` (se asumía 1) | Enviar `tipo_documento` (1-4 o 9 con `descripcion_tipo_documento`) |
 
 ### Added
 
@@ -293,6 +338,17 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 
 ### Fixed
 
+- Fiscal (DECISIONES F10-F14, F20-F22, F24, F30-F34): `dCodSeg` aleatorio con
+  CSPRNG y persistido por documento (MT v150 §10.3), `dFecFirma` con la hora
+  real de la firma y chequeos previos de 1004/2450 (RG 23/2019 Art. 13), ventana
+  de `dFeEmiDE` (1150/1151/1156), `gEmis` sin valores inventados y con la
+  misma fuente que el CDC (1000/0142/1101), receptor según las NT 03, 10, 23,
+  24 y 26, `gRespDE` según el XSD, RUC del certificado leído también del
+  SubjectAlternativeName con DV verificado (MT v150 §7.5) y hora oficial con
+  offset fijo UTC−03:00 (Ley 7354/2024). Migraciones `20261001_09`,
+  `20261001_10` y `20261001_11`.
+- El constructor de XML tipado ya no rechaza textos que contienen «ds:»
+  (por ejemplo «Brands: X»): sólo una etiqueta o declaración `ds:` real.
 - Docker Compose: `worker`, `outbox` y `migrate` deshabilitan el
   `HEALTHCHECK` HTTP (`/v1/health`) que heredaban de la imagen. Ninguno sirve
   HTTP, así que Docker los marcaba `unhealthy` aunque funcionaran. La API lo

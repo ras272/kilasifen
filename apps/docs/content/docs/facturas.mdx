@@ -9,7 +9,27 @@ POST /v1/emitters/{emitter_id}/documents/facturas
 ```
 
 El contrato valida receptor, ítems, IVA, moneda, tipo de cambio, descuentos,
-anticipos y condición de pago antes de crear el job.
+anticipos y condición de pago antes de crear el job. El emisor tiene que tener
+su perfil fiscal completo.
+
+## Reglas fiscales
+
+- `emisor` sólo puede repetir el RUC, DV y razón social del emisor; si no
+  coinciden la respuesta es `422 documents.emisor.identity_mismatch`.
+- Un `cliente` con RUC necesita `tipo_contribuyente` y un DV válido
+  (`"ruc": "80025298-5"`).
+- Un no contribuyente sólo puede ser B2C o B2F y siempre informa su documento
+  de identidad. En B2F, `pais_codigo` es distinto de `PRY` y la dirección es
+  obligatoria.
+- Innominado (`tipo_documento_identidad: 5`): sólo B2C, menos de 7.000.000 Gs;
+  KilaSifen escribe número `0` y nombre `Sin Nombre`.
+- Con dirección fuera de B2F, `departamento`, `ciudad` y `descripcion_ciudad`
+  son obligatorios.
+- `codigo_seguridad` es opcional: si no lo enviás, KilaSifen genera uno
+  aleatorio y lo conserva en los reintentos.
+- `fecha_emision` tiene que estar entre 720 h antes y 120 h después de ahora.
+  A más de 120 h el documento se crea con un aviso en `fiscal_warnings`
+  (el SIFEN lo aprueba con observación por extemporáneo).
 
 ## Identificadores
 

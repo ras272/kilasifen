@@ -17,8 +17,8 @@ curl -X POST https://TU_API/v1/emitters \
   -d '{
     "owner_consumer_id": "CONSUMER_ID",
     "external_id": "empresa_42",
-    "ruc": "80024135",
-    "dv": "5",
+    "ruc": "44444401",
+    "dv": "7",
     "legal_name": "Empresa Ejemplo S.A.",
     "tax_environment": "test"
   }'
@@ -26,6 +26,54 @@ curl -X POST https://TU_API/v1/emitters \
 
 `external_id` es la referencia estable de tu ERP. Usá el `id` asignado por
 KilaSifen en las rutas posteriores.
+
+El RUC se valida con el formato oficial (3 a 8 caracteres, sin DV) y `dv` tiene
+que ser su dígito verificador por módulo 11. `legal_name` va de 4 a 255
+caracteres, el CSC tiene 32 caracteres alfanuméricos y `csc_id` se guarda con
+cuatro dígitos (`1` → `0001`).
+
+## Perfil fiscal
+
+Los datos del emisor que viajan en cada documento (`gEmis`) salen sólo del
+perfil fiscal, que tiene que coincidir con lo declarado en el RUC. Sin perfil
+no se pueden crear documentos: la API responde
+`422 emitters.fiscal_profile_required`.
+
+```bash
+curl -X PATCH https://TU_API/v1/emitters/EMITTER_ID \
+  -H "X-API-Key: $KILA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fiscal_profile": {
+      "tipo_contribuyente": 2,
+      "actividades_economicas": [
+        {"codigo": "62010", "descripcion": "ACTIVIDADES DE PROGRAMACION INFORMATICA"}
+      ],
+      "domicilio": {
+        "direccion": "CALLE EJEMPLO",
+        "numero_casa": "123",
+        "departamento": 1,
+        "ciudad": 1,
+        "descripcion_ciudad": "ASUNCION (DISTRITO)",
+        "telefono": "021123456",
+        "email": "facturacion@example.com"
+      },
+      "establecimientos": []
+    }
+  }'
+```
+
+- `tipo_contribuyente`: 1 persona física, 2 persona jurídica.
+- `actividades_economicas`: de 1 a 9, con código y descripción del RUC.
+- `domicilio`: dirección del local; `numero_casa` es `0` si no tiene
+  numeración. El departamento se valida contra el catálogo oficial y su
+  descripción se completa sola; distrito y ciudad van con código y
+  descripción.
+- `establecimientos`: la dirección propia de cada establecimiento (`dEst`) que
+  no use el domicilio por defecto.
+
+Cada `PATCH` reemplaza el perfil completo. La respuesta del emisor incluye
+`fiscal_profile` y `fiscal_profile_complete`.
 
 Una clave tenant no puede reclamar un RUC nuevo. Si intentaba usar esta ruta,
 ahora recibe `403 auth.insufficient_scope`; sus lecturas y actualizaciones de
