@@ -88,6 +88,7 @@ from kilasifen.engine.de.bindings.v150.ws_si_recep_lote_de_v141 import (
 from kilasifen.engine.sdk.errors import (
     MAX_CUERPO_CRUDO,
     SifenError,
+    SifenExperimentalWarning,
     SifenRequestNotSentError,
     SifenSignatureError,
     SifenTimeoutError,
@@ -103,6 +104,7 @@ from kilasifen.engine.transmision.base import TransmisionBase
 from kilasifen.engine.transmision.config import (
     ENDPOINTS,
     PRODUCCION,
+    SERVICIOS_EXPERIMENTALES,
     TEST,
     get_endpoint,
 )
@@ -117,6 +119,13 @@ from kilasifen.engine.transmision.de import (
 )
 from kilasifen.engine.transmision.evento import TransmisionEvento
 from tests._muestras import FACTURA, NOTA_CREDITO
+
+# La consulta DTE avisa que es experimental en cada llamada; aca se la
+# ejercita como cualquier otra operacion. El aviso se prueba aparte, con
+# ``pytest.warns``, que ignora este filtro.
+pytestmark = pytest.mark.filterwarnings(
+    "ignore::kilasifen.engine.sdk.errors.SifenExperimentalWarning"
+)
 
 requests = pytest.importorskip(
     "requests", reason="las pruebas de transmision requieren el extra 'transmision'"
@@ -863,6 +872,20 @@ class TestConfiguracionEndpoints:
             get_endpoint(TEST, "cons_ruc")
             == "https://sifen-test.set.gov.py/de/ws/consultas/consulta-ruc.wsdl"
         )
+
+    def test_consulta_dte_marcada_como_experimental(self) -> None:
+        """Los seis servicios del MT sec. 7.10 no son experimentales."""
+        assert SERVICIOS_EXPERIMENTALES == {"cons_dte", "cons_dte_async"}
+        for ambiente in (PRODUCCION, TEST):
+            documentados = set(ENDPOINTS[ambiente]) - SERVICIOS_EXPERIMENTALES
+            assert documentados == {
+                "recep_de",
+                "recep_lote",
+                "cons_de",
+                "cons_lote",
+                "cons_ruc",
+                "evento",
+            }
 
     def test_endpoint_consulta_lote_test_es_ruta_oficial(self) -> None:
         """L07."""
@@ -3211,6 +3234,39 @@ class TestConsultaSIFEN:
         assert isinstance(resultado, REnviConsDteAsyncResponse)
         assert resultado.dProtConsDTEAsync == "5550001234"
         assert resultado.dMsgRes == "Consulta registrada"
+
+    @pytest.mark.parametrize(
+        "operar, respuesta",
+        [
+            pytest.param(
+                lambda c: c.consultar_dte(SENTINELA_DTE),
+                RConsDteResponse(dFecProc=FECHA_PROCESO, dMsgRes="Procesada"),
+                id="sincronica",
+            ),
+            pytest.param(
+                lambda c: c.consultar_dte_async(SENTINELA_DTE),
+                REnviConsDteAsyncResponse(
+                    dFecProc=FECHA_PROCESO,
+                    dProtConsDTEAsync="5550001234",
+                    dMsgRes="Consulta registrada",
+                ),
+                id="asincronica",
+            ),
+        ],
+    )
+    def test_consulta_dte_avisa_que_es_experimental(
+        self,
+        consulta: Any,
+        cliente_soap_falso: ClienteSoapFalso,
+        operar: Callable[[Any], Any],
+        respuesta: Any,
+    ) -> None:
+        """Sin respaldo en el MT sec. 7.10, las NT 01-27, la Guia ni la FAQ."""
+        cliente_soap_falso.respuesta = respuesta
+        with pytest.warns(SifenExperimentalWarning, match="experimental") as avisos:
+            operar(consulta)
+        assert len(avisos) == 1
+        assert avisos[0].filename == __file__
 
     @pytest.mark.parametrize(
         "invocar, servicio, request_valido, con_did", CASOS_REQUEST_POR_CONSULTA

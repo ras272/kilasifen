@@ -1,7 +1,13 @@
-"""Consultas al SIFEN: documento por CDC, lote, RUC y DTE."""
+"""Consultas al SIFEN: documento por CDC, lote, RUC y DTE.
+
+La consulta DTE (sincronica y asincronica) es EXPERIMENTAL y no esta
+documentada por la SET: ver
+:data:`~kilasifen.engine.transmision.config.SERVICIOS_EXPERIMENTALES`.
+"""
 
 from __future__ import annotations
 
+import warnings
 from decimal import Decimal
 from typing import Any
 
@@ -25,10 +31,19 @@ from kilasifen.engine.de.bindings.v150.ws_si_cons_ruc_v141 import (
     REnviConsRuc,
     RResEnviConsRuc,
 )
-from kilasifen.engine.sdk.errors import SifenUnexpectedResponseError
+from kilasifen.engine.sdk.errors import (
+    SifenExperimentalWarning,
+    SifenUnexpectedResponseError,
+)
 from kilasifen.engine.transmision.base import TransmisionBase, _generate_id
 
 __all__ = ["ConsultaSIFEN"]
+
+#: Aviso de la consulta DTE, que no figura en la documentacion oficial.
+_AVISO_DTE_EXPERIMENTAL = (
+    "La consulta DTE es experimental: la SET no documenta su direccion, sus "
+    "codigos ni sus plazos (solo publica los XSD WS_SiConsDTE*.xsd)"
+)
 
 #: Largo exacto de un CDC.
 _LARGO_CDC = 44
@@ -162,7 +177,12 @@ class ConsultaSIFEN(TransmisionBase):
         return self._como_respuesta(respuesta, RResEnviConsRuc)
 
     def consultar_dte(self, consulta_dte: Any) -> RConsDteResponse:
-        """Consulta un DTE con el ``rConsultaDTE`` recibido."""
+        """Consulta DTE sincronica con el ``rConsultaDTE`` recibido.
+
+        EXPERIMENTAL: emite :class:`SifenExperimentalWarning`. El servicio no
+        esta documentado por la SET; la respuesta no trae ``dCodRes``.
+        """
+        warnings.warn(_AVISO_DTE_EXPERIMENTAL, SifenExperimentalWarning, stacklevel=2)
         solicitud = RConsDteRequest(rConsultaDTE=consulta_dte)
         respuesta = self._get_client("cons_dte").send(solicitud)
         return self._como_respuesta(respuesta, RConsDteResponse)
@@ -171,7 +191,12 @@ class ConsultaSIFEN(TransmisionBase):
         self,
         consulta_dte_async: Any,
     ) -> REnviConsDteAsyncResponse:
-        """Registra una consulta DTE asincrona y devuelve su protocolo."""
+        """Registra una consulta DTE asincronica y devuelve su protocolo.
+
+        EXPERIMENTAL: emite :class:`SifenExperimentalWarning`. El servicio no
+        esta documentado por la SET.
+        """
+        warnings.warn(_AVISO_DTE_EXPERIMENTAL, SifenExperimentalWarning, stacklevel=2)
         solicitud = REnviConsDteAsyncRequest(rConsultaDTE=consulta_dte_async)
         respuesta = self._get_client("cons_dte_async").send(solicitud)
         return self._como_respuesta(respuesta, REnviConsDteAsyncResponse)
