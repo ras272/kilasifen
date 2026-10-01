@@ -214,6 +214,13 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   del mismo job (reintento manual, despacho duplicado) no firma ni envía
   nada: el job conserva su estado, anota `attempt_in_flight` y se vuelve a
   despachar cuando vence esa ventana.
+- Plataforma: el outbox ya no da por publicado un job cuando RQ todavía
+  informa como `started` una ejecución anterior con el mismo id. Antes
+  devolvía ese registro y marcaba la fila como publicada, así que un
+  reintento manual de un job cuyo worker había muerto se perdía en silencio
+  (el job quedaba `queued` y el documento `submitting`). Ahora la publicación
+  se posterga (`jobs.outbox.publish_deferred`) con el backoff habitual del
+  outbox hasta que RQ termina esa ejecución o la marca fallida.
 - Plataforma: los workers de RQ y el proceso del outbox configuran el mismo
   logging JSON que la API (`configure_logging`, nivel de
   `KILA_SIFEN_LOG_LEVEL`) la primera vez que corre un job o arranca el

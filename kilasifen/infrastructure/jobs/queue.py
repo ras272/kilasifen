@@ -7,7 +7,11 @@ from rq.exceptions import NoSuchJobError
 from rq.job import Job as RqJob
 
 from kilasifen.domain.jobs.models import Job
+from kilasifen.infrastructure.jobs.outbox import PublicationDeferredError
 from kilasifen.logging import get_correlation_id
+
+#: RQ states of a run that has not started yet and will read the job.
+_WAITING_RQ_STATUSES = frozenset({"queued", "deferred", "scheduled"})
 
 
 class WebhookJobQueue(Protocol):
@@ -86,14 +90,24 @@ class RqJobQueue:
         job_type: str,
         correlation_id: str | None,
     ) -> RqJob:
-        """Publish once by durable job id, replacing only a terminal RQ record."""
+        """Publish once by durable job id, replacing only a terminal RQ record.
+
+        A record still waiting to run is returned as is: that run will pick up
+        the job. A ``started`` record is not enough: its worker may already be
+        past the point where it reads the job, or may have died (RQ keeps the
+        record ``started`` until it cleans its registries). Then
+        :class:`PublicationDeferredError` asks the outbox to try again later,
+        once RQ has finished or failed that run.
+        """
 
         existing = self._fetch_job(job_id)
         if existing is not None:
             raw_status = existing.get_status(refresh=True)
             status = getattr(raw_status, "value", raw_status)
-            if status in {"queued", "started", "deferred", "scheduled"}:
+            if status in _WAITING_RQ_STATUSES:
                 return existing
+            if status == "started":
+                raise PublicationDeferredError(f"RQ job {job_id} is still started")
             existing.delete()
 
         try:

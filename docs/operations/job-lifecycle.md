@@ -119,6 +119,15 @@ Admin console allows:
 
 Retries re-queue job payload with current DB/crypto settings.
 
+A retry goes through the outbox like any dispatch. While RQ still reports a
+run of the same job as `started`, the outbox does not publish it (RQ would
+drop it as a duplicate): it logs `jobs.outbox.publish_deferred` and tries
+again with its usual backoff (5 s, 30 s, 2 min, 10 min, 30 min). A live run
+ends normally. When the worker process died, RQ keeps the record `started`
+until the maintenance task of a surviving worker (every 10 minutes by
+default) sees that its heartbeat expired and marks it failed, so a retry of
+a dead worker's job can take that long to start.
+
 ## Recommended monitoring
 
 Workers (`rq worker`) and the outbox sweeper log one JSON object per line,
@@ -126,7 +135,8 @@ with `correlation_id` when the job carries one, exactly like the API; the level
 comes from `KILA_SIFEN_LOG_LEVEL`. RQ's own lifecycle lines keep RQ's text
 format. Useful events: `worker.document_job.request_not_sent`,
 `worker.document_job.outcome_unknown`, `worker.document_job.outcome_superseded`,
-`events.outcome_unknown` and `jobs.outbox.publish_failed`.
+`events.outcome_unknown`, `events.attempt_in_flight`, `worker.job.emitter_busy`,
+`jobs.outbox.publish_deferred` and `jobs.outbox.publish_failed`.
 
 - ratio of `failed` + `retry_scheduled` by job type
 - aging of jobs in `queued`
