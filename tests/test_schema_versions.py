@@ -5,12 +5,14 @@
   remotas.
 - ``TestIntegridadBindings``: cada modulo generado por xsdata se importa.
 - ``TestComparacionListadoSet``: la logica que compara el listado publicado por
-  la SET con los XSD locales, probada sin red.
+  la SET con los XSD locales, y que toda falla de la descarga llegue al test
+  como error, probadas sin red.
 - ``TestSchemaUpdates``: descarga el listado de la SET y falla si publica un
   XSD que no esta en el repositorio. Solo corre con la variable de entorno
   ``CHECK_SCHEMA_UPDATES`` activada (el CI la define en un job semanal que
-  selecciona esta clase por nombre). Si el equipo no tiene red se omite; un
-  error HTTP, de TLS o un timeout la hacen fallar.
+  selecciona esta clase por nombre). Una vez activada nunca se omite: cualquier
+  error de conexion (DNS incluido), HTTP, TLS, timeout o de decodificacion
+  deja el test en rojo, porque ese job es la alarma.
 
 Al importar o coleccionar el modulo solo se usa la libreria estandar y
 pytest: el job semanal no instala los extras del motor, y una rotura de los
@@ -21,7 +23,6 @@ que impida correr ``TestSchemaUpdates``.
 from __future__ import annotations
 
 import email.message
-import errno
 import importlib
 import os
 import pkgutil
@@ -30,7 +31,7 @@ import socket
 import ssl
 import urllib.error
 import urllib.request
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 import pytest
@@ -69,24 +70,6 @@ _VALORES_APAGADO = frozenset({"", "0", "false", "no", "off"})
 
 #: Enlaces ``href="..."`` cuyo valor termina en ``.xsd``.
 _ENLACE_XSD = re.compile(r'href="([^"]*\.xsd)"')
-
-#: ``errno`` que indican que el equipo no tiene ruta hacia la red (POSIX y
-#: Winsock).
-_ERRNO_SIN_RED = frozenset(
-    codigo
-    for codigo in (
-        getattr(errno, nombre, None)
-        for nombre in (
-            "ENETUNREACH",
-            "EHOSTUNREACH",
-            "ENETDOWN",
-            "WSAENETUNREACH",
-            "WSAEHOSTUNREACH",
-            "WSAENETDOWN",
-        )
-    )
-    if codigo is not None
-)
 
 
 # ---------------------------------------------------------------------------
@@ -162,21 +145,21 @@ def _descargar_listado_set() -> str:
         return respuesta.read().decode(charset)
 
 
-def _es_falta_de_conexion(error: BaseException) -> bool:
-    """Indica si ``error`` significa que este equipo no tiene red.
+def _verificar_listado_set() -> None:
+    """Falla si la SET publica un XSD que no esta en el repositorio.
 
-    Solo cuentan la falla de resolucion de nombres y la falta de ruta hacia
-    el servidor. Una respuesta HTTP de error, un problema de TLS, un timeout
-    o una conexion rechazada apuntan a la SET y no cuentan.
+    No captura ningun error de la descarga: conexion, DNS, HTTP, TLS,
+    timeout y decodificacion se propagan tal cual y dejan el test en rojo.
+    Convertirlos en omision apagaria la alarma del job semanal.
     """
-    if isinstance(error, urllib.error.HTTPError):
-        return False
-    causa = error.reason if isinstance(error, urllib.error.URLError) else error
-    if isinstance(causa, ssl.SSLError):
-        return False
-    if isinstance(causa, socket.gaierror):
-        return True
-    return isinstance(causa, OSError) and causa.errno in _ERRNO_SIN_RED
+    publicados = _esquemas_publicados(_descargar_listado_set())
+    assert publicados, (
+        f"el listado de {URL_LISTADO_SET} no enlaza ningun .xsd; "
+        "revisar si cambio su formato"
+    )
+    nuevos = _esquemas_nuevos(publicados, _esquemas_locales())
+    if nuevos:
+        pytest.fail(_mensaje_esquemas_nuevos(nuevos))
 
 
 # ---------------------------------------------------------------------------
@@ -281,8 +264,78 @@ class _RespuestaFalsa:
         return self._cuerpo
 
 
+def _urlopen_que_lanza(error: BaseException) -> Callable[..., _RespuestaFalsa]:
+    """``urlopen`` sustituto que falla con ``error`` sin tocar la red."""
+
+    def urlopen_falso(*_args: object, **_kwargs: object) -> _RespuestaFalsa:
+        raise error
+
+    return urlopen_falso
+
+
+def _urlopen_que_responde(
+    cuerpo: bytes, tipo_contenido: str
+) -> Callable[..., _RespuestaFalsa]:
+    """``urlopen`` sustituto que devuelve siempre el mismo cuerpo."""
+
+    def urlopen_falso(*_args: object, **_kwargs: object) -> _RespuestaFalsa:
+        return _RespuestaFalsa(cuerpo, tipo_contenido)
+
+    return urlopen_falso
+
+
+#: Fallas de la descarga y la excepcion que debe llegar al test de la SET.
+_FALLAS_DE_DESCARGA = [
+    pytest.param(
+        _urlopen_que_lanza(
+            urllib.error.URLError(socket.gaierror(11001, "getaddrinfo failed"))
+        ),
+        urllib.error.URLError,
+        id="dns",
+    ),
+    pytest.param(
+        _urlopen_que_lanza(
+            urllib.error.URLError(OSError("Network is unreachable"))
+        ),
+        urllib.error.URLError,
+        id="sin_ruta",
+    ),
+    pytest.param(
+        _urlopen_que_lanza(
+            urllib.error.URLError(ConnectionRefusedError("conexion rechazada"))
+        ),
+        urllib.error.URLError,
+        id="rechazada",
+    ),
+    pytest.param(
+        _urlopen_que_lanza(
+            urllib.error.HTTPError(URL_LISTADO_SET, 503, "No disponible", {}, None)
+        ),
+        urllib.error.HTTPError,
+        id="http_503",
+    ),
+    pytest.param(
+        _urlopen_que_lanza(
+            urllib.error.URLError(ssl.SSLCertVerificationError("cadena"))
+        ),
+        urllib.error.URLError,
+        id="tls",
+    ),
+    pytest.param(
+        _urlopen_que_lanza(TimeoutError("timed out")),
+        TimeoutError,
+        id="timeout",
+    ),
+    pytest.param(
+        _urlopen_que_responde(b'<a href="\xff.xsd">', "text/html; charset=utf-8"),
+        UnicodeDecodeError,
+        id="decodificacion",
+    ),
+]
+
+
 class TestComparacionListadoSet:
-    """Extraccion de nombres, diferencia y descarga, sin acceder a la red."""
+    """Extraccion, diferencia, descarga y propagacion de fallas, sin red."""
 
     def test_listado_igual_al_local_no_reporta_nada(self) -> None:
         locales = _esquemas_locales()
@@ -311,43 +364,22 @@ class TestComparacionListadoSet:
         html = _listado_html("/sifen/xsd/DE_v160.xsd")
         assert _esquemas_publicados(html) == {"DE_v160.xsd"}
 
-    @pytest.mark.parametrize(
-        ("error", "sin_red"),
-        [
-            pytest.param(
-                urllib.error.URLError(socket.gaierror(11001, "getaddrinfo")),
-                True,
-                id="dns",
-            ),
-            pytest.param(
-                urllib.error.URLError(
-                    OSError(errno.ENETUNREACH, "Network is unreachable")
-                ),
-                True,
-                id="sin_ruta",
-            ),
-            pytest.param(
-                urllib.error.HTTPError(URL_LISTADO_SET, 503, "No disponible", {}, None),
-                False,
-                id="http_503",
-            ),
-            pytest.param(
-                urllib.error.URLError(ssl.SSLCertVerificationError("cadena")),
-                False,
-                id="tls",
-            ),
-            pytest.param(TimeoutError("timed out"), False, id="timeout"),
-            pytest.param(
-                urllib.error.URLError(ConnectionRefusedError(errno.ECONNREFUSED, "")),
-                False,
-                id="rechazada",
-            ),
-        ],
-    )
-    def test_solo_la_falta_de_red_cuenta_como_sin_conexion(
-        self, error: OSError, sin_red: bool
+    @pytest.mark.parametrize(("urlopen_falso", "tipo_error"), _FALLAS_DE_DESCARGA)
+    def test_falla_de_descarga_deja_la_deteccion_en_rojo(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        urlopen_falso: Callable[..., _RespuestaFalsa],
+        tipo_error: type[BaseException],
     ) -> None:
-        assert _es_falta_de_conexion(error) is sin_red
+        monkeypatch.setattr(urllib.request, "urlopen", urlopen_falso)
+
+        with pytest.raises(tipo_error):
+            try:
+                _verificar_listado_set()
+            except pytest.skip.Exception:
+                pytest.fail(
+                    "una falla de la descarga omitio la deteccion; debe fallar"
+                )
 
     @pytest.mark.parametrize(
         ("valor", "activada"),
@@ -413,17 +445,4 @@ class TestSchemaUpdates:
     """Compara el listado publico de la SET con los XSD del repositorio."""
 
     def test_detecta_esquemas_nuevos_en_set(self) -> None:
-        try:
-            html = _descargar_listado_set()
-        except OSError as error:
-            if _es_falta_de_conexion(error):
-                pytest.skip(f"sin conexion a {URL_LISTADO_SET}: {error}")
-            raise
-        publicados = _esquemas_publicados(html)
-        assert publicados, (
-            f"el listado de {URL_LISTADO_SET} no enlaza ningun .xsd; "
-            "revisar si cambio su formato"
-        )
-        nuevos = _esquemas_nuevos(publicados, _esquemas_locales())
-        if nuevos:
-            pytest.fail(_mensaje_esquemas_nuevos(nuevos))
+        _verificar_listado_set()
