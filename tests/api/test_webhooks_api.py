@@ -285,7 +285,7 @@ def test_replay_returns_not_found_for_unknown_delivery(client: TestClient) -> No
 def test_replay_cannot_copy_a_delivery_of_another_emitter(
     client: TestClient,
 ) -> None:
-    second_emitter = _create_emitter(client, "erp-replay-foreign", "80444444", "3")
+    second_emitter = _create_emitter(client, "erp-replay-foreign", "80444444", "7")
     _register_endpoint(client, second_emitter, "foreign-source")
     foreign = _publish_event(
         client,
@@ -384,7 +384,7 @@ def test_send_test_event_delivers_a_marked_synthetic_event(
 def test_send_test_event_returns_not_found_for_other_emitter_endpoint(
     client: TestClient,
 ) -> None:
-    second_emitter = _create_emitter(client, "erp-ping-foreign", "80555555", "4")
+    second_emitter = _create_emitter(client, "erp-ping-foreign", "80555555", "2")
     endpoint_id = _register_endpoint(client, second_emitter, "foreign-ping")
 
     response = client.post(
@@ -420,7 +420,7 @@ def test_get_webhook_delivery_returns_delivery_and_job(client: TestClient) -> No
 def test_replay_webhook_delivery_returns_not_found_for_other_emitter(
     client: TestClient,
 ) -> None:
-    second_emitter = _create_emitter(client, "erp-c", "80222222", "1")
+    second_emitter = _create_emitter(client, "erp-c", "80222222", "6")
     endpoint_id = _register_endpoint(client, second_emitter, "foreign")
 
     response = client.post(
@@ -449,7 +449,7 @@ def test_replay_webhook_delivery_requires_valid_api_key(client: TestClient) -> N
 def test_get_webhook_delivery_returns_not_found_for_other_emitter(
     client: TestClient,
 ) -> None:
-    second_emitter = _create_emitter(client, "erp-d", "80333333", "2")
+    second_emitter = _create_emitter(client, "erp-d", "80333333", "1")
     _register_endpoint(client, second_emitter, "foreign-detail")
     delivery_id = _publish_event(
         client,
@@ -493,7 +493,7 @@ def test_list_webhook_deliveries_can_filter_by_emitter(client: TestClient) -> No
         event_type="document.approved",
         payload={"document_id": "doc-a"},
     )
-    second_emitter = _create_emitter(client, "erp-b", "80111111", "9")
+    second_emitter = _create_emitter(client, "erp-b", "80111111", "0")
     _register_endpoint(client, second_emitter, "b")
     _publish_event(
         client,
@@ -523,7 +523,7 @@ def test_list_webhook_deliveries_without_emitter_filter_returns_system_wide_data
         event_type="document.approved",
         payload={"document_id": "doc-a-global"},
     )
-    second_emitter = _create_emitter(client, "erp-b-global", "80111111", "9")
+    second_emitter = _create_emitter(client, "erp-b-global", "80111111", "0")
     _register_endpoint(client, second_emitter, "b-global")
     _publish_event(
         client,

@@ -816,30 +816,32 @@
           "csc": {
             "anyOf": [
               {
-                "maxLength": 255,
+                "pattern": "^[0-9A-Za-z]{32}$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Código de seguridad del contribuyente: 32 caracteres alfanuméricos. Nunca se devuelve.",
             "title": "Csc"
           },
           "csc_id": {
             "anyOf": [
               {
-                "maxLength": 16,
+                "pattern": "^[0-9]{1,4}$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "IdCSC: de 1 a 4 dígitos entre 1 y 9999; se guarda con cuatro dígitos (`1` → `0001`).",
             "title": "Csc Id"
           },
           "dv": {
-            "maxLength": 4,
-            "minLength": 1,
+            "description": "Dígito verificador del RUC por módulo 11 (D102, 1253).",
+            "pattern": "^[0-9]$",
             "title": "Dv",
             "type": "string"
           },
@@ -856,8 +858,9 @@
             "title": "External Id"
           },
           "legal_name": {
+            "description": "Razón social (D105, XSD `tdNombre`, 4-255).",
             "maxLength": 255,
-            "minLength": 1,
+            "minLength": 4,
             "title": "Legal Name",
             "type": "string"
           },
@@ -875,8 +878,10 @@
             "title": "Owner Consumer Id"
           },
           "ruc": {
-            "maxLength": 16,
-            "minLength": 8,
+            "description": "RUC sin DV (D101, XSD `tRuc`).",
+            "maxLength": 8,
+            "minLength": 3,
+            "pattern": "^[1-9][0-9]*[0-9A-D]?$",
             "title": "Ruc",
             "type": "string"
           },
@@ -1123,38 +1128,41 @@
           "csc": {
             "anyOf": [
               {
-                "maxLength": 255,
+                "pattern": "^[0-9A-Za-z]{32}$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Código de seguridad del contribuyente: 32 caracteres alfanuméricos. Nunca se devuelve.",
             "title": "Csc"
           },
           "csc_id": {
             "anyOf": [
               {
-                "maxLength": 16,
+                "pattern": "^[0-9]{1,4}$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "IdCSC: de 1 a 4 dígitos entre 1 y 9999; se guarda con cuatro dígitos (`1` → `0001`).",
             "title": "Csc Id"
           },
           "legal_name": {
             "anyOf": [
               {
                 "maxLength": 255,
-                "minLength": 1,
+                "minLength": 4,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Razón social (D105, XSD `tdNombre`, 4-255).",
             "title": "Legal Name"
           },
           "tax_environment": {

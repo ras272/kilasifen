@@ -116,7 +116,7 @@ def test_create_emitter_rejects_duplicate_external_id(client: TestClient) -> Non
         json={
             **payload,
             "ruc": "80111111",
-            "dv": "9",
+            "dv": "0",
         },
     )
 
@@ -131,7 +131,7 @@ def test_get_emitter_health_returns_operational_snapshot(client: TestClient) -> 
         json={
             "external_id": "erp-health",
             "ruc": "81234123",
-            "dv": "1",
+            "dv": "6",
             "legal_name": "EMITTER HEALTH SA",
             "tax_environment": "test",
             "csc": None,
@@ -162,3 +162,93 @@ def test_get_emitter_health_returns_operational_snapshot(client: TestClient) -> 
     assert health["has_active_certificate"] is False
     assert health["has_active_stamping"] is False
     assert health["last_document_id"] is not None
+
+
+def test_create_emitter_rejects_a_dv_that_is_not_the_modulo_11(
+    client: TestClient,
+) -> None:
+    # MT v150 p. 211: "RUC Emisor: 44444401-7" (validation 1253, D102).
+    response = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "ruc": "44444401",
+            "dv": "8",
+            "legal_name": "EMISOR FICTICIO SA",
+            "tax_environment": "test",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "emitters.dv_mismatch"
+
+
+def test_create_emitter_accepts_short_ruc_and_normalizes_csc_id(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "ruc": "123",
+            "dv": "6",
+            "legal_name": "PERSONA FISICA FICTICIA",
+            "tax_environment": "test",
+            "csc": "ABCD0000000000000000000000000000",
+            "csc_id": "1",
+        },
+    )
+
+    assert response.status_code == 201
+    emitter = response.json()["data"]["emitter"]
+    assert emitter["ruc"] == "123"
+    assert emitter["csc_id"] == "0001"
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"ruc": "0123456"},
+        {"ruc": "123456789"},
+        {"legal_name": "ABC"},
+        {"csc": "short-csc"},
+        {"csc_id": "12345"},
+    ],
+)
+def test_create_emitter_rejects_identity_outside_official_formats(
+    client: TestClient, override: dict
+) -> None:
+    payload = {
+        "ruc": "44444401",
+        "dv": "7",
+        "legal_name": "EMISOR FICTICIO SA",
+        "tax_environment": "test",
+        **override,
+    }
+
+    response = client.post("/v1/emitters", headers={"X-API-Key": API_KEY}, json=payload)
+
+    assert response.status_code == 422
+
+
+def test_update_emitter_rejects_csc_id_zero(client: TestClient) -> None:
+    created = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "ruc": "44444401",
+            "dv": "7",
+            "legal_name": "EMISOR FICTICIO SA",
+            "tax_environment": "test",
+        },
+    )
+    emitter_id = created.json()["data"]["emitter"]["id"]
+
+    response = client.patch(
+        f"/v1/emitters/{emitter_id}",
+        headers={"X-API-Key": API_KEY},
+        json={"csc_id": "0000"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "emitters.csc_id_invalid"

@@ -131,7 +131,7 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
     secret_update_response = client.patch(
         "/v1/emitters/emitter-a",
         headers={"X-API-Key": _KEY_A},
-        json={"csc": "caller-must-not-write-this", "csc_id": "0001"},
+        json={"csc": "CallerMustNotWriteThis0000000000", "csc_id": "0001"},
     )
     read_only_stamping_response = client.post(
         "/v1/emitters/emitter-a/stampings",
@@ -154,7 +154,7 @@ def test_tenants_cannot_claim_a_global_ruc(client: TestClient) -> None:
     payload = {
         "external_id": "attempted-global-claim",
         "ruc": "80000999",
-        "dv": "9",
+        "dv": "1",
         "legal_name": "GLOBAL RUC CLAIM",
         "tax_environment": "test",
     }
@@ -186,7 +186,7 @@ def _seed_tenants(session_factory) -> None:
                     id="emitter-a",
                     external_id="erp-a",
                     ruc="80000001",
-                    dv="1",
+                    dv="3",
                     legal_name="Emitter A",
                     tax_environment="test",
                     status="active",
@@ -195,7 +195,7 @@ def _seed_tenants(session_factory) -> None:
                     id="emitter-b",
                     external_id="erp-b",
                     ruc="80000002",
-                    dv="2",
+                    dv="1",
                     legal_name="Emitter B",
                     tax_environment="test",
                     status="active",

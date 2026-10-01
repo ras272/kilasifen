@@ -18,8 +18,8 @@ from kilasifen.infrastructure.db.session import (
 )
 
 _EMITTER_ID = "emitter-update-security"
-_OLD_CSC = "OLD-CSC-0000000000000000000000000001"
-_NEW_CSC = "NEW-CSC-0000000000000000000000000002"
+_OLD_CSC = "OLDCSC00000000000000000000000001"
+_NEW_CSC = "NEWCSC00000000000000000000000002"
 
 
 class _FailOnSecretAccess:
@@ -131,7 +131,7 @@ def _seed_emitter(factory, *, encrypted_csc: str) -> None:
                 id=_EMITTER_ID,
                 external_id="security-test",
                 ruc="80000001",
-                dv="1",
+                dv="3",
                 legal_name="Before",
                 tax_environment="test",
                 status="active",

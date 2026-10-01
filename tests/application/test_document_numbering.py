@@ -72,7 +72,7 @@ def test_reserve_next_number_is_sequential(postgres_database_url: str) -> None:
 def test_reserve_next_number_is_isolated_between_sequences(postgres_database_url: str) -> None:
     session_factory = _build_session_factory(postgres_database_url)
     _seed_emitter(session_factory, emitter_id="emitter-a", external_id="erp-a", ruc="80024135", dv="5")
-    _seed_emitter(session_factory, emitter_id="emitter-b", external_id="erp-b", ruc="80111111", dv="9")
+    _seed_emitter(session_factory, emitter_id="emitter-b", external_id="erp-b", ruc="80111111", dv="0")
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         futures_a = [

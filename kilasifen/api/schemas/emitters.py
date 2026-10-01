@@ -5,27 +5,59 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+_LEGAL_NAME_DESCRIPTION = "Razón social (D105, XSD `tdNombre`, 4-255)."
+_CSC_PATTERN = r"^[0-9A-Za-z]{32}$"
+_CSC_DESCRIPTION = (
+    "Código de seguridad del contribuyente: 32 caracteres alfanuméricos. "
+    "Nunca se devuelve."
+)
+_CSC_ID_PATTERN = r"^[0-9]{1,4}$"
+_CSC_ID_DESCRIPTION = (
+    "IdCSC: de 1 a 4 dígitos entre 1 y 9999; se guarda con cuatro dígitos "
+    "(`1` → `0001`)."
+)
+
 
 class EmitterCreateRequest(BaseModel):
     """Emitter creation payload."""
 
     owner_consumer_id: str | None = Field(default=None, min_length=1, max_length=36)
     external_id: str | None = Field(default=None, max_length=128)
-    ruc: str = Field(min_length=8, max_length=16)
-    dv: str = Field(min_length=1, max_length=4)
-    legal_name: str = Field(min_length=1, max_length=255)
+    ruc: str = Field(
+        min_length=3,
+        max_length=8,
+        pattern=r"^[1-9][0-9]*[0-9A-D]?$",
+        description="RUC sin DV (D101, XSD `tRuc`).",
+    )
+    dv: str = Field(
+        pattern=r"^[0-9]$",
+        description="Dígito verificador del RUC por módulo 11 (D102, 1253).",
+    )
+    legal_name: str = Field(
+        min_length=4, max_length=255, description=_LEGAL_NAME_DESCRIPTION
+    )
     tax_environment: Literal["test", "production"]
-    csc: str | None = Field(default=None, max_length=255, repr=False)
-    csc_id: str | None = Field(default=None, max_length=16)
+    csc: str | None = Field(
+        default=None, pattern=_CSC_PATTERN, repr=False, description=_CSC_DESCRIPTION
+    )
+    csc_id: str | None = Field(
+        default=None, pattern=_CSC_ID_PATTERN, description=_CSC_ID_DESCRIPTION
+    )
 
 
 class EmitterUpdateRequest(BaseModel):
     """Emitter update payload."""
 
-    legal_name: str | None = Field(default=None, min_length=1, max_length=255)
+    legal_name: str | None = Field(
+        default=None, min_length=4, max_length=255, description=_LEGAL_NAME_DESCRIPTION
+    )
     tax_environment: Literal["test", "production"] | None = None
-    csc: str | None = Field(default=None, max_length=255, repr=False)
-    csc_id: str | None = Field(default=None, max_length=16)
+    csc: str | None = Field(
+        default=None, pattern=_CSC_PATTERN, repr=False, description=_CSC_DESCRIPTION
+    )
+    csc_id: str | None = Field(
+        default=None, pattern=_CSC_ID_PATTERN, description=_CSC_ID_DESCRIPTION
+    )
 
 
 class EmitterResponse(BaseModel):

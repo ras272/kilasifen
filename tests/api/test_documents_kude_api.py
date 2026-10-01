@@ -129,7 +129,7 @@ def test_get_kude_returns_pdf(client: TestClient):
 
 def test_get_kude_isolates_documents_across_emitters(client: TestClient):
     emitter_a = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
-    emitter_b = _create_emitter(client, external_id="erp-b", ruc="80111111", dv="9")
+    emitter_b = _create_emitter(client, external_id="erp-b", ruc="80111111", dv="0")
     document = _create_document_with_signed_xml(
         client,
         emitter_id=emitter_a["id"],
@@ -266,7 +266,7 @@ def test_get_kude_data_returns_normalized_nota_debito(client: TestClient):
 
 def test_get_kude_data_isolates_documents_across_emitters(client: TestClient):
     emitter_a = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
-    emitter_b = _create_emitter(client, external_id="erp-b", ruc="80111111", dv="9")
+    emitter_b = _create_emitter(client, external_id="erp-b", ruc="80111111", dv="0")
     document = _create_document_with_signed_xml(
         client,
         emitter_id=emitter_a["id"],

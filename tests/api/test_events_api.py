@@ -719,7 +719,7 @@ def _seed_event_context(
                 id="emitter-2",
                 external_id="erp-otro",
                 ruc="80111111",
-                dv="9",
+                dv="0",
                 legal_name="OTRO EMISOR SA",
                 tax_environment="test",
                 status="active",

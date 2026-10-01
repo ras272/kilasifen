@@ -4,6 +4,12 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from kilasifen.application.emitters.guards import require_active_emitter
+from kilasifen.application.emitters.identity import (
+    normalize_csc_id,
+    validate_csc,
+    validate_legal_name,
+    validate_tax_id,
+)
 from kilasifen.domain.common.errors import (
     ConflictError,
     NotFoundError,
@@ -37,6 +43,9 @@ class EmitterService:
         owner_consumer_id: str | None = None,
     ) -> Emitter:
         self._validate_tax_environment(tax_environment)
+        validate_tax_id(ruc, dv)
+        validate_legal_name(legal_name)
+        csc, csc_id = _validated_csc(csc, csc_id)
         if external_id and self.repository.get_by_external_id(external_id) is not None:
             raise ConflictError("emitters.external_id_conflict")
         if self.repository.get_by_tax_id(ruc, dv) is not None:
@@ -81,6 +90,9 @@ class EmitterService:
     ) -> EmitterSummary:
         if tax_environment is not None:
             self._validate_tax_environment(tax_environment)
+        if legal_name is not None:
+            validate_legal_name(legal_name)
+        csc, csc_id = _validated_csc(csc, csc_id)
         updates_secret = csc is not None or csc_id is not None
         if updates_secret:
             require_active_emitter(self.repository, emitter_id)
@@ -116,6 +128,16 @@ class EmitterService:
         if emitter is None:
             raise NotFoundError("emitters.not_found")
         return emitter
+
+
+def _validated_csc(
+    csc: str | None, csc_id: str | None
+) -> tuple[str | None, str | None]:
+    if csc is not None:
+        validate_csc(csc)
+    if csc_id is not None:
+        csc_id = normalize_csc_id(csc_id)
+    return csc, csc_id
 
 
 def _now() -> datetime:

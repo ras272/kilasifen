@@ -73,7 +73,7 @@ def second_emitter_id(client: TestClient) -> str:
         json={
             "external_id": "erp-ares-2",
             "ruc": "80111111",
-            "dv": "9",
+            "dv": "0",
             "legal_name": "OTRO EMISOR SA",
             "tax_environment": "test",
             "csc": None,

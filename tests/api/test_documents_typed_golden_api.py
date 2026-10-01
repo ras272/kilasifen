@@ -76,7 +76,7 @@ def test_typed_documents_api_scenarios_match_golden_and_isolation(
         client, external_id=f"erp-{scenario.name}-a", ruc="80024135", dv="5"
     )
     emitter_b = _create_emitter(
-        client, external_id=f"erp-{scenario.name}-b", ruc="80111111", dv="9"
+        client, external_id=f"erp-{scenario.name}-b", ruc="80111111", dv="0"
     )
 
     first = _create_typed_document(
