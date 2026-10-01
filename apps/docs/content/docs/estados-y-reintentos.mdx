@@ -71,8 +71,8 @@ plataforma ya reenvía el mismo DE cuando SIFEN lo permite.
 
 | Código | Qué hace KilaSifen |
 | --- | --- |
-| `1001`, `1002` (CDC o documento duplicado) | Solo saltan si otro documento ya está **autorizado**. El documento queda `retry_pending` y se consulta el CDC: con `0422` queda `approved`; con `0420` el rechazo se vuelve definitivo. |
-| `0161`, `0162` (servidor de SIFEN sin respuesta o paralizado) | El documento queda `rejected` con el error del job `retryable_server_error` y el mismo DE firmado se reenvía con espera creciente, dentro de los cinco intentos. Al agotarlos, un reintento del operador lo vuelve a enviar. Que estos códigos se puedan reenviar es una interpretación (no está escrito en la norma). |
+| `1001`, `1002` (CDC o documento duplicado) | Solo saltan si otro documento ya está **autorizado**. Si cualquier mensaje del rechazo trae uno de esos códigos, el documento queda `retry_pending` y se consulta el CDC: con `0422` queda `approved`; con `0420` el rechazo se vuelve definitivo, con el primer error que informó SIFEN. |
+| `0161`, `0162` (servidor de SIFEN sin respuesta o paralizado, en cualquier mensaje del rechazo) | El documento queda `rejected` con el error del job `retryable_server_error` y el mismo DE firmado se reenvía con espera creciente, dentro de los cinco intentos. Al agotarlos, un reintento del operador lo vuelve a enviar. Que estos códigos se puedan reenviar es una interpretación (no está escrito en la norma). |
 | Cualquier otro | Rechazo definitivo. Para corregirlo sin cambiar el CDC hay que emitir de nuevo; si el CDC cambia, el número se inutiliza. |
 
 ## Avisos de plazo

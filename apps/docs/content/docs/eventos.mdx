@@ -41,9 +41,11 @@ Reglas que KilaSifen controla antes de firmar:
   respuesta es `409 events.cancel.already_pending`. Una segunda solicitud sería
   rechazada como duplicada (`4003`).
 - **Documentos asociados**: bloquean la cancelación las notas de crédito o
-  débito asociadas que ya son DTE o que podrían serlo (en envío, pendientes de
-  reconciliación, o rechazadas con `0161`/`0162` a punto de reenviarse). Las
-  rechazadas, fallidas, en cola, canceladas o inutilizadas no bloquean.
+  débito asociadas que ya son DTE o que podrían serlo: en envío, pendientes de
+  reconciliación, o con su DE firmado y un job activo que las va a enviar
+  (el mismo DE después de un `0420`, o un rechazo `0161`/`0162` por
+  reenviar). Las rechazadas, fallidas, en cola sin armar, canceladas,
+  inutilizadas o las que ningún job va a enviar no bloquean.
 
 ### Si la respuesta de SIFEN se pierde
 
@@ -57,7 +59,18 @@ la consulta del documento (siConsDE, contenedor `xContEv`). Por eso:
   responde así), el evento queda `reconciliation_required` sin enviar nada;
 - una respuesta `4002`, `4003`, `4009` o `4010` puede esconder un registro
   anterior: antes de darla por buena se consulta el CDC y, si la cancelación
-  figura registrada, el evento queda `approved`.
+  figura registrada, el evento queda `approved`. El rechazo solo se acepta
+  si la consulta muestra el DTE sin cancelación;
+- `4003` («el DTE ya se encuentra con un evento que se está requiriendo
+  nuevamente») nunca se toma como rechazo: si la consulta no muestra la
+  cancelación, el evento queda `reconciliation_required` y el documento no
+  cambia. Lo mismo pasa con cualquiera de esos códigos cuando el contenedor
+  de la consulta (`xContenDE`, cuyo formato no está publicado) no se puede
+  leer. Antes de un reenvío, un contenedor ilegible no frena el envío: la
+  respuesta del mismo evento firmado decide (`0600`, o uno de esos códigos).
+
+No hay todavía un endpoint para resolver a mano un evento
+`reconciliation_required`: un reintento del operador repite la consulta.
 
 ## Inutilizar numeración
 
@@ -87,7 +100,9 @@ Los números bloqueados devuelven `409 events.inutilize.range_already_used`,
 con cada documento y su estado. Cuando SIFEN aprueba el evento, los documentos
 del rango pasan a `inutilized` y el webhook `numbering.inutilized` trae sus
 identificadores. KilaSifen evita superponer rangos ya inutilizados del mismo
-timbrado.
+timbrado. La inutilización es por timbrado: un documento firmado con otro
+timbrado (según el `dNumTim` de su XML) no choca con el rango ni cambia de
+estado.
 
 El plazo normativo es hasta el día 15 del mes siguiente al consumo del número.
 SIFEN no rechaza por plazo, así que KilaSifen nunca bloquea una inutilización

@@ -109,7 +109,9 @@ revisar la guía de migración de esta sección.
   - El plazo de cancelación se cuenta desde `sifen_approved_at` (o una cota
     inferior) y no desde `updated_at`. Una segunda cancelación con otra
     pendiente responde `409 events.cancel.already_pending`. Los documentos
-    asociados rechazados, fallidos o en cola ya no bloquean la cancelación.
+    asociados rechazados, fallidos o en cola ya no bloquean la cancelación,
+    salvo que tengan su DE firmado con CDC y un job activo que los va a
+    enviar (reenvío tras `0420`, rechazo `0161`/`0162` por reenviar).
   - Inutilizar números con documento `rejected`, `failed` o `queued` abortado
     ahora está permitido y esos documentos pasan al estado nuevo
     `inutilized`. Ya no existe el tope de 45 días ni el error
@@ -123,6 +125,12 @@ revisar la guía de migración de esta sección.
 - Plataforma: el timbrado se elige con la fecha de `dFeEmiDE` y no con la del
   servidor; sin un timbrado activo en esa fecha el documento queda `failed`
   (validación local) en lugar de abortar el job con `RuntimeError`.
+- Webhooks de documentos: las transiciones a `approved_with_observation`,
+  `cancelled` e `inutilized` se publican como
+  `document.approved_with_observation`, `document.cancelled` y
+  `document.inutilized`, y ya no como `document.updated`. Un endpoint
+  suscrito solo a `document.updated` deja de recibirlas: hay que sumar esos
+  tipos a `event_subscriptions` (o dejarlo suscrito a todos).
 
 ### Guía de migración
 
@@ -174,10 +182,8 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   `retryable_server_error` y `timbrado`. Las filas anteriores toman
   `timbrado` del `dNumTim` de su XML firmado (o generado); solo un documento
   que nunca se armó queda en NULL.
-- Estado de documento `inutilized` y webhooks
-  `document.approved_with_observation`, `document.cancelled` y
-  `document.inutilized` para las transiciones que antes se publicaban como
-  `document.updated`.
+- Estado de documento `inutilized` (los webhooks nuevos de las transiciones
+  figuran en Breaking changes).
 - Avisos de plazo en `error_snapshot.deadline_alerts` del job (72 h desde
   `dFecFirma`, 720 h desde `dFeEmiDE`) y el log
   `worker.document_job.transmission_deadline`.
@@ -360,6 +366,17 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   rechazado: reenviar un CDC aprobado da `1001`/`1002`.
 - La consulta por CDC guarda para auditoría el request que viajó, con su
   `dId` real, y lee el contenedor `rContDe` (escapado o embebido).
+- Una cancelación que recibe `4003` («ya se encuentra con un evento que se
+  está requiriendo nuevamente», MT v150 §11.6.1) ya no queda `rejected` con
+  el documento `approved`: si la consulta por CDC no muestra la cancelación
+  en `xContEv`, el evento queda `reconciliation_required`. Lo mismo ocurre
+  con `4002`/`4003`/`4009`/`4010` cuando el `xContenDE` de la consulta no se
+  puede leer.
+- Inutilización por timbrado: un documento firmado con otro timbrado (según
+  el `dNumTim` de su XML) ya no choca con el rango ni pasa a `inutilized`
+  (1109 es por timbrado, MT v150 §12.4 C007).
+- Los códigos `1001`/`1002` y `0161`/`0162` se buscan en todos los
+  `gResProc` de un rechazo, no solo en el primero.
 - Docker Compose: `worker`, `outbox` y `migrate` deshabilitan el
   `HEALTHCHECK` HTTP (`/v1/health`) que heredaban de la imagen. Ninguno sirve
   HTTP, así que Docker los marcaba `unhealthy` aunque funcionaran. La API lo

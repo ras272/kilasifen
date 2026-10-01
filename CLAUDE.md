@@ -399,7 +399,16 @@ Plataforma (hallazgos de auditoría pendientes):
 - El QR de producción usa siempre el parámetro `dRucRec`.
 - Una inutilización con resultado incierto se reenvía sin verificación
   previa, porque ningún servicio oficial permite consultarla; un `4066`
-  posterior queda `reconciliation_required` para un operador.
+  posterior queda `reconciliation_required` para un operador. Lo mismo
+  una cancelación con `4003` cuya cancelación no aparece en `xContEv` (o
+  con un `xContenDE` ilegible) y una cuyo CDC responde `0420`. No existe un
+  endpoint para resolver a mano esos eventos: el reintento del operador
+  repite la consulta o el envío.
+- Un reenvío del mismo DE (tras `0420` o `0161`/`0162`) no vuelve a
+  controlar la ventana de `dFeEmiDE` (1150/1151, MT v150 §12.4 val. 19-20):
+  solo deja el aviso en `deadline_alerts`.
+- `KilaSifenQueryGateway.query_ruc` guarda para auditoría un request con un
+  `dId` distinto del que viajó (`query_document` ya guarda el real).
 - La respuesta de `GET /documents/{id}` (`api/schemas/documents.py`) todavía
   no expone `sifen_approved_at`, `sifen_protocol`, `sifen_messages` ni
   `retryable_server_error`: quedan en la base (el protocolo también sale en la

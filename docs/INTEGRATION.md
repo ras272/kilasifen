@@ -162,9 +162,12 @@ queda registrado solo con `0600`. La cancelación vence 48 h (factura) o 168 h
 (otros DTE) después de la aprobación en SIFEN, no admite una segunda solicitud
 mientras otra pueda registrarse (`409 events.cancel.already_pending`) y, ante
 una respuesta perdida o un rechazo `4002`/`4003`/`4009`/`4010`, consulta el CDC
-(`xContEv`) antes de reenviar o de creer el rechazo. La inutilización acepta
+(`xContEv`) antes de reenviar o de creer el rechazo; un `4003` sin la
+cancelación visible, o cualquiera de esos códigos con un contenedor
+ilegible, deja el evento `reconciliation_required` y no `rejected`. La inutilización acepta
 números sin documento, rechazados, fallidos o en cola abortados, nunca un DTE
-ni un documento que pueda estar en SIFEN; no tiene tope de días (pasado el día
+ni un documento que pueda estar en SIFEN, y solo del timbrado pedido (un
+documento firmado con otro timbrado no cuenta); no tiene tope de días (pasado el día
 15 del mes siguiente responde `warnings: ["inutilization.extemporaneous"]`) y,
 al aprobarse, deja esos documentos en `inutilized`. Los endpoints raw `/documents` y `/events` están
 deprecados y son sólo admin. En el raw `/documents`, `payload.generated_xml`
@@ -184,9 +187,9 @@ timeout, respuesta ambigua o caída del worker durante el envío, el intento
 siguiente consulta SIFEN por CDC: con `0422` el documento queda aprobado y no se
 reenvía; con `0420` («no existe o no está aprobado») vuelve a `queued` y el
 intento siguiente reenvía el mismo DE firmado (mismo CDC y firma) en un
-`rEnviDe` con `dId` nuevo (Decreto 872/2023 Art. 29). Un rechazo `1001`/`1002`
-solo queda firme después de esa consulta, y uno `0161`/`0162` (falla del
-servidor) se reenvía. Si al agotar los intentos SIFEN no dio una respuesta
+`rEnviDe` con `dId` nuevo (Decreto 872/2023 Art. 29). Un rechazo que trae
+`1001`/`1002` en cualquiera de sus mensajes solo queda firme después de esa
+consulta, y uno con `0161`/`0162` (falla del servidor) se reenvía. Si al agotar los intentos SIFEN no dio una respuesta
 sobre el CDC, el documento queda `reconciliation_required`; el ERP usa el
 endpoint `reconcile` con la misma intención original. Cuando la falla prueba
 que el request no salió (`transport_not_sent` en el job) el documento vuelve a

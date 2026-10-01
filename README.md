@@ -518,6 +518,15 @@ Hallazgos de una auditoría reciente, que se corregirán a continuación:
   documento, `submitting`) hasta que un operador lo reencola desde la consola;
   ese reintento consulta el CDC antes de decidir. No hay un proceso que
   detecte esos jobs solo.
+- No hay un endpoint para resolver a mano un evento
+  `reconciliation_required` (una cancelación cuyo CDC responde `0420`, una
+  inutilización con `4066` o una cancelación con `4003` sin la cancelación
+  visible): un reintento del operador repite la consulta o el envío.
+- Un reenvío del mismo DE (después de `0420` o de `0161`/`0162`) no vuelve a
+  controlar la ventana de `dFeEmiDE` (rechazos `1150`/`1151`): solo deja el
+  aviso en `deadline_alerts`.
+- La consulta de RUC guarda para auditoría un request con un `dId` distinto
+  del que viajó (la consulta por CDC sí guarda el real).
 
 Puntos que la normativa deja abiertos (NO DETERMINADO) y la opción que tomó la
 plataforma; el detalle está en `docs/normativa/matriz.md`:
@@ -533,6 +542,16 @@ plataforma; el detalle está en `docs/normativa/matriz.md`:
 - Una inutilización que recibe `4066` después de un intento incierto queda
   `reconciliation_required`: ningún servicio permite saber si la registró el
   intento anterior.
+- Una cancelación que recibe `4003` («ya se encuentra con un evento que se
+  está requiriendo nuevamente») nunca queda `rejected`: si la consulta por
+  CDC no muestra la cancelación en `xContEv`, o su contenedor no se puede
+  leer (el formato de `xContenDE` no está publicado), el evento queda
+  `reconciliation_required`.
+- El orden de los mensajes `gResProc` de un rechazo no está definido: se
+  buscan `1001`/`1002` y `0161`/`0162` en todos ellos.
+- Un DE cuya aprobación se conoce por consulta queda `approved` aunque se
+  haya transmitido pasadas las 72 h desde la firma (SIFEN lo registra como
+  aprobado con observación `1005`, pero la consulta no lo informa).
 - La hora de aprobación de un DE aprobado por consulta no la informa el SIFEN;
   el plazo de cancelación se cuenta desde una cota inferior (la `dFecFirma` o
   la creación del documento), así que puede cerrar antes que el del SIFEN.

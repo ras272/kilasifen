@@ -64,10 +64,12 @@ retries never fire.
    - answer without a recognizable `dEstRes` => document `retry_pending`,
      `job.retry_scheduled` (`sifen_unclassified`); the next attempt queries
      the CDC
-   - rejected with `1001`/`1002` => document `retry_pending`
+   - rejected with `1001`/`1002` in any `gResProc` (their order is NO
+     DETERMINADO) => document `retry_pending`
      (`duplicate_reconciliation`); the CDC is queried before the rejection is
      believed (`0422` approves it, `0420` makes the rejection final)
-   - rejected with `0161`/`0162` (SIFEN server failures) => document
+   - rejected with `0161`/`0162` in any `gResProc` (SIFEN server
+     failures) => document
      `rejected` with `retryable_server_error`, `job.retry_scheduled`
      (`retryable_server_error`); the next attempt resends the same signed DE
    - any other rejection, or a fiscal validation failure => `job.failed`
@@ -145,7 +147,13 @@ lead time is a platform choice.
    leaves the event `reconciliation_required` (whether a cancelled DTE answers
    0420 is NO DETERMINADO); a failed query sends nothing and is tried again
    (`reconciliation_unavailable`). A `4002`/`4003`/`4009`/`4010` answer to a
-   cancellation is believed only after the same query. An inutilization that
+   cancellation is believed only after the same query shows the DTE
+   without a cancellation. `4003` (GEC002b, "ya se encuentra con un
+   evento que se esta requiriendo nuevamente") is never believed: when
+   `xContEv` does not show the cancellation, or any of those answers meets
+   an unreadable `xContenDE`, the event becomes `reconciliation_required`.
+   Before a resend an unreadable container does not stop the stored
+   event: its own answer decides. An inutilization that
    gets `4066` after an uncertain attempt is left `reconciliation_required`.
    An uncertain event that exhausts its attempts becomes
    `reconciliation_required` (one that never left becomes `failed`); an
