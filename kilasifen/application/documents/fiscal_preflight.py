@@ -12,6 +12,11 @@ from kilasifen.domain.common.errors import UnprocessableEntityError
 from kilasifen.domain.documents.emitter_identity import (
     find_emitter_identity_mismatch,
 )
+from kilasifen.domain.documents.security_code import (
+    InvalidSecurityCodeError,
+    generate_security_code,
+    normalize_security_code,
+)
 from kilasifen.domain.emitters.models import EmitterSummary
 
 #: Typed contracts whose XML the platform builds from the emitter profile.
@@ -62,3 +67,30 @@ def require_emitter_fiscal_identity(
             "documents.emisor.identity_mismatch",
             details={"field": mismatch},
         )
+
+
+def resolve_security_code(typed_payload: dict) -> str:
+    """Return the ``dCodSeg`` the document will keep for its whole life.
+
+    A caller-supplied ``codigo_seguridad`` is validated (``422`` when it is
+    zero, not nine digits or equal to the document number); otherwise a
+    random one is generated with ``secrets`` (MT v150 §10.3, XSD ``tiCodSe``).
+    """
+
+    number = _document_number(typed_payload)
+    provided = typed_payload.get("codigo_seguridad")
+    try:
+        if provided is not None:
+            return normalize_security_code(provided, document_number=number)
+        return generate_security_code(number)
+    except InvalidSecurityCodeError as exc:
+        raise UnprocessableEntityError(exc.code) from exc
+
+
+def _document_number(typed_payload: dict) -> int:
+    try:
+        return int(str(typed_payload.get("numero")))
+    except (TypeError, ValueError):
+        # Without a number nothing can collide with it; the builder refuses
+        # the document later because dNumDoc is mandatory.
+        return 0

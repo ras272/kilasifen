@@ -359,7 +359,15 @@ class BaseFiscalDocumentPayload(FiscalContractModel):
             "tiene que coincidir."
         ),
     )
-    codigo_seguridad: int | str | None = None
+    codigo_seguridad: int | str | None = Field(
+        default=None,
+        description=(
+            "dCodSeg (B004): opcional. Si se omite, la plataforma genera uno "
+            "aleatorio con un CSPRNG y lo conserva para todos los reintentos. "
+            "Si se envía tiene que ser aleatorio, de 1 a 999999999, sin relación "
+            "con los datos del DE y distinto del número del documento."
+        ),
+    )
     emisor: EmitterPayload | None = None
     cliente: CustomerPayload
     condicion_operacion: OperationConditionPayload | None = None
@@ -404,6 +412,9 @@ class BaseFiscalDocumentPayload(FiscalContractModel):
         text = str(value)
         if not text.isdigit() or len(text) > 9:
             raise ValueError("codigo_seguridad must contain at most nine digits")
+        if int(text) == 0:
+            # XSD tiCodSe: minInclusive 1, "tampoco debe contener solo ceros".
+            raise ValueError("codigo_seguridad must not be zero")
         return value
 
     @model_validator(mode="after")

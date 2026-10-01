@@ -16,6 +16,10 @@ from kilasifen.domain.documents.emitter_identity import (
     find_emitter_identity_mismatch,
 )
 from kilasifen.domain.documents.models import Document
+from kilasifen.domain.documents.security_code import (
+    InvalidSecurityCodeError,
+    normalize_security_code,
+)
 from kilasifen.domain.emitters.fiscal_profile import (
     EmitterFiscalProfile,
     FiscalAddress,
@@ -314,6 +318,7 @@ def build_typed_document_xml(
             emitter=emitter,
             stamping=stamping,
             test_emitter_name_literal=test_emitter_name_literal,
+            security_code=document.security_code,
         )
     if contract == "nota_credito_v1":
         return _build_adjustment_note_xml(
@@ -321,6 +326,7 @@ def build_typed_document_xml(
             emitter=emitter,
             stamping=stamping,
             test_emitter_name_literal=test_emitter_name_literal,
+            security_code=document.security_code,
             document_type_code=5,
             document_type_description="Nota de crédito electrónica",
         )
@@ -330,6 +336,7 @@ def build_typed_document_xml(
             emitter=emitter,
             stamping=stamping,
             test_emitter_name_literal=test_emitter_name_literal,
+            security_code=document.security_code,
             document_type_code=6,
             document_type_description="Nota de débito electrónica",
         )
@@ -342,6 +349,7 @@ def _build_factura_xml(
     emitter: Emitter,
     stamping: Stamping,
     test_emitter_name_literal: str | None,
+    security_code: str | None,
 ) -> TypedXmlBuildResult:
     numero_documento = _required_intlike(typed_payload, "numero")
     fecha_emision = _resolve_emission_datetime(typed_payload)
@@ -349,8 +357,8 @@ def _build_factura_xml(
         typed_payload.get("establecimiento"), "001"
     )
     punto = _normalize_three_digits(typed_payload.get("punto"), "001")
-    codigo_seguridad = _normalize_nine_digits(
-        typed_payload.get("codigo_seguridad"), "123456789"
+    codigo_seguridad = _resolve_security_code(
+        security_code, typed_payload, numero_documento
     )
     issuer = _resolve_issuer(
         emitter=emitter,
@@ -482,6 +490,7 @@ def _build_adjustment_note_xml(
     emitter: Emitter,
     stamping: Stamping,
     test_emitter_name_literal: str | None,
+    security_code: str | None,
     document_type_code: int,
     document_type_description: str,
 ) -> TypedXmlBuildResult:
@@ -491,8 +500,8 @@ def _build_adjustment_note_xml(
         typed_payload.get("establecimiento"), "001"
     )
     punto = _normalize_three_digits(typed_payload.get("punto"), "001")
-    codigo_seguridad = _normalize_nine_digits(
-        typed_payload.get("codigo_seguridad"), "123456789"
+    codigo_seguridad = _resolve_security_code(
+        security_code, typed_payload, numero_documento
     )
     issuer = _resolve_issuer(
         emitter=emitter,
@@ -1917,10 +1926,18 @@ def _normalize_three_digits(value, fallback: str) -> str:
     return f"{int(str(value)):03d}"
 
 
-def _normalize_nine_digits(value, fallback: str) -> str:
-    if value is None:
-        value = fallback
-    return f"{int(str(value)):09d}"
+def _resolve_security_code(
+    persisted: str | None, typed_payload: dict, numero_documento: int
+) -> str:
+    """dCodSeg persisted at creation (MT v150 §10.3); never a constant."""
+
+    raw = persisted or typed_payload.get("codigo_seguridad")
+    if raw is None:
+        raise SifenValidationError("documents.codigo_seguridad.missing")
+    try:
+        return normalize_security_code(raw, document_number=numero_documento)
+    except InvalidSecurityCodeError as exc:
+        raise SifenValidationError(exc.code) from exc
 
 
 def _split_ruc_dv(cliente: dict) -> tuple[str, str | None]:

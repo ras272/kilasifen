@@ -31,3 +31,6 @@ class Document:
     establishment: str | None = None
     point: str | None = None
     document_number: int | None = None
+    # dCodSeg (B004) chosen once at creation; every rebuild reuses it so the
+    # CDC never changes (MT v150 §10.3 and §6.5). None for raw-XML documents.
+    security_code: str | None = None

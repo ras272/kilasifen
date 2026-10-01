@@ -40,6 +40,7 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
                 establishment=document.establishment,
                 point=document.point,
                 document_number=document.document_number,
+                security_code=document.security_code,
                 created_at=document.created_at,
                 updated_at=document.updated_at,
             )
@@ -208,4 +209,5 @@ def _to_domain(model: DocumentModel) -> Document:
         establishment=model.establishment,
         point=model.point,
         document_number=model.document_number,
+        security_code=model.security_code,
     )

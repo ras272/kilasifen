@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from kilasifen.application.documents.fiscal_preflight import (
     require_emitter_fiscal_identity,
+    resolve_security_code,
     typed_fiscal_payload,
 )
 from kilasifen.application.documents.idempotency import (
@@ -189,6 +190,12 @@ class DocumentService:
             document_type=document_type,
             payload_snapshot=payload_snapshot,
         )
+        numbered_typed_payload = typed_fiscal_payload(normalized_payload_snapshot)
+        security_code = (
+            resolve_security_code(numbered_typed_payload)
+            if numbered_typed_payload is not None
+            else None
+        )
 
         timestamp = _now()
         document = Document(
@@ -215,6 +222,7 @@ class DocumentService:
             establishment=establishment,
             point=point,
             document_number=document_number,
+            security_code=security_code,
         )
         saved_document = self.document_repository.save(document)
         job = self.job_service.create_job(

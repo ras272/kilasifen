@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date, datetime, timezone
 
 import pytest
@@ -206,6 +207,84 @@ def test_ds_prefix_detection_ignores_escaped_text() -> None:
     assert not _has_ds_namespace_prefix(xml_text)
 
 
+def test_persisted_security_code_feeds_dcodseg_and_the_cdc() -> None:
+    mapper = KilaSifenPayloadMapper()
+    document = replace(
+        _build_document(payload_snapshot=_minimal_factura_snapshot()),
+        security_code="731640258",
+    )
+
+    emission_input = mapper.map_document(
+        document, emitter=_build_emitter(), stamping=_build_stamping()
+    )
+
+    assert "<dCodSeg>731640258</dCodSeg>" in emission_input.generated_xml
+    # MT v150 §10.1: dCodSeg occupies positions 35-43 of the CDC.
+    assert emission_input.doc_id[34:43] == "731640258"
+
+
+def test_rebuilding_the_same_document_yields_the_same_cdc() -> None:
+    mapper = KilaSifenPayloadMapper()
+    document = _build_document(payload_snapshot=_minimal_factura_snapshot())
+
+    first = mapper.map_document(
+        document, emitter=_build_emitter(), stamping=_build_stamping()
+    )
+    second = mapper.map_document(
+        document, emitter=_build_emitter(), stamping=_build_stamping()
+    )
+
+    assert first.doc_id == second.doc_id
+
+
+def test_document_without_security_code_is_refused_instead_of_a_constant() -> None:
+    mapper = KilaSifenPayloadMapper()
+    document = replace(
+        _build_document(payload_snapshot=_minimal_factura_snapshot()),
+        security_code=None,
+    )
+
+    with pytest.raises(SifenValidationError, match="codigo_seguridad.missing"):
+        mapper.map_document(
+            document, emitter=_build_emitter(), stamping=_build_stamping()
+        )
+
+
+def test_security_code_equal_to_the_document_number_is_refused() -> None:
+    mapper = KilaSifenPayloadMapper()
+    document = replace(
+        _build_document(payload_snapshot=_minimal_factura_snapshot()),
+        security_code="000001001",
+    )
+
+    with pytest.raises(SifenValidationError, match="equals_numero"):
+        mapper.map_document(
+            document, emitter=_build_emitter(), stamping=_build_stamping()
+        )
+
+
+def _minimal_factura_snapshot() -> dict:
+    return {
+        "typed_contract": {
+            "contract": "factura_v1",
+            "payload": {
+                "numero": 1001,
+                "fecha": "2026-04-25T10:00:00",
+                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "items": [
+                    {
+                        "codigo": "A-001",
+                        "descripcion": "Producto",
+                        "cantidad": 1,
+                        "precioUnitario": 100000,
+                        "iva": 10,
+                    }
+                ],
+            },
+        }
+    }
+
+
 def _build_document(*, payload_snapshot: dict) -> Document:
     return Document(
         id="doc-1",
@@ -228,6 +307,7 @@ def _build_document(*, payload_snapshot: dict) -> Document:
         sifen_result_message=None,
         created_at=_now(),
         updated_at=_now(),
+        security_code="482019375",
     )
 
 

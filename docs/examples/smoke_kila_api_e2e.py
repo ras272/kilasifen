@@ -543,7 +543,7 @@ def build_default_unsigned_xml() -> str:
         fecha_emision=fecha_emision,
         timbrado="80024135",
         fecha_inicio_timbrado="2024-03-11",
-        codigo_seguridad="123456789",
+        codigo_seguridad=helper.random_security_code(),
         establecimiento="001",
         punto_expedicion="001",
         codigo_actividad="82999",

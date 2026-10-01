@@ -26,6 +26,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "482019375",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -66,6 +67,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "731640258",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -124,6 +126,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "205877413",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -166,6 +169,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "918346027",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -199,6 +203,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "364052981",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -254,6 +259,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "657213904",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -304,6 +310,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "140698732",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -347,6 +354,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "829471560",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -387,6 +395,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "573908146",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -425,6 +434,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="nota_credito_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "396185270",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -461,6 +471,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="nota_credito_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "761502849",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -506,6 +517,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="nota_credito_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "258943617",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -542,6 +554,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="nota_debito_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "604327195",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",

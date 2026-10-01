@@ -1595,6 +1595,7 @@
                 "type": "null"
               }
             ],
+            "description": "dCodSeg (B004): opcional. Si se omite, la plataforma genera uno aleatorio con un CSPRNG y lo conserva para todos los reintentos. Si se envía tiene que ser aleatorio, de 1 a 999999999, sin relación con los datos del DE y distinto del número del documento.",
             "title": "Codigo Seguridad"
           },
           "condicion": {
@@ -2418,6 +2419,7 @@
                 "type": "null"
               }
             ],
+            "description": "dCodSeg (B004): opcional. Si se omite, la plataforma genera uno aleatorio con un CSPRNG y lo conserva para todos los reintentos. Si se envía tiene que ser aleatorio, de 1 a 999999999, sin relación con los datos del DE y distinto del número del documento.",
             "title": "Codigo Seguridad"
           },
           "condicion": {
@@ -2730,6 +2732,7 @@
                 "type": "null"
               }
             ],
+            "description": "dCodSeg (B004): opcional. Si se omite, la plataforma genera uno aleatorio con un CSPRNG y lo conserva para todos los reintentos. Si se envía tiene que ser aleatorio, de 1 a 999999999, sin relación con los datos del DE y distinto del número del documento.",
             "title": "Codigo Seguridad"
           },
           "condicion": {
