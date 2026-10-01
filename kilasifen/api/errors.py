@@ -31,6 +31,7 @@ _ERROR_DESCRIPTIONS: dict[int, str] = {
     403: "The credential lacks the required scope.",
     404: "Resource not found or owned by another tenant.",
     409: "Resource conflict or state that does not allow the operation.",
+    413: "Request body exceeds the configured size limit; see `details.max_bytes`.",
     422: "Request validation failed; the request was not processed.",
     429: "Request limit exceeded; retry after `details.retry_after_seconds`.",
     503: "A dependency is temporarily unavailable; retry with backoff.",

@@ -68,7 +68,16 @@ def test_openapi_declares_the_error_envelope_for_client_errors(monkeypatch) -> N
         }
 
     factura = error_schemas("/v1/emitters/{emitter_id}/documents/facturas", "post")
-    assert set(factura) == {"401", "403", "404", "409", "422", "429", "503"}
+    assert set(factura) == {
+        "401",
+        "403",
+        "404",
+        "409",
+        "413",
+        "422",
+        "429",
+        "503",
+    }
     assert all(item == envelope_ref for item in factura.values())
 
     job = error_schemas("/v1/emitters/{emitter_id}/jobs/{job_id}", "get")

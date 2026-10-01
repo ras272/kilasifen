@@ -7,8 +7,9 @@ icon: CircleAlert
 Toda respuesta de error de la API usa el mismo envelope, incluidos los errores
 de validación del request, las rutas o métodos inexistentes y los fallos
 inesperados del servidor. El contrato OpenAPI lo declara como `ErrorEnvelope`
-en las respuestas `401`, `403`, `404`, `409`, `422`, `429` y `503` de cada
-ruta autenticada.
+en las respuestas `401`, `403`, `404`, `422`, `429` y `503` de cada ruta
+autenticada, y además en `409` y `413` en los grupos de rutas que modifican
+recursos.
 
 ```json
 {

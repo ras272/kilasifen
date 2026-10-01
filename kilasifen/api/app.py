@@ -62,9 +62,10 @@ logger = logging.getLogger(__name__)
 # Error envelopes declared in the OpenAPI contract for authenticated routers.
 # Every protected route authenticates (401), checks a scope (403), resolves an
 # owned emitter or resource (404), validates input (422) and goes through the
-# shared request limiter (429, or 503 when its backend is unavailable).
+# shared request limiter (429, or 503 when its backend is unavailable). Routers
+# with write routes also declare 409 and the body size limit (413).
 _READ_ONLY_ERROR_RESPONSES = error_responses(401, 403, 404, 422, 429, 503)
-_TENANT_ERROR_RESPONSES = error_responses(401, 403, 404, 409, 422, 429, 503)
+_TENANT_ERROR_RESPONSES = error_responses(401, 403, 404, 409, 413, 422, 429, 503)
 
 
 @asynccontextmanager
