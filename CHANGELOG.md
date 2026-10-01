@@ -169,9 +169,11 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   respuesta truncada) siguen siendo `SifenTimeoutError` o
   `SifenTransportError`. Un `requests.ConnectTimeout` ahora se informa con
   esta excepción y ya no como `SifenTimeoutError`.
-- Migración `20261001_09` (sobre `20260822_08`): `documents` suma
+- Migración `20261001_15` (sobre `20260822_08`): `documents` suma
   `sifen_approved_at`, `sifen_protocol`, `sifen_messages`,
-  `retryable_server_error` y `timbrado`.
+  `retryable_server_error` y `timbrado`. Las filas anteriores toman
+  `timbrado` del `dNumTim` de su XML firmado (o generado); solo un documento
+  que nunca se armó queda en NULL.
 - Estado de documento `inutilized` y webhooks
   `document.approved_with_observation`, `document.cancelled` y
   `document.inutilized` para las transiciones que antes se publicaban como
