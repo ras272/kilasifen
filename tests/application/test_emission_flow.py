@@ -1,5 +1,6 @@
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -16,6 +17,7 @@ from kilasifen.engine.sdk.errors import (
     SifenTimeoutError,
     SifenValidationError,
 )
+from kilasifen.engine.sdk.signer import clear_pkcs12_signer_cache, get_pkcs12_signer
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.models import CertificateModel, EmitterModel
@@ -107,6 +109,35 @@ def test_process_document_job_persists_emission_artifacts(tmp_path) -> None:
         assert job is not None
         assert job.status == "succeeded"
         assert job.error_snapshot is None
+
+
+def test_completed_document_job_drops_cached_signing_keys(tmp_path) -> None:
+    pfx = (Path(__file__).resolve().parents[1] / "test_cert.pfx").read_bytes()
+    clear_pkcs12_signer_cache()
+    cached_signer = get_pkcs12_signer(pfx, "test1234")
+    try:
+        with managed_test_database_url(
+            tmp_path=tmp_path,
+            name="emission_drops_signers",
+        ) as database_url:
+            _seed_emission_context(
+                database_url, EncryptedCertificateStore(_fernet_key())
+            )
+
+            payload = process_document_job(
+                job_id="job-1",
+                database_url=database_url,
+                encryption_key=_fernet_key(),
+                emission_engine=FakeEmissionEngine(
+                    error=SifenRejectionError("2500", "rechazo de prueba")
+                ),
+                current_date=date(2024, 4, 24),
+            )
+
+        assert payload["job_status"] == "failed"
+        assert get_pkcs12_signer(pfx, "test1234") is not cached_signer
+    finally:
+        clear_pkcs12_signer_cache()
 
 
 def test_queued_document_job_honors_inactive_emitter_before_secret_access(

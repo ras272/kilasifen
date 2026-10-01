@@ -189,11 +189,17 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
     (`documents.signed_xml` vacío): el worker ahora los marca `failed`
     (`fiscal_validation`). Si alguno pudo llegar al SIFEN (una caída entre el
     envío y el commit), consultar su CDC en el SIFEN antes de desplegar.
-- Activar un certificado (lo que reemplaza y desactiva los demás del emisor)
-  vacía la caché de firmadores PKCS12 del proceso
-  (`kilasifen.engine.sdk.signer.clear_pkcs12_signer_cache`), para que las
-  claves privadas descifradas no queden residentes en memoria. La caché es por
-  proceso: los workers conservan la suya hasta reiniciar o desalojarla.
+- Las claves privadas descifradas ya no quedan residentes en los workers: los
+  jobs de documentos y de eventos vacían la caché de firmadores PKCS12
+  (`kilasifen.engine.sdk.signer.clear_pkcs12_signer_cache`) al terminar,
+  también cuando fallan. Antes, un worker que no hace fork por job
+  (`CrossPlatformSimpleWorker`, el de Windows) conservaba la clave de un
+  certificado reemplazado o desactivado hasta el desalojo del LRU o un
+  reinicio. Con el `rq worker` por defecto la caché ya moría con cada work
+  horse. Cada job paga ahora una decodificación del PKCS12.
+- Como defensa en profundidad, activar un certificado también vacía la caché
+  del proceso de la API. Ese proceso no firma documentos ni eventos (los firman
+  los workers), y la limpieza ocurre antes del commit de la activación.
 - `SECURITY.md` deja un solo canal para reportar vulnerabilidades: el
   private vulnerability reporting de GitHub. Se quitó el correo del mantenedor
   anterior, que figuraba como segunda opción.

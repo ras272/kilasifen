@@ -101,9 +101,11 @@ class CertificateService:
         if activated is None:
             raise ConflictError("certificates.activation_failed")
         # Activation replaces and deactivates the emitter's other certificates.
-        # Drop the decrypted private keys this process keeps in the PKCS12
-        # signer cache so a retired key does not stay resident in memory. The
-        # cache is per process: worker processes keep their own until evicted.
+        # Defense in depth: drop the decrypted keys this process may hold in
+        # the per-process PKCS12 signer cache. Signing happens in the workers,
+        # which drop that cache at the end of every document and event job.
+        # This runs before the request transaction commits, so a signer in
+        # this same process could still cache the old key until it commits.
         self.evict_cached_signers()
         return activated
 

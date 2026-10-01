@@ -221,9 +221,11 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   la usan `BindingMixin.sign_xml` y `infrastructure/sifen/engine.py`.
   `TransmisionBase` y `infrastructure/sifen/typed_event_builder.py` piden el
   firmador directamente con `sdk.signer.get_pkcs12_signer`. La caché es por
-  proceso: `CertificateService.activate_certificate` la vacía
-  (`clear_pkcs12_signer_cache`) en el proceso que activa, pero los workers
-  conservan la suya hasta que el LRU la desaloje o el proceso reinicie.
+  proceso. Los jobs de documentos y eventos la vacían al terminar
+  (`clear_pkcs12_signer_cache` en `infrastructure/jobs/workers.py`), así que
+  ningún worker conserva claves descifradas entre jobs;
+  `CertificateService.activate_certificate` además la vacía en el proceso que
+  activa, como defensa en profundidad.
 - **Transporte.** `TransmisionBase` arma el cliente SOAP con mTLS; endpoints y
   ambientes salen de `transmision/config.py`. La plataforma envía el XML ya
   firmado con `SifenClient.enviar_de_xml` (que delega en
