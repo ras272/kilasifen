@@ -46,7 +46,7 @@ def test_transport_wraps_timeout(monkeypatch):
     from requests.exceptions import Timeout
 
     from kilasifen.engine.sdk.errors import SifenTimeoutError
-    from kilasifen.engine.transmissao.base import _create_transport
+    from kilasifen.engine.transmision.base import _create_transport
 
     transport = _create_transport("cert.pem", "key.pem")
 
@@ -65,7 +65,7 @@ def test_transport_wraps_http_error(monkeypatch):
     from requests.exceptions import HTTPError
 
     from kilasifen.engine.sdk.errors import SifenTransportError
-    from kilasifen.engine.transmissao.base import _create_transport
+    from kilasifen.engine.transmision.base import _create_transport
 
     transport = _create_transport("cert.pem", "key.pem")
 

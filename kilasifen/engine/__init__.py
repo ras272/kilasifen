@@ -2,13 +2,13 @@
 
 from kilasifen import __version__
 from kilasifen.engine.firma import sign_xml
-from kilasifen.engine.transmissao import (
+from kilasifen.engine.transmision import (
     ENDPOINTS,
     PRODUCCION,
     TEST,
     ConsultaSIFEN,
-    TransmissaoDE,
-    TransmissaoEvento,
+    TransmisionDE,
+    TransmisionEvento,
     get_endpoint,
 )
 
@@ -19,7 +19,7 @@ __all__ = [
     "TEST",
     "ENDPOINTS",
     "get_endpoint",
-    "TransmissaoDE",
+    "TransmisionDE",
     "ConsultaSIFEN",
-    "TransmissaoEvento",
+    "TransmisionEvento",
 ]

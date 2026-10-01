@@ -22,10 +22,10 @@ from kilasifen.engine.sdk.polling import (
     poll_dte_async_status,
     poll_lote_status,
 )
-from kilasifen.engine.transmissao import (
+from kilasifen.engine.transmision import (
     ConsultaSIFEN,
-    TransmissaoDE,
-    TransmissaoEvento,
+    TransmisionDE,
+    TransmisionEvento,
 )
 
 
@@ -41,7 +41,7 @@ class SifenClient:
         max_retries: int = 2,
         retry_backoff: float = 0.2,
     ):
-        self._de = TransmissaoDE(
+        self._de = TransmisionDE(
             ambiente=ambiente,
             pkcs12_data=pkcs12_data,
             pkcs12_password=pkcs12_password,
@@ -57,7 +57,7 @@ class SifenClient:
             max_retries=max_retries,
             retry_backoff=retry_backoff,
         )
-        self._evento = TransmissaoEvento(
+        self._evento = TransmisionEvento(
             ambiente=ambiente,
             pkcs12_data=pkcs12_data,
             pkcs12_password=pkcs12_password,
