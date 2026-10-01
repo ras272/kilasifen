@@ -235,10 +235,15 @@ try {
 }
 ```
 
-`KilaSifenError` represents a valid API error envelope.
-`KilaSifenConnectionError` represents timeouts, network failures or malformed
-responses. Both expose a `retryable` flag, but your retry policy must still use
-the same idempotency key for fiscal mutations.
+`KilaSifenError` represents a valid API error envelope, including request
+validation failures (`422 request.validation_failed`, with the offending fields
+in `details.errors`). `KilaSifenConnectionError` represents timeouts, network
+failures, malformed success bodies (`sdk.invalid_response`) and HTTP errors
+that arrive without the envelope (`sdk.http_error`, for example an HTML `502`
+from a proxy). `sdk.http_error` keeps `status` and the `X-Correlation-ID`
+header, and is retryable for `408`, `425`, `429` and `5xx`, like
+`KilaSifenError`. Both expose a `retryable` flag, but your retry policy must
+still use the same idempotency key for fiscal mutations.
 
 ## Verify webhooks
 

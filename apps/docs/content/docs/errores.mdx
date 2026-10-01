@@ -67,7 +67,9 @@ logs del ERP.
 
 Las respuestas `500` también traen `correlation_id` y el header
 `X-Correlation-ID`. Un proxy intermedio puede devolver `502` o `504` sin JSON:
-tratalos como un `5xx` reintentable.
+tratalos como un `5xx` reintentable. El SDK TypeScript los informa como
+`KilaSifenConnectionError` con `code: "sdk.http_error"`, el `status` original y
+`retryable: true`.
 
 Conservá `correlation_id` en logs del ERP y tickets de soporte. Nunca agregues la
 API key, contraseña del PFX, CSC, XML firmado completo ni datos de tarjeta.

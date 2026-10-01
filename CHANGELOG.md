@@ -130,6 +130,14 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   `{"detail": ...}` o como texto plano. El contrato OpenAPI declara
   `ErrorEnvelope` en las respuestas `401`, `403`, `404`, `409`, `422`, `429` y
   `503` de las rutas autenticadas y ya no publica `HTTPValidationError`.
+- SDK TypeScript: una respuesta de error sin envelope (por ejemplo el `502`
+  HTML de un proxy) ya no se reporta como
+  `KilaSifenConnectionError("sdk.invalid_response")` no reintentable, sino con
+  el código nuevo `sdk.http_error`, que conserva `status` y `correlationId` y
+  es reintentable para `408`, `425`, `429` y `5xx`. `KilaSifenConnectionError`
+  suma las propiedades `status` y `correlationId` (`null` cuando no aplican).
+  Los envelopes de error de cualquier `4xx`, incluido `422`, siguen llegando
+  como `KilaSifenError` con sus `details`.
 
 ### Security
 

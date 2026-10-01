@@ -398,6 +398,100 @@ describe("KilaSifen client", () => {
     });
   });
 
+  it("keeps field details from a 422 validation envelope", async () => {
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json(
+          {
+            error: {
+              code: "request.validation_failed",
+              message: "Request validation failed.",
+              category: "validation",
+              correlation_id: "corr_422",
+              details: {
+                errors: [
+                  { loc: ["body", "factura", "items"], message: "Field required", type: "missing" },
+                ],
+              },
+            },
+          },
+          { status: 422 },
+        ),
+      ),
+    });
+
+    const error = await client.facturas
+      .create("emitter_1", { factura: {} as never })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(KilaSifenError);
+    expect(error).toMatchObject({
+      status: 422,
+      code: "request.validation_failed",
+      category: "validation",
+      correlationId: "corr_422",
+      retryable: false,
+      details: {
+        errors: [{ loc: ["body", "factura", "items"], message: "Field required", type: "missing" }],
+      },
+    });
+  });
+
+  it("treats a non-JSON 5xx from a proxy as a retryable HTTP error", async () => {
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response("<html>Bad Gateway</html>", {
+          status: 502,
+          headers: { "Content-Type": "text/html", "X-Correlation-ID": "corr_502" },
+        }),
+      ),
+    });
+
+    const error = await client.documents.get("emitter_1", "doc_1").catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(KilaSifenConnectionError);
+    expect(error).toMatchObject({
+      code: "sdk.http_error",
+      status: 502,
+      correlationId: "corr_502",
+      retryable: true,
+    } satisfies Partial<KilaSifenConnectionError>);
+  });
+
+  it("does not retry a 4xx that lacks the error envelope", async () => {
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({ detail: "Not Found" }, { status: 404 }),
+      ),
+    });
+
+    await expect(client.documents.get("emitter_1", "doc_1")).rejects.toMatchObject({
+      code: "sdk.http_error",
+      status: 404,
+      correlationId: null,
+      retryable: false,
+    } satisfies Partial<KilaSifenConnectionError>);
+  });
+
+  it("rejects a non-JSON 2xx body as an invalid response", async () => {
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(new Response("ok", { status: 200 })),
+    });
+
+    await expect(client.documents.get("emitter_1", "doc_1")).rejects.toMatchObject({
+      code: "sdk.invalid_response",
+      retryable: false,
+    } satisfies Partial<KilaSifenConnectionError>);
+  });
+
   it("rejects malformed success envelopes", async () => {
     const client = new KilaSifen({
       apiKey: "sk_test_123",
