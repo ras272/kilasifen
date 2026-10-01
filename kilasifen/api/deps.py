@@ -216,6 +216,7 @@ async def enforce_request_limits(
                 message="Request limit exceeded. Retry later.",
                 category="rate_limit",
                 details={"retry_after_seconds": lease.retry_after_seconds},
+                headers={"Retry-After": str(lease.retry_after_seconds)},
             )
         yield
     finally:

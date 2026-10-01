@@ -141,6 +141,10 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   `{"detail": ...}` o como texto plano. El contrato OpenAPI declara
   `ErrorEnvelope` en las respuestas `401`, `403`, `404`, `409`, `422`, `429` y
   `503` de las rutas autenticadas y ya no publica `HTTPValidationError`.
+- El `429` del límite por credencial (`limits.rate_exceeded`,
+  `limits.concurrency_exceeded`) trae el header `Retry-After`, como ya lo
+  traía el límite previo a la autenticación, y el contrato OpenAPI lo declara
+  en todas las respuestas `429`.
 - SDK TypeScript: una respuesta de error sin envelope (por ejemplo el `502`
   HTML de un proxy) ya no se reporta como
   `KilaSifenConnectionError("sdk.invalid_response")` no reintentable, sino con

@@ -29,7 +29,7 @@ ruta autenticada.
 | `404` | Revisar el ID y el ownership del emisor. |
 | `409` | Resolver la colisión o reutilizar la intención original. |
 | `422` | Corregir el payload; no ingresó a la cola. |
-| `429` | Respetar el límite y aplicar backoff. |
+| `429` | Esperar los segundos del header `Retry-After` (también en `details.retry_after_seconds`) y aplicar backoff. |
 | `500` | Reintentar con backoff y reportar el `correlation_id` si persiste. |
 | `503` | Reintentar con backoff porque una dependencia no está disponible. |
 

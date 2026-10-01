@@ -77,6 +77,13 @@ def test_openapi_declares_the_error_envelope_for_client_errors(monkeypatch) -> N
     auth_check = error_schemas("/v1/auth/check", "get")
     assert set(auth_check) == {"401", "429", "503"}
 
+    for path, method in (
+        ("/v1/emitters/{emitter_id}/documents/facturas", "post"),
+        ("/v1/auth/check", "get"),
+    ):
+        rate_limited = schema["paths"][path][method]["responses"]["429"]
+        assert set(rate_limited["headers"]) == {"Retry-After"}
+
     assert {"ErrorEnvelope", "ErrorPayload"} <= set(schema["components"]["schemas"])
     assert "HTTPValidationError" not in schema["components"]["schemas"]
 

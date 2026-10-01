@@ -60,7 +60,8 @@ un webhook.
 ```
 
 `401` credencial; `403` scope; `404` inexistente/ajeno; `409` conflicto; `422`
-payload; `429` límite; `503` dependencia. Conservar `correlation_id`.
+payload; `429` límite (esperar `Retry-After` segundos); `503` dependencia.
+Conservar `correlation_id`.
 
 El mismo envelope cubre los errores del framework y el contrato OpenAPI lo
 declara (`ErrorEnvelope`) en cada ruta autenticada:

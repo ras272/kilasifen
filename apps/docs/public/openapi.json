@@ -3101,7 +3101,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -3218,7 +3226,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -3334,7 +3350,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -3390,7 +3414,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -3496,7 +3528,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -3603,7 +3643,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -3718,7 +3766,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -3825,7 +3881,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -3940,7 +4004,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -4056,7 +4128,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -4163,7 +4243,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -4357,7 +4445,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -4495,7 +4591,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -4633,7 +4737,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -4771,7 +4883,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -4909,7 +5029,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -5025,7 +5153,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -5151,7 +5287,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -5265,7 +5409,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -5381,7 +5533,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -5495,7 +5655,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -5613,7 +5781,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -5729,7 +5905,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -5836,7 +6020,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -5953,7 +6145,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -6059,7 +6259,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -6175,7 +6383,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -6292,7 +6508,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -6408,7 +6632,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -6515,7 +6747,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -6630,7 +6870,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -6746,7 +6994,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -6862,7 +7118,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -6969,7 +7233,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -7084,7 +7356,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -7210,7 +7490,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -7337,7 +7625,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -7454,7 +7750,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -7651,7 +7955,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {
@@ -7852,7 +8164,15 @@
                 }
               }
             },
-            "description": "Request limit exceeded; retry after `details.retry_after_seconds`."
+            "description": "Request limit exceeded; retry after `details.retry_after_seconds`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait before retrying the request.",
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
           },
           "503": {
             "content": {

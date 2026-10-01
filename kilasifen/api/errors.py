@@ -36,6 +36,16 @@ _ERROR_DESCRIPTIONS: dict[int, str] = {
     503: "A dependency is temporarily unavailable; retry with backoff.",
 }
 
+# Headers that accompany an error status in every response that declares it.
+_ERROR_HEADERS: dict[int, dict[str, dict[str, Any]]] = {
+    429: {
+        "Retry-After": {
+            "description": "Seconds to wait before retrying the request.",
+            "schema": {"type": "integer"},
+        }
+    },
+}
+
 # Framework HTTP errors mapped to stable codes. Unknown statuses fall back to
 # ``http.<status>`` so the envelope is always present.
 _HTTP_ERRORS: dict[int, tuple[str, str, str]] = {
@@ -93,6 +103,11 @@ def error_responses(*status_codes: int) -> dict[int | str, dict[str, Any]]:
         status_code: {
             "model": ErrorEnvelope,
             "description": _ERROR_DESCRIPTIONS[status_code],
+            **(
+                {"headers": _ERROR_HEADERS[status_code]}
+                if status_code in _ERROR_HEADERS
+                else {}
+            ),
         }
         for status_code in status_codes
     }
