@@ -59,11 +59,13 @@ EVENT_SUBMITTING_STATUS = "submitting"
 #: operator retry runs the reconciliation again.
 EVENT_RECONCILIATION_REQUIRED_STATUS = "reconciliation_required"
 
-#: Event states after which SIFEN may hold the event although no answer was
-#: recorded: the next attempt must not trust a plain resend.
+#: Event states after which SIFEN may hold the event although no final
+#: answer was recorded (``submitted``: an answer without result code): the
+#: next attempt must not trust a plain resend.
 EVENT_UNCERTAIN_STATUSES = frozenset(
     {
         EVENT_SUBMITTING_STATUS,
+        "submitted",
         "retry_pending",
         EVENT_RECONCILIATION_REQUIRED_STATUS,
     }

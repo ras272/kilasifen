@@ -368,6 +368,29 @@ def test_a_cancellation_already_registered_is_not_sent_again(
     assert document.last_query_response_raw == "<rEnviConsDeResponse/>"
 
 
+def test_an_answer_without_code_is_reconciled_before_a_resend(
+    context: _Context,
+) -> None:
+    unclassified = EventSubmissionOutcome(
+        response_raw="<rRetEnviEventoDe/>",
+        status="submitted",
+        result_code=None,
+        result_message=None,
+        protocol=None,
+    )
+    _run(context, _Gateway(outcome=unclassified))
+    event, _ = _load(context)
+    assert event.status == "submitted"
+
+    retry = _Gateway()
+    payload = _run(
+        context, retry, query=_Query(status=QUERY_FOUND, cancellation_registered=True)
+    )
+
+    assert retry.submitted_requests == []
+    assert payload["event_status"] == "approved"
+
+
 def test_an_unanswerable_cdc_leaves_the_cancellation_to_an_operator(
     context: _Context,
 ) -> None:
