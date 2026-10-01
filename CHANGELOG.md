@@ -152,6 +152,10 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   - documenta el orden de despliegue (Railway no ordena los deploys por push),
     `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` para API y worker (el default es
     0 s) y la URL `postgresql+psycopg://` armada con las variables `PG*`.
+- `.env.example` y el README explican qué proceso lee
+  `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE` (la API) y
+  `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS` (el worker) y qué se pierde si quedan
+  en su default `false`. El default del código no cambia.
 - `docs/operations`: rotación de la clave Fernet y ciclo de vida de jobs
   incluyen el outbox y los interruptores `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE` y
   `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS`.

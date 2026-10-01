@@ -99,6 +99,15 @@ def test_compose_redis_persists_queued_jobs_across_restarts() -> None:
     assert "  kila-redis-data:" in _block(compose, "volumes:").splitlines()
 
 
+@pytest.mark.parametrize(
+    "variable",
+    ("KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE", "KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS"),
+)
+def test_env_example_turns_on_the_emission_switches(variable: str) -> None:
+    # The code defaults both to false; the example is where people start.
+    assert f"{variable}=true" in _read(".env.example").splitlines()
+
+
 def test_ci_runs_on_pull_requests_to_any_branch() -> None:
     triggers = _block(_read(WORKFLOW), "on:")
 

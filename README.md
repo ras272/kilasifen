@@ -120,10 +120,11 @@ la configuración exige además `KILA_SIFEN_ENVIRONMENT=production` y
 `KILA_SIFEN_ENABLE_PRODUCTION=true`; si falta alguna, la configuración se
 rechaza al iniciar.
 
-`.env.example` deja en `true` `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE` y
-`KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS`. En el código ambos valen `false` por
-defecto: si no los definís, los documentos no se encolan solos y no se
-publican webhooks de documentos.
+`.env.example` deja en `true` `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE` (lo lee la
+API) y `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS` (lo lee el worker). Mantenelos
+así. En el código ambos valen `false` por defecto y ninguna validación los
+exige: sin el primero los documentos quedan en `queued` y nunca se emiten; sin
+el segundo no se publican webhooks de documentos.
 
 Con la clave de administración se crean el consumidor, su credencial y el
 emisor (ver `docs/INTEGRATION.md`). La carga de certificado y timbrado está en
