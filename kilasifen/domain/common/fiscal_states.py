@@ -3,10 +3,28 @@
 from __future__ import annotations
 
 DOCUMENT_APPROVED_STATUSES = frozenset({"approved", "approved_with_observation"})
+
+#: The exact request is persisted and a worker is sending it to SIFEN. A
+#: document still in this state after its worker died may or may not have
+#: reached SIFEN.
+DOCUMENT_SUBMITTING_STATUS = "submitting"
+
 DOCUMENT_PENDING_STATUSES = frozenset(
     {
         "queued",
         "processing",
+        DOCUMENT_SUBMITTING_STATUS,
+        "submitted",
+        "retry_pending",
+        "reconciliation_required",
+    }
+)
+
+#: Pending states in which SIFEN may already hold the document. They are
+#: resolved by querying the CDC, never by sending the document again.
+DOCUMENT_POSSIBLY_RECEIVED_STATUSES = frozenset(
+    {
+        DOCUMENT_SUBMITTING_STATUS,
         "submitted",
         "retry_pending",
         "reconciliation_required",

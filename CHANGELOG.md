@@ -142,6 +142,12 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   la transacción, restaurado después). Si se agota, la API responde `503`
   con el código `emitters.lock_timeout`, igual que `numbering.lock_timeout`
   en la numeración. En SQLite no cambia nada.
+- Plataforma: las consultas de documento y de RUC y el endpoint `reconcile`
+  ya no toman el bloqueo de la fila del emisor, así que no lo retienen
+  mientras esperan al SIFEN. Después de la respuesta, la reconciliación
+  relee el documento con `SELECT ... FOR UPDATE` y decide sobre el estado
+  confirmado: si un worker registró un resultado mientras tanto, ya no se
+  pisa.
 - La firma de un `rDE` ya no se invalida al armar el `rEnviDe` (defecto P3).
   `_build_enviar_de_request_xml` inserta el `rDE` como texto, con sus propias
   declaraciones de namespace y sus prefijos, en lugar de moverlo como árbol
