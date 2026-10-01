@@ -204,6 +204,9 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 - Documentos de contribución y de política de seguridad.
 - README, `CLAUDE.md` y la guía de API pública reescritos desde cero contra
   el código actual, con sus limitaciones conocidas.
+- `docs/examples/kila_api_emit_document.py` (ruta raw, sólo admin) lee el
+  `rDE` sin firmar de `KILA_RDE_XML_PATH` en lugar de enviar `<rDE/>`, que la
+  ruta ahora rechaza, y muestra el código de un `422`.
 
 ## [0.1.1] - 2026-04-22
 
