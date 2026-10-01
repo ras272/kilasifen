@@ -154,7 +154,9 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   UPDATE`) queda acotada a 5 segundos en PostgreSQL (`lock_timeout` local a
   la transacción, restaurado después). Si se agota, la API responde `503`
   con el código `emitters.lock_timeout`, igual que `numbering.lock_timeout`
-  en la numeración. En SQLite no cambia nada.
+  en la numeración. En los workers, el job vuelve a `retry_scheduled`
+  (categoría `emitter_busy`) 30 segundos después, sin gastar un intento ni
+  tocar el documento o el evento. En SQLite no cambia nada.
 - Plataforma: las consultas de documento y de RUC y el endpoint `reconcile`
   ya no toman el bloqueo de la fila del emisor, así que no lo retienen
   mientras esperan al SIFEN. Después de la respuesta, la reconciliación

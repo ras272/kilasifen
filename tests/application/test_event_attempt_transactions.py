@@ -16,6 +16,7 @@ from sqlalchemy import create_engine, update
 
 import kilasifen.application.events.service as event_service_module
 from kilasifen.application.events.service import EventService
+from kilasifen.domain.common.errors import ServiceUnavailableError
 from kilasifen.engine.sdk.errors import (
     SifenRequestNotSentError,
     SifenTimeoutError,
@@ -269,6 +270,30 @@ def test_an_approval_recorded_meanwhile_is_not_overwritten(
     assert payload["retryable"] is False
     assert event.status == "approved"
     assert job.status == "succeeded"
+
+
+def test_a_busy_emitter_reschedules_the_event_job(
+    context: _Context,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def busy_emitter(self, emitter_id: str) -> str | None:
+        del self, emitter_id
+        raise ServiceUnavailableError("emitters.lock_timeout")
+
+    monkeypatch.setattr(
+        SqlAlchemyEmitterRepository, "get_status_for_update", busy_emitter
+    )
+    gateway = _Gateway()
+
+    with pytest.raises(ServiceUnavailableError):
+        _run(context, gateway)
+
+    event, job = _load(context)
+    assert gateway.submitted_requests == []
+    assert event.status == "queued"
+    assert job.status == "retry_scheduled" and job.attempts == 0
+    assert job.error_snapshot["category"] == "emitter_busy"
+    assert _outbox_status(context) == "pending"
 
 
 def _run(context: _Context, gateway: _Gateway) -> dict:

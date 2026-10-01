@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy import create_engine, select, update
 from xsdata.exceptions import ParserError
 
+from kilasifen.domain.common.errors import ServiceUnavailableError
 from kilasifen.engine.sdk.errors import (
     SifenRequestNotSentError,
     SifenTimeoutError,
@@ -30,6 +31,9 @@ from kilasifen.infrastructure.db.models import (
 )
 from kilasifen.infrastructure.db.repositories.documents import (
     SqlAlchemyDocumentRepository,
+)
+from kilasifen.infrastructure.db.repositories.emitters import (
+    SqlAlchemyEmitterRepository,
 )
 from kilasifen.infrastructure.db.repositories.job_outbox import (
     SqlAlchemyJobOutboxRepository,
@@ -380,6 +384,33 @@ def test_the_persisted_request_is_exactly_the_one_sent(database_url: str) -> Non
     assert sent == [document.sifen_request_xml]
     assert "<dId>1</dId>" not in sent[0]
     assert f'<DE Id="{_PREPARED.cdc}"/><Signature/></rDE></xDE>' in sent[0]
+
+
+def test_a_busy_emitter_reschedules_the_job_without_spending_an_attempt(
+    database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def busy_emitter(self, emitter_id: str) -> str | None:
+        del self, emitter_id
+        raise ServiceUnavailableError("emitters.lock_timeout")
+
+    monkeypatch.setattr(
+        SqlAlchemyEmitterRepository, "get_status_for_update", busy_emitter
+    )
+    engine = FakeEmissionEngine()
+
+    with pytest.raises(ServiceUnavailableError):
+        _run(database_url, engine)
+
+    document, job = _load(database_url)
+    assert engine.calls == []
+    assert document.internal_status == "queued"
+    assert job.status == "retry_scheduled" and job.attempts == 0
+    assert job.error_snapshot == {
+        "category": "emitter_busy",
+        "message": "emitters.lock_timeout",
+    }
+    assert _outbox_status(database_url) == "pending"
 
 
 def _run(database_url: str, engine, *, query_gateway=None) -> dict[str, str]:

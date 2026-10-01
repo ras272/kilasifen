@@ -1,7 +1,8 @@
 """Worker entrypoints for background jobs."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import TypeVar
@@ -19,7 +20,7 @@ from kilasifen.application.jobs.service import JobService
 from kilasifen.application.sandbox.service import SandboxOutcomePolicy
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import Settings, get_settings
-from kilasifen.domain.common.errors import NotFoundError
+from kilasifen.domain.common.errors import NotFoundError, ServiceUnavailableError
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.jobs.models import Job
@@ -109,6 +110,8 @@ logger = logging.getLogger(__name__)
 _Row = TypeVar("_Row")
 
 _EVENT_RETRY_DELAYS = (30, 120, 600, 1800)
+#: Wait before trying again a job whose emitter row stayed locked.
+_EMITTER_BUSY_RETRY_SECONDS = 30
 
 
 def process_document_job(
@@ -148,7 +151,10 @@ def process_document_job(
         )
 
     try:
-        with session_scope(session_factory) as session:
+        with (
+            _retry_later_if_emitter_busy(session_factory, job_id),
+            session_scope(session_factory) as session,
+        ):
             claim = _claim_document_attempt(
                 session,
                 job_id=job_id,
@@ -606,7 +612,10 @@ def process_event_job(
         )
 
     try:
-        with session_scope(session_factory) as session:
+        with (
+            _retry_later_if_emitter_busy(session_factory, job_id),
+            session_scope(session_factory) as session,
+        ):
             claim = event_service(session).begin_queued_event_attempt(
                 job_id=job_id,
                 worker_correlation_id=worker_correlation_id,
@@ -721,6 +730,41 @@ def _now() -> datetime:
 def _retry_at(*, attempt_number: int, delays: tuple[int, ...]) -> datetime:
     retry_index = min(max(attempt_number - 1, 0), len(delays) - 1)
     return _now() + timedelta(seconds=delays[retry_index])
+
+
+@contextmanager
+def _retry_later_if_emitter_busy(session_factory, job_id: str) -> Iterator[None]:
+    """Put the job back in line when its emitter row stayed locked.
+
+    The first transaction of an attempt waits a bounded time for the emitter
+    lock (``emitters.lock_timeout``). Nothing was sent and no attempt was
+    spent, so the job is staged again for a little later and the error is
+    re-raised for RQ to report.
+    """
+
+    try:
+        yield
+    except ServiceUnavailableError:
+        logger.warning("worker.job.emitter_busy", extra={"job_id": job_id})
+        with session_scope(session_factory) as session:
+            jobs = SqlAlchemyJobRepository(session)
+            job = jobs.get_for_update(job_id)
+            if job is not None and job.status in {"queued", "retry_scheduled"}:
+                job = jobs.save(
+                    replace(
+                        job,
+                        status="retry_scheduled",
+                        scheduled_at=_now()
+                        + timedelta(seconds=_EMITTER_BUSY_RETRY_SECONDS),
+                        error_snapshot={
+                            "category": "emitter_busy",
+                            "message": "emitters.lock_timeout",
+                        },
+                        updated_at=_now(),
+                    )
+                )
+                _stage_retry_outbox(session, job)
+        raise
 
 
 def _stage_retry_outbox(session, job: Job) -> None:
