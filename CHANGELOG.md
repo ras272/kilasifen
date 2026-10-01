@@ -131,6 +131,14 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   el volumen `kila-redis-data`. Antes un reinicio del contenedor perdía los
   jobs encolados, los leases y el heartbeat del outbox. `docker compose down -v`
   borra también este volumen.
+- CI: el job `platform-tests` corre también `tests/domain`, que ningún job
+  ejecutaba. `tests/test_deployment_artifacts.py` falla si una carpeta de
+  pruebas queda fuera de ese job.
+- CI: el workflow corre en los pull requests contra cualquier rama, no solo
+  contra `main`. Se mantienen el push a `main` y la corrida semanal.
+- CI: el job `docs-site` instala pnpm con `pnpm/action-setup` antes de
+  `actions/setup-node`. Con `cache: pnpm`, `setup-node` necesita pnpm ya
+  instalado, y el paso `corepack enable` corría después.
 
 ### Security
 

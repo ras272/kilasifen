@@ -3,8 +3,7 @@ name: Tests
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  pull_request: # any base branch
   schedule:
     - cron: "0 6 * * 1" # Every Monday at 06:00 UTC
 
@@ -89,7 +88,7 @@ jobs:
 
       - name: Run platform tests
         run: |
-          uv run pytest tests/api tests/application tests/infrastructure -v --tb=short
+          uv run pytest tests/api tests/application tests/domain tests/infrastructure -v --tb=short
 
       - name: Migration smoke check
         run: |
@@ -188,15 +187,19 @@ jobs:
       - name: Check committed OpenAPI contract
         run: uv run python scripts/export_openapi.py --check
 
+      # setup-node's pnpm cache needs pnpm installed beforehand.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.4
+          run_install: false
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: pnpm
           cache-dependency-path: apps/docs/pnpm-lock.yaml
-
-      - name: Enable pnpm
-        run: corepack enable
 
       - name: Install docs dependencies
         working-directory: apps/docs

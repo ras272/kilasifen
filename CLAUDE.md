@@ -385,6 +385,9 @@ Proyecto:
   timbrado con aspecto de datos reales de un contribuyente; el certificado
   efímero de `conftest.py` usa ese mismo RUC. Hay que pasarlos a datos
   ficticios.
-- El workflow `.github/workflows/tests.yml` (push/PR a `main` y semanal) nunca
-  completó una corrida por fallas de arranque a nivel de cuenta. No afirmar
-  que el CI está en verde: validar localmente.
+- El workflow `.github/workflows/tests.yml` (push a `main`, PR contra
+  cualquier rama y semanal) nunca completó una corrida por fallas de arranque
+  a nivel de cuenta. No afirmar que el CI está en verde: validar localmente.
+  El job `platform-tests` corre cada carpeta de `tests/` con pruebas;
+  `tests/test_deployment_artifacts.py` falla si se agrega una carpeta nueva
+  sin sumarla a ese job.
