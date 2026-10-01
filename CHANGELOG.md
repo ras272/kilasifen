@@ -147,8 +147,9 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
     `Dockerfile` y no expande `$KILA_SIFEN_REDIS_URL`. La API deja el start
     command vacío y usa el `CMD` del `Dockerfile`, que ya expande `$PORT`;
   - el healthcheck de Railway pasa de `/v1/ready` a `/v1/health`. Railway lo
-    consulta sólo al desplegar, y con `/v1/ready` el primer deploy de la API
-    no terminaba nunca: worker y outbox se crean después;
+    consulta sólo al desplegar y lo da por fallido a los 300 s; con
+    `/v1/ready` el primer deploy de la API fallaba siempre, porque worker y
+    outbox se crean después;
   - documenta el orden de despliegue (Railway no ordena los deploys por push),
     `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` para API y worker (el default es
     0 s) y la URL `postgresql+psycopg://` armada con las variables `PG*`.
