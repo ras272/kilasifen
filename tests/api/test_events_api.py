@@ -651,6 +651,70 @@ def test_documents_of_another_timbrado_do_not_collide(client: TestClient) -> Non
     assert response.status_code == 201
 
 
+def _save_legacy_document(document_id: str, numero: int, status: str) -> None:
+    """A document signed under timbrado 80024135 before ``timbrado`` existed."""
+
+    signed = (
+        "<rDE><DE><gTimb><dNumTim>80024135</dNumTim></gTimb></DE>"
+        "<Signature/></rDE>"
+    )
+    with session_scope(_session_factory()) as session:
+        SqlAlchemyDocumentRepository(session).save(
+            replace(
+                _document(
+                    id=document_id,
+                    emitter_id="emitter-1",
+                    document_type="factura",
+                    cdc=None,
+                    sifen_status=status,
+                    internal_status=status,
+                    establishment="002",
+                    point="001",
+                    document_number=numero,
+                    updated_at=_now() - timedelta(days=1),
+                ),
+                signed_xml=signed,
+            )
+        )
+
+
+def test_a_legacy_document_counts_only_for_its_own_timbrado(
+    client: TestClient,
+    published_webhooks: list[dict],
+) -> None:
+    """1109 applies per timbrado (MT v150 §12.4 C007 p. 161).
+
+    Without a recorded timbrado, the ``dNumTim`` of the signed XML decides:
+    inutilizing the same number of another timbrado neither collides with
+    the document nor marks it ``inutilized``.
+    """
+
+    _save_legacy_document("doc-legacy-approved", 20, "approved")
+    _save_legacy_document("doc-legacy-rejected", 21, "rejected")
+
+    response = _inutilize(
+        client, timbrado="80024136", numero_desde=20, numero_hasta=21
+    )
+
+    assert response.status_code == 201
+    payload = response.json()["data"]["event"]["input_payload"]["typed_contract"][
+        "payload"
+    ]
+    assert payload["document_ids"] == []
+    with session_scope(_session_factory()) as session:
+        documents = SqlAlchemyDocumentRepository(session)
+        assert documents.get("doc-legacy-approved").internal_status == "approved"
+        assert documents.get("doc-legacy-rejected").internal_status == "rejected"
+
+    # Under its own timbrado the rejected number is inutilized as usual.
+    response = _inutilize(client, numero_desde=21, numero_hasta=21)
+
+    assert response.status_code == 201
+    with session_scope(_session_factory()) as session:
+        document = SqlAlchemyDocumentRepository(session).get("doc-legacy-rejected")
+    assert document.internal_status == "inutilized"
+
+
 def test_the_timbrado_must_belong_to_the_emitter(client: TestClient) -> None:
     response = _inutilize(client, timbrado="12345678")
 

@@ -49,6 +49,7 @@ from kilasifen.infrastructure.sifen.de_facts import (
     PARAGUAY_TZ,
     approval_lower_bound,
     paraguay_today,
+    read_de_facts,
 )
 from kilasifen.infrastructure.sifen.event import EventSubmissionGateway
 from kilasifen.infrastructure.sifen.query import (
@@ -289,15 +290,19 @@ class EventService:
         if size > 1000:
             raise UnprocessableEntityError("events.inutilize.range_too_large")
 
-        numbered = self.document_repository.list_in_number_range(
-            emitter_id=emitter_id,
-            document_type=normalized_document_type,
-            establishment=normalized_est,
-            point=normalized_point,
-            number_from=numero_desde,
-            number_to=numero_hasta,
-            timbrado=normalized_timbrado,
-        )
+        numbered = [
+            document
+            for document in self.document_repository.list_in_number_range(
+                emitter_id=emitter_id,
+                document_type=normalized_document_type,
+                establishment=normalized_est,
+                point=normalized_point,
+                number_from=numero_desde,
+                number_to=numero_hasta,
+                timbrado=normalized_timbrado,
+            )
+            if _numbered_under(document, normalized_timbrado)
+        ]
         blocking = [
             document for document in numbered if not self._is_inutilizable(document)
         ]
@@ -864,7 +869,8 @@ class EventService:
 
         Only those still inutilizable: one sent again meanwhile is left to
         its job and logged, since SIFEN will reject it with 1109 (MT v150
-        §12.4 C007 p. 161).
+        §12.4 C007 p. 161). 1109 applies per timbrado, so a document signed
+        under another timbrado is never marked (:func:`_numbered_under`).
         """
 
         marked: list[Document] = []
@@ -877,6 +883,8 @@ class EventService:
             number_to=range_item.numero_hasta,
             timbrado=range_item.timbrado,
         ):
+            if not _numbered_under(document, range_item.timbrado):
+                continue
             if not self._is_inutilizable(document):
                 logger.warning(
                     "events.inutilize.document_changed",
@@ -1134,6 +1142,21 @@ def _cancellation_may_register(event: Event) -> bool:
     if event.status in _PENDING_EVENT_STATUSES:
         return True
     return event.status == "failed" and bool(event.sifen_request_xml)
+
+
+def _numbered_under(document: Document, timbrado: str) -> bool:
+    """Whether the number of ``document`` belongs to ``timbrado``.
+
+    A number is inutilized per timbrado, establishment and point (1109, MT
+    v150 §12.4 C007 p. 161). Without a recorded timbrado the ``dNumTim``
+    (C004) of its XML decides; a document never built carries none and
+    counts for the range the operator inutilized.
+    """
+
+    if document.timbrado is not None:
+        return document.timbrado == timbrado
+    found = read_de_facts(document.signed_xml or document.generated_xml).timbrado
+    return found is None or found == timbrado
 
 
 def _blocks_parent_cancellation(child: Document) -> bool:
