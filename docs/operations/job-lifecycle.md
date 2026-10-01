@@ -34,8 +34,11 @@ Jobs are the operational ledger for retries, observability, and support.
      `reconcile` endpoint) is never moved; a non-final outcome is dropped if
      a newer attempt already claimed the job.
    If the emitter lock is not granted within 5 s, no attempt is spent: the
-   job goes back to `retry_scheduled` (`emitter_busy`) for 30 s later and the
-   RQ job reports `emitters.lock_timeout`. Event jobs behave the same.
+   job keeps its status (`queued` or `retry_scheduled`), records the
+   `emitter_busy` category and is dispatched again 30 s later, and the RQ job
+   reports `emitters.lock_timeout`. Keeping `queued` matters for an operator
+   retry of a `failed` document or event, which only a `queued` job reopens.
+   Event jobs behave the same.
 4. Outcomes:
    - approved/accepted => `job.succeeded`
    - request provably not sent (`SifenRequestNotSentError`) => document back

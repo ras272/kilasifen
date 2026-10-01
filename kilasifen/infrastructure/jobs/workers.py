@@ -112,6 +112,8 @@ _Row = TypeVar("_Row")
 _EVENT_RETRY_DELAYS = (30, 120, 600, 1800)
 #: Wait before trying again a job whose emitter row stayed locked.
 _EMITTER_BUSY_RETRY_SECONDS = 30
+#: Job states that wait for a worker; the outbox dispatches only these.
+_WAITING_JOB_STATUSES = frozenset({"queued", "retry_scheduled"})
 
 
 def process_document_job(
@@ -738,8 +740,11 @@ def _retry_later_if_emitter_busy(session_factory, job_id: str) -> Iterator[None]
 
     The first transaction of an attempt waits a bounded time for the emitter
     lock (``emitters.lock_timeout``). Nothing was sent and no attempt was
-    spent, so the job is staged again for a little later and the error is
-    re-raised for RQ to report.
+    spent, so only the schedule moves: the job keeps its status and is staged
+    again for a little later, and the error is re-raised for RQ to report.
+
+    Keeping the status matters: a ``queued`` job on a ``failed`` document or
+    event is an operator retry, and only a ``queued`` job reopens one.
     """
 
     try:
@@ -749,11 +754,10 @@ def _retry_later_if_emitter_busy(session_factory, job_id: str) -> Iterator[None]
         with session_scope(session_factory) as session:
             jobs = SqlAlchemyJobRepository(session)
             job = jobs.get_for_update(job_id)
-            if job is not None and job.status in {"queued", "retry_scheduled"}:
+            if job is not None and job.status in _WAITING_JOB_STATUSES:
                 job = jobs.save(
                     replace(
                         job,
-                        status="retry_scheduled",
                         scheduled_at=_now()
                         + timedelta(seconds=_EMITTER_BUSY_RETRY_SECONDS),
                         error_snapshot={
@@ -763,7 +767,7 @@ def _retry_later_if_emitter_busy(session_factory, job_id: str) -> Iterator[None]
                         updated_at=_now(),
                     )
                 )
-                _stage_retry_outbox(session, job)
+                _stage_dispatch(session, job)
         raise
 
 
@@ -772,6 +776,12 @@ def _stage_retry_outbox(session, job: Job) -> None:
 
     if job.status != "retry_scheduled" or job.scheduled_at is None:
         raise RuntimeError("Retry jobs require a durable schedule")
+    _stage_dispatch(session, job)
+
+
+def _stage_dispatch(session, job: Job) -> None:
+    """Stage ``job`` in the outbox for dispatch at its ``scheduled_at``."""
+
     queue = SqlAlchemyJobOutboxQueue(SqlAlchemyJobOutboxRepository(session))
     if job.job_type == "document.emit":
         queue.enqueue_document_emit(job)

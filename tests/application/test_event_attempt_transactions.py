@@ -21,6 +21,7 @@ from kilasifen.engine.sdk.errors import (
     SifenRequestNotSentError,
     SifenTimeoutError,
     SifenUnexpectedResponseError,
+    SifenValidationError,
 )
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
@@ -74,6 +75,7 @@ class _Gateway:
     """Event gateway double; every prepare builds a request with a new dId."""
 
     outcome: EventSubmissionOutcome = field(default_factory=lambda: _APPROVED)
+    prepare_error: Exception | None = None
     submit_error: BaseException | None = None
     during_submit: Callable[[], None] | None = None
     prepared_requests: list[str] = field(default_factory=list)
@@ -81,6 +83,8 @@ class _Gateway:
 
     def prepare_event(self, *, event, **kwargs) -> PreparedEventSubmission:
         del kwargs
+        if self.prepare_error is not None:
+            raise self.prepare_error
         request = f"<rEnviEventoDe><dId>{len(self.prepared_requests) + 1}</dId>"
         request += f"<dEvReg>{event.generated_xml}</dEvReg></rEnviEventoDe>"
         self.prepared_requests.append(request)
@@ -276,12 +280,8 @@ def test_a_busy_emitter_reschedules_the_event_job(
     context: _Context,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def busy_emitter(self, emitter_id: str) -> str | None:
-        del self, emitter_id
-        raise ServiceUnavailableError("emitters.lock_timeout")
-
     monkeypatch.setattr(
-        SqlAlchemyEmitterRepository, "get_status_for_update", busy_emitter
+        SqlAlchemyEmitterRepository, "get_status_for_update", _busy_emitter
     )
     gateway = _Gateway()
 
@@ -291,9 +291,42 @@ def test_a_busy_emitter_reschedules_the_event_job(
     event, job = _load(context)
     assert gateway.submitted_requests == []
     assert event.status == "queued"
-    assert job.status == "retry_scheduled" and job.attempts == 0
+    assert job.status == "queued" and job.attempts == 0
     assert job.error_snapshot["category"] == "emitter_busy"
     assert _outbox_status(context) == "pending"
+
+
+def test_an_operator_retry_of_a_failed_event_survives_a_busy_emitter(
+    context: _Context,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    refused = _Gateway(prepare_error=SifenValidationError("firma invalida"))
+    assert _run(context, refused)["event_status"] == "failed"
+    _requeue(context)
+
+    with monkeypatch.context() as busy:
+        busy.setattr(
+            SqlAlchemyEmitterRepository, "get_status_for_update", _busy_emitter
+        )
+        with pytest.raises(ServiceUnavailableError):
+            _run(context, _Gateway())
+
+    event, job = _load(context)
+    assert event.status == "failed"
+    assert job.status == "queued"
+    assert _outbox_status(context) == "pending"
+
+    gateway = _Gateway()
+    payload = _run(context, gateway)
+
+    assert len(gateway.submitted_requests) == 1
+    assert payload["event_status"] == "approved"
+    assert payload["job_status"] == "succeeded"
+
+
+def _busy_emitter(self, emitter_id: str) -> str | None:
+    del self, emitter_id
+    raise ServiceUnavailableError("emitters.lock_timeout")
 
 
 def _run(context: _Context, gateway: _Gateway) -> dict:
@@ -315,6 +348,17 @@ def _load(context: _Context):
         job = SqlAlchemyJobRepository(session).get(context.job_id)
     assert event is not None and job is not None
     return event, job
+
+
+def _requeue(context: _Context) -> None:
+    """What an operator retry does to the job (``AdminService.retry_job``)."""
+
+    with _session(context) as session:
+        jobs = SqlAlchemyJobRepository(session)
+        job = jobs.get(context.job_id)
+        jobs.save(
+            replace(job, status="queued", finished_at=None, error_snapshot=None)
+        )
 
 
 def _outbox_status(context: _Context) -> str | None:

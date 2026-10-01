@@ -22,6 +22,7 @@ from kilasifen.engine.sdk.errors import (
     SifenTimeoutError,
     SifenTransportClosedError,
     SifenUnexpectedResponseError,
+    SifenValidationError,
 )
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.models import (
@@ -390,14 +391,11 @@ def test_a_busy_emitter_reschedules_the_job_without_spending_an_attempt(
     database_url: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def busy_emitter(self, emitter_id: str) -> str | None:
-        del self, emitter_id
-        raise ServiceUnavailableError("emitters.lock_timeout")
-
     monkeypatch.setattr(
-        SqlAlchemyEmitterRepository, "get_status_for_update", busy_emitter
+        SqlAlchemyEmitterRepository, "get_status_for_update", _busy_emitter
     )
     engine = FakeEmissionEngine()
+    before = _now()
 
     with pytest.raises(ServiceUnavailableError):
         _run(database_url, engine)
@@ -405,12 +403,46 @@ def test_a_busy_emitter_reschedules_the_job_without_spending_an_attempt(
     document, job = _load(database_url)
     assert engine.calls == []
     assert document.internal_status == "queued"
-    assert job.status == "retry_scheduled" and job.attempts == 0
+    assert job.status == "queued" and job.attempts == 0
+    assert job.scheduled_at.replace(tzinfo=timezone.utc) > before
     assert job.error_snapshot == {
         "category": "emitter_busy",
         "message": "emitters.lock_timeout",
     }
     assert _outbox_status(database_url) == "pending"
+
+
+def test_an_operator_retry_of_a_failed_document_survives_a_busy_emitter(
+    database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    refused = FakeEmissionEngine(prepare_error=SifenValidationError("timbrado"))
+    assert _run(database_url, refused)["document_status"] == "failed"
+    _requeue(database_url)
+
+    with monkeypatch.context() as busy:
+        busy.setattr(
+            SqlAlchemyEmitterRepository, "get_status_for_update", _busy_emitter
+        )
+        with pytest.raises(ServiceUnavailableError):
+            _run(database_url, FakeEmissionEngine())
+
+    document, job = _load(database_url)
+    assert document.internal_status == "failed"
+    assert job.status == "queued"
+    assert _outbox_status(database_url) == "pending"
+
+    engine = FakeEmissionEngine(outcome=_APPROVED)
+    payload = _run(database_url, engine)
+
+    assert engine.calls == ["prepare", "submit"]
+    assert payload["document_status"] == "approved"
+    assert payload["job_status"] == "succeeded"
+
+
+def _busy_emitter(self, emitter_id: str) -> str | None:
+    del self, emitter_id
+    raise ServiceUnavailableError("emitters.lock_timeout")
 
 
 def _run(database_url: str, engine, *, query_gateway=None) -> dict[str, str]:
