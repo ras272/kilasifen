@@ -10,7 +10,6 @@ from kilasifen.api.deps import (
     require_emitter_read,
     require_fiscal_write,
 )
-from kilasifen.api.errors import ApiError
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.documents import (
     DocumentCreateRequest,
@@ -22,11 +21,9 @@ from kilasifen.api.schemas.documents import (
 from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.application.documents.service import DocumentService
 from kilasifen.application.jobs.service import JobService
+from kilasifen.domain.documents.models import Document
+from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.sandbox import SandboxOutcome
-from kilasifen.infrastructure.sifen.raw_xml_policy import (
-    RawDocumentXmlError,
-    validate_raw_document_payload,
-)
 
 router = APIRouter(tags=["documents"])
 
@@ -67,10 +64,7 @@ def create_document(
     _principal=Depends(get_admin_principal),
     service: DocumentService = Depends(get_document_service),
 ) -> JSONResponse:
-    _require_signable_raw_payload(payload.payload)
-    return _create_document_response(
-        request=request,
-        service=service,
+    document, job, replayed = service.create_raw_document(
         emitter_id=emitter_id,
         external_id=payload.external_id,
         idempotency_key=payload.idempotency_key,
@@ -78,6 +72,7 @@ def create_document(
         payload_snapshot=payload.payload,
         sandbox_outcome=sandbox_outcome,
     )
+    return _document_created_response(request, document, job, replayed)
 
 
 @router.post(
@@ -300,21 +295,6 @@ def get_document_kude_data(
     )
 
 
-def _require_signable_raw_payload(payload: dict | None) -> None:
-    """Reject raw XML that the platform must not sign or transmit."""
-
-    try:
-        validate_raw_document_payload(payload)
-    except RawDocumentXmlError as exc:
-        raise ApiError(
-            status_code=422,
-            code=exc.code,
-            message="Raw document XML was rejected.",
-            category="validation",
-            details={"errors": list(exc.errors)} if exc.errors else None,
-        ) from exc
-
-
 def _build_typed_payload(contract: str, typed_payload: dict) -> dict:
     payload = {
         "generated_xml": None,
@@ -347,6 +327,15 @@ def _create_document_response(
         payload_snapshot=payload_snapshot,
         sandbox_outcome=sandbox_outcome,
     )
+    return _document_created_response(request, document, job, replayed)
+
+
+def _document_created_response(
+    request: Request,
+    document: Document,
+    job: Job,
+    replayed: bool,
+) -> JSONResponse:
     envelope = SuccessEnvelope(
         data={
             "document": DocumentResponse.model_validate(document).model_dump(

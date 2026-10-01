@@ -11,6 +11,7 @@ from copy import deepcopy
 
 from lxml import etree
 
+from kilasifen.domain.common.errors import UnprocessableEntityError
 from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.engine.sdk.validation import validate_xml
 
@@ -88,6 +89,22 @@ def validate_raw_document_payload(payload: dict | None) -> None:
                 generated_xml=generated_xml,
                 requested_doc_id=section.get("doc_id"),
             )
+
+
+def require_signable_raw_payload(payload: dict | None) -> None:
+    """Apply :func:`validate_raw_document_payload` for the document service.
+
+    Raises ``UnprocessableEntityError`` with the policy code and, for schema
+    errors, the validator messages in ``details["errors"]``.
+    """
+
+    try:
+        validate_raw_document_payload(payload)
+    except RawDocumentXmlError as exc:
+        raise UnprocessableEntityError(
+            exc.code,
+            details={"errors": list(exc.errors)} if exc.errors else None,
+        ) from exc
 
 
 def signable_doc_id(*, generated_xml: object, requested_doc_id: object) -> str:

@@ -245,8 +245,10 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   errores esperables (la `Signature` todavía ausente y un defecto conocido del
   XSD en `dEntCont`). No se emite a través del binding `RDe`, que tiene el
   layout v141 (ver «Esquemas XSD»). El `generated_xml` del endpoint raw
-  deprecado pasa por `infrastructure/sifen/raw_xml_policy.py` al crearse y
-  otra vez en el mapper antes de firmar: el `rDE` sólo puede tener
+  deprecado pasa por `infrastructure/sifen/raw_xml_policy.py` al crearse
+  (`DocumentService.create_raw_document`, con la política inyectada desde
+  `api/deps.py` y aplicada después de la búsqueda idempotente)
+  y otra vez en el mapper antes de firmar: el `rDE` sólo puede tener
   `dVerFor`, un `DE`, una `Signature` opcional y `gCamFuFD`; se valida una
   copia con una `Signature` de relleno, sin tolerar su ausencia, y la firma
   referencia siempre el `Id` de ese `DE`. Un `signed_xml` enviado por el

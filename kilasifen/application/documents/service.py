@@ -37,6 +37,14 @@ class DocumentJobQueue(Protocol):
         """Enqueue one document emission job."""
 
 
+class RawDocumentPayloadPolicy(Protocol):
+    """Gate for payloads of the deprecated raw document route."""
+
+    def __call__(self, payload_snapshot: dict | None) -> None:
+        """Raise ``UnprocessableEntityError`` when the platform must not sign
+        or transmit the XML the payload carries."""
+
+
 class DocumentService:
     """Use cases for documents."""
 
@@ -51,6 +59,7 @@ class DocumentService:
         database_url: str | None = None,
         encryption_key: str | None = None,
         sandbox_policy: SandboxOutcomePolicy | None = None,
+        raw_payload_policy: RawDocumentPayloadPolicy | None = None,
     ):
         self.document_repository = document_repository
         self.emitter_repository = emitter_repository
@@ -60,6 +69,7 @@ class DocumentService:
         self.database_url = database_url
         self.encryption_key = encryption_key
         self.sandbox_policy = sandbox_policy or SandboxOutcomePolicy("development")
+        self.raw_payload_policy = raw_payload_policy
 
     def create_document(
         self,
@@ -70,6 +80,57 @@ class DocumentService:
         document_type: str,
         payload_snapshot: dict | None,
         sandbox_outcome: SandboxOutcome | None = None,
+    ) -> tuple[Document, Job, bool]:
+        return self._create_document(
+            emitter_id=emitter_id,
+            external_id=external_id,
+            idempotency_key=idempotency_key,
+            document_type=document_type,
+            payload_snapshot=payload_snapshot,
+            sandbox_outcome=sandbox_outcome,
+        )
+
+    def create_raw_document(
+        self,
+        *,
+        emitter_id: str,
+        external_id: str | None,
+        idempotency_key: str | None,
+        document_type: str,
+        payload_snapshot: dict | None,
+        sandbox_outcome: SandboxOutcome | None = None,
+    ) -> tuple[Document, Job, bool]:
+        """Create a document from the deprecated raw route.
+
+        ``raw_payload_policy`` only applies to documents this call would
+        create: a retry that resolves to an existing document (same
+        idempotency key, or a taken ``external_id``) answers exactly as
+        before, even when that document predates the policy. Without a
+        configured policy the route fails closed.
+        """
+
+        if self.raw_payload_policy is None:
+            raise RuntimeError("DocumentService has no raw_payload_policy.")
+        return self._create_document(
+            emitter_id=emitter_id,
+            external_id=external_id,
+            idempotency_key=idempotency_key,
+            document_type=document_type,
+            payload_snapshot=payload_snapshot,
+            sandbox_outcome=sandbox_outcome,
+            new_payload_policy=self.raw_payload_policy,
+        )
+
+    def _create_document(
+        self,
+        *,
+        emitter_id: str,
+        external_id: str | None,
+        idempotency_key: str | None,
+        document_type: str,
+        payload_snapshot: dict | None,
+        sandbox_outcome: SandboxOutcome | None,
+        new_payload_policy: RawDocumentPayloadPolicy | None = None,
     ) -> tuple[Document, Job, bool]:
         payload_snapshot = self.sandbox_policy.apply(
             payload_snapshot,
@@ -106,6 +167,9 @@ class DocumentService:
             )
             if existing_external is not None:
                 raise ConflictError("documents.external_id_conflict")
+
+        if new_payload_policy is not None:
+            new_payload_policy(payload_snapshot)
 
         (
             normalized_payload_snapshot,

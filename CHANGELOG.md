@@ -180,7 +180,10 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   distinto se rechaza con `documents.raw.doc_id_mismatch` y, si falta, se toma
   del `DE`. El worker vuelve a aplicar la misma política antes de firmar e
   ignora cualquier `signed_xml` del payload: sólo reutiliza el XML que la propia
-  plataforma firmó en un intento anterior.
+  plataforma firmó en un intento anterior. La política se aplica después de la
+  búsqueda por `Idempotency-Key` y `external_id`, así que el reintento de un
+  documento raw creado antes de este cambio sigue recibiendo su replay `200`
+  (o el mismo `409`) en lugar de un `422`.
   - Antes de desplegar, listar los documentos raw `queued` o `processing` cuyo
     `payload_snapshot` traiga `signed_xml` y ninguno firmado por la plataforma
     (`documents.signed_xml` vacío): el worker ahora los marca `failed`
