@@ -62,6 +62,21 @@ un webhook.
 `401` credencial; `403` scope; `404` inexistente/ajeno; `409` conflicto; `422`
 payload; `429` límite; `503` dependencia. Conservar `correlation_id`.
 
+El mismo envelope cubre los errores del framework y el contrato OpenAPI lo
+declara (`ErrorEnvelope`) en cada ruta autenticada:
+
+- `422 request.validation_failed`: body, query o path inválidos. Los campos van
+  en `details.errors` como `{loc, message, type}`; el valor enviado nunca se
+  devuelve.
+- `404 request.route_not_found` y `405 request.method_not_allowed` (con header
+  `Allow`): ruta o método inexistente.
+- `413 request.body_too_large`: body por encima del límite configurado.
+- `500 server.internal_error`: fallo inesperado, con `correlation_id` y header
+  `X-Correlation-ID`, sin detalle interno. Reintentar con backoff.
+
+Un `502`/`504` de un proxy puede llegar sin JSON: tratarlo como `5xx`
+reintentable.
+
 ## Crear factura
 
 ```http

@@ -120,6 +120,16 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   `tests/test_logging.py` y `tests/test_observability.py` importan la
   plataforma, que usa `datetime.UTC` en 18 módulos y en la práctica necesita
   Python 3.11 o posterior.
+- La API responde con el envelope de error documentado (`code`, `category`,
+  `message`, `correlation_id`, `details`) también ante errores del framework:
+  validación del request (`422 request.validation_failed`, con los campos en
+  `details.errors` y sin devolver el valor enviado), ruta inexistente
+  (`404 request.route_not_found`), método no permitido
+  (`405 request.method_not_allowed`, conserva `Allow`) y fallos inesperados
+  (`500 server.internal_error`, con `X-Correlation-ID`). Antes salían como
+  `{"detail": ...}` o como texto plano. El contrato OpenAPI declara
+  `ErrorEnvelope` en las respuestas `401`, `403`, `404`, `409`, `422`, `429` y
+  `503` de las rutas autenticadas y ya no publica `HTTPValidationError`.
 
 ### Security
 

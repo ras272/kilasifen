@@ -51,3 +51,33 @@ def test_openapi_describes_consumer_security_and_supported_contracts(
     assert "signed_xml" not in typed_payload["properties"]
 
     get_settings.cache_clear()
+
+
+def test_openapi_declares_the_error_envelope_for_client_errors(monkeypatch) -> None:
+    monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    get_settings.cache_clear()
+    schema = create_app().openapi()
+    envelope_ref = {"$ref": "#/components/schemas/ErrorEnvelope"}
+
+    def error_schemas(path: str, method: str) -> dict[str, dict]:
+        responses = schema["paths"][path][method]["responses"]
+        return {
+            status: response["content"]["application/json"]["schema"]
+            for status, response in responses.items()
+            if status.startswith(("4", "5"))
+        }
+
+    factura = error_schemas("/v1/emitters/{emitter_id}/documents/facturas", "post")
+    assert set(factura) == {"401", "403", "404", "409", "422", "429", "503"}
+    assert all(item == envelope_ref for item in factura.values())
+
+    job = error_schemas("/v1/emitters/{emitter_id}/jobs/{job_id}", "get")
+    assert set(job) == {"401", "403", "404", "422", "429", "503"}
+
+    auth_check = error_schemas("/v1/auth/check", "get")
+    assert set(auth_check) == {"401", "429", "503"}
+
+    assert {"ErrorEnvelope", "ErrorPayload"} <= set(schema["components"]["schemas"])
+    assert "HTTPValidationError" not in schema["components"]["schemas"]
+
+    get_settings.cache_clear()
