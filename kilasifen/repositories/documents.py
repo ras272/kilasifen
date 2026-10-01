@@ -21,7 +21,9 @@ class DocumentRepository(ABC):
         """Lock a document row and load its committed state."""
 
     @abstractmethod
-    def get_by_idempotency_key(self, emitter_id: str, idempotency_key: str) -> Document | None:
+    def get_by_idempotency_key(
+        self, emitter_id: str, idempotency_key: str
+    ) -> Document | None:
         """Load a document by emitter and idempotency key."""
 
     @abstractmethod
@@ -33,7 +35,9 @@ class DocumentRepository(ABC):
         """Load a document by emitter and CDC."""
 
     @abstractmethod
-    def list_by_associated_cdc(self, *, emitter_id: str, associated_cdc: str) -> list[Document]:
+    def list_by_associated_cdc(
+        self, *, emitter_id: str, associated_cdc: str
+    ) -> list[Document]:
         """List documents that reference the given CDC in typed payloads."""
 
     @abstractmethod

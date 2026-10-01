@@ -19,7 +19,9 @@ from kilasifen.engine.sdk.validation import validate_xml
 SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 ET.register_namespace("", SIFEN_NS)
 
-_WS_SERIALIZER = XmlSerializer(config=SerializerConfig(xml_declaration=True, encoding="UTF-8"))
+_WS_SERIALIZER = XmlSerializer(
+    config=SerializerConfig(xml_declaration=True, encoding="UTF-8")
+)
 
 
 def build_signed_cancel_event_group_xml(

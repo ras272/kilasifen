@@ -91,7 +91,9 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             return None
         return _to_domain(model)
 
-    def get_by_idempotency_key(self, emitter_id: str, idempotency_key: str) -> Document | None:
+    def get_by_idempotency_key(
+        self, emitter_id: str, idempotency_key: str
+    ) -> Document | None:
         statement = select(DocumentModel).where(
             DocumentModel.emitter_id == emitter_id,
             DocumentModel.idempotency_key == idempotency_key,
@@ -121,12 +123,18 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             return None
         return _to_domain(model)
 
-    def list_by_associated_cdc(self, *, emitter_id: str, associated_cdc: str) -> list[Document]:
+    def list_by_associated_cdc(
+        self, *, emitter_id: str, associated_cdc: str
+    ) -> list[Document]:
         statement = select(DocumentModel).where(DocumentModel.emitter_id == emitter_id)
         models = list(self.session.scalars(statement))
         matched: list[Document] = []
         for model in models:
-            snapshot = model.payload_snapshot if isinstance(model.payload_snapshot, dict) else None
+            snapshot = (
+                model.payload_snapshot
+                if isinstance(model.payload_snapshot, dict)
+                else None
+            )
             if not snapshot:
                 continue
             typed_contract = snapshot.get("typed_contract")
@@ -187,7 +195,9 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
         if emitter_id:
             statement = statement.where(DocumentModel.emitter_id == emitter_id)
         if internal_status:
-            statement = statement.where(DocumentModel.internal_status == internal_status)
+            statement = statement.where(
+                DocumentModel.internal_status == internal_status
+            )
         if document_type:
             statement = statement.where(DocumentModel.document_type == document_type)
         if external_id:
