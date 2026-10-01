@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
 from uuid import uuid4
 
@@ -425,7 +425,7 @@ class WebhookService:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _supports_event(*, endpoint: WebhookEndpoint, event_type: str) -> bool:

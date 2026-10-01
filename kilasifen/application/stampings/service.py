@@ -1,7 +1,7 @@
 """Stamping application service layer."""
 
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from kilasifen.application.emitters.guards import require_active_emitter
@@ -91,4 +91,4 @@ class StampingService:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

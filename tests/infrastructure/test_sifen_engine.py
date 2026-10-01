@@ -50,6 +50,12 @@ def test_resolve_emission_datetime_preserves_py_local_wall_time_from_offset() ->
     assert resolved == "2026-04-26T23:21:14"
 
 
+def test_resolve_emission_datetime_accepts_utc_z_suffix() -> None:
+    resolved = _resolve_emission_datetime({"fecha_emision": "2026-04-27T02:21:14Z"})
+
+    assert resolved == "2026-04-26T23:21:14"
+
+
 def test_live_document_transport_disables_automatic_mutation_retries() -> None:
     response = _FakeResponse(
         _FakeProt(

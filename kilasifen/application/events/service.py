@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -757,7 +757,7 @@ class EventService:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _event_job_payload(
@@ -783,8 +783,8 @@ def _now_asuncion() -> datetime:
 
 def _ensure_utc_datetime(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _normalize_three_digits(value: str) -> str:

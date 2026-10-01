@@ -1,7 +1,7 @@
 """Certificate application service layer."""
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from cryptography import x509
@@ -161,17 +161,17 @@ def _extract_ruc(certificate: x509.Certificate) -> str | None:
 def _certificate_not_valid_before(certificate: x509.Certificate) -> datetime:
     if hasattr(certificate, "not_valid_before_utc"):
         return certificate.not_valid_before_utc
-    return certificate.not_valid_before.replace(tzinfo=UTC)
+    return certificate.not_valid_before.replace(tzinfo=timezone.utc)
 
 
 def _certificate_not_valid_after(certificate: x509.Certificate) -> datetime:
     if hasattr(certificate, "not_valid_after_utc"):
         return certificate.not_valid_after_utc
-    return certificate.not_valid_after.replace(tzinfo=UTC)
+    return certificate.not_valid_after.replace(tzinfo=timezone.utc)
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _normalize_ruc(value: str | None) -> str | None:
@@ -184,5 +184,5 @@ def _normalize_ruc(value: str | None) -> str | None:
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)

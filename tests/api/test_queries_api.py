@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -205,7 +205,7 @@ class FakeQueryGateway:
             result_message="Consulta DE exitosa",
             status="found",
             content_xml="<rDE version='150'/>",
-            processed_at=datetime(2026, 4, 24, 12, 0, tzinfo=UTC),
+            processed_at=datetime(2026, 4, 24, 12, 0, tzinfo=timezone.utc),
         )
 
 
@@ -291,4 +291,4 @@ def _seed_query_context(
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

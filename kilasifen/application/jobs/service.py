@@ -1,6 +1,6 @@
 """Job application service layer."""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from kilasifen.domain.common.errors import NotFoundError
@@ -97,4 +97,4 @@ class JobService:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

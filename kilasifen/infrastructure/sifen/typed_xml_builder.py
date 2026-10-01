@@ -1871,6 +1871,9 @@ def _resolve_emission_datetime(payload: dict) -> str:
             dt = datetime.combine(raw, time(0, 0, 0))
         else:
             value = str(raw).strip()
+            if value.endswith(("Z", "z")):
+                # Python < 3.11 fromisoformat does not accept the "Z" suffix.
+                value = value[:-1] + "+00:00"
             try:
                 dt = datetime.fromisoformat(value)
             except ValueError:

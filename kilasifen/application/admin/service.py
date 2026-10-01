@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Protocol
 
 from kilasifen.application.certificates.service import CertificateService
@@ -311,4 +311,4 @@ class AdminConsoleService:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import fakeredis
 from rq import Queue
@@ -177,7 +177,7 @@ def test_process_document_job_hydrates_job_and_document_context(tmp_path) -> Non
             id="stamp-1",
             emitter_id="emitter-1",
             number="80024135",
-            start_date=datetime(2024, 3, 11, tzinfo=UTC).date(),
+            start_date=datetime(2024, 3, 11, tzinfo=timezone.utc).date(),
             end_date=None,
             is_active=True,
             status="active",
@@ -223,7 +223,7 @@ def test_process_document_job_hydrates_job_and_document_context(tmp_path) -> Non
                     result_message="ok",
                 )
             ),
-            current_date=datetime(2024, 4, 24, tzinfo=UTC).date(),
+            current_date=datetime(2024, 4, 24, tzinfo=timezone.utc).date(),
         )
 
         assert payload["job_id"] == "job-1"
@@ -289,4 +289,4 @@ def _fernet_key() -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

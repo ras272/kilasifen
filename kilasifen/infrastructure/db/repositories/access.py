@@ -1,6 +1,6 @@
 """SQL access administration repository."""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -66,7 +66,7 @@ class SqlAlchemyAccessRepository(AccessRepository):
         if model is None:
             return None
         model.status = "revoked"
-        model.updated_at = datetime.now(UTC)
+        model.updated_at = datetime.now(timezone.utc)
         self.session.flush()
         return _credential(model)
 

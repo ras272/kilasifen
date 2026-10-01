@@ -1,6 +1,6 @@
 """Emitter application service layer."""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 from kilasifen.application.emitters.guards import require_active_emitter
@@ -119,4 +119,4 @@ class EmitterService:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

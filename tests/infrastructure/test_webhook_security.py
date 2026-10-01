@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -123,7 +123,7 @@ def test_default_transport_receives_only_the_validated_pinned_addresses(
 
 
 def test_versioned_signature_covers_metadata_and_exact_body() -> None:
-    now = datetime(2026, 8, 16, 20, 0, tzinfo=UTC)
+    now = datetime(2026, 8, 16, 20, 0, tzinfo=timezone.utc)
     timestamp = str(int(now.timestamp()))
     body = b'{"value":1, "spacing":"is exact"}'
     signature = build_signature(
@@ -160,7 +160,7 @@ def test_versioned_signature_covers_metadata_and_exact_body() -> None:
 
 
 def test_signature_verification_enforces_freshness_and_replay_lookup() -> None:
-    now = datetime(2026, 8, 16, 20, 0, tzinfo=UTC)
+    now = datetime(2026, 8, 16, 20, 0, tzinfo=timezone.utc)
     old_timestamp = str(int((now - timedelta(minutes=6)).timestamp()))
     body = b"{}"
     signature = build_signature(

@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -124,7 +124,7 @@ def test_metadata_update_cannot_restore_a_concurrently_rotated_csc(
 
 
 def _seed_emitter(factory, *, encrypted_csc: str) -> None:
-    timestamp = datetime.now(UTC)
+    timestamp = datetime.now(timezone.utc)
     with session_scope(factory) as session:
         session.add(
             EmitterModel(

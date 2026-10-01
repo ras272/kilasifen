@@ -22,7 +22,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -408,7 +408,7 @@ def check_emitter_exists(client: KilaApiClient, emitter_id: str) -> str:
 
 
 def create_smoke_emitter(client: KilaApiClient, args: argparse.Namespace) -> str:
-    suffix = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     external_id = f"smoke-{suffix}"
     created = client.post(
         "/v1/emitters",
@@ -527,14 +527,14 @@ def build_document_payload(
     if not doc_id:
         raise SmokeFailure("Could not extract doc_id from generated XML.")
 
-    unique = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    unique = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     external_id = f"smoke-doc-{unique}"
     idempotency_key = f"smoke-idem-{uuid.uuid4()}"
     payload = {
         "generated_xml": generated_xml,
         "doc_id": doc_id,
         "source": "smoke_kila_api_e2e",
-        "generated_at": datetime.now(UTC).isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     return payload, external_id, idempotency_key
 
@@ -542,7 +542,7 @@ def build_document_payload(
 def build_default_unsigned_xml() -> str:
     helper = load_ares_example_module()
     numero_documento = str(int(time.time()) % 9999999).zfill(7)
-    fecha_emision = datetime.now(UTC).replace(microsecond=0).isoformat()
+    fecha_emision = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     unsigned = helper.build_unsigned_de_base(
         numero_documento=numero_documento,
         fecha_emision=fecha_emision,

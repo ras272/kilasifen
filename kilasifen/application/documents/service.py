@@ -1,7 +1,7 @@
 """Document application service layer."""
 
 import logging
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Protocol
 from uuid import uuid4
 
@@ -335,7 +335,7 @@ class DocumentService:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _normalize_three_digits(value, *, default: str) -> str:

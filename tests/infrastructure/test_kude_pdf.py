@@ -1,6 +1,6 @@
 """Tests for the SIFEN KuDE PDF renderer."""
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -15,7 +15,7 @@ _GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden"
 
 
 def _emitter(*, ambiente: str = "test") -> Emitter:
-    ts = datetime.now(UTC)
+    ts = datetime.now(timezone.utc)
     return Emitter(
         id="emitter-1",
         external_id="erp-test",
@@ -33,7 +33,7 @@ def _emitter(*, ambiente: str = "test") -> Emitter:
 
 def _document_for_scenario(name: str, doc_type: str) -> Document:
     signed_xml = (_GOLDEN_DIR / f"{name}.xml").read_text(encoding="utf-8")
-    ts = datetime.now(UTC)
+    ts = datetime.now(timezone.utc)
     return Document(
         id=f"doc-{name}",
         emitter_id="emitter-1",

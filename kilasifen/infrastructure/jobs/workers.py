@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from xml.etree import ElementTree as ET
 
 from rq import get_current_job
@@ -706,7 +706,7 @@ def _mark_reconciliation_required(
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _retry_at(*, attempt_number: int, delays: tuple[int, ...]) -> datetime:

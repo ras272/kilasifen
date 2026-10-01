@@ -1,7 +1,7 @@
 import xml.etree.ElementTree as ET
 from collections.abc import Iterator
 from copy import deepcopy
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -256,9 +256,9 @@ def _build_stamping(emitter_id: str) -> Stamping:
 def _parse_datetime(value: str) -> datetime:
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=UTC)
+        return parsed.replace(tzinfo=timezone.utc)
     return parsed
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

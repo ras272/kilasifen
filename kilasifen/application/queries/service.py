@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.domain.common.errors import ConflictError, NotFoundError
@@ -139,4 +139,4 @@ class QueryService:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

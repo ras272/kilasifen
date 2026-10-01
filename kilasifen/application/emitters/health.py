@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 
 from kilasifen.domain.common.errors import NotFoundError
 from kilasifen.repositories.certificates import CertificateRepository
@@ -81,5 +81,5 @@ class EmitterHealthService:
             queue_failed_count=queue_failed_count,
             last_document_id=last_document.id if last_document else None,
             last_document_status=last_document.internal_status if last_document else None,
-            checked_at=datetime.now(UTC),
+            checked_at=datetime.now(timezone.utc),
         )

@@ -9,7 +9,7 @@ import socket
 import ssl
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Callable
 
 from kilasifen.infrastructure.webhooks.security import (
@@ -76,7 +76,7 @@ class WebhookDeliverer:
     ) -> DeliveryOutcome:
         body = request_body or serialize_webhook_body(payload_snapshot)
         body_bytes = body.encode("utf-8")
-        request_at = datetime.now(UTC)
+        request_at = datetime.now(timezone.utc)
         if len(body_bytes) > MAX_REQUEST_BODY_BYTES:
             return DeliveryOutcome(
                 request_at=request_at,

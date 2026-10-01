@@ -1,5 +1,5 @@
 from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 
 import pytest
 
@@ -863,4 +863,4 @@ def _fernet_key() -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

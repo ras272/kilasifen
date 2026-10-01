@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import fakeredis
 import pytest
@@ -51,7 +51,7 @@ def test_outbox_never_publishes_before_business_commit(tmp_path) -> None:
 
 def test_outbox_recovers_after_redis_failure_without_leaking_error(tmp_path) -> None:
     session_factory = _session_factory(tmp_path, "redis_recovery")
-    clock = _MutableClock(datetime.now(UTC) + timedelta(seconds=1))
+    clock = _MutableClock(datetime.now(timezone.utc) + timedelta(seconds=1))
     queue = _FailOnceQueue()
     job_id = _stage_document_job(session_factory)
     dispatcher = JobOutboxDispatcher(
@@ -116,7 +116,7 @@ def test_all_job_queue_ports_stage_the_expected_outbox_route(
 def test_active_lease_prevents_a_second_dispatcher_from_claiming(tmp_path) -> None:
     session_factory = _session_factory(tmp_path, "replica_lease")
     _stage_document_job(session_factory)
-    now = datetime.now(UTC) + timedelta(seconds=1)
+    now = datetime.now(timezone.utc) + timedelta(seconds=1)
     first = JobOutboxDispatcher(
         session_factory=session_factory,
         queues={},
@@ -141,7 +141,7 @@ def test_retry_is_invisible_before_commit_and_dispatches_after_due_time(
 ) -> None:
     session_factory = _session_factory(tmp_path, "retry_commit")
     published: list[str] = []
-    initial_clock = datetime.now(UTC) + timedelta(seconds=1)
+    initial_clock = datetime.now(timezone.utc) + timedelta(seconds=1)
     dispatcher = JobOutboxDispatcher(
         session_factory=session_factory,
         queues={"documents": _RecordingQueue(published)},
@@ -173,7 +173,7 @@ def test_retry_is_invisible_before_commit_and_dispatches_after_due_time(
 def test_retry_restaging_revokes_an_unconfirmed_publication_lease(tmp_path) -> None:
     session_factory = _session_factory(tmp_path, "retry_publication_race")
     job_id = _stage_document_job(session_factory)
-    now = datetime.now(UTC) + timedelta(seconds=1)
+    now = datetime.now(timezone.utc) + timedelta(seconds=1)
     dispatcher = JobOutboxDispatcher(
         session_factory=session_factory,
         queues={},
@@ -197,7 +197,7 @@ def test_retry_restaging_revokes_an_unconfirmed_publication_lease(tmp_path) -> N
     assert confirmed is False
     assert message is not None
     assert message.status == "pending"
-    assert message.available_at.replace(tzinfo=UTC) == retry_at
+    assert message.available_at.replace(tzinfo=timezone.utc) == retry_at
 
 
 def test_rq_publication_is_idempotent_by_job_id() -> None:
@@ -228,7 +228,7 @@ def test_expired_lease_recovery_does_not_duplicate_rq_publication(tmp_path) -> N
     redis_connection = fakeredis.FakeRedis()
     queue = Queue("documents", connection=redis_connection)
     adapter = RqJobQueue(queue)
-    now = datetime.now(UTC) + timedelta(seconds=1)
+    now = datetime.now(timezone.utc) + timedelta(seconds=1)
     crashed_dispatcher = JobOutboxDispatcher(
         session_factory=session_factory,
         queues={"documents": adapter},

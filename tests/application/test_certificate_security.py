@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 import pytest
@@ -8,7 +8,7 @@ from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.common.errors import ConflictError
 from kilasifen.domain.emitters.models import Emitter
 
-_REFERENCE_NOW = datetime.now(UTC)
+_REFERENCE_NOW = datetime.now(timezone.utc)
 
 
 @pytest.mark.parametrize(
@@ -108,4 +108,4 @@ def _certificate(
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

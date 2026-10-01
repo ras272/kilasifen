@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from uuid import UUID, uuid5
 
 from sqlalchemy import select
@@ -90,7 +90,7 @@ class SqlAlchemyApiKeyRepository:
             credential.key_hash = hash_api_key(raw_key)
             credential.scopes = [PLATFORM_ADMIN_SCOPE]
             credential.status = "active"
-            credential.updated_at = datetime.now(UTC)
+            credential.updated_at = datetime.now(timezone.utc)
         self.session.flush()
 
     def grant_emitter(self, *, consumer_id: str, emitter_id: str) -> None:
