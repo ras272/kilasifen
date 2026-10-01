@@ -16,7 +16,7 @@ from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.events.models import Event
 from kilasifen.engine import PRODUCCION, TEST
 from kilasifen.engine.sdk.errors import SifenValidationError
-from kilasifen.engine.transmissao.evento import TransmissaoEvento, _generate_id
+from kilasifen.engine.transmision.evento import TransmisionEvento, _generate_id
 
 
 @dataclass(slots=True)
@@ -150,12 +150,12 @@ def _submit_event_raw(
     certificate_password: str,
     request_xml: str,
 ) -> str:
-    with TransmissaoEvento(
+    with TransmisionEvento(
         ambiente=ambiente,
         pkcs12_data=certificate_bytes,
         pkcs12_password=certificate_password,
-    ) as transmissao:
-        response_raw = transmissao._send_raw_xml("evento", request_xml)
+    ) as transmision:
+        response_raw = transmision._send_raw_xml("evento", request_xml)
     return response_raw.decode("utf-8")
 
 

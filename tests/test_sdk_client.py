@@ -9,9 +9,9 @@ from kilasifen.engine.sdk.client import SifenClient
 
 def test_sifen_client_builds_internal_services_with_shared_config():
     with (
-        patch("kilasifen.engine.sdk.client.TransmissaoDE") as de_cls,
+        patch("kilasifen.engine.sdk.client.TransmisionDE") as de_cls,
         patch("kilasifen.engine.sdk.client.ConsultaSIFEN") as cons_cls,
-        patch("kilasifen.engine.sdk.client.TransmissaoEvento") as evt_cls,
+        patch("kilasifen.engine.sdk.client.TransmisionEvento") as evt_cls,
     ):
         SifenClient(
             ambiente=2,
@@ -51,9 +51,9 @@ def test_sifen_client_delegates_all_operations():
     evt.enviar_evento.return_value = "evt-ok"
 
     with (
-        patch("kilasifen.engine.sdk.client.TransmissaoDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
         patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("kilasifen.engine.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
         patch(
             "kilasifen.engine.sdk.client.poll_dte_async_status",
             return_value="polled-async",
@@ -108,9 +108,9 @@ def test_sifen_client_enviar_lote_y_esperar_uses_polling_helper():
     de.enviar_lote.return_value = envio_lote
 
     with (
-        patch("kilasifen.engine.sdk.client.TransmissaoDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
         patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("kilasifen.engine.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
         patch(
             "kilasifen.engine.sdk.client.poll_lote_status",
             return_value="lote-final",
@@ -145,9 +145,9 @@ def test_sifen_client_consultar_dte_async_y_esperar_returns_both():
     cons.consultar_dte_async.return_value = async_response
 
     with (
-        patch("kilasifen.engine.sdk.client.TransmissaoDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
         patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("kilasifen.engine.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
         patch(
             "kilasifen.engine.sdk.client.poll_dte_async_status",
             return_value="estado-final",
@@ -176,9 +176,9 @@ def test_sifen_client_consultar_dte_async_y_esperar_requires_protocol():
     cons.consultar_dte_async.return_value = MagicMock(dProtConsDTEAsync="")
 
     with (
-        patch("kilasifen.engine.sdk.client.TransmissaoDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
         patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("kilasifen.engine.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
     ):
         client = SifenClient(
             ambiente=2,
@@ -199,9 +199,9 @@ def test_sifen_client_enviar_lote_y_esperar_requires_protocol():
     de.enviar_lote.return_value = MagicMock(dProtConsLote=None)
 
     with (
-        patch("kilasifen.engine.sdk.client.TransmissaoDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
         patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("kilasifen.engine.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
     ):
         client = SifenClient(
             ambiente=2,
@@ -218,9 +218,9 @@ def test_sifen_client_wraps_fiscal_generators():
     evt = MagicMock()
 
     with (
-        patch("kilasifen.engine.sdk.client.TransmissaoDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
         patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("kilasifen.engine.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
         patch(
             "kilasifen.engine.sdk.client._generate_cdc",
             return_value="CDC-OK",
@@ -257,9 +257,9 @@ def test_sifen_client_wraps_kude_helpers():
     evt = MagicMock()
 
     with (
-        patch("kilasifen.engine.sdk.client.TransmissaoDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
         patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("kilasifen.engine.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
         patch(
             "kilasifen.engine.sdk.client._render_kude_html",
             return_value="<html>kude</html>",
@@ -299,9 +299,9 @@ def test_sifen_client_close_is_idempotent():
     evt = MagicMock()
 
     with (
-        patch("kilasifen.engine.sdk.client.TransmissaoDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
         patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("kilasifen.engine.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
     ):
         client = SifenClient(
             ambiente=2,
@@ -323,9 +323,9 @@ def test_sifen_client_context_manager_closes_services():
     evt = MagicMock()
 
     with (
-        patch("kilasifen.engine.sdk.client.TransmissaoDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
         patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("kilasifen.engine.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
     ):
         with SifenClient(
             ambiente=2,

@@ -19,7 +19,7 @@ from kilasifen.engine.sdk.errors import (
     SifenTransportError,
     SifenValidationError,
 )
-from kilasifen.engine.transmissao.de import _build_enviar_de_request_xml
+from kilasifen.engine.transmision.de import _build_enviar_de_request_xml
 from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
 from kilasifen.infrastructure.sifen.mapper import PysifenPayloadMapper
 
