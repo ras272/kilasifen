@@ -111,19 +111,22 @@ curl http://127.0.0.1:8000/v1/health   # el proceso responde
 curl http://127.0.0.1:8000/v1/ready    # PostgreSQL y Redis (workers: solo en staging/production)
 ```
 
-Compose levanta PostgreSQL, Redis, un paso de migración
+Compose levanta PostgreSQL, Redis (con AOF en un volumen, así que los jobs
+encolados sobreviven a un reinicio), un paso de migración
 (`alembic upgrade head`), la API en `127.0.0.1:8000`, el worker RQ (colas
-`documents`, `events` y `webhooks`) y el despachador del outbox. Todo queda
-publicado solo en loopback. Con `.env.example` el SIFEN apunta al ambiente de
+`documents`, `events` y `webhooks`) y el despachador del outbox. Sólo la API
+conserva el healthcheck HTTP de la imagen; worker, outbox y migración no sirven
+HTTP y lo tienen deshabilitado. Todo queda publicado solo en loopback. Con `.env.example` el SIFEN apunta al ambiente de
 pruebas. Para apuntar a producción (`KILA_SIFEN_SIFEN_ENVIRONMENT=production`)
 la configuración exige además `KILA_SIFEN_ENVIRONMENT=production` y
 `KILA_SIFEN_ENABLE_PRODUCTION=true`; si falta alguna, la configuración se
 rechaza al iniciar.
 
-`.env.example` deja en `true` `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE` y
-`KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS`. En el código ambos valen `false` por
-defecto: si no los definís, los documentos no se encolan solos y no se
-publican webhooks de documentos.
+`.env.example` deja en `true` `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE` (lo lee la
+API) y `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS` (lo lee el worker). Mantenelos
+así. En el código ambos valen `false` por defecto y ninguna validación los
+exige: sin el primero los documentos quedan en `queued` y nunca se emiten; sin
+el segundo no se publican webhooks de documentos.
 
 Con la clave de administración se crean el consumidor, su credencial y el
 emisor (ver `docs/INTEGRATION.md`). La carga de certificado y timbrado está en
@@ -141,7 +144,9 @@ la guía `apps/docs/content/docs/certificados-y-timbrado.mdx` del portal.
 - [`docs/operations/deployment-compose.md`](docs/operations/deployment-compose.md):
   detalles del stack local, incluido el worker en Windows sin contenedores.
 - [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): runbook de un staging
-  independiente (Railway), con variables obligatorias, red y rollback.
+  independiente (Railway): servicios `api`, `worker` y `outbox`, migración
+  como pre-deploy de la API, start commands, healthcheck, orden de despliegue,
+  variables obligatorias, red y rollback.
 - [`sdks/typescript`](sdks/typescript): cliente TypeScript de la API. Como no
   está publicado en npm, se compila desde esa carpeta (`pnpm install && pnpm build`).
 

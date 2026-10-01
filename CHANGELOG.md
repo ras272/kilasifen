@@ -293,6 +293,46 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   Los envelopes de error de cualquier `4xx`, incluido `422`, siguen llegando
   como `KilaSifenError` con sus `details`.
 
+### Fixed
+
+- Docker Compose: `worker`, `outbox` y `migrate` deshabilitan el
+  `HEALTHCHECK` HTTP (`/v1/health`) que heredaban de la imagen. Ninguno sirve
+  HTTP, así que Docker los marcaba `unhealthy` aunque funcionaran. La API lo
+  conserva.
+- Docker Compose: Redis guarda sus datos con AOF (`appendfsync everysec`) en
+  el volumen `kila-redis-data`. Antes un reinicio del contenedor perdía los
+  jobs encolados, los leases y el heartbeat del outbox. `docker compose down -v`
+  borra también este volumen.
+- CI: el job `platform-tests` corre también `tests/domain`, que ningún job
+  ejecutaba. `tests/test_deployment_artifacts.py` falla si una carpeta de
+  pruebas queda fuera de ese job.
+- CI: el workflow corre en los pull requests contra cualquier rama, no solo
+  contra `main`. Se mantienen el push a `main` y la corrida semanal.
+- CI: el job `docs-site` instala pnpm con `pnpm/action-setup` antes de
+  `actions/setup-node`. Con `cache: pnpm`, `setup-node` necesita pnpm ya
+  instalado, y el paso `corepack enable` corría después.
+- Runbook de Railway (`docs/DEPLOYMENT.md`):
+  - agrega el servicio `outbox`, que faltaba aunque `/v1/ready` exige su
+    heartbeat en staging y production;
+  - el start command del worker va envuelto en `/bin/sh -c "exec ..."`.
+    Railway corre en forma exec los start commands de servicios con
+    `Dockerfile` y no expande `$KILA_SIFEN_REDIS_URL`. La API deja el start
+    command vacío y usa el `CMD` del `Dockerfile`, que ya expande `$PORT`;
+  - el healthcheck de Railway pasa de `/v1/ready` a `/v1/health`. Railway lo
+    consulta sólo al desplegar y lo da por fallido a los 300 s; con
+    `/v1/ready` el primer deploy de la API fallaba siempre, porque worker y
+    outbox se crean después;
+  - documenta el orden de despliegue (Railway no ordena los deploys por push),
+    `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` para API y worker (el default es
+    0 s) y la URL `postgresql+psycopg://` armada con las variables `PG*`.
+- `.env.example` y el README explican qué proceso lee
+  `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE` (la API) y
+  `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS` (el worker) y qué se pierde si quedan
+  en su default `false`. El default del código no cambia.
+- `docs/operations`: rotación de la clave Fernet y ciclo de vida de jobs
+  incluyen el outbox y los interruptores `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE` y
+  `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS`.
+
 ### Security
 
 - Firmador XMLDSig (`kilasifen.engine.sdk.signer`) reescrito desde la

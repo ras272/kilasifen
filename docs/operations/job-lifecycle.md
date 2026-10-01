@@ -5,6 +5,13 @@
 Kila SIFEN is async-first for emission and outgoing integrations.
 Jobs are the operational ledger for retries, observability, and support.
 
+Nothing is pushed to RQ directly. API requests and workers write an
+outbox row in the same database transaction as the job; the outbox
+dispatcher (`python -m kilasifen.infrastructure.jobs.outbox_worker`)
+publishes due rows to the `documents`, `events` or `webhooks` RQ queue.
+Without a running dispatcher no job reaches a worker and scheduled
+retries never fire.
+
 ## Core statuses
 
 - `queued`: created and waiting execution
@@ -16,12 +23,16 @@ Jobs are the operational ledger for retries, observability, and support.
 
 ## Document emission flow
 
-1. API creates `document` + `job` (`document.emit`).
-2. Worker hydrates context:
+1. API creates `document` + `job` (`document.emit`) and, when
+   `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE=true`, its outbox row. The setting
+   defaults to `false` in code: with it off the job stays `queued` and is
+   never dispatched.
+2. The outbox dispatcher publishes the row to the `documents` queue.
+3. Worker hydrates context:
    - emitter
    - active certificate
    - active stamping
-3. Each attempt uses two short transactions and holds no transaction or
+4. Each attempt uses two short transactions and holds no transaction or
    row lock while SIFEN answers:
    - transaction 1 locks emitter, document and job (emitter wait bounded to
      5 s), counts the attempt, builds and signs the DE and stores the
@@ -43,10 +54,11 @@ Jobs are the operational ledger for retries, observability, and support.
    reports `emitters.lock_timeout`. Keeping `queued` matters for an operator
    retry of a `failed` document or event, which only a `queued` job reopens.
    Event jobs behave the same.
-4. Outcomes:
+5. Outcomes:
    - approved/accepted => `job.succeeded`
    - request provably not sent (`SifenRequestNotSentError`) => document back
-     to `queued`, `job.retry_scheduled` (`transport_not_sent`); the next
+     to `queued`, `job.retry_scheduled` (`transport_not_sent`, the next
+     attempt is staged in the outbox for its `scheduled_at`); the next
      attempt resends the stored request unchanged, signed with the
      certificate that was active when it was prepared. If the emitter
      certificate was rotated in between, the request travels over mTLS with
@@ -54,10 +66,12 @@ Jobs are the operational ledger for retries, observability, and support.
      like any other
    - timeout, dropped connection, SOAP Fault, unreadable answer or any other
      error after sending => document `retry_pending`, `job.retry_scheduled`
-     (`transport`); later attempts only query the CDC
+     (`transport`, staged in the outbox for its `scheduled_at`); later
+     attempts only query the CDC
    - fiscal validation/rejection => `job.failed`
-5. Optional webhook fanout:
-   - if `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS=true`, document transitions publish
+6. Optional webhook fanout:
+   - if `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS=true` (read by the worker;
+     `false` by default in code), document transitions publish
      events like `document.approved`, `document.rejected`, `document.retry_pending`
      to active subscribed webhook endpoints.
 
@@ -104,7 +118,8 @@ fails while the document stays `queued` for a manual retry.
 
 ## Webhook delivery flow
 
-1. Endpoint replay/event creates `webhook_delivery` + `job` (`webhook.deliver`).
+1. Endpoint replay/event creates `webhook_delivery` + `job` (`webhook.deliver`)
+   and its outbox row; the dispatcher publishes it to the `webhooks` queue.
 2. Worker signs payload and performs HTTP POST.
 3. Outcomes:
    - `2xx` => `delivery.delivered`, `job.succeeded`
@@ -145,6 +160,8 @@ format. Useful events: `worker.document_job.request_not_sent`,
 - ratio of `failed` + `retry_scheduled` by job type
 - aging of jobs in `queued`
 - missing workers for any of `documents`, `events`, `webhooks`
+- missing outbox dispatcher: in staging/production `/v1/ready` answers 503
+  with `missing:outbox_dispatcher` when its Redis heartbeat expires
 - webhook failure concentration per endpoint
 - document rejection codes from SIFEN
 
