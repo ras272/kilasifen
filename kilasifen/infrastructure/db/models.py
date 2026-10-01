@@ -185,6 +185,7 @@ class DocumentModel(TimestampMixin, Base):
     point: Mapped[str | None] = mapped_column(String(3))
     document_number: Mapped[int | None] = mapped_column(Integer)
     security_code: Mapped[str | None] = mapped_column(String(9))
+    fiscal_warnings: Mapped[list[str] | None] = mapped_column(JSON)
 
     emitter: Mapped[EmitterModel] = relationship(back_populates="documents")
     events: Mapped[list["EventModel"]] = relationship(back_populates="document")

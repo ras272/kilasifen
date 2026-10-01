@@ -513,5 +513,14 @@ class DocumentResponse(BaseModel):
     establishment: str | None
     point: str | None
     document_number: int | None
+    fiscal_warnings: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Avisos fiscales detectados al crear el documento, por ejemplo "
+            "`documents.transmission.emission_far_from_now`: la fecha de emisión "
+            "queda a más de 120 h de la transmisión y el SIFEN la aprobará con "
+            "observación 1005 (transmisión extemporánea)."
+        ),
+    )
     created_at: datetime
     updated_at: datetime

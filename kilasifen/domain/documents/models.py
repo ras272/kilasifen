@@ -34,3 +34,6 @@ class Document:
     # dCodSeg (B004) chosen once at creation; every rebuild reuses it so the
     # CDC never changes (MT v150 §10.3 and §6.5). None for raw-XML documents.
     security_code: str | None = None
+    # Codes of fiscal warnings found at creation, such as an emission date
+    # that makes the transmission extemporaneous (1005).
+    fiscal_warnings: tuple[str, ...] = ()

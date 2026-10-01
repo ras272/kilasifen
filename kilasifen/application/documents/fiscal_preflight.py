@@ -8,9 +8,16 @@ emitter changes.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from kilasifen.domain.common.errors import UnprocessableEntityError
 from kilasifen.domain.documents.emitter_identity import (
     find_emitter_identity_mismatch,
+)
+from kilasifen.domain.documents.fiscal_dates import (
+    emission_window_error,
+    parse_sifen_datetime,
+    transmission_warnings,
 )
 from kilasifen.domain.documents.security_code import (
     InvalidSecurityCodeError,
@@ -94,3 +101,32 @@ def _document_number(typed_payload: dict) -> int:
         # Without a number nothing can collide with it; the builder refuses
         # the document later because dNumDoc is mandatory.
         return 0
+
+
+def check_emission_date(typed_payload: dict, *, now: datetime) -> tuple[str, ...]:
+    """Refuse a ``dFeEmiDE`` SIFEN would reject and report extemporaneous ones.
+
+    - Outside the window (MT v150 D002: 1150 over 720 h late, 1151 over 120 h
+      ahead, 1156 before 2018-11-22): ``422`` with that code.
+    - More than 120 h before ``now``: accepted, but SIFEN approves it with
+      observation 1005 (MT v150 §6.2.1); the warning code is returned.
+
+    Without ``fecha_emision`` the builder uses the time it runs, always inside
+    the window.
+    """
+
+    raw = typed_payload.get("fecha_emision")
+    if raw is None:
+        raw = typed_payload.get("fecha")
+    if raw is None:
+        return ()
+    try:
+        emission = parse_sifen_datetime(raw)
+    except ValueError as exc:
+        raise UnprocessableEntityError("documents.fecha_emision.invalid") from exc
+    error = emission_window_error(emission, now)
+    if error is not None:
+        raise UnprocessableEntityError(
+            error, details={"fecha_emision": emission.isoformat()}
+        )
+    return tuple(transmission_warnings(emission=emission, now=now))

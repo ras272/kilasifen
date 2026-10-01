@@ -41,6 +41,7 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
                 point=document.point,
                 document_number=document.document_number,
                 security_code=document.security_code,
+                fiscal_warnings=list(document.fiscal_warnings) or None,
                 created_at=document.created_at,
                 updated_at=document.updated_at,
             )
@@ -210,4 +211,5 @@ def _to_domain(model: DocumentModel) -> Document:
         point=model.point,
         document_number=model.document_number,
         security_code=model.security_code,
+        fiscal_warnings=tuple(model.fiscal_warnings or ()),
     )

@@ -9,7 +9,9 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from kilasifen.api.app import create_app
+from kilasifen.api.deps import get_fiscal_clock
 from kilasifen.config import get_settings
+from kilasifen.domain.common.paraguay_time import PARAGUAY_TZ
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.fiscal_profile import fiscal_profile_from_dict
 from kilasifen.domain.emitters.models import Emitter
@@ -61,7 +63,13 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClie
         engine = build_engine(database_url)
         Base.metadata.create_all(engine)
 
-        with TestClient(create_app()) as test_client:
+        app = create_app()
+        # The scenarios are issued on 2026-04-25T10:00:00 and signed at
+        # GOLDEN_SIGNED_AT; creation happens at that same moment.
+        app.dependency_overrides[get_fiscal_clock] = lambda: lambda: (
+            GOLDEN_SIGNED_AT.replace(tzinfo=PARAGUAY_TZ)
+        )
+        with TestClient(app) as test_client:
             yield test_client
 
 

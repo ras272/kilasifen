@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -7,7 +8,9 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from kilasifen.api.app import create_app
+from kilasifen.api.deps import get_fiscal_clock
 from kilasifen.config import get_settings
+from kilasifen.domain.common.paraguay_time import PARAGUAY_TZ
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
@@ -19,6 +22,7 @@ from tests._raw_xml import (
 )
 
 API_KEY = "secret-key"
+_FISCAL_NOW = datetime(2026, 4, 25, 12, 0, 0, tzinfo=PARAGUAY_TZ)
 _SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 _FORGED_DE = f"<DE xmlns='{_SIFEN_NS}' Id='FORGED1'><anything>x</anything></DE>"
 
@@ -43,7 +47,11 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClie
         engine = build_engine(database_url)
         Base.metadata.create_all(engine)
 
-        with TestClient(create_app()) as test_client:
+        app = create_app()
+        # The typed payloads below are dated 2026-04-25; dFeEmiDE must be
+        # inside the 720 h / 120 h window of that moment (1150/1151).
+        app.dependency_overrides[get_fiscal_clock] = lambda: lambda: _FISCAL_NOW
+        with TestClient(app) as test_client:
             yield test_client
 
 
@@ -788,3 +796,64 @@ def test_typed_document_cannot_change_the_emitter_identity(
     error = response.json()["error"]
     assert error["code"] == "documents.emisor.identity_mismatch"
     assert error["details"]["field"] == field
+
+
+@pytest.mark.parametrize(
+    ("fecha", "code"),
+    [
+        ("2026-03-25T11:59:59", "documents.fecha_emision.too_old"),  # 1150
+        ("2026-04-30T12:00:01", "documents.fecha_emision.too_far_ahead"),  # 1151
+        ("2018-11-20T10:00:00", "documents.fecha_emision.before_sifen_launch"),
+        ("25/04/2026", "documents.fecha_emision.invalid"),
+    ],
+)
+def test_typed_document_outside_the_emission_window_is_rejected(
+    client: TestClient, emitter_id: str, fecha: str, code: str
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "factura": {
+                "fecha_emision": fecha,
+                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "items": [
+                    {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == code
+
+
+def test_typed_document_far_from_transmission_is_created_with_a_warning(
+    client: TestClient, emitter_id: str
+) -> None:
+    # 130 h before the clock: inside 720 h, but SIFEN approves it with
+    # observation 1005 (MT v150 §6.2.1).
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "factura": {
+                "fecha_emision": "2026-04-20T02:00:00",
+                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "items": [
+                    {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    document = response.json()["data"]["document"]
+    assert document["fiscal_warnings"] == [
+        "documents.transmission.emission_far_from_now"
+    ]
+    fetched = client.get(
+        f"/v1/emitters/{emitter_id}/documents/{document['id']}",
+        headers={"X-API-Key": API_KEY},
+    ).json()["data"]["document"]
+    assert fetched["fiscal_warnings"] == document["fiscal_warnings"]
