@@ -12,10 +12,12 @@ from zoneinfo import ZoneInfo
 from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.events.attempts import (
     EVENT_SUBMITTING_STATUS,
+    DeferredEventJob,
     EventAttempt,
     EventAttemptResult,
     EventPreparationRefused,
     FinishedEventJob,
+    in_flight_until,
     send_event_attempt,
 )
 from kilasifen.application.jobs.service import JobService
@@ -365,13 +367,15 @@ class EventService:
         *,
         job_id: str,
         worker_correlation_id: str | None = None,
-    ) -> EventAttempt | FinishedEventJob:
+    ) -> EventAttempt | FinishedEventJob | DeferredEventJob:
         """First transaction of a worker attempt: claim the job, store the request.
 
         The caller must commit before :func:`send_event_attempt`, so the
         emitter lock taken here is released while SIFEN answers. A refused
         event (bad payload, signature that does not verify) is recorded here
-        and nothing is sent.
+        and nothing is sent. While an earlier attempt may still be at SIFEN
+        nothing is claimed either: the caller dispatches the returned
+        :class:`DeferredEventJob` again at its ``scheduled_at``.
         """
 
         job = self.job_service.get_job(job_id)
@@ -394,6 +398,11 @@ class EventService:
         if _event_job_is_finished(event, job):
             return FinishedEventJob(
                 _event_job_payload(event=event, job=job, retryable=False)
+            )
+        previous_attempt_until = in_flight_until(event)
+        if previous_attempt_until is not None:
+            return self._defer_attempt(
+                event=event, job=job, until=previous_attempt_until
             )
 
         attempt_number = job.attempts + 1
@@ -479,6 +488,46 @@ class EventService:
             job=updated_job,
             attempt_number=attempt.attempt_number,
             protocol=protocol,
+        )
+
+    def _defer_attempt(
+        self,
+        *,
+        event: Event,
+        job: Job,
+        until: datetime,
+    ) -> DeferredEventJob:
+        """Send nothing while an earlier attempt may still be at SIFEN.
+
+        An operator retry of a job whose worker looks dead, or a duplicate
+        dispatch, must not sign and send the event again while the first
+        request may still be waiting on SIFEN. The job keeps its status and
+        is scheduled for when that window closes.
+        """
+
+        job = self.job_repository.save(
+            replace(
+                job,
+                scheduled_at=until,
+                error_snapshot={
+                    "category": "attempt_in_flight",
+                    "message": "a previous attempt may still be waiting on SIFEN",
+                },
+                updated_at=_now(),
+            )
+        )
+        logger.warning(
+            "events.attempt_in_flight",
+            extra={
+                "job_id": job.id,
+                "event_id": event.id,
+                "job_status": job.status,
+                "retry_at": until.isoformat(),
+            },
+        )
+        return DeferredEventJob(
+            job=job,
+            payload=_event_job_payload(event=event, job=job, retryable=False),
         )
 
     def _save_attempt(

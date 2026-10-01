@@ -90,6 +90,13 @@ fails while the document stays `queued` for a manual retry.
    event on the next attempt: whether an uncertain event should be queried
    first is a fiscal decision still pending. Validation/rejection is
    terminal.
+6. An event still `submitting` means an attempt stored its request and has
+   recorded no outcome yet: its worker may still be waiting on SIFEN. For
+   five minutes after the request was stored (the RQ job timeout is 180 s),
+   a new attempt of that job (an operator retry, a duplicate dispatch) sends
+   nothing: the job keeps its status, records `attempt_in_flight` and is
+   dispatched again when the window closes. A `processing` job is left to
+   the worker that owns it.
 
 ## Webhook delivery flow
 

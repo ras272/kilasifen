@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
 
 from kilasifen.application.sifen_submissions import (
@@ -36,6 +36,11 @@ logger = logging.getLogger(__name__)
 #: The exact request is persisted and a worker is sending it to SIFEN.
 EVENT_SUBMITTING_STATUS = "submitting"
 
+#: How long an attempt may still be waiting on SIFEN after its request was
+#: stored. Every SIFEN call runs inside an RQ job, which RQ stops after 180 s
+#: by default; the rest is margin.
+EVENT_IN_FLIGHT_WINDOW = timedelta(minutes=5)
+
 
 @dataclass(frozen=True, slots=True)
 class EventAttempt:
@@ -55,6 +60,35 @@ class FinishedEventJob:
     """The event job ended without a SIFEN call (already final, or refused)."""
 
     payload: dict[str, str | bool | None]
+
+
+@dataclass(frozen=True, slots=True)
+class DeferredEventJob:
+    """A previous attempt may still be at SIFEN, so nothing is sent now.
+
+    ``job.scheduled_at`` is when no earlier attempt can still be in flight;
+    the caller dispatches the job again at that moment.
+    """
+
+    job: Job
+    payload: dict[str, str | bool | None]
+
+
+def in_flight_until(event: Event) -> datetime | None:
+    """When an earlier attempt of ``event`` can no longer be waiting on SIFEN.
+
+    Only an event left ``submitting`` (request stored, no outcome recorded)
+    may still be in flight, and only within :data:`EVENT_IN_FLIGHT_WINDOW`
+    of storing its request; ``None`` means no attempt can be in flight.
+    """
+
+    if event.status != EVENT_SUBMITTING_STATUS:
+        return None
+    stored_at = event.updated_at
+    if stored_at.tzinfo is None:
+        stored_at = stored_at.replace(tzinfo=timezone.utc)
+    until = stored_at + EVENT_IN_FLIGHT_WINDOW
+    return until if until > _now() else None
 
 
 class EventAttemptResult(Protocol):

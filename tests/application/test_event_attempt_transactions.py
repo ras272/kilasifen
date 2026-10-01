@@ -8,7 +8,7 @@ the stored signed event again) and the engineering guarantees around it.
 import os
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -16,6 +16,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, text, update
 
 import kilasifen.application.events.service as event_service_module
+from kilasifen.application.events.attempts import EVENT_IN_FLIGHT_WINDOW
 from kilasifen.application.events.service import EventService
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
@@ -287,6 +288,63 @@ def test_a_crash_during_the_call_leaves_the_attempt_on_record(
     assert job.status == "processing" and job.attempts == 1
 
 
+def test_an_operator_retry_waits_while_the_first_request_may_be_at_sifen(
+    context: _Context,
+) -> None:
+    with pytest.raises(_WorkerKilled):
+        _run(context, _Gateway(submit_error=_WorkerKilled()))
+    stored, _ = _load(context)
+    _requeue(context)
+
+    retry = _Gateway()
+    payload = _run(context, retry)
+
+    event, job = _load(context)
+    assert retry.prepared_requests == [] and retry.submitted_requests == []
+    assert payload["event_status"] == "submitting"
+    assert event.sifen_request_xml == stored.sifen_request_xml
+    assert job.status == "queued" and job.attempts == 1
+    assert job.error_snapshot["category"] == "attempt_in_flight"
+    assert _utc(job.scheduled_at) == _utc(stored.updated_at) + EVENT_IN_FLIGHT_WINDOW
+    assert _outbox_status(context) == "pending"
+
+
+def test_a_duplicate_dispatch_leaves_the_running_attempt_alone(
+    context: _Context,
+) -> None:
+    duplicate = _Gateway()
+    seen: dict = {}
+
+    def same_job_runs_again() -> None:
+        seen["payload"] = _run(context, duplicate)
+
+    first = _Gateway(during_submit=same_job_runs_again)
+    payload = _run(context, first)
+
+    assert duplicate.prepared_requests == [] and duplicate.submitted_requests == []
+    assert seen["payload"]["job_status"] == "processing"
+    assert len(first.submitted_requests) == 1
+    assert payload["event_status"] == "approved"
+    _, job = _load(context)
+    assert job.status == "succeeded" and job.attempts == 1
+
+
+def test_a_retry_once_the_window_closed_sends_the_event_again(
+    context: _Context,
+) -> None:
+    with pytest.raises(_WorkerKilled):
+        _run(context, _Gateway(submit_error=_WorkerKilled()))
+    _age_stored_request(context, EVENT_IN_FLIGHT_WINDOW + timedelta(seconds=1))
+    _requeue(context)
+
+    # Pending fiscal decision: today an uncertain event is sent again.
+    retry = _Gateway()
+    payload = _run(context, retry)
+
+    assert len(retry.submitted_requests) == 1
+    assert payload["event_status"] == "approved"
+
+
 def test_an_approval_recorded_meanwhile_is_not_overwritten(
     context: _Context,
 ) -> None:
@@ -475,6 +533,19 @@ def _outbox_status(context: _Context) -> str | None:
     with _session(context) as session:
         message = SqlAlchemyJobOutboxRepository(session).get_for_job(context.job_id)
     return message.status if message is not None else None
+
+
+def _age_stored_request(context: _Context, age: timedelta) -> None:
+    with _session(context) as session:
+        events = SqlAlchemyEventRepository(session)
+        event = events.get(context.event_id)
+        events.save(replace(event, updated_at=_now() - age))
+
+
+def _utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def _now() -> datetime:

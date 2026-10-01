@@ -208,7 +208,12 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   eventos que no es `rRetEnviEventoDe` (SOAP Fault, HTML, cuerpo truncado)
   ahora es `SifenUnexpectedResponseError`, resultado incierto, y ya no un
   error de validación que marcaba el evento como `failed`. El reintento de
-  un evento incierto sigue reenviándolo, como antes.
+  un evento incierto sigue reenviándolo, como antes. Mientras un evento sigue
+  en `submitting` y no pasaron cinco minutos desde que se guardó su request
+  (el intento anterior puede seguir esperando al SIFEN), un intento nuevo
+  del mismo job (reintento manual, despacho duplicado) no firma ni envía
+  nada: el job conserva su estado, anota `attempt_in_flight` y se vuelve a
+  despachar cuando vence esa ventana.
 - Plataforma: los workers de RQ y el proceso del outbox configuran el mismo
   logging JSON que la API (`configure_logging`, nivel de
   `KILA_SIFEN_LOG_LEVEL`) la primera vez que corre un job o arranca el

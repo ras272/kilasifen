@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.events.attempts import (
+    DeferredEventJob,
     FinishedEventJob,
     send_event_attempt,
 )
@@ -631,7 +632,9 @@ def process_event_job(
                 job_id=job_id,
                 worker_correlation_id=worker_correlation_id,
             )
-        if isinstance(claim, FinishedEventJob):
+            if isinstance(claim, DeferredEventJob):
+                _stage_dispatch(session, claim.job)
+        if isinstance(claim, (FinishedEventJob, DeferredEventJob)):
             payload = claim.payload
         else:
             # The request is committed: nothing is held while SIFEN answers.
