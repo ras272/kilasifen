@@ -1,6 +1,7 @@
 """Payload mappers for the kilasifen.engine emission bridge."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from xml.etree import ElementTree as ET
 
 from kilasifen.domain.documents.models import Document
@@ -41,7 +42,10 @@ class KilaSifenPayloadMapper:
         *,
         emitter: Emitter | None = None,
         stamping: Stamping | None = None,
+        signed_at: datetime | None = None,
     ) -> KilaSifenEmissionInput:
+        """Return the XML to sign; ``signed_at`` becomes ``dFecFirma``."""
+
         payload = document.payload_snapshot or {}
         signed_xml = document.signed_xml
         raw_generated_xml = payload.get("generated_xml")
@@ -64,6 +68,7 @@ class KilaSifenPayloadMapper:
                 emitter=emitter,
                 stamping=stamping,
                 test_emitter_name_literal=self.test_emitter_name_literal,
+                signed_at=signed_at,
             )
             if typed_xml is not None:
                 generated_xml = typed_xml.generated_xml

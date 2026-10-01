@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
+
+#: dFecFirma of the golden documents. It is the real signing time in
+#: production; the goldens pin it five minutes after the dFeEmiDE of the
+#: scenarios (2026-04-25T10:00:00) so the snapshots stay deterministic.
+GOLDEN_SIGNED_AT = datetime(2026, 4, 25, 10, 5, 0)
 
 
 @dataclass(frozen=True, slots=True)

@@ -22,6 +22,7 @@ from kilasifen.infrastructure.sifen.mapper import KilaSifenPayloadMapper
 from kilasifen.testing.database import managed_test_database_url
 from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile_payload
 from kilasifen.testing.typed_contract_scenarios import (
+    GOLDEN_SIGNED_AT,
     TypedContractScenario,
     get_typed_contract_scenarios,
 )
@@ -230,6 +231,7 @@ def _build_signed_xml_from_api_document(
         document,
         emitter=emitter_obj,
         stamping=_build_stamping(emitter["id"]),
+        signed_at=GOLDEN_SIGNED_AT,
     )
     assert emission_input.generated_xml is not None
     assert emission_input.doc_id is not None

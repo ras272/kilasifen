@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from xml.etree import ElementTree as ET
 
 from kilasifen.domain.common.paraguay_time import (
+    format_sifen_datetime,
     paraguay_now,
-    to_paraguay_wall_time,
 )
 from kilasifen.domain.documents.emitter_identity import (
     find_emitter_identity_mismatch,
 )
+from kilasifen.domain.documents.fiscal_dates import parse_sifen_datetime
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.documents.security_code import (
     InvalidSecurityCodeError,
@@ -296,12 +297,17 @@ def build_typed_document_xml(
     emitter: Emitter,
     stamping: Stamping,
     test_emitter_name_literal: str | None = None,
+    signed_at: datetime | None = None,
 ) -> TypedXmlBuildResult | None:
     """Build unsigned XML when payload includes a supported typed contract.
 
     ``test_emitter_name_literal`` replaces ``dNomEmi`` for emitters of the
     SIFEN test environment (validation 1263); ``None`` keeps the legal name.
+    ``signed_at`` is the moment the XML will be signed, written as
+    ``dFecFirma``; it defaults to now.
     """
+
+    fecha_firma = format_sifen_datetime(signed_at or paraguay_now())
 
     payload = document.payload_snapshot or {}
     typed_contract = payload.get("typed_contract")
@@ -319,6 +325,7 @@ def build_typed_document_xml(
             stamping=stamping,
             test_emitter_name_literal=test_emitter_name_literal,
             security_code=document.security_code,
+            fecha_firma=fecha_firma,
         )
     if contract == "nota_credito_v1":
         return _build_adjustment_note_xml(
@@ -327,6 +334,7 @@ def build_typed_document_xml(
             stamping=stamping,
             test_emitter_name_literal=test_emitter_name_literal,
             security_code=document.security_code,
+            fecha_firma=fecha_firma,
             document_type_code=5,
             document_type_description="Nota de crédito electrónica",
         )
@@ -337,6 +345,7 @@ def build_typed_document_xml(
             stamping=stamping,
             test_emitter_name_literal=test_emitter_name_literal,
             security_code=document.security_code,
+            fecha_firma=fecha_firma,
             document_type_code=6,
             document_type_description="Nota de débito electrónica",
         )
@@ -350,6 +359,7 @@ def _build_factura_xml(
     stamping: Stamping,
     test_emitter_name_literal: str | None,
     security_code: str | None,
+    fecha_firma: str,
 ) -> TypedXmlBuildResult:
     numero_documento = _required_intlike(typed_payload, "numero")
     fecha_emision = _resolve_emission_datetime(typed_payload)
@@ -424,6 +434,7 @@ def _build_factura_xml(
     root = _build_base_document_root(
         doc_id=doc_id,
         fecha_emision=fecha_emision,
+        fecha_firma=fecha_firma,
         i_tide=1,
         d_des_tide="Factura electrónica",
         stamping=stamping,
@@ -491,6 +502,7 @@ def _build_adjustment_note_xml(
     stamping: Stamping,
     test_emitter_name_literal: str | None,
     security_code: str | None,
+    fecha_firma: str,
     document_type_code: int,
     document_type_description: str,
 ) -> TypedXmlBuildResult:
@@ -561,6 +573,7 @@ def _build_adjustment_note_xml(
     root = _build_base_document_root(
         doc_id=doc_id,
         fecha_emision=fecha_emision,
+        fecha_firma=fecha_firma,
         i_tide=document_type_code,
         d_des_tide=document_type_description,
         stamping=stamping,
@@ -623,6 +636,7 @@ def _build_base_document_root(
     *,
     doc_id: str,
     fecha_emision: str,
+    fecha_firma: str,
     i_tide: int,
     d_des_tide: str,
     stamping: Stamping,
@@ -646,7 +660,8 @@ def _build_base_document_root(
     de = _sub(root, "DE")
     de.set("Id", doc_id)
     _sub(de, "dDVId", str(calculate_mod11_dv(doc_id[:-1])))
-    _sub(de, "dFecFirma", fecha_emision)
+    # A004: the real signing time (RG 23/2019 Art. 13), not dFeEmiDE.
+    _sub(de, "dFecFirma", fecha_firma)
     _sub(de, "dSisFact", "1")
 
     gope = _sub(de, "gOpeDE")
@@ -1885,27 +1900,11 @@ def _resolve_item_rate(item: dict, *, affectation: int) -> int:
 def _resolve_emission_datetime(payload: dict) -> str:
     raw = _first_non_none(payload, "fecha_emision", "fecha")
     if raw is None:
-        dt = paraguay_now()
-    else:
-        if isinstance(raw, datetime):
-            dt = raw
-        elif isinstance(raw, date):
-            dt = datetime.combine(raw, time(0, 0, 0))
-        else:
-            value = str(raw).strip()
-            if value.endswith(("Z", "z")):
-                # Python < 3.11 fromisoformat does not accept the "Z" suffix.
-                value = value[:-1] + "+00:00"
-            try:
-                dt = datetime.fromisoformat(value)
-            except ValueError:
-                try:
-                    dt = datetime.combine(date.fromisoformat(value), time(0, 0, 0))
-                except ValueError as exc:
-                    raise SifenValidationError(
-                        "fecha/fecha_emision has invalid format"
-                    ) from exc
-    return to_paraguay_wall_time(dt).isoformat()
+        return format_sifen_datetime(paraguay_now())
+    try:
+        return parse_sifen_datetime(raw).isoformat()
+    except ValueError as exc:
+        raise SifenValidationError("fecha/fecha_emision has invalid format") from exc
 
 
 def _resolve_date(raw) -> date:
