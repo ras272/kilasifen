@@ -249,6 +249,13 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   plataforma arma el `rEnviDe` con `_build_enviar_de_request_xml` y el `dId`
   real, lo guarda con el documento y lo envía tal cual con
   `TransmisionDE._send_raw_xml`, no con `enviar_de(rde)`.
+- **Lote.** `transmision/de.py` arma el ZIP del lote (`_build_lote_zip`):
+  una entrada `.xml` con `<rLoteDE>` sin namespace, una sola declaración y
+  los `rDE` sin blancos; al binding `REnvioLote.xDE` se le pasan los bytes
+  del ZIP, porque él ya codifica en base64. `sdk/polling.py` aplica los
+  códigos de la consulta de lote (solo `0361` es pendiente) con intervalos de
+  600 s por defecto. Las reglas y sus fuentes están en
+  `docs/normativa/matriz.md`.
 
 ## Plataforma
 
@@ -379,10 +386,17 @@ el plan del fork escritos por este proyecto. Para no volver atrás:
 Engine (defectos que la reescritura clean-room conservó a propósito para
 mantener el mismo comportamiento; se corrigen en commits posteriores):
 
-- `enviar_lote` codifica en base64 dos veces y sin ZIP: no cumple la
-  especificación. La plataforma no lo usa.
+- La consulta DTE (`cons_dte`, `cons_dte_async`) es experimental: solo hay
+  XSD, sin dirección, códigos ni plazos oficiales. Emite
+  `SifenExperimentalWarning`; no inventar tokens de "pendiente" ni rutas
+  nuevas sin una fuente oficial.
 - `consultar_dte_async` se reintenta como si fuera una consulta de solo
   lectura.
+- El lote (`enviar_lote`, `enviar_lote_xml`) ya sigue el formato oficial,
+  pero la plataforma todavía no envía por lote ni usa
+  `kilasifen.engine.sdk.polling`; el nombre del archivo del ZIP y la medida
+  de 1000 KB son decisiones NO DETERMINADO registradas en
+  `docs/normativa/matriz.md`.
 - El único binding `RDe` tiene el layout v141 (sin `dSisFact`).
 
 Plataforma (hallazgos de auditoría pendientes):

@@ -82,6 +82,21 @@ revisar la guía de migración de esta sección.
   pasa a ser `{ delivery_id }` y se agrega `webhooks.sendTestEvent`. Es un
   cambio de semántica dentro de `/v1` justificado por seguridad (ver la
   sección Security).
+- Engine, lotes (decisiones F65 y F66; ver Fixed): `poll_lote_status` devuelve
+  un `LoteResult` en lugar de la respuesta cruda y ya no acepta
+  `pending_codes`. `PollingConfig` suma `initial_delay_seconds` y cambia sus
+  valores por defecto a 600 s antes de la primera consulta, 600 s entre
+  consultas, 48 h de espera y ningún tope de intentos (antes 2 s, 120 s y 60
+  intentos). `SifenClient.enviar_lote_y_esperar` devuelve ese `LoteResult`,
+  lanza `SifenRejectionError` si la recepción no fue `0300` y `SifenLoteError`
+  si falta `dProtConsLote`. `enviar_lote` rechaza con `ValueError`, sin
+  enviar, un lote que mezcle `iTiDE` o RUC emisores, repita un CDC, tenga un
+  `rDE` sin `DE/@Id`, `iTiDE` o `dRucEm`, traiga blancos entre etiquetas o
+  supere 1000 KB.
+- Engine, consulta DTE: `poll_dte_async_status` ya no trae textos de
+  "pendiente" por defecto (eran inventados); sin `pending_tokens` devuelve la
+  primera respuesta. También espera `initial_delay_seconds` antes de la
+  primera consulta.
 
 ### Guía de migración
 
@@ -107,6 +122,10 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 | Comparar el texto de un mensaje de error del engine | Comparar por tipo de excepción; los textos cambiaron |
 | `signxml>=3.0` | `signxml>=5.1` |
 | `POST .../deliveries/replay` con `{"event_type", "payload"}` (o `webhooks.replay(..., { event_type, payload })` en el SDK) | `POST .../webhooks/{endpoint_id}/test` (`webhooks.sendTestEvent`) para probar el endpoint; `{"delivery_id": "..."}` para reenviar una entrega existente |
+| `poll_lote_status(...)` devolvía la respuesta de la consulta de lote | Leer `resultado.response` (última respuesta) y `resultado.documents` (un `LoteDocumentResult` por CDC); pasar `cdcs` y `consultar_de` para el paso a siConsDE tras `0364` o 48 h |
+| `poll_lote_status(..., pending_codes=(...))` | Sin reemplazo: el único código pendiente es `0361` |
+| `PollingConfig()` con 2 s, 120 s y 60 intentos | `PollingConfig()` con 600 s, 48 h y sin tope; en pruebas, `PollingConfig(initial_delay_seconds=0, interval_seconds=0)` o `clock`/`sleep` simulados |
+| `poll_dte_async_status(...)` con `PENDIENTE`, `EN PROCESO` y `PROCESANDO` por defecto | Pasar `pending_tokens=(...)` explícitos; el servicio es experimental |
 
 ### Added
 
@@ -119,6 +138,17 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   eventos.
 - Registro de esquemas determinista para validar contra los XSD.
 - Utilidades de *polling* para lotes y para la consulta asíncrona de DTE.
+- Engine, lotes: `TransmisionDE.enviar_lote_xml` (y `SifenClient.enviar_lote_xml`)
+  envía en lote `rDE` ya firmados. `ConsultaSIFEN.consultar_lote(cdc=...)`
+  consulta un lote por uno de sus CDC cuando no llegó el número de lote
+  (XSD `WS_SiConsLote_v141.xsd`, `dCDC`; Guía de mejores prácticas de la DNIT,
+  oct-2024, p. 6, punto 3). `kilasifen.engine.sdk` exporta `LoteResult`,
+  `LoteDocumentResult`, `require_lote_protocol`, `classify_lote_response`,
+  `lote_document_results`, `consulta_de_result` y `SifenLoteError`.
+  `kilasifen.engine.transmision.de` expone `MAX_BYTES_MENSAJE_LOTE` y
+  `NOMBRE_ARCHIVO_LOTE`.
+- Engine: `SifenExperimentalWarning` y
+  `kilasifen.engine.transmision.config.SERVICIOS_EXPERIMENTALES`.
 - Ejemplos ejecutables en `docs/examples/`.
 - `SifenRequestNotSentError` (subclase de `SifenTransportError`, exportada en
   `kilasifen.engine.sdk`): el transporte la lanza cuando la falla prueba que
@@ -133,6 +163,12 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 
 - El transporte SOAP admite `close()` y uso como *context manager*, con
   timeouts, reintentos de consultas y reutilización de la sesión.
+- Engine: la consulta DTE sincrónica y asincrónica (`consultar_dte`,
+  `consultar_dte_async`) queda marcada como experimental y emite
+  `SifenExperimentalWarning`. Solo existen sus XSD: su dirección, sus códigos
+  y sus plazos no figuran en el Manual Técnico v150 (§7.10, p. 41), en las
+  notas técnicas 01 a 27, en la Guía de mejores prácticas (p. 5), en la Guía
+  de pruebas (feb-2026, p. 6) ni en la FAQ de la DNIT (decisión F66).
 - El estado del PKCS12 se reutiliza entre firmas repetidas.
 - La CI valida además los artefactos wheel/sdist y la API pública.
 - `import kilasifen.engine` funciona sin ningún extra instalado: `requests`,
@@ -292,6 +328,26 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   como `KilaSifenError` con sus `details`.
 
 ### Fixed
+
+- Engine: `enviar_lote` arma el lote con el formato oficial (decisión F65).
+  Antes unía los `rDE` con saltos de línea, los codificaba en base64 a mano y
+  el binding volvía a codificarlos, sin ZIP ni `rLoteDE`: el SIFEN lo tomaba
+  como contenido no válido (`0301` o bloqueo del RUC). Ahora `xDE` lleva un
+  ZIP con una sola entrada `.xml` que contiene una única declaración UTF-8, la
+  raíz `<rLoteDE>` sin namespace y de 1 a 50 `rDE` sin declaración, con su
+  `xmlns` y sin nada entre etiquetas, codificado en base64 una sola vez (MT
+  v150 §7.2.1, §7.2.2.2, §7.2.4 y §9.2; Guía de mejores prácticas, oct-2024,
+  pp. 4, 6-9; XSD `WS_SiRecepLoteDE_v141.xsd`). Antes de enviar valida el
+  mismo `iTiDE` y RUC emisor, que no se repitan CDC y el tope de 1000 KB del
+  mensaje (Guía p. 6).
+- Engine: la espera de lotes trataba `0300` (código de recepción) y `0360`
+  (lote inexistente) como pendientes y terminaba en `0361`, el único estado
+  realmente pendiente, consultando cada 2 s durante 120 s. Ahora sigue el MT
+  v150 (Tabla F, p. 49; §12.3.3) y la Guía (pp. 6, 9 y 10): solo consulta
+  tras un `0300` con `dProtConsLote`; `0361` es el único pendiente; `0362`
+  devuelve el detalle de cada DE; `0360`, `0363`, `0340` y `0320` son
+  errores; con `0364` o pasadas 48 h consulta cada CDC con siConsDE, y las
+  consultas van a los 10 minutos y después cada 10 minutos (decisión F66).
 
 - Docker Compose: `worker`, `outbox` y `migrate` deshabilitan el
   `HEALTHCHECK` HTTP (`/v1/health`) que heredaban de la imagen. Ninguno sirve
