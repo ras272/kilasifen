@@ -33,13 +33,22 @@ ruta autenticada.
 | `500` | Reintentar con backoff y reportar el `correlation_id` si persiste. |
 | `503` | Reintentar con backoff porque una dependencia no está disponible. |
 
+`category` agrupa los códigos para decidir la recuperación sin conocerlos
+todos: `authentication`, `authorization`, `validation`, `invalid_request`
+(método, media type o request mal formado), `not_found`, `conflict`,
+`rate_limit`, `service_unavailable` e `internal`. Los códigos (`code`) son
+la referencia estable; la lista de categorías puede crecer.
+
 ## Errores de validación y de ruta
 
 Cuando el body, la query o los parámetros de ruta no cumplen el contrato, la
 API responde `422` con `code: "request.validation_failed"` y la lista de campos
 en `details.errors`. Cada entrada trae `loc` (ubicación del campo), `message` y
-`type`. La API nunca devuelve el valor enviado, para no reflejar secretos en
-logs del ERP.
+`type`. En `request.validation_failed` la API nunca devuelve el valor enviado,
+para no reflejar secretos en logs del ERP. La excepción es la ruta raw
+deprecada (sólo `platform:admin`): los `details.errors` de
+`documents.raw.generated_xml_invalid_schema` son mensajes del validador XSD y
+pueden citar valores del XML que envió el mismo caller.
 
 ```json
 {
