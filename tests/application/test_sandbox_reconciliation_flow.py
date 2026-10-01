@@ -70,56 +70,61 @@ def test_accepted_response_lost_reconciles_by_cdc_without_resubmission(
         assert job.attempts == 2
 
 
-def test_transport_timeout_queries_same_cdc_and_never_resubmits(
+def test_transport_timeout_queries_the_cdc_before_each_resend(
     tmp_path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """DECISIONES F63: a lost answer is queried; 0420 lets the same DE travel.
+
+    The sandbox times out on every send and answers 0420 to every query, so
+    sends and queries alternate until the attempt budget runs out.
+    """
+
     with _sandbox_document(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
         database_name="sandbox-transport-timeout",
         outcome="transport_timeout",
     ) as database_url:
-        result = process_document_job(
-            job_id="job-1",
-            database_url=database_url,
-            encryption_key=_fernet_key(),
-            current_date=date(2024, 4, 24),
-        )
-        assert result["job_status"] == "retry_scheduled"
+        sent: list[str] = []
+        original_submit = DeterministicSandboxTransport.submit
 
-        first_document, _ = _load_context(database_url)
-        assert first_document.cdc == "0180012345"
-        immutable_request = first_document.sifen_request_xml
+        def recording_submit(self, **kwargs):
+            sent.append(kwargs["request_xml"])
+            return original_submit(self, **kwargs)
 
-        monkeypatch.setattr(
-            DeterministicSandboxTransport,
-            "submit",
-            _fail_if_resubmitted,
-        )
-        for _ in range(3):
+        monkeypatch.setattr(DeterministicSandboxTransport, "submit", recording_submit)
+
+        statuses = []
+        for _ in range(5):
             result = process_document_job(
                 job_id="job-1",
                 database_url=database_url,
                 encryption_key=_fernet_key(),
                 current_date=date(2024, 4, 24),
             )
-            assert result["job_status"] == "retry_scheduled"
-        result = process_document_job(
-            job_id="job-1",
-            database_url=database_url,
-            encryption_key=_fernet_key(),
-            current_date=date(2024, 4, 24),
-        )
+            statuses.append(result["document_status"])
 
         document, job = _load_context(database_url)
-        assert result["document_status"] == "reconciliation_required"
-        assert result["job_status"] == "failed"
-        assert document.internal_status == "reconciliation_required"
+        # send, query (0420), resend, query (0420), resend.
+        assert statuses == [
+            "retry_pending",
+            "queued",
+            "retry_pending",
+            "queued",
+            "reconciliation_required",
+        ]
+        assert len(sent) == 3
+        assert len(set(sent)) == 3  # a fresh dId for every request
+        assert all('<DE Id="0180012345"/>' in request for request in sent)
+        assert document.signed_xml == _SIGNED_XML
+        assert document.sifen_request_xml == sent[-1]
         assert document.cdc == "0180012345"
-        assert document.sifen_request_xml == immutable_request
         assert document.last_query_response_raw is not None
-        assert "<status>not_found</status>" in document.last_query_response_raw
+        assert (
+            "<status>not_found_or_not_approved</status>"
+            in document.last_query_response_raw
+        )
         assert job.status == "failed"
         assert job.attempts == 5
         assert job.error_snapshot["category"] == "reconciliation_required"

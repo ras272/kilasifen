@@ -12,9 +12,19 @@ row lock while it waits on SIFEN:
    records the result of step 2.
 
 This module holds the pure rules of steps 1 and 3; the worker owns sessions
-and I/O. A document that may already be at SIFEN is only ever queried by CDC.
-A document whose request provably never left goes back to ``queued`` and its
-persisted request is sent again, unchanged, on the next attempt.
+and I/O. What the next attempt does follows SIFEN's last word on the CDC
+(DECISIONES F60, F61, F63, F64):
+
+- a document that may already be at SIFEN is first queried by CDC; 0422
+  makes it approved (cancelled if a cancellation is registered) and it is
+  never sent again; 0420 lets the same signed DE travel again;
+- a rejection with 1001/1002 is only believed after that query;
+- a rejection with 0161/0162 (server failures) is sent again;
+- a request that provably never left is sent again.
+
+Every resend carries the same signed ``rDE`` (same CDC, signature and
+``dFecFirma``) in a new ``rEnviDe`` with a fresh ``dId``, stored by the first
+transaction before it travels.
 """
 
 from __future__ import annotations
@@ -26,27 +36,48 @@ from typing import Protocol
 
 from kilasifen.domain.common.fiscal_states import (
     DOCUMENT_APPROVED_STATUSES,
+    DOCUMENT_PENDING_STATUSES,
     DOCUMENT_POSSIBLY_RECEIVED_STATUSES,
     DOCUMENT_SUBMITTING_STATUS,
     DOCUMENT_TERMINAL_STATUSES,
     job_status_for_document,
 )
+from kilasifen.domain.common.sifen_results import (
+    DUPLICATE_DOCUMENT_CODES,
+    SERVER_FAILURE_CODES,
+)
 from kilasifen.domain.documents.models import Document
+from kilasifen.domain.documents.transmission_deadlines import (
+    DeadlineAlert,
+    transmission_deadline_alerts,
+)
 from kilasifen.domain.jobs.models import Job
-from kilasifen.infrastructure.sifen.de_facts import approval_lower_bound
+from kilasifen.infrastructure.sifen.de_facts import approval_lower_bound, read_de_facts
 from kilasifen.infrastructure.sifen.engine import PreparedSubmission, SubmissionOutcome
-from kilasifen.infrastructure.sifen.query import DocumentQueryOutcome
+from kilasifen.infrastructure.sifen.query import (
+    QUERY_FOUND,
+    QUERY_NOT_FOUND_OR_NOT_APPROVED,
+    DocumentQueryOutcome,
+)
+from kilasifen.infrastructure.sifen.reconciliation import (
+    document_found_at_sifen,
+    document_not_approved_at_sifen,
+)
 
 MAX_DOCUMENT_ATTEMPTS = 5
 DOCUMENT_RETRY_DELAYS = (30, 120, 600, 1800)
 
 _RECONCILIATION_REQUIRED_MESSAGE = (
-    "automatic reconciliation attempts exhausted; "
-    "the immutable CDC was not resubmitted"
+    "automatic attempts exhausted while SIFEN's answer for the CDC is unknown; "
+    "an operator retry queries the CDC again"
 )
-_NEVER_DELIVERED_MESSAGE = (
-    "SIFEN could not be reached; the prepared request was never delivered "
-    "and a manual retry sends it unchanged"
+_NOT_DELIVERED_MESSAGE = (
+    "SIFEN holds no approved DTE for this CDC (never delivered, or answered "
+    "0420); a manual retry sends the same signed document again"
+)
+_SERVER_FAILURE_EXHAUSTED_MESSAGE = (
+    "SIFEN kept answering a server failure (0161/0162); a manual retry sends "
+    "the same signed document again"
 )
 
 
@@ -57,7 +88,7 @@ class AttemptAction(str, Enum):
     """Build and sign the document, persist the request, send it."""
 
     RESEND = "resend"
-    """Send again the persisted request of an attempt that never left."""
+    """Send the stored signed DE again, in a new ``rEnviDe``."""
 
     RECONCILE = "reconcile"
     """Query the CDC; the document may already be at SIFEN."""
@@ -68,7 +99,7 @@ def select_action(document: Document) -> AttemptAction:
 
     if document.internal_status in DOCUMENT_POSSIBLY_RECEIVED_STATUSES and document.cdc:
         return AttemptAction.RECONCILE
-    if document.internal_status == "queued" and _has_prepared_request(document):
+    if _awaits_resend(document):
         return AttemptAction.RESEND
     return AttemptAction.PREPARE
 
@@ -76,13 +107,18 @@ def select_action(document: Document) -> AttemptAction:
 def is_finished(document: Document, job: Job) -> bool:
     """Tell whether the job has nothing left to do.
 
-    A ``failed`` document whose job was queued again by an operator is the
-    one terminal state that still runs.
+    Two terminal documents still run: a ``failed`` one whose job an operator
+    queued again, and one rejected with a server failure (0161/0162) while its
+    job is scheduled or queued again (DECISIONES F64).
     """
 
     if document.internal_status not in DOCUMENT_TERMINAL_STATUSES:
         return False
-    return not (document.internal_status == "failed" and job.status == "queued")
+    if document.internal_status == "failed":
+        return job.status != "queued"
+    if _rejected_by_server_failure(document):
+        return job.status not in {"queued", "retry_scheduled"}
+    return True
 
 
 def start_attempt(job: Job, *, worker_correlation_id: str | None) -> Job:
@@ -103,8 +139,15 @@ def start_attempt(job: Job, *, worker_correlation_id: str | None) -> Job:
 def mark_submitting(
     document: Document,
     prepared: PreparedSubmission | None = None,
+    *,
+    request_xml: str | None = None,
+    timbrado: str | None = None,
 ) -> Document:
-    """Persist what is about to be sent; ``prepared`` is ``None`` on a resend."""
+    """Persist what is about to be sent.
+
+    ``prepared`` comes from a fresh preparation; on a resend ``request_xml``
+    is the new ``rEnviDe`` around the stored signed DE.
+    """
 
     if prepared is not None:
         document = replace(
@@ -113,10 +156,14 @@ def mark_submitting(
             signed_xml=prepared.signed_xml,
             sifen_request_xml=prepared.request_xml,
             cdc=prepared.cdc,
+            timbrado=timbrado or document.timbrado,
         )
+    elif request_xml is not None:
+        document = replace(document, sifen_request_xml=request_xml)
     return replace(
         document,
         internal_status=DOCUMENT_SUBMITTING_STATUS,
+        retryable_server_error=False,
         updated_at=_now(),
     )
 
@@ -150,6 +197,7 @@ class SifenAnswered:
             sifen_result_message=outcome.result_message,
             sifen_messages=[message.as_dict() for message in outcome.messages]
             or None,
+            retryable_server_error=False,
             updated_at=_now(),
         )
         if outcome.sifen_status in DOCUMENT_APPROVED_STATUSES:
@@ -163,10 +211,7 @@ class SifenAnswered:
             )
             return approved, _succeed(job)
         if outcome.sifen_status == "rejected":
-            rejected = replace(
-                answered, internal_status="rejected", sifen_status="rejected"
-            )
-            return rejected, _rejected_job(job, rejected)
+            return _record_rejection(answered, job)
         pending = replace(
             answered, internal_status="retry_pending", sifen_status="retry_pending"
         )
@@ -183,15 +228,15 @@ class SifenRejected:
     message: str
 
     def apply(self, document: Document, job: Job) -> tuple[Document, Job]:
-        updated = replace(
+        answered = replace(
             document,
-            internal_status="rejected",
-            sifen_status="rejected",
             sifen_result_code=self.code,
             sifen_result_message=self.message,
+            sifen_messages=[{"code": self.code, "message": self.message}],
+            retryable_server_error=False,
             updated_at=_now(),
         )
-        return updated, _job_following(job, updated, pending_category="sifen_pending")
+        return _record_rejection(answered, job)
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,7 +280,7 @@ class PreparationRefused:
 
 @dataclass(frozen=True, slots=True)
 class Reconciled:
-    """SIFEN answered the query by CDC."""
+    """SIFEN answered the query by CDC (DECISIONES F61, F62, F63)."""
 
     outcome: DocumentQueryOutcome
 
@@ -249,33 +294,25 @@ class Reconciled:
             sifen_result_message=self.outcome.result_message,
             updated_at=_now(),
         )
-        if self.outcome.status != "found":
-            # SIFEN code 0420 combines "not found" and "not approved". It is not
-            # proof that the previous submission failed, so resending here could
-            # duplicate one fiscal intent. Keep querying the immutable CDC.
-            pending = replace(
-                traced,
-                internal_status="retry_pending",
-                sifen_status="retry_pending",
+        if self.outcome.status == QUERY_FOUND:
+            return document_found_at_sifen(traced, self.outcome), _succeed(job)
+        if self.outcome.status == QUERY_NOT_FOUND_OR_NOT_APPROVED:
+            settled = document_not_approved_at_sifen(traced)
+            if settled.internal_status == "rejected":
+                return settled, _rejected_job(job, settled)
+            # The same signed DE travels again on the next attempt.
+            return settled, _job_following(
+                job, settled, pending_category="resubmission"
             )
-            return pending, _job_following(
-                job, pending, pending_category="reconciliation_pending"
-            )
-
-        signed_xml = self.outcome.content_xml or document.signed_xml
-        if not signed_xml:
-            return _still_pending(traced), _fail(
-                job,
-                category="fiscal_validation",
-                message="SIFEN returned a document without XML content",
-            )
-        approved = replace(
+        # Any other code is an error of the query, not an answer on the CDC.
+        pending = replace(
             traced,
-            signed_xml=signed_xml,
-            internal_status="approved",
-            sifen_status="approved",
+            internal_status="retry_pending",
+            sifen_status="retry_pending",
         )
-        return approved, _succeed(job)
+        return pending, _job_following(
+            job, pending, pending_category="reconciliation_pending"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -310,13 +347,15 @@ class RecordedAttempt:
 
     ``retryable`` asks for the next attempt to be staged in the outbox;
     ``document_changed`` is false when only the job is closed, so no status
-    webhook is published again.
+    webhook is published again. ``deadline_alerts`` are the transmission
+    deadlines a still unapproved document is close to, or past.
     """
 
     document: Document
     job: Job
     retryable: bool
     document_changed: bool = True
+    deadline_alerts: tuple[DeadlineAlert, ...] = ()
 
 
 def conclude_attempt(
@@ -363,12 +402,53 @@ def conclude_claimed_attempt(
         )
 
     updated_document, updated_job = result.apply(current_document, current_job)
-    if (
-        updated_document.internal_status not in DOCUMENT_TERMINAL_STATUSES
-        and current_job.attempts != attempt_number
-    ):
+    settled = updated_document.internal_status in DOCUMENT_TERMINAL_STATUSES and not (
+        _rejected_by_server_failure(updated_document)
+    )
+    if not settled and current_job.attempts != attempt_number:
         return None
     return _apply_attempt_budget(updated_document, updated_job, attempt_number)
+
+
+def _record_rejection(document: Document, job: Job) -> tuple[Document, Job]:
+    """Record a Rechazado according to its code (first error, Dto 872 Art. 29).
+
+    - 1001/1002 only fire when another document is AUTHORIZED (MT v150 §12.4
+      val. 2-3, p. 159): the CDC is queried before the rejection is believed
+      (DECISIONES F61).
+    - 0161/0162 are server failures reported with state R (MT v150 §12.2.6,
+      p. 153). Reading them as a resendable rejection is NO DETERMINADO
+      (DECISIONES F64): the document stays ``rejected`` with
+      ``retryable_server_error`` and its signed XML is sent again within the
+      attempt budget.
+    """
+
+    code = document.sifen_result_code
+    if code in DUPLICATE_DOCUMENT_CODES:
+        pending = replace(
+            document, internal_status="retry_pending", sifen_status="retry_pending"
+        )
+        return pending, _job_following(
+            job, pending, pending_category="duplicate_reconciliation"
+        )
+    rejected = replace(
+        document,
+        internal_status="rejected",
+        sifen_status="rejected",
+        retryable_server_error=code in SERVER_FAILURE_CODES,
+    )
+    if rejected.retryable_server_error:
+        return rejected, replace(
+            job,
+            status="retry_scheduled",
+            error_snapshot={
+                "category": "retryable_server_error",
+                "code": code,
+                "message": rejected.sifen_result_message,
+            },
+            updated_at=_now(),
+        )
+    return rejected, _rejected_job(job, rejected)
 
 
 def _apply_attempt_budget(
@@ -380,7 +460,9 @@ def _apply_attempt_budget(
     if job.status != "retry_scheduled":
         if job.status in {"succeeded", "failed"}:
             job = replace(job, finished_at=now, updated_at=now)
-        return RecordedAttempt(document=document, job=job, retryable=False)
+        return _with_deadline_alerts(
+            RecordedAttempt(document=document, job=job, retryable=False)
+        )
 
     if attempt_number < MAX_DOCUMENT_ATTEMPTS:
         scheduled = replace(
@@ -388,24 +470,61 @@ def _apply_attempt_budget(
             scheduled_at=_retry_at(attempt_number),
             updated_at=now,
         )
-        return RecordedAttempt(document=document, job=scheduled, retryable=True)
-
-    if document.internal_status == "queued":
-        # Nothing ever reached SIFEN: the document stays queued with its
-        # request, so an operator retry can send it as is.
-        exhausted = _fail(
-            job,
-            category="retry_exhausted",
-            message=_NEVER_DELIVERED_MESSAGE,
+        return _with_deadline_alerts(
+            RecordedAttempt(document=document, job=scheduled, retryable=True)
         )
+
+    if document.internal_status == "queued" or _rejected_by_server_failure(document):
+        # SIFEN holds no DTE for the CDC: the document keeps its signed XML
+        # and an operator retry sends it again.
+        message = (
+            _NOT_DELIVERED_MESSAGE
+            if document.internal_status == "queued"
+            else _SERVER_FAILURE_EXHAUSTED_MESSAGE
+        )
+        exhausted = _fail(job, category="retry_exhausted", message=message)
         exhausted = replace(exhausted, finished_at=now, updated_at=now)
-        return RecordedAttempt(document=document, job=exhausted, retryable=False)
+        return _with_deadline_alerts(
+            RecordedAttempt(document=document, job=exhausted, retryable=False)
+        )
 
     required_document, required_job = _mark_reconciliation_required(document, job)
-    return RecordedAttempt(
-        document=required_document,
-        job=required_job,
-        retryable=False,
+    return _with_deadline_alerts(
+        RecordedAttempt(
+            document=required_document,
+            job=required_job,
+            retryable=False,
+        )
+    )
+
+
+def _with_deadline_alerts(recorded: RecordedAttempt) -> RecordedAttempt:
+    """Add the 72 h / 720 h alerts of a document SIFEN has not approved yet.
+
+    The alerts go into the job ``error_snapshot`` (visible through the jobs
+    API) and are logged by the worker (DECISIONES F63).
+    """
+
+    document = recorded.document
+    if not (
+        document.internal_status in DOCUMENT_PENDING_STATUSES
+        or _rejected_by_server_failure(document)
+    ):
+        return recorded
+    facts = read_de_facts(document.signed_xml)
+    alerts = transmission_deadline_alerts(
+        signed_at=facts.signed_at,
+        issued_at=facts.issued_at,
+        now=_now(),
+    )
+    if not alerts:
+        return recorded
+    snapshot = dict(recorded.job.error_snapshot or {})
+    snapshot["deadline_alerts"] = [alert.value for alert in alerts]
+    return replace(
+        recorded,
+        job=replace(recorded.job, error_snapshot=snapshot),
+        deadline_alerts=alerts,
     )
 
 
@@ -443,16 +562,7 @@ def _job_following(job: Job, document: Document, *, pending_category: str) -> Jo
     if status == "succeeded":
         return _succeed(job)
     if status == "failed":
-        return replace(
-            job,
-            status="failed",
-            error_snapshot={
-                "category": "sifen_rejection",
-                "code": document.sifen_result_code,
-                "message": document.sifen_result_message,
-            },
-            updated_at=_now(),
-        )
+        return _rejected_job(job, document)
     return replace(
         job,
         status="retry_scheduled",
@@ -537,8 +647,18 @@ def _still_pending(document: Document) -> Document:
     )
 
 
-def _has_prepared_request(document: Document) -> bool:
-    return bool(document.sifen_request_xml and document.signed_xml and document.cdc)
+def _awaits_resend(document: Document) -> bool:
+    """SIFEN holds no DTE for the CDC and the signed DE can travel again."""
+
+    if not (document.signed_xml and document.cdc):
+        return False
+    return document.internal_status == "queued" or _rejected_by_server_failure(
+        document
+    )
+
+
+def _rejected_by_server_failure(document: Document) -> bool:
+    return document.internal_status == "rejected" and document.retryable_server_error
 
 
 def _retry_at(attempt_number: int) -> datetime:
