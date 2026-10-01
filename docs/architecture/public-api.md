@@ -65,8 +65,8 @@ clave se cargan en un `ssl.SSLContext` propio
 
 | Clase | Método | Qué hace |
 | --- | --- | --- |
-| `TransmisionDE` | `enviar_de_xml(xml_de)` | Envía un `rDE` ya firmado sin pasarlo por xsdata: lo parsea con lxml, le agrega `xsi:schemaLocation` si no lo tiene y lo inserta en `rEnviDe`. Es el camino que usa la plataforma. |
-| `TransmisionDE` | `enviar_de(rde, sign=True)` | Serializa un binding `RDe`, lo firma con el `Id` de su `DE` y lo envía. Ver [problemas conocidos](#problemas-conocidos). |
+| `TransmisionDE` | `enviar_de_xml(xml_de)` | Envía un `rDE` ya firmado sin pasarlo por xsdata: lo parsea con lxml, le agrega `xsi:schemaLocation` si no lo tiene y lo inserta en `rEnviDe` como texto, con sus propias declaraciones de namespace y sus prefijos, para que la firma siga verificando. Es el camino que usa la plataforma. |
+| `TransmisionDE` | `enviar_de(rde, sign=True)` | Serializa un binding `RDe` con el namespace del SIFEN por defecto (sin prefijos), lo firma con el `Id` de su `DE` y lo envía como `enviar_de_xml`. El binding tiene el layout v141 (ver [Bindings generados](#bindings-generados)). |
 | `TransmisionDE` | `enviar_lote(lista_rde, lote_id=None, sign=True)` | Arma un lote asíncrono de hasta 50 documentos (`MAX_LOTE`). Ver [problemas conocidos](#problemas-conocidos). |
 | `ConsultaSIFEN` | `consultar_de(cdc)` | Consulta un DE por CDC; exige 44 dígitos ASCII. |
 | `ConsultaSIFEN` | `consultar_lote(prot_lote)` | Estado de un lote por número de protocolo. |
@@ -194,14 +194,6 @@ publiquen como API, un cambio en ellos tiene que ir junto con el ajuste en
 Defectos que la reescritura de 0.2.0 conservó a propósito para mantener el
 comportamiento anterior. Están pendientes de corrección:
 
-- `enviar_de(rde)` con `sign=True` envía una firma que no verifica. xsdata
-  serializa el `rDE` con prefijo (`ns0:`), la firma se calcula sobre ese texto
-  y al armar `rEnviDe` el `rDE` se reexpresa con el namespace por defecto.
-  Hay un test `xfail` estricto en `tests/test_transmision.py`. Lo mismo pasa
-  con `enviar_de_xml` si el XML firmado viene de `to_xml()`, que también usa
-  el prefijo. Para enviar, firmar un `rDE` que ya use el namespace del SIFEN
-  por defecto (como el que arma `typed_xml_builder.py`) y pasarlo a
-  `enviar_de_xml`.
 - `enviar_lote` codifica el contenido en base64 dos veces y no lo comprime en
   ZIP, así que no respeta el formato del servicio de lotes. La plataforma no
   lo usa.
@@ -219,8 +211,9 @@ from pathlib import Path
 
 from kilasifen.engine import TEST, TransmisionDE, sign_xml
 
-# xml_rde: texto del rDE con el namespace del SIFEN por defecto, sin
-# prefijos (ver "Problemas conocidos"); cdc: el Id de su elemento DE.
+# xml_rde: texto del rDE, preferentemente con el namespace del SIFEN por
+# defecto y sin prefijos (la forma que usa la plataforma); cdc: el Id de su
+# elemento DE.
 pfx = Path("emisor.pfx").read_bytes()
 xml_firmado = sign_xml(xml_rde, pfx, clave_pfx, doc_id=cdc)
 

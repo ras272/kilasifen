@@ -137,6 +137,18 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   incluye en el mensaje. Las respuestas se validan por el nombre de su raíz
   antes de parsearlas, y `consultar_ruc` reabre la conexión ante esta
   excepción en lugar de ante `ParserError`.
+- La firma de un `rDE` ya no se invalida al armar el `rEnviDe` (defecto P3).
+  `_build_enviar_de_request_xml` inserta el `rDE` como texto, con sus propias
+  declaraciones de namespace y sus prefijos, en lugar de moverlo como árbol
+  lxml (lxml quitaba las declaraciones repetidas en el padre y reexpresaba un
+  `rDE` prefijado en el namespace por defecto). Además, `enviar_de` y
+  `enviar_lote` serializan el binding con el namespace del SIFEN por defecto,
+  sin el prefijo `ns0:`, antes de firmar. La firma verifica dentro del
+  `rEnviDe` tanto con `enviar_de(rde)` como con `enviar_de_xml` de un `rDE`
+  firmado con o sin prefijos. Cambia la forma textual del `rEnviDe`: el `rDE`
+  repite `xmlns="http://ekuatia.set.gov.py/sifen/xsd"` antes de
+  `xmlns:xsi` (la cabecera habitual de un `rDE` del SIFEN), y un `rDE`
+  prefijado conserva su prefijo en lugar de pasar al namespace por defecto.
 - El firmador PKCS12 acepta `bytearray` y `memoryview`, además de `bytes`,
   para el contenido del certificado, la contraseña y el documento a firmar.
 - El autor declarado en los metadatos del paquete es "The KilaSifen Authors".

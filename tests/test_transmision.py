@@ -44,6 +44,7 @@ from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
 from kilasifen.engine.de.bindings.v150.evento_v150 import TgGroupGesEve
+from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
 from kilasifen.engine.de.bindings.v150.prot_proces_de_v150 import RProtDe
 from kilasifen.engine.de.bindings.v150.prot_proces_eventos_v141 import (
     TgResProc,
@@ -109,6 +110,7 @@ from kilasifen.engine.transmision.de import (
     _build_enviar_de_request_xml,
 )
 from kilasifen.engine.transmision.evento import TransmisionEvento
+from tests._muestras import FACTURA
 
 requests = pytest.importorskip(
     "requests", reason="las pruebas de transmision requieren el extra 'transmision'"
@@ -357,6 +359,15 @@ def _verificar_firma(rde: Any, certificado_pem: str) -> None:
     signxml = pytest.importorskip("signxml")
     signxml.XMLVerifier().verify(
         etree.tostring(rde), x509_cert=certificado_pem, id_attribute="Id"
+    )
+
+
+def _verificar_firma_en_solicitud(solicitud: bytes, certificado_pem: str) -> None:
+    """Verifica con signxml la firma sobre los bytes completos de ``rEnviDe``,
+    tal como los recibe el SIFEN (lanza si falla)."""
+    signxml = pytest.importorskip("signxml")
+    signxml.XMLVerifier().verify(
+        solicitud, x509_cert=certificado_pem, id_attribute="Id"
     )
 
 
@@ -3945,9 +3956,14 @@ class TestRespuestasInesperadas:
 # ---------------------------------------------------------------------------
 
 _DECLARACION_SOLICITUD = b"<?xml version='1.0' encoding='UTF-8'?>\n"
-_RDE_CON_ESQUEMA = (
-    b'<rDE xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+# El rDE conserva su propia declaracion del namespace del SIFEN (aunque
+# rEnviDe tambien la tenga) y recibe xsi:schemaLocation.
+_DECLARACIONES_ESQUEMA = (
+    b'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
     b'xsi:schemaLocation="http://ekuatia.set.gov.py/sifen/xsd siRecepDE_v150.xsd"'
+)
+_RDE_CON_ESQUEMA = (
+    b'<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd" ' + _DECLARACIONES_ESQUEMA
 )
 
 
@@ -3984,7 +4000,8 @@ CASOS_SOLICITUD_DORADOS = [
         '<DE Id="1"/></rDE>',
         _solicitud_esperada(
             b"2",
-            b'<rDE xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+            b'<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd" '
+            b'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
             b'xsi:schemaLocation="custom"><DE Id="1"/></rDE>',
         ),
         id="schema_location_propio",
@@ -3992,8 +4009,13 @@ CASOS_SOLICITUD_DORADOS = [
     pytest.param(
         3,
         f'<ns0:rDE xmlns:ns0="{NS_SIFEN}"><ns0:DE Id="1"/></ns0:rDE>',
-        _solicitud_esperada(b"3", _RDE_CON_ESQUEMA + b'><DE Id="1"/></rDE>'),
-        id="prefijado",
+        _solicitud_esperada(
+            b"3",
+            b'<ns0:rDE xmlns:ns0="http://ekuatia.set.gov.py/sifen/xsd" '
+            + _DECLARACIONES_ESQUEMA
+            + b'><ns0:DE Id="1"/></ns0:rDE>',
+        ),
+        id="prefijado_se_conserva",
     ),
     pytest.param(
         1,
@@ -4010,7 +4032,9 @@ CASOS_SOLICITUD_DORADOS = [
     pytest.param(
         5,
         '<rDE><DE Id="1"/></rDE>',
-        _solicitud_esperada(b"5", _RDE_CON_ESQUEMA + b'><DE Id="1"/></rDE>'),
+        _solicitud_esperada(
+            b"5", b"<rDE " + _DECLARACIONES_ESQUEMA + b'><DE Id="1"/></rDE>'
+        ),
         id="sin_namespace",
     ),
     pytest.param(
@@ -4045,6 +4069,12 @@ CASOS_SOLICITUD_DORADOS = [
         f'<rDE xmlns="{NS_SIFEN}"/>',
         _solicitud_esperada(b"x", _RDE_CON_ESQUEMA + b"/>"),
         id="d_id_no_entero",
+    ),
+    pytest.param(
+        "<&>",
+        f'<rDE xmlns="{NS_SIFEN}"/>',
+        _solicitud_esperada(b"&lt;&amp;&gt;", _RDE_CON_ESQUEMA + b"/>"),
+        id="d_id_se_escapa",
     ),
 ]
 
@@ -4560,7 +4590,7 @@ class TestTransmisionDE:
         monkeypatch.setattr(
             TransmisionBase,
             "_serialize",
-            Registrador(efecto=lambda rde: f"<rDE><DE Id='{rde.DE.Id}'/></rDE>"),
+            Registrador(efecto=lambda rde, **_kw: f"<rDE><DE Id='{rde.DE.Id}'/></rDE>"),
         )
         identificadores = [_cdc_ficticio(n) for n in (641, 642)]
 
@@ -4612,18 +4642,21 @@ class TestTransmisionDE:
             _rde_dentro_de_solicitud(solicitud), _certificado_pem(pfx_de_prueba)
         )
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Defecto heredado que se conserva (D02, P3 de S1, pregunta abierta 13 "
-            "de S2): el constructor de rEnviDe reexpresa un rDE prefijado en el "
-            "espacio por defecto y la firma deja de verificar."
-        ),
+    @pytest.mark.parametrize(
+        "armar_solicitud",
+        [
+            pytest.param(_solicitud_por_constructor, id="constructor"),
+            pytest.param(_solicitud_por_enviar_de_xml, id="enviar_de_xml"),
+        ],
     )
     def test_firma_de_rde_prefijado_dentro_de_renvide(
-        self, pfx_de_prueba: bytes
+        self,
+        pfx_de_prueba: bytes,
+        transmision_de: Any,
+        armar_solicitud: Callable[[Any, str], bytes],
     ) -> None:
-        """N73."""
+        """N73 (defecto P3 corregido): el rDE prefijado se inserta sin
+        reexpresarlo y la firma sigue verificando."""
         cdc = _cdc_ficticio(73)
         prefijado = (
             f'<s:rDE xmlns:s="{NS_SIFEN}"><s:dVerFor>150</s:dVerFor>'
@@ -4631,11 +4664,78 @@ class TestTransmisionDE:
         )
         firmado = _firmar_con_pfx(pfx_de_prueba, prefijado, cdc)
 
-        solicitud = _build_enviar_de_request_xml(1, firmado)
+        solicitud = armar_solicitud(transmision_de, firmado)
 
-        _verificar_firma(
-            _rde_dentro_de_solicitud(solicitud), _certificado_pem(pfx_de_prueba)
+        rde = _rde_dentro_de_solicitud(solicitud)
+        assert rde.prefix == "s"
+        assert rde.find(f"{{{NS_SIFEN}}}DE").prefix == "s"
+        certificado = _certificado_pem(pfx_de_prueba)
+        _verificar_firma(rde, certificado)
+        _verificar_firma_en_solicitud(solicitud, certificado)
+
+    @pytest.mark.parametrize(
+        "armar_solicitud",
+        [
+            pytest.param(_solicitud_por_constructor, id="constructor"),
+            pytest.param(_solicitud_por_enviar_de_xml, id="enviar_de_xml"),
+        ],
+    )
+    def test_binding_firmado_con_prefijos_xsdata_verifica_en_renvide(
+        self,
+        pfx_de_prueba: bytes,
+        transmision_de: Any,
+        armar_solicitud: Callable[[Any, str], bytes],
+    ) -> None:
+        """``BindingMixin.sign_xml`` firma la serializacion de xsdata, que usa
+        el prefijo ``ns0:``; ese rDE firmado tambien verifica dentro de
+        ``rEnviDe``."""
+        rde_binding = RDe.from_path(FACTURA.ruta)
+        firmado = rde_binding.sign_xml(
+            None, pfx_de_prueba, CONTRASENA_CERTIFICADO_PRUEBA, FACTURA.cdc
         )
+        assert "<ns0:rDE" in firmado
+
+        solicitud = armar_solicitud(transmision_de, firmado)
+
+        certificado = _certificado_pem(pfx_de_prueba)
+        _verificar_firma(_rde_dentro_de_solicitud(solicitud), certificado)
+        _verificar_firma_en_solicitud(solicitud, certificado)
+
+    def test_enviar_de_firma_un_binding_sin_prefijos_y_verifica_en_renvide(
+        self, pfx_de_prueba: bytes
+    ) -> None:
+        """``enviar_de(rde)`` serializa el rDE con el namespace del SIFEN por
+        defecto, lo firma y la firma verifica dentro de ``rEnviDe``."""
+        envios = Registrador(_ret_envi_de_minimo())
+        with TransmisionDE(
+            ambiente=TEST,
+            pkcs12_data=pfx_de_prueba,
+            pkcs12_password=CONTRASENA_CERTIFICADO_PRUEBA,
+        ) as transmision:
+            transmision._send_raw_xml = envios
+            transmision.enviar_de(RDe.from_path(FACTURA.ruta))
+
+        ((servicio, solicitud),) = envios.argumentos
+        assert servicio == "recep_de"
+        assert not re.search(rb"<\w+:", solicitud)
+        rde = _rde_dentro_de_solicitud(solicitud)
+        assert rde.find(f"{{{NS_SIFEN}}}DE").get("Id") == FACTURA.cdc
+        assert len(rde.findall(f"{{{NS_XMLDSIG}}}Signature")) == 1
+        certificado = _certificado_pem(pfx_de_prueba)
+        _verificar_firma(rde, certificado)
+        _verificar_firma_en_solicitud(solicitud, certificado)
+
+    def test_enviar_de_serializa_con_el_namespace_por_defecto(
+        self, transmision_de: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        serializaciones = Registrador(_rde_sifen(_cdc_ficticio(74)))
+        monkeypatch.setattr(TransmisionBase, "_serialize", serializaciones)
+        transmision_de._send_raw_xml = Registrador(_ret_envi_de_minimo())
+        rde = SimpleNamespace(DE=SimpleNamespace(Id=""))
+
+        transmision_de.enviar_de(rde)
+
+        assert serializaciones.llamadas == [((rde,), {"ns_map": {None: NS_SIFEN}})]
 
 
 # ---------------------------------------------------------------------------

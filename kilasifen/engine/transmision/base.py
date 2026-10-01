@@ -779,9 +779,13 @@ class TransmisionBase:
 
     # -- serializacion -----------------------------------------------------
 
-    def _serialize(self, obj: Any) -> str:
-        """Serializa un binding a texto XML con declaracion y sin sangria."""
-        return _serializador().render(obj)
+    def _serialize(self, obj: Any, ns_map: dict[str | None, str] | None = None) -> str:
+        """Serializa un binding a texto XML con declaracion y sin sangria.
+
+        Sin ``ns_map`` xsdata asigna prefijos propios (``ns0:``...); con
+        ``{None: namespace}`` ese namespace queda como espacio por defecto.
+        """
+        return _serializador().render(obj, ns_map=ns_map)
 
     def _parse(self, xml: str, clazz: type) -> Any:
         """Parsea texto XML a una instancia de ``clazz``."""

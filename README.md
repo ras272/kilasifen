@@ -252,9 +252,11 @@ firmado = sign_xml(xml_rde, pfx, "contraseña-del-pfx", cdc)
 - `xml_rde` puede ser `str`, `bytes` o un elemento `lxml`; `cdc` es el valor
   del atributo `Id` del nodo a firmar (el CDC en un `DE`, el identificador en
   un evento).
-- Si después vas a transmitirlo, el `rDE` tiene que usar el namespace del
-  SIFEN como namespace por defecto, sin prefijo (ver la segunda limitación del
-  motor).
+- Si después vas a transmitirlo, conviene que el `rDE` use el namespace del
+  SIFEN como namespace por defecto, sin prefijos, como el XML que arma la
+  plataforma. `enviar_de_xml` inserta el `rDE` sin reescribir sus prefijos,
+  así que la firma verifica en los dos casos, pero que el SIFEN acepte un
+  `rDE` con prefijos no está verificado.
 - La firma es XMLDSig *enveloped*, RSA-SHA256, con canonicalización exclusiva
   y digest SHA-256. La `Signature` queda inmediatamente después del nodo
   firmado y usa el namespace XMLDSig por defecto, sin prefijo `ds:`.
@@ -263,8 +265,9 @@ firmado = sign_xml(xml_rde, pfx, "contraseña-del-pfx", cdc)
   `kilasifen.engine.sdk.errors.SifenSignatureError`.
 
 Desde un binding, `rde.sign_xml(None, pfx, clave, rde.DE.Id)` serializa la
-instancia en forma compacta y la firma. Antes de enviar un XML firmado de esa
-manera, leé la segunda limitación del motor.
+instancia en forma compacta (con el prefijo `ns0:` que asigna xsdata) y la
+firma. Para transmitir un binding conviene `TransmisionDE.enviar_de(rde)`, que
+lo serializa sin prefijos antes de firmar.
 
 ### Hablar con el SIFEN
 
@@ -297,8 +300,14 @@ for resultado in protocolo.gResProc:
     print(resultado.dCodRes, resultado.dMsgRes)
 ```
 
-`TransmisionDE.enviar_de(rde)` serializa y firma un binding antes de enviarlo,
-pero hoy produce una firma inválida (ver limitaciones).
+`TransmisionDE.enviar_de(rde)` serializa un binding con el namespace del
+SIFEN por defecto (sin prefijos), lo firma y lo envía; la firma verifica
+dentro del `rEnviDe`. Tené en cuenta que el binding `RDe` tiene el layout
+v1.41 (ver la primera limitación del motor).
+
+En los dos caminos, el `rDE` firmado viaja dentro del `rEnviDe` como texto:
+conserva sus propias declaraciones de namespace y sus prefijos, de modo que
+el `DE` mantiene la forma canónica sobre la que se calculó la firma.
 
 **Errores y reintentos.** Todas las fallas de transporte heredan de
 `SifenTransportError`. `SifenRequestNotSentError` indica que la solicitud no
@@ -460,9 +469,8 @@ entorno fijado en `uv.lock`, igual que el workflow de CI.
   repositorio.
 - Las pruebas de concurrencia contra PostgreSQL se saltean salvo que definas
   `KILA_SIFEN_TEST_DATABASE_URL`.
-- Hay una prueba marcada `xfail` estricta que documenta el defecto de firma
-  descrito en la segunda limitación del motor; cuando se corrija, va a fallar
-  como aviso para quitar la marca.
+- Las pruebas de transmisión que verifican el handshake TLS abren un socket en
+  `127.0.0.1` (loopback); ningún paquete sale de la máquina.
 - Si cambiás rutas o schemas de la API, regenerá el contrato con
   `python scripts/export_openapi.py` (con `--check` solo verifica).
 
@@ -484,25 +492,9 @@ Las reglas para contribuir están en [CONTRIBUTING.md](CONTRIBUTING.md).
    plataforma no usa este binding: arma el XML con su propio constructor
    ElementTree (`kilasifen/infrastructure/sifen/typed_xml_builder.py`) y lo
    valida contra `siRecepDE_v150.xsd` antes de firmar.
-2. **La firma de un `rDE` con prefijo se invalida dentro de `rEnviDe`.**
-   `to_xml()` emite el namespace del SIFEN con prefijo (`ns0:`). Al insertar
-   ese `rDE` firmado en el `rEnviDe`, tanto `enviar_de` como `enviar_de_xml`
-   lo reescriben en el namespace por defecto y la firma deja de verificar. Al
-   XML de la plataforma no le afecta porque se genera sin prefijos. Si
-   necesitás firmar XML producido por un binding, serializalo sin prefijo
-   antes de firmar:
-
-   ```python
-   from xsdata.formats.dataclass.serializers import XmlSerializer
-
-   xml = XmlSerializer().render(
-       rde, ns_map={None: "http://ekuatia.set.gov.py/sifen/xsd"}
-   )
-   ```
-
-3. **`enviar_lote` no respeta el formato del SIFEN.** Codifica el contenido
+2. **`enviar_lote` no respeta el formato del SIFEN.** Codifica el contenido
    dos veces en base64 y no lo comprime en ZIP. La plataforma no lo usa.
-4. **`consultar_dte_async` se reintenta como si fuera una consulta de solo
+3. **`consultar_dte_async` se reintenta como si fuera una consulta de solo
    lectura** (por ejemplo, con el `max_retries` de `SifenClient`), aunque
    registra una solicitud en el SIFEN.
 
