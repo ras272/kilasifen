@@ -8,6 +8,7 @@ from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.infrastructure.sifen.mapper import KilaSifenPayloadMapper
 from kilasifen.infrastructure.sifen.typed_xml_builder import _has_ds_namespace_prefix
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile
 
 
 def test_mapper_builds_factura_xml_from_typed_payload() -> None:
@@ -243,6 +244,7 @@ def _build_emitter() -> Emitter:
         csc_id="0001",
         created_at=_now(),
         updated_at=_now(),
+        fiscal_profile=fictional_fiscal_profile(),
     )
 
 

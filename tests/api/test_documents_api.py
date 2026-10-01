@@ -11,6 +11,7 @@ from kilasifen.config import get_settings
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile_payload
 from tests._raw_xml import (
     raw_document_payload,
     unsigned_rde,
@@ -59,6 +60,7 @@ def emitter_id(client: TestClient) -> str:
             "tax_environment": "test",
             "csc": None,
             "csc_id": None,
+            "fiscal_profile": fictional_fiscal_profile_payload(),
         },
     )
     assert response.status_code == 201
@@ -78,6 +80,7 @@ def second_emitter_id(client: TestClient) -> str:
             "tax_environment": "test",
             "csc": None,
             "csc_id": None,
+            "fiscal_profile": fictional_fiscal_profile_payload(),
         },
     )
     assert response.status_code == 201
@@ -719,3 +722,69 @@ def test_create_typed_document_ignores_client_number_and_logs_warning(
     assert document["payload_snapshot"]["typed_contract"]["payload"]["numero"] == 1
     warning.assert_called_once()
     assert warning.call_args.args[0] == "documents.numbering.client_number_ignored"
+
+
+def test_typed_document_requires_the_emitter_fiscal_profile(
+    client: TestClient,
+) -> None:
+    created = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "ruc": "44444401",
+            "dv": "7",
+            "legal_name": "EMISOR SIN PERFIL SA",
+            "tax_environment": "test",
+        },
+    )
+    emitter_without_profile = created.json()["data"]["emitter"]["id"]
+
+    response = client.post(
+        f"/v1/emitters/{emitter_without_profile}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "factura": {
+                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "items": [
+                    {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "emitters.fiscal_profile_required"
+
+
+@pytest.mark.parametrize(
+    ("factura_changes", "field"),
+    [
+        ({"emisor": {"ruc": "80111111-0"}}, "emisor.ruc"),
+        ({"emisor": {"razon_social": "OTRA RAZON SOCIAL"}}, "emisor.razon_social"),
+        ({"tipo_contribuyente": 1}, "tipo_contribuyente"),
+    ],
+)
+def test_typed_document_cannot_change_the_emitter_identity(
+    client: TestClient,
+    emitter_id: str,
+    factura_changes: dict,
+    field: str,
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "factura": {
+                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "items": [
+                    {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
+                ],
+                **factura_changes,
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "documents.emisor.identity_mismatch"
+    assert error["details"]["field"] == field

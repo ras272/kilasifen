@@ -12,6 +12,7 @@ from kilasifen.engine.firma import sign_xml
 from kilasifen.engine.sdk.validation import validate_xml
 from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
 from kilasifen.infrastructure.sifen.typed_xml_builder import build_typed_document_xml
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile
 from kilasifen.testing.typed_contract_scenarios import (
     TypedContractScenario,
     get_typed_contract_scenarios,
@@ -141,6 +142,7 @@ def _build_emitter() -> Emitter:
         csc_id="0001",
         created_at=timestamp,
         updated_at=timestamp,
+        fiscal_profile=fictional_fiscal_profile(),
     )
 
 

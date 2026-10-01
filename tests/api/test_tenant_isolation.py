@@ -27,6 +27,7 @@ from kilasifen.security import (
     key_prefix,
 )
 from kilasifen.testing.database import managed_test_database_url
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile_payload
 from tests._raw_xml import raw_document_payload
 
 _KEY_A = "ks_test_consumer_a_000000000000000001"
@@ -190,6 +191,7 @@ def _seed_tenants(session_factory) -> None:
                     legal_name="Emitter A",
                     tax_environment="test",
                     status="active",
+                    fiscal_profile=fictional_fiscal_profile_payload(),
                 ),
                 EmitterModel(
                     id="emitter-b",
@@ -199,6 +201,7 @@ def _seed_tenants(session_factory) -> None:
                     legal_name="Emitter B",
                     tax_environment="test",
                     status="active",
+                    fiscal_profile=fictional_fiscal_profile_payload(),
                 ),
             ]
         )

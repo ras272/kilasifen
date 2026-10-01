@@ -81,3 +81,20 @@ def test_production_requires_explicit_enablement() -> None:
 def test_trusted_proxy_ranges_must_be_valid_cidrs() -> None:
     with pytest.raises(ValidationError, match="does not appear"):
         Settings(trusted_proxy_cidrs=["not-a-network"], _env_file=None)
+
+
+def test_test_emitter_name_literal_is_disabled_by_default() -> None:
+    blank = Settings(_env_file=None, test_emitter_name_literal="  ")
+
+    assert Settings(_env_file=None).test_emitter_name_literal is None
+    assert blank.test_emitter_name_literal is None
+
+
+def test_test_emitter_name_literal_follows_tdnombre_length() -> None:
+    literal = "DE generado en ambiente de prueba - sin valor comercial ni fiscal"
+
+    settings = Settings(_env_file=None, test_emitter_name_literal=literal)
+
+    assert settings.test_emitter_name_literal == literal
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, test_emitter_name_literal="ABC")

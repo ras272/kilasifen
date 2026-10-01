@@ -5,6 +5,10 @@ from datetime import datetime, timezone
 from typing import Protocol
 from uuid import uuid4
 
+from kilasifen.application.documents.fiscal_preflight import (
+    require_emitter_fiscal_identity,
+    typed_fiscal_payload,
+)
 from kilasifen.application.documents.idempotency import (
     require_matching_idempotent_intent,
 )
@@ -171,6 +175,10 @@ class DocumentService:
         if new_payload_policy is not None:
             new_payload_policy(payload_snapshot)
 
+        typed_payload = typed_fiscal_payload(payload_snapshot)
+        if typed_payload is not None:
+            self._require_fiscal_identity(emitter_id, typed_payload)
+
         (
             normalized_payload_snapshot,
             establishment,
@@ -305,6 +313,12 @@ class DocumentService:
             external_id=external_id,
             cdc=cdc,
         )
+
+    def _require_fiscal_identity(self, emitter_id: str, typed_payload: dict) -> None:
+        emitter = self.emitter_repository.get_summary(emitter_id)
+        if emitter is None:
+            raise NotFoundError("emitters.not_found")
+        require_emitter_fiscal_identity(emitter, typed_payload)
 
     def _enqueue_if_configured(self, job: Job) -> None:
         if self.queue is None:

@@ -1014,6 +1014,7 @@
       },
       "EmitterPayload": {
         "additionalProperties": false,
+        "description": "Optional echo of the emitter identity; it can never change it.\n\n``ruc``, ``dv`` and ``razon_social`` are accepted only when they match the\nregistered emitter (``422 documents.emisor.identity_mismatch`` otherwise);\naddress, contact and activity fields are ignored.",
         "properties": {
           "actividad_economica": {
             "anyOf": [
@@ -1023,7 +1024,9 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`)."
           },
           "ciudad": {
             "anyOf": [
@@ -1037,6 +1040,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Ciudad"
           },
           "complemento_1": {
@@ -1049,6 +1054,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Complemento 1"
           },
           "complemento_2": {
@@ -1061,6 +1068,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Complemento 2"
           },
           "departamento": {
@@ -1075,6 +1084,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Departamento"
           },
           "descripcion_ciudad": {
@@ -1087,6 +1098,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Descripcion Ciudad"
           },
           "descripcion_departamento": {
@@ -1099,6 +1112,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Descripcion Departamento"
           },
           "descripcion_distrito": {
@@ -1111,6 +1126,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Descripcion Distrito"
           },
           "direccion": {
@@ -1124,6 +1141,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Direccion"
           },
           "distrito": {
@@ -1138,6 +1157,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Distrito"
           },
           "dv": {
@@ -1150,6 +1171,7 @@
                 "type": "null"
               }
             ],
+            "description": "Tiene que coincidir con el DV del emisor registrado.",
             "title": "Dv"
           },
           "email": {
@@ -1163,6 +1185,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Email"
           },
           "numero": {
@@ -1177,6 +1201,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Numero"
           },
           "razon_social": {
@@ -1190,6 +1216,7 @@
                 "type": "null"
               }
             ],
+            "description": "Tiene que coincidir con la razón social del emisor.",
             "title": "Razon Social"
           },
           "responsable_generacion": {
@@ -1205,13 +1232,15 @@
           "ruc": {
             "anyOf": [
               {
-                "pattern": "^\\d{5,8}(?:-\\d)?$",
+                "maxLength": 10,
+                "pattern": "^[1-9][0-9]*[0-9A-D]?(?:-[0-9])?$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Tiene que coincidir con el RUC del emisor registrado.",
             "title": "Ruc"
           },
           "telefono": {
@@ -1225,6 +1254,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Telefono"
           }
         },
@@ -1787,6 +1818,7 @@
                 "type": "null"
               }
             ],
+            "description": "Opcional. iTipCont sale del perfil fiscal del emisor; si se envía tiene que coincidir.",
             "title": "Tipo Contribuyente"
           },
           "tipo_documento": {
@@ -2595,6 +2627,7 @@
                 "type": "null"
               }
             ],
+            "description": "Opcional. iTipCont sale del perfil fiscal del emisor; si se envía tiene que coincidir.",
             "title": "Tipo Contribuyente"
           },
           "tipo_documento": {
@@ -2906,6 +2939,7 @@
                 "type": "null"
               }
             ],
+            "description": "Opcional. iTipCont sale del perfil fiscal del emisor; si se envía tiene que coincidir.",
             "title": "Tipo Contribuyente"
           },
           "tipo_documento": {

@@ -53,28 +53,72 @@ class GenerationResponsiblePayload(FiscalContractModel):
     cargo: str = Field(min_length=2, max_length=100)
 
 
+_IGNORED_EMITTER_FIELD = {
+    "description": (
+        "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del "
+        "emisor (`PATCH /v1/emitters/{emitter_id}`)."
+    ),
+    "json_schema_extra": {"deprecated": True},
+}
+
+
 class EmitterPayload(FiscalContractModel):
-    ruc: str | None = Field(default=None, pattern=r"^\d{5,8}(?:-\d)?$")
-    dv: str | None = Field(default=None, pattern=r"^\d$")
+    """Optional echo of the emitter identity; it can never change it.
+
+    ``ruc``, ``dv`` and ``razon_social`` are accepted only when they match the
+    registered emitter (``422 documents.emisor.identity_mismatch`` otherwise);
+    address, contact and activity fields are ignored.
+    """
+
+    ruc: str | None = Field(
+        default=None,
+        max_length=10,
+        pattern=r"^[1-9][0-9]*[0-9A-D]?(?:-[0-9])?$",
+        description="Tiene que coincidir con el RUC del emisor registrado.",
+    )
+    dv: str | None = Field(
+        default=None,
+        pattern=r"^\d$",
+        description="Tiene que coincidir con el DV del emisor registrado.",
+    )
     razon_social: str | None = Field(
         default=None,
         min_length=4,
         max_length=255,
         validation_alias=AliasChoices("razon_social", "razonSocial", "nombre"),
+        description="Tiene que coincidir con la razón social del emisor.",
     )
-    direccion: str | None = Field(default=None, min_length=1, max_length=255)
-    numero: str | int | None = None
-    complemento_1: str | None = Field(default=None, max_length=255)
-    complemento_2: str | None = Field(default=None, max_length=255)
-    departamento: int | str | None = None
-    descripcion_departamento: str | None = Field(default=None, max_length=100)
-    distrito: int | str | None = None
-    descripcion_distrito: str | None = Field(default=None, max_length=100)
-    ciudad: int | str | None = None
-    descripcion_ciudad: str | None = Field(default=None, max_length=100)
-    telefono: str | None = Field(default=None, min_length=6, max_length=15)
-    email: str | None = Field(default=None, min_length=3, max_length=80)
-    actividad_economica: EconomicActivityPayload | None = None
+    direccion: str | None = Field(
+        default=None, min_length=1, max_length=255, **_IGNORED_EMITTER_FIELD
+    )
+    numero: str | int | None = Field(default=None, **_IGNORED_EMITTER_FIELD)
+    complemento_1: str | None = Field(
+        default=None, max_length=255, **_IGNORED_EMITTER_FIELD
+    )
+    complemento_2: str | None = Field(
+        default=None, max_length=255, **_IGNORED_EMITTER_FIELD
+    )
+    departamento: int | str | None = Field(default=None, **_IGNORED_EMITTER_FIELD)
+    descripcion_departamento: str | None = Field(
+        default=None, max_length=100, **_IGNORED_EMITTER_FIELD
+    )
+    distrito: int | str | None = Field(default=None, **_IGNORED_EMITTER_FIELD)
+    descripcion_distrito: str | None = Field(
+        default=None, max_length=100, **_IGNORED_EMITTER_FIELD
+    )
+    ciudad: int | str | None = Field(default=None, **_IGNORED_EMITTER_FIELD)
+    descripcion_ciudad: str | None = Field(
+        default=None, max_length=100, **_IGNORED_EMITTER_FIELD
+    )
+    telefono: str | None = Field(
+        default=None, min_length=6, max_length=15, **_IGNORED_EMITTER_FIELD
+    )
+    email: str | None = Field(
+        default=None, min_length=3, max_length=80, **_IGNORED_EMITTER_FIELD
+    )
+    actividad_economica: EconomicActivityPayload | None = Field(
+        default=None, **_IGNORED_EMITTER_FIELD
+    )
     responsable_generacion: GenerationResponsiblePayload | None = None
 
 
@@ -306,7 +350,15 @@ class BaseFiscalDocumentPayload(FiscalContractModel):
     condicion_tipo_cambio: int | None = Field(default=None, ge=1, le=2)
     tipo_transaccion: int | str | None = None
     tipo_impuesto: int | str | None = None
-    tipo_contribuyente: int | None = Field(default=None, ge=1, le=2)
+    tipo_contribuyente: int | None = Field(
+        default=None,
+        ge=1,
+        le=2,
+        description=(
+            "Opcional. iTipCont sale del perfil fiscal del emisor; si se envía "
+            "tiene que coincidir."
+        ),
+    )
     codigo_seguridad: int | str | None = None
     emisor: EmitterPayload | None = None
     cliente: CustomerPayload

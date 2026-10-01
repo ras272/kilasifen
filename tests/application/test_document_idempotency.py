@@ -21,6 +21,7 @@ from kilasifen.infrastructure.db.session import (
     session_scope,
 )
 from kilasifen.testing.database import managed_test_database_url
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile
 
 
 def test_create_document_is_idempotent_per_emitter_and_key(tmp_path) -> None:
@@ -44,6 +45,7 @@ def test_create_document_is_idempotent_per_emitter_and_key(tmp_path) -> None:
             csc_id=None,
             created_at=_now(),
             updated_at=_now(),
+            fiscal_profile=fictional_fiscal_profile(),
         )
 
         with session_scope(session_factory) as session:
@@ -209,6 +211,7 @@ def test_create_document_enqueues_job_when_queue_is_configured(tmp_path) -> None
             csc_id=None,
             created_at=_now(),
             updated_at=_now(),
+            fiscal_profile=fictional_fiscal_profile(),
         )
 
         with session_scope(session_factory) as session:
@@ -270,6 +273,7 @@ def _emitter() -> Emitter:
         csc_id=None,
         created_at=_now(),
         updated_at=_now(),
+        fiscal_profile=fictional_fiscal_profile(),
     )
 
 

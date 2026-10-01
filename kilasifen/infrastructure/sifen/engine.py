@@ -21,6 +21,7 @@ from typing import Protocol
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
+from kilasifen.config import get_settings
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
@@ -147,7 +148,11 @@ class KilaSifenEmissionEngine:
         deployment_environment: str = "test",
         transport: DocumentSubmissionTransport | None = None,
     ):
-        self.mapper = mapper or KilaSifenPayloadMapper()
+        # Without an explicit mapper the dNomEmi literal of the test
+        # environment comes from KILA_SIFEN_TEST_EMITTER_NAME_LITERAL (F13).
+        self.mapper = mapper or KilaSifenPayloadMapper(
+            test_emitter_name_literal=get_settings().test_emitter_name_literal
+        )
         self.deployment_environment = deployment_environment
         self.transport = transport or KilaSifenDocumentTransport()
 

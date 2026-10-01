@@ -10,6 +10,7 @@ from kilasifen.config import get_settings
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile_payload
 
 API_KEY = "sandbox-test-key"
 
@@ -49,6 +50,7 @@ def emitter_id(client: TestClient) -> str:
             "dv": "5",
             "legal_name": "KILASIFEN SANDBOX",
             "tax_environment": "test",
+            "fiscal_profile": fictional_fiscal_profile_payload(),
         },
     )
     assert response.status_code == 201

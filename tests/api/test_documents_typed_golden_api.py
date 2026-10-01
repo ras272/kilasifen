@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from kilasifen.api.app import create_app
 from kilasifen.config import get_settings
 from kilasifen.domain.documents.models import Document
+from kilasifen.domain.emitters.fiscal_profile import fiscal_profile_from_dict
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine.firma import sign_xml
@@ -19,6 +20,7 @@ from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
 from kilasifen.infrastructure.sifen.mapper import KilaSifenPayloadMapper
 from kilasifen.testing.database import managed_test_database_url
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile_payload
 from kilasifen.testing.typed_contract_scenarios import (
     TypedContractScenario,
     get_typed_contract_scenarios,
@@ -173,6 +175,7 @@ def _create_emitter(client: TestClient, *, external_id: str, ruc: str, dv: str) 
             "tax_environment": "test",
             "csc": _TEST_CSC,
             "csc_id": _TEST_CSC_ID,
+            "fiscal_profile": fictional_fiscal_profile_payload(),
         },
     )
     assert response.status_code == 201
@@ -220,6 +223,7 @@ def _build_signed_xml_from_api_document(
         csc_id=_TEST_CSC_ID,
         created_at=_parse_datetime(emitter["created_at"]),
         updated_at=_parse_datetime(emitter["updated_at"]),
+        fiscal_profile=fiscal_profile_from_dict(emitter["fiscal_profile"]),
     )
     mapper = KilaSifenPayloadMapper()
     emission_input = mapper.map_document(

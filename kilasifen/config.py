@@ -60,6 +60,23 @@ class Settings(BaseSettings):
     sentry_traces_sample_rate: float = 0.0
     document_auto_enqueue: bool = False
     document_publish_webhooks: bool = False
+    #: dNomEmi for emitters of the SIFEN test environment. MT v150 validation
+    #: 1263 asks for "DE generado en ambiente de prueba - sin valor comercial
+    #: ni fiscal" and the DNIT test guide (feb-2026) for another text; which
+    #: one SIFEN test accepts is not determined, so it stays opt-in. ``None``
+    #: keeps the legal name.
+    test_emitter_name_literal: str | None = Field(
+        default=None, min_length=4, max_length=255
+    )
+
+    @field_validator("test_emitter_name_literal", mode="before")
+    @classmethod
+    def blank_literal_means_disabled(cls, value: object) -> object:
+        """An empty KILA_SIFEN_TEST_EMITTER_NAME_LITERAL keeps the feature off."""
+
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
     @field_validator("trusted_proxy_cidrs")
     @classmethod

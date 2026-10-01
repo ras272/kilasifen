@@ -12,7 +12,14 @@ from kilasifen.domain.common.paraguay_time import (
     paraguay_now,
     to_paraguay_wall_time,
 )
+from kilasifen.domain.documents.emitter_identity import (
+    find_emitter_identity_mismatch,
+)
 from kilasifen.domain.documents.models import Document
+from kilasifen.domain.emitters.fiscal_profile import (
+    EmitterFiscalProfile,
+    FiscalAddress,
+)
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine.sdk.errors import SifenValidationError
@@ -27,6 +34,11 @@ _AMOUNT_Q = Decimal("0.00000001")
 _AMOUNT4_Q = Decimal("0.0001")
 _PERCENT_Q = Decimal("0.00000001")
 _ITEM_TOTAL_Q = Decimal("0.00000001")
+#: Literal that MT v150 validation 1263 (D105) requires in the test
+#: environment and forbids in production.
+MT_TEST_EMITTER_NAME = (
+    "DE generado en ambiente de prueba - sin valor comercial ni fiscal"
+)
 #: A qualified ``ds:`` tag (opening or closing) or an ``xmlns:ds`` declaration.
 _DS_PREFIX_PATTERN = re.compile(r"</?ds:|\sxmlns:ds\s*=")
 
@@ -225,6 +237,17 @@ class TypedXmlBuildResult:
     doc_id: str
 
 
+@dataclass(frozen=True, slots=True)
+class _Issuer:
+    """``gEmis`` data of one document, all taken from the registered emitter."""
+
+    ruc: str
+    dv: str
+    name: str
+    profile: EmitterFiscalProfile
+    address: FiscalAddress
+
+
 @dataclass(slots=True)
 class _ItemComputation:
     amount_exe: Decimal
@@ -268,8 +291,13 @@ def build_typed_document_xml(
     document: Document,
     emitter: Emitter,
     stamping: Stamping,
+    test_emitter_name_literal: str | None = None,
 ) -> TypedXmlBuildResult | None:
-    """Build unsigned XML when payload includes a supported typed contract."""
+    """Build unsigned XML when payload includes a supported typed contract.
+
+    ``test_emitter_name_literal`` replaces ``dNomEmi`` for emitters of the
+    SIFEN test environment (validation 1263); ``None`` keeps the legal name.
+    """
 
     payload = document.payload_snapshot or {}
     typed_contract = payload.get("typed_contract")
@@ -285,12 +313,14 @@ def build_typed_document_xml(
             typed_payload=typed_payload,
             emitter=emitter,
             stamping=stamping,
+            test_emitter_name_literal=test_emitter_name_literal,
         )
     if contract == "nota_credito_v1":
         return _build_adjustment_note_xml(
             typed_payload=typed_payload,
             emitter=emitter,
             stamping=stamping,
+            test_emitter_name_literal=test_emitter_name_literal,
             document_type_code=5,
             document_type_description="Nota de crédito electrónica",
         )
@@ -299,6 +329,7 @@ def build_typed_document_xml(
             typed_payload=typed_payload,
             emitter=emitter,
             stamping=stamping,
+            test_emitter_name_literal=test_emitter_name_literal,
             document_type_code=6,
             document_type_description="Nota de débito electrónica",
         )
@@ -310,6 +341,7 @@ def _build_factura_xml(
     typed_payload: dict,
     emitter: Emitter,
     stamping: Stamping,
+    test_emitter_name_literal: str | None,
 ) -> TypedXmlBuildResult:
     numero_documento = _required_intlike(typed_payload, "numero")
     fecha_emision = _resolve_emission_datetime(typed_payload)
@@ -320,8 +352,11 @@ def _build_factura_xml(
     codigo_seguridad = _normalize_nine_digits(
         typed_payload.get("codigo_seguridad"), "123456789"
     )
-    tipo_contribuyente = _required_intlike(
-        typed_payload, "tipo_contribuyente", default=2
+    issuer = _resolve_issuer(
+        emitter=emitter,
+        typed_payload=typed_payload,
+        establecimiento=establecimiento,
+        test_emitter_name_literal=test_emitter_name_literal,
     )
     cliente = _required_object(typed_payload, "cliente")
     items = _required_items(typed_payload)
@@ -371,12 +406,11 @@ def _build_factura_xml(
 
     doc_id = _build_doc_id(
         i_tide=1,
-        emitter=emitter,
+        issuer=issuer,
         fecha_emision=fecha_emision,
         establecimiento=establecimiento,
         punto=punto,
         numero_documento=numero_documento,
-        tipo_contribuyente=tipo_contribuyente,
         codigo_seguridad=codigo_seguridad,
     )
     root = _build_base_document_root(
@@ -385,7 +419,7 @@ def _build_factura_xml(
         i_tide=1,
         d_des_tide="Factura electrónica",
         stamping=stamping,
-        emitter=emitter,
+        issuer=issuer,
         establecimiento=establecimiento,
         punto=punto,
         numero_documento=numero_documento,
@@ -447,6 +481,7 @@ def _build_adjustment_note_xml(
     typed_payload: dict,
     emitter: Emitter,
     stamping: Stamping,
+    test_emitter_name_literal: str | None,
     document_type_code: int,
     document_type_description: str,
 ) -> TypedXmlBuildResult:
@@ -459,8 +494,11 @@ def _build_adjustment_note_xml(
     codigo_seguridad = _normalize_nine_digits(
         typed_payload.get("codigo_seguridad"), "123456789"
     )
-    tipo_contribuyente = _required_intlike(
-        typed_payload, "tipo_contribuyente", default=2
+    issuer = _resolve_issuer(
+        emitter=emitter,
+        typed_payload=typed_payload,
+        establecimiento=establecimiento,
+        test_emitter_name_literal=test_emitter_name_literal,
     )
     cliente = _required_object(typed_payload, "cliente")
     items = _required_items(typed_payload)
@@ -504,12 +542,11 @@ def _build_adjustment_note_xml(
 
     doc_id = _build_doc_id(
         i_tide=document_type_code,
-        emitter=emitter,
+        issuer=issuer,
         fecha_emision=fecha_emision,
         establecimiento=establecimiento,
         punto=punto,
         numero_documento=numero_documento,
-        tipo_contribuyente=tipo_contribuyente,
         codigo_seguridad=codigo_seguridad,
     )
     root = _build_base_document_root(
@@ -518,7 +555,7 @@ def _build_adjustment_note_xml(
         i_tide=document_type_code,
         d_des_tide=document_type_description,
         stamping=stamping,
-        emitter=emitter,
+        issuer=issuer,
         establecimiento=establecimiento,
         punto=punto,
         numero_documento=numero_documento,
@@ -580,7 +617,7 @@ def _build_base_document_root(
     i_tide: int,
     d_des_tide: str,
     stamping: Stamping,
-    emitter: Emitter,
+    issuer: _Issuer,
     establecimiento: str,
     punto: str,
     numero_documento: int,
@@ -644,122 +681,93 @@ def _build_base_document_root(
 
     _append_anticipation_condition(ope=ope, typed_payload=typed_payload)
 
-    emis = _sub(gdat, "gEmis")
-    emisor_payload = (
-        typed_payload.get("emisor")
-        if isinstance(typed_payload.get("emisor"), dict)
-        else {}
-    )
-    emisor_ruc = _clean_text(emisor_payload.get("ruc")) or emitter.ruc
-    emisor_dv = _clean_text(emisor_payload.get("dv")) or emitter.dv
-    emisor_name = (
-        _clean_text(emisor_payload.get("razon_social"))
-        or _clean_text(emisor_payload.get("nombre"))
-        or emitter.legal_name
-    )
-    _sub(emis, "dRucEm", emisor_ruc)
-    _sub(emis, "dDVEmi", emisor_dv)
-    _sub(
-        emis,
-        "iTipCont",
-        str(_required_intlike(typed_payload, "tipo_contribuyente", default=2)),
-    )
-    _sub(emis, "dNomEmi", emisor_name)
-    _sub(
-        emis,
-        "dDirEmi",
-        _clean_text(emisor_payload.get("direccion"))
-        or _clean_text(typed_payload.get("direccion_emisor"))
-        or "ASUNCION",
-    )
-    _sub(
-        emis,
-        "dNumCas",
-        _clean_text(emisor_payload.get("numero"))
-        or _clean_text(typed_payload.get("numero_casa_emisor"))
-        or "0",
-    )
-    comp1 = _clean_text(emisor_payload.get("complemento_1"))
-    comp2 = _clean_text(emisor_payload.get("complemento_2"))
-    if comp1:
-        _sub(emis, "dCompDir1", comp1)
-    if comp2:
-        _sub(emis, "dCompDir2", comp2)
-    _sub(
-        emis,
-        "cDepEmi",
-        _clean_text(emisor_payload.get("departamento"))
-        or _clean_text(typed_payload.get("departamento_emisor"))
-        or "1",
-    )
-    _sub(
-        emis,
-        "dDesDepEmi",
-        _clean_text(emisor_payload.get("descripcion_departamento"))
-        or _clean_text(typed_payload.get("descripcion_departamento_emisor"))
-        or "CAPITAL",
-    )
-    distrito = _clean_text(emisor_payload.get("distrito")) or _clean_text(
-        typed_payload.get("distrito_emisor")
-    )
-    if distrito:
-        _sub(emis, "cDisEmi", distrito)
-    distrito_descripcion = _clean_text(
-        emisor_payload.get("descripcion_distrito")
-    ) or _clean_text(typed_payload.get("descripcion_distrito_emisor"))
-    if distrito_descripcion:
-        _sub(emis, "dDesDisEmi", distrito_descripcion)
-    _sub(
-        emis,
-        "cCiuEmi",
-        _clean_text(emisor_payload.get("ciudad"))
-        or _clean_text(typed_payload.get("ciudad_emisor"))
-        or "1",
-    )
-    _sub(
-        emis,
-        "dDesCiuEmi",
-        _clean_text(emisor_payload.get("descripcion_ciudad"))
-        or _clean_text(typed_payload.get("descripcion_ciudad_emisor"))
-        or "ASUNCION (DISTRITO)",
-    )
-    _sub(
-        emis,
-        "dTelEmi",
-        _clean_text(emisor_payload.get("telefono"))
-        or _clean_text(typed_payload.get("telefono_emisor"))
-        or "021000000",
-    )
-    _sub(
-        emis,
-        "dEmailE",
-        _clean_text(emisor_payload.get("email"))
-        or _clean_text(typed_payload.get("email_emisor"))
-        or "facturacion@kila.local",
-    )
-    activity = emisor_payload.get("actividad_economica")
-    activity_payload = activity if isinstance(activity, dict) else {}
-    gact = _sub(emis, "gActEco")
-    _sub(
-        gact,
-        "cActEco",
-        _clean_text(activity_payload.get("codigo"))
-        or _clean_text(typed_payload.get("codigo_actividad"))
-        or "82999",
-    )
-    _sub(
-        gact,
-        "dDesActEco",
-        _clean_text(activity_payload.get("descripcion"))
-        or _clean_text(typed_payload.get("descripcion_actividad"))
-        or "OTRAS ACTIVIDADES DE SERVICIOS DE APOYO A EMPRESAS N.C.P.",
-    )
-    responsable = emisor_payload.get("responsable_generacion")
-    if isinstance(responsable, dict):
-        _append_generation_responsible(emis=emis, responsable=responsable)
-
+    _append_issuer(gdat=gdat, issuer=issuer, typed_payload=typed_payload)
     _append_receiver(gdat=gdat, cliente=cliente)
     return root
+
+
+def _resolve_issuer(
+    *,
+    emitter: Emitter,
+    typed_payload: dict,
+    establecimiento: str,
+    test_emitter_name_literal: str | None,
+) -> _Issuer:
+    """Take every gEmis value from the registered emitter (MT v150 D101-D132)."""
+
+    profile = emitter.fiscal_profile
+    if profile is None:
+        raise SifenValidationError("emitters.fiscal_profile_required")
+    mismatch = find_emitter_identity_mismatch(
+        typed_payload,
+        ruc=emitter.ruc,
+        dv=emitter.dv,
+        legal_name=emitter.legal_name,
+        taxpayer_type=profile.taxpayer_type,
+    )
+    if mismatch is not None:
+        raise SifenValidationError(f"documents.emisor.identity_mismatch:{mismatch}")
+    return _Issuer(
+        ruc=emitter.ruc,
+        dv=emitter.dv,
+        name=_issuer_name(emitter, test_emitter_name_literal),
+        profile=profile,
+        address=profile.address_for(establecimiento),
+    )
+
+
+def _issuer_name(emitter: Emitter, test_emitter_name_literal: str | None) -> str:
+    """dNomEmi (D105): the test literal only applies to test emitters (1263)."""
+
+    if emitter.tax_environment == "test":
+        return test_emitter_name_literal or emitter.legal_name
+    if emitter.legal_name.strip().casefold() == MT_TEST_EMITTER_NAME.casefold():
+        # 1263: the test literal must not be used in production.
+        raise SifenValidationError("documents.emisor.test_name_in_production")
+    return emitter.legal_name
+
+
+def _append_issuer(*, gdat: ET.Element, issuer: _Issuer, typed_payload: dict) -> None:
+    profile = issuer.profile
+    address = issuer.address
+    emis = _sub(gdat, "gEmis")
+    _sub(emis, "dRucEm", issuer.ruc)
+    _sub(emis, "dDVEmi", issuer.dv)
+    _sub(emis, "iTipCont", str(profile.taxpayer_type))
+    if profile.regime_type is not None:
+        _sub(emis, "cTipReg", str(profile.regime_type))
+    _sub(emis, "dNomEmi", issuer.name)
+    if profile.trade_name:
+        _sub(emis, "dNomFanEmi", profile.trade_name)
+    _sub(emis, "dDirEmi", address.street)
+    _sub(emis, "dNumCas", address.house_number)
+    if address.complement_1:
+        _sub(emis, "dCompDir1", address.complement_1)
+    if address.complement_2:
+        _sub(emis, "dCompDir2", address.complement_2)
+    _sub(emis, "cDepEmi", str(address.department_code))
+    _sub(emis, "dDesDepEmi", address.department_description)
+    if address.district_code is not None:
+        _sub(emis, "cDisEmi", str(address.district_code))
+        _sub(emis, "dDesDisEmi", address.district_description)
+    _sub(emis, "cCiuEmi", str(address.city_code))
+    _sub(emis, "dDesCiuEmi", address.city_description)
+    _sub(emis, "dTelEmi", address.phone)
+    _sub(emis, "dEmailE", address.email)
+    if address.branch_name:
+        _sub(emis, "dDenSuc", address.branch_name)
+    for activity in profile.activities:
+        gact = _sub(emis, "gActEco")
+        _sub(gact, "cActEco", activity.code)
+        _sub(gact, "dDesActEco", activity.description)
+    emisor_payload = typed_payload.get("emisor")
+    responsable = (
+        emisor_payload.get("responsable_generacion")
+        if isinstance(emisor_payload, dict)
+        else None
+    )
+    if isinstance(responsable, dict):
+        _append_generation_responsible(emis=emis, responsable=responsable)
 
 
 def _append_generation_responsible(*, emis: ET.Element, responsable: dict) -> None:
@@ -1701,22 +1709,22 @@ def _resolve_qr_receptor(cliente: dict) -> str:
 def _build_doc_id(
     *,
     i_tide: int,
-    emitter: Emitter,
+    issuer: _Issuer,
     fecha_emision: str,
     establecimiento: str,
     punto: str,
     numero_documento: int,
-    tipo_contribuyente: int,
     codigo_seguridad: str,
 ) -> str:
+    # The CDC takes RUC, DV and iTipCont from the same source as gEmis (1000).
     return generate_cdc(
         i_tide=i_tide,
-        d_ruc_em=emitter.ruc,
-        d_dv_emi=emitter.dv,
+        d_ruc_em=issuer.ruc,
+        d_dv_emi=issuer.dv,
         d_est=establecimiento,
         d_pun_exp=punto,
         d_num_doc=str(numero_documento),
-        i_tip_cont=str(tipo_contribuyente),
+        i_tip_cont=str(issuer.profile.taxpayer_type),
         d_fe_emi_de=fecha_emision,
         i_tip_emi="1",
         d_cod_seg=codigo_seguridad,
