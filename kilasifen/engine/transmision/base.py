@@ -72,6 +72,7 @@ from kilasifen.engine.de.bindings.v150.ws_si_recep_lote_de_v141 import (
 # Los errores se toman del submodulo y no del paquete ``kilasifen.engine.sdk``:
 # este modulo se importa mientras ese paquete todavia se esta inicializando.
 from kilasifen.engine.sdk.errors import (
+    SifenRequestNotSentError,
     SifenTimeoutError,
     SifenTransportClosedError,
     SifenTransportError,
@@ -111,6 +112,9 @@ _RAIZ_INVALIDA = "invalid_xml"
 _MSG_CERRADA = "La transmision SIFEN ya esta cerrada; cree una nueva instancia"
 _MSG_TIMEOUT = "Se agoto el tiempo de espera de la solicitud SOAP al SIFEN"
 _MSG_TRANSPORTE = "Error de transporte en la solicitud SOAP al SIFEN"
+_MSG_NO_ENVIADA = (
+    "No se pudo establecer la conexion con el SIFEN; la solicitud SOAP no se envio"
+)
 _MSG_EXTRA_FALTANTE = (
     "La transmision al SIFEN necesita dependencias opcionales que no estan "
     'instaladas ({modulo}). Instala: pip install "kilasifen[transmision]"'
@@ -381,15 +385,19 @@ class RequestsTransport:
     ) -> bytes:
         """Envia ``data`` a ``url`` dentro de un sobre SOAP 1.2.
 
-        Hace hasta ``max_retries + 1`` intentos. Se reintentan los timeouts,
-        los errores de conexion y los errores HTTP sin cuerpo XML que no sean
-        4xx; entre intentos se espera ``backoff_factor * 2**i`` segundos.
+        Hace hasta ``max_retries + 1`` intentos. Se reintentan los fallos en
+        que la solicitud no llego al SIFEN, los timeouts, los demas errores de
+        conexion y los errores HTTP sin cuerpo XML que no sean 4xx; entre
+        intentos se espera ``backoff_factor * 2**i`` segundos.
 
         Returns:
             Los bytes del primer elemento del ``Body`` de la respuesta, o la
             respuesta cruda si no es un sobre SOAP.
 
         Raises:
+            SifenRequestNotSentError: si el ultimo intento fallo antes de
+                enviar la solicitud (DNS, conexion rechazada o inalcanzable,
+                tiempo agotado al conectar, handshake TLS).
             SifenTimeoutError: si se agotaron los intentos por timeout.
             SifenTransportError: ante cualquier otro fallo de ``requests``.
         """
@@ -412,32 +420,31 @@ class RequestsTransport:
                 )
                 respuesta.raise_for_status()
                 return _extract_soap_body(respuesta.content)
-            except excepciones.Timeout as exc:
-                fallo: SifenTransportError = SifenTimeoutError(_MSG_TIMEOUT)
-                causa: BaseException = exc
-                reintentable = True
-            except excepciones.HTTPError as exc:
-                cuerpo_xml = _extract_http_error_xml_body(exc)
-                if cuerpo_xml is not None:
-                    return cuerpo_xml
-                fallo = SifenTransportError(_MSG_TRANSPORTE)
-                causa = exc
-                reintentable = not _es_error_de_cliente(exc)
-            except excepciones.ConnectionError as exc:
-                fallo = SifenTransportError(_MSG_TRANSPORTE)
-                causa = exc
-                reintentable = True
             except excepciones.RequestException as exc:
-                fallo = SifenTransportError(_MSG_TRANSPORTE)
-                causa = exc
-                reintentable = False
-
-            if not reintentable or intento == total_intentos - 1:
-                raise fallo from causa
+                if isinstance(exc, excepciones.HTTPError):
+                    cuerpo_xml = _extract_http_error_xml_body(exc)
+                    if cuerpo_xml is not None:
+                        return cuerpo_xml
+                fallo, reintentable = self._clasificar_fallo(exc)
+                if not reintentable or intento == total_intentos - 1:
+                    raise fallo from exc
             self._esperar_antes_de_reintentar(intento)
 
         # Solo se llega aqui sin ningun intento (``max_retries`` negativo).
         raise SifenTransportError(_MSG_TRANSPORTE)
+
+    def _clasificar_fallo(self, exc: BaseException) -> tuple[SifenTransportError, bool]:
+        """Traduce un error de ``requests`` y dice si admite otro intento."""
+        excepciones = _importar_opcional("requests.exceptions")
+        if _modulo_conexion().solicitud_no_enviada(exc):
+            return SifenRequestNotSentError(_MSG_NO_ENVIADA), True
+        if isinstance(exc, excepciones.Timeout):
+            return SifenTimeoutError(_MSG_TIMEOUT), True
+        if isinstance(exc, excepciones.HTTPError):
+            return SifenTransportError(_MSG_TRANSPORTE), not _es_error_de_cliente(exc)
+        if isinstance(exc, excepciones.ConnectionError):
+            return SifenTransportError(_MSG_TRANSPORTE), True
+        return SifenTransportError(_MSG_TRANSPORTE), False
 
     def _esperar_antes_de_reintentar(self, intento_fallido: int) -> None:
         """Espera exponencial tras el intento ``intento_fallido`` (base 0)."""

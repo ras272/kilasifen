@@ -514,7 +514,9 @@ Hallazgos de una auditoría reciente, que se corregirán a continuación:
   cualquier otro código se clasifica como rechazo, así que nunca se produce
   `approved_with_observation` a partir de una respuesta real.
 - Un documento cuyo envío falló antes de llegar al SIFEN puede quedar
-  bloqueado en `reconciliation_required`.
+  bloqueado en `reconciliation_required`. El engine ya distingue ese caso
+  (`SifenRequestNotSentError`), pero la plataforma todavía lo trata como
+  resultado incierto.
 
 KilaSifen no certifica conformidad fiscal. Probá cada flujo en el ambiente
 de pruebas de la SET antes de habilitar producción.

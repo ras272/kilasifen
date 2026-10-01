@@ -14,7 +14,23 @@ class SifenSignatureError(SifenError):
 
 
 class SifenTransportError(SifenError):
-    """Error al transportar mensajes SOAP."""
+    """Error al transportar mensajes SOAP.
+
+    Salvo que sea una :class:`SifenRequestNotSentError`, el SIFEN pudo haber
+    recibido y procesado la solicitud: el resultado de un envio con efecto
+    fiscal queda incierto y hay que consultarlo antes de volver a enviar.
+    """
+
+
+class SifenRequestNotSentError(SifenTransportError):
+    """La solicitud no llego al SIFEN.
+
+    Se lanza solo cuando la falla prueba que no se escribio nada de la
+    solicitud HTTP: el nombre del servidor no se pudo resolver, la conexion
+    fue rechazada o el destino era inalcanzable, se agoto el tiempo al
+    conectar o fallo el handshake TLS. Reenviar la misma solicitud no puede
+    duplicar una operacion fiscal.
+    """
 
 
 class SifenTransportClosedError(SifenTransportError):

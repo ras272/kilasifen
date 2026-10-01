@@ -90,6 +90,14 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 - Registro de esquemas determinista para validar contra los XSD.
 - Utilidades de *polling* para lotes y para la consulta asíncrona de DTE.
 - Ejemplos ejecutables en `docs/examples/`.
+- `SifenRequestNotSentError` (subclase de `SifenTransportError`, exportada en
+  `kilasifen.engine.sdk`): el transporte la lanza cuando la falla prueba que
+  la solicitud nunca llegó al SIFEN (DNS, conexión rechazada o inalcanzable,
+  tiempo agotado al conectar, handshake TLS fallido). Los errores que pueden
+  ocurrir después de enviar el cuerpo (timeout de lectura, conexión cortada,
+  respuesta truncada) siguen siendo `SifenTimeoutError` o
+  `SifenTransportError`. Un `requests.ConnectTimeout` ahora se informa con
+  esta excepción y ya no como `SifenTimeoutError`.
 
 ### Changed
 

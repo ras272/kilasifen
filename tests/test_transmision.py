@@ -22,13 +22,16 @@ import importlib
 import json
 import os
 import re
+import socket
 import ssl
 import stat
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
 from decimal import Decimal
+from http.client import RemoteDisconnected
 from importlib.util import find_spec
 from pathlib import Path
 from types import SimpleNamespace
@@ -80,6 +83,7 @@ from kilasifen.engine.de.bindings.v150.ws_si_recep_lote_de_v141 import (
 )
 from kilasifen.engine.sdk.errors import (
     SifenError,
+    SifenRequestNotSentError,
     SifenSignatureError,
     SifenTimeoutError,
     SifenTransportClosedError,
@@ -113,6 +117,7 @@ etree = pytest.importorskip(
 # El cliente SOAP de xsdata importa ``requests`` al cargarse: va despues del skip.
 cliente_xsdata = importlib.import_module("xsdata.formats.dataclass.client")
 conexion = importlib.import_module("kilasifen.engine.transmision.conexion")
+urllib3_exc = importlib.import_module("urllib3.exceptions")
 
 
 # ---------------------------------------------------------------------------
@@ -1700,21 +1705,28 @@ class TestTransporteSoap:
         assert error.value.__cause__ is falla
 
     @pytest.mark.parametrize(
-        "tipo",
-        [requests.exceptions.Timeout, requests.exceptions.ConnectTimeout],
-        ids=["Timeout", "ConnectTimeout"],
+        "tipo, error_esperado",
+        [
+            (requests.exceptions.Timeout, SifenTimeoutError),
+            (requests.exceptions.ReadTimeout, SifenTimeoutError),
+            # Agotar el tiempo al conectar prueba que nada se envio.
+            (requests.exceptions.ConnectTimeout, SifenRequestNotSentError),
+        ],
+        ids=["Timeout", "ReadTimeout", "ConnectTimeout"],
     )
     def test_transporte_timeout_agotado_lanza_sifen_timeout(
         self,
         transporte: Callable[..., Any],
         sesion_programada: Callable[..., SesionProgramada],
         tipo: type[Exception],
+        error_esperado: type[Exception],
     ) -> None:
         """N22."""
         transporte_http = transporte(max_retries=1)
         sesion = sesion_programada(transporte_http, tipo("sin respuesta"))
-        with pytest.raises(SifenTimeoutError) as error:
+        with pytest.raises(SifenTransportError) as error:
             transporte_http.post(URL_PRUEBA, b"<xml />")
+        assert type(error.value) is error_esperado
         assert isinstance(error.value.__cause__, tipo)
         assert len(sesion.llamadas) == 2
 
@@ -2188,6 +2200,293 @@ class TestConexionTlsMutuo:
         with pytest.raises(ssl.SSLError):
             adaptador.send("solicitud")
         assert envios.veces == 0
+
+
+# ---------------------------------------------------------------------------
+# Fallos en que la solicitud no llego al SIFEN
+# ---------------------------------------------------------------------------
+
+URL_RECEPCION_PRUEBA = get_endpoint(TEST, "recep_de")
+
+
+def _por_requests(tipo: type[Exception], razon: BaseException) -> Exception:
+    """Envuelve ``razon`` como lo hace ``HTTPAdapter.send`` con un MaxRetryError."""
+    return tipo(urllib3_exc.MaxRetryError(None, URL_RECEPCION_PRUEBA, reason=razon))
+
+
+def _timeout_mientras_se_maneja_un_fallo_de_conexion() -> Exception:
+    """ReadTimeout cuyo ``__context__`` es un fallo de conexion previo y ajeno."""
+    try:
+        raise urllib3_exc.NewConnectionError(None, "fallo de conexion anterior")
+    except urllib3_exc.NewConnectionError:
+        try:
+            raise requests.exceptions.ReadTimeout("lectura agotada")
+        except requests.exceptions.ReadTimeout as exc:
+            return exc
+
+
+def _ssl_error_tras_el_handshake() -> Exception:
+    return _por_requests(
+        requests.exceptions.SSLError,
+        urllib3_exc.SSLError(ssl.SSLError(1, "decryption failed or bad record mac")),
+    )
+
+
+FALLOS_NO_ENVIADOS = [
+    pytest.param(
+        lambda: _por_requests(
+            requests.exceptions.ConnectionError,
+            urllib3_exc.NameResolutionError(
+                "sifen-test.set.gov.py", None, socket.gaierror(11001, "sin DNS")
+            ),
+        ),
+        id="dns",
+    ),
+    pytest.param(
+        lambda: _por_requests(
+            requests.exceptions.ConnectionError,
+            urllib3_exc.NewConnectionError(
+                None, "Failed to establish a new connection: connection refused"
+            ),
+        ),
+        id="conexion_rechazada",
+    ),
+    pytest.param(
+        lambda: _por_requests(
+            requests.exceptions.ConnectionError,
+            urllib3_exc.NewConnectionError(
+                None, "Failed to establish a new connection: network unreachable"
+            ),
+        ),
+        id="red_inalcanzable",
+    ),
+    pytest.param(
+        lambda: _por_requests(
+            requests.exceptions.ConnectTimeout,
+            urllib3_exc.ConnectTimeoutError(None, "connect timeout=30"),
+        ),
+        id="timeout_al_conectar",
+    ),
+    pytest.param(
+        lambda: requests.exceptions.ConnectTimeout("sin detalle"),
+        id="connect_timeout_sin_cadena",
+    ),
+    pytest.param(
+        lambda: _por_requests(
+            requests.exceptions.ProxyError,
+            urllib3_exc.ProxyError(
+                "Unable to connect to proxy",
+                urllib3_exc.NewConnectionError(None, "proxy caido"),
+            ),
+        ),
+        id="proxy_inalcanzable",
+    ),
+]
+
+FALLOS_AMBIGUOS = [
+    pytest.param(
+        lambda: requests.exceptions.ReadTimeout(
+            urllib3_exc.ReadTimeoutError(None, URL_RECEPCION_PRUEBA, "read timeout=30")
+        ),
+        id="timeout_de_lectura",
+    ),
+    pytest.param(
+        lambda: requests.exceptions.ConnectionError(
+            urllib3_exc.ProtocolError(
+                "Connection aborted.", RemoteDisconnected("sin respuesta")
+            )
+        ),
+        id="remote_disconnected",
+    ),
+    pytest.param(
+        lambda: requests.exceptions.ConnectionError(
+            urllib3_exc.ProtocolError(
+                "Connection aborted.", ConnectionResetError(104, "reset")
+            )
+        ),
+        id="conexion_reiniciada",
+    ),
+    pytest.param(_ssl_error_tras_el_handshake, id="ssl_tras_handshake"),
+    pytest.param(
+        lambda: requests.exceptions.ChunkedEncodingError(
+            urllib3_exc.ProtocolError("Response ended prematurely")
+        ),
+        id="respuesta_truncada",
+    ),
+    pytest.param(
+        lambda: requests.exceptions.ConnectionError("sin detalle"),
+        id="connection_error_sin_cadena",
+    ),
+    pytest.param(
+        _timeout_mientras_se_maneja_un_fallo_de_conexion,
+        id="contexto_ajeno_no_cuenta",
+    ),
+]
+
+
+class ServidorLocal:
+    """Oyente TCP en 127.0.0.1 (no sale de la maquina) para probar el handshake.
+
+    Sin ``respuesta`` nadie acepta: el kernel completa la conexion TCP y el
+    handshake TLS del cliente espera hasta agotar su tiempo. Con
+    ``respuesta``, un hilo acepta cada conexion, escribe esos bytes (que no
+    son TLS) y la cierra.
+    """
+
+    def __init__(self, respuesta: bytes | None = None) -> None:
+        self._oyente = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._oyente.bind(("127.0.0.1", 0))
+        self._oyente.listen(4)
+        self.url = f"https://127.0.0.1:{self._oyente.getsockname()[1]}/ws"
+        self._hilo: threading.Thread | None = None
+        if respuesta is not None:
+            self._hilo = threading.Thread(
+                target=self._responder, args=(respuesta,), daemon=True
+            )
+            self._hilo.start()
+
+    def _responder(self, respuesta: bytes) -> None:
+        while True:
+            try:
+                conexion_cliente, _origen = self._oyente.accept()
+            except OSError:
+                return
+            with conexion_cliente:
+                conexion_cliente.sendall(respuesta)
+
+    def __enter__(self) -> ServidorLocal:
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        self._oyente.close()
+        if self._hilo is not None:
+            self._hilo.join(timeout=5)
+
+
+def _transporte_local(
+    pem: tuple[str, str, bytes], max_retries: int, timeout: float = 0.3
+) -> Any:
+    ruta_certificado, ruta_clave, contrasena = pem
+    transporte_http = base._create_transport(
+        ruta_certificado,
+        ruta_clave,
+        timeout=timeout,
+        max_retries=max_retries,
+        backoff_factor=0.0,
+        key_password=contrasena,
+    )
+    # Que un proxy del entorno no intercepte la conexion local.
+    transporte_http._session.trust_env = False
+    return transporte_http
+
+
+class TestSolicitudNoEnviada:
+    @pytest.mark.parametrize("fabricar", FALLOS_NO_ENVIADOS)
+    def test_fallos_antes_de_enviar(self, fabricar: Callable[[], Exception]) -> None:
+        assert conexion.solicitud_no_enviada(fabricar()) is True
+
+    @pytest.mark.parametrize("fabricar", FALLOS_AMBIGUOS)
+    def test_fallos_que_pueden_ocurrir_despues_de_enviar(
+        self, fabricar: Callable[[], Exception]
+    ) -> None:
+        assert conexion.solicitud_no_enviada(fabricar()) is False
+
+    def test_error_del_handshake_queda_marcado(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        falla = ssl.SSLCertVerificationError(1, "certificate verify failed")
+
+        def handshake_fallido(self: Any, block: bool = False) -> None:
+            raise falla
+
+        monkeypatch.setattr(ssl.SSLSocket, "do_handshake", handshake_fallido)
+        socket_tls = socket.socket.__new__(conexion._SocketTlsCliente)
+        with pytest.raises(ssl.SSLCertVerificationError) as error:
+            socket_tls.do_handshake()
+        assert error.value is falla
+        envuelto = _por_requests(
+            requests.exceptions.SSLError, urllib3_exc.SSLError(falla)
+        )
+        assert conexion.solicitud_no_enviada(envuelto) is True
+
+    def test_contexto_crea_sockets_que_marcan_el_handshake(self) -> None:
+        adaptador = conexion.AdaptadorTlsMutuo("c.pem", "k.pem", None)
+        try:
+            assert adaptador.contexto_tls.sslsocket_class is conexion._SocketTlsCliente
+        finally:
+            adaptador.close()
+
+    @pytest.mark.parametrize("fabricar", FALLOS_NO_ENVIADOS)
+    def test_transporte_lanza_error_tipado_y_reintenta(
+        self,
+        transporte: Callable[..., Any],
+        sesion_programada: Callable[..., SesionProgramada],
+        fabricar: Callable[[], Exception],
+    ) -> None:
+        transporte_http = transporte(max_retries=2)
+        fallas = [fabricar() for _ in range(3)]
+        sesion = sesion_programada(transporte_http, *fallas)
+        with pytest.raises(SifenRequestNotSentError) as error:
+            transporte_http.post(URL_PRUEBA, b"<xml />")
+        assert len(sesion.llamadas) == 3
+        assert error.value.__cause__ is fallas[-1]
+        assert not isinstance(error.value, SifenTimeoutError)
+
+    def test_transporte_responde_tras_un_fallo_de_conexion(
+        self,
+        transporte: Callable[..., Any],
+        sesion_programada: Callable[..., SesionProgramada],
+        respuesta_http: type[RespuestaHttpFalsa],
+    ) -> None:
+        transporte_http = transporte(max_retries=1)
+        falla = _por_requests(
+            requests.exceptions.ConnectionError,
+            urllib3_exc.NewConnectionError(None, "connection refused"),
+        )
+        sesion_programada(transporte_http, falla, respuesta_http(b"<ok/>"))
+        assert transporte_http.post(URL_PRUEBA, b"<xml />") == b"<ok/>"
+
+    @pytest.mark.parametrize("fabricar", FALLOS_AMBIGUOS)
+    def test_transporte_no_clasifica_ambiguos_como_no_enviados(
+        self,
+        transporte: Callable[..., Any],
+        sesion_programada: Callable[..., SesionProgramada],
+        fabricar: Callable[[], Exception],
+    ) -> None:
+        transporte_http = transporte(max_retries=0)
+        sesion_programada(transporte_http, fabricar())
+        with pytest.raises(SifenTransportError) as error:
+            transporte_http.post(URL_PRUEBA, b"<xml />")
+        assert not isinstance(error.value, SifenRequestNotSentError)
+
+    def test_handshake_sin_respuesta_no_llego_al_sifen(
+        self, pem_de_prueba: tuple[str, str, bytes]
+    ) -> None:
+        """Integracion por loopback: el timeout del handshake TLS llega desde
+        requests como ``ReadTimeout`` y aun asi se reconoce como no enviado."""
+        transporte_http = _transporte_local(pem_de_prueba, max_retries=1)
+        try:
+            with ServidorLocal() as servidor:
+                with pytest.raises(SifenRequestNotSentError) as error:
+                    transporte_http.post(servidor.url, b"<xml />")
+        finally:
+            transporte_http.close()
+        assert isinstance(error.value.__cause__, requests.exceptions.ReadTimeout)
+
+    def test_handshake_rechazado_no_llego_al_sifen(
+        self, pem_de_prueba: tuple[str, str, bytes]
+    ) -> None:
+        """Integracion por loopback: el servidor contesta algo que no es TLS y
+        cierra. Segun la plataforma, requests lo informa como ``SSLError`` o
+        como conexion abortada; en ambos casos el fallo es del handshake."""
+        transporte_http = _transporte_local(pem_de_prueba, max_retries=0, timeout=5)
+        try:
+            with ServidorLocal(b"HTTP/1.1 400 Bad Request\r\n\r\n") as servidor:
+                with pytest.raises(SifenRequestNotSentError) as error:
+                    transporte_http.post(servidor.url, b"<xml />")
+        finally:
+            transporte_http.close()
+        assert isinstance(error.value.__cause__, requests.exceptions.ConnectionError)
 
 
 # ---------------------------------------------------------------------------

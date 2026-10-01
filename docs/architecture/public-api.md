@@ -78,6 +78,23 @@ clave se cargan en un `ssl.SSLContext` propio
 Las respuestas son instancias de los bindings de cada servicio (por ejemplo,
 `RRetEnviDe` para `enviar_de_xml`).
 
+### Errores de transporte
+
+Todas las fallas de transporte heredan de `SifenTransportError`
+(`kilasifen.engine.sdk.errors`, reexportadas en `kilasifen.engine.sdk`):
+
+| Excepción | Cuándo | ¿El SIFEN pudo recibir la solicitud? |
+| --- | --- | --- |
+| `SifenRequestNotSentError` | No se resolvió el nombre del servidor, la conexión fue rechazada o el destino era inalcanzable, se agotó el tiempo al conectar o falló el handshake TLS. | No: es seguro volver a enviar. |
+| `SifenTimeoutError` | Se agotó el tiempo esperando la respuesta (incluye el timeout de lectura). | Sí: resultado incierto. |
+| `SifenTransportError` | Cualquier otro fallo: conexión cortada a mitad de la respuesta, error HTTP sin cuerpo XML, etc. | Sí: resultado incierto. |
+
+El handshake TLS se reconoce porque los sockets del contexto de
+`kilasifen.engine.transmision.conexion` marcan los errores ocurridos durante
+el handshake; un fallo que llega desde `requests` como `ReadTimeout` o
+`SSLError` solo se clasifica como no enviado si tiene esa marca. Ante un
+resultado incierto, consultar por CDC antes de volver a transmitir.
+
 ## Dependencias opcionales
 
 `import kilasifen.engine` solo necesita `xsdata`. Lo demás se importa al

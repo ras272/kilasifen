@@ -8,6 +8,7 @@ pytest.importorskip("requests", reason="requests not installed")
 def test_error_hierarchy_exports():
     from kilasifen.engine.sdk import (
         SifenError,
+        SifenRequestNotSentError,
         SifenSignatureError,
         SifenTimeoutError,
         SifenTransportClosedError,
@@ -22,6 +23,9 @@ def test_error_hierarchy_exports():
     assert issubclass(SifenTransportClosedError, SifenTransportError)
     assert issubclass(SifenTimeoutError, SifenTransportError)
     assert issubclass(SifenUnexpectedResponseError, SifenTransportError)
+    # Los manejadores existentes de SifenTransportError siguen atrapandolo.
+    assert issubclass(SifenRequestNotSentError, SifenTransportError)
+    assert not issubclass(SifenRequestNotSentError, SifenTimeoutError)
 
 
 def test_sign_xml_wraps_unexpected_errors(monkeypatch):

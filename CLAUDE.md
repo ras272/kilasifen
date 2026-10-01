@@ -376,7 +376,9 @@ Plataforma (hallazgos de auditoría pendientes):
   «Aprobado» sin más texto; no se produce el estado «aprobado con
   observación».
 - Un documento cuyo envío falló antes de llegar al SIFEN puede quedar trabado
-  en `reconciliation_required`.
+  en `reconciliation_required`. El engine ya lanza `SifenRequestNotSentError`
+  en ese caso; falta que `infrastructure/sifen/engine.py` y los workers lo
+  distingan de un resultado incierto.
 
 Proyecto:
 

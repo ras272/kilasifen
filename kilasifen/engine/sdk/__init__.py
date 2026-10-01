@@ -3,6 +3,7 @@
 from kilasifen.engine.sdk.client import SifenClient
 from kilasifen.engine.sdk.errors import (
     SifenError,
+    SifenRequestNotSentError,
     SifenSignatureError,
     SifenTimeoutError,
     SifenTransportClosedError,
@@ -40,6 +41,7 @@ __all__ = [
     "SifenValidationError",
     "SifenSignatureError",
     "SifenTransportError",
+    "SifenRequestNotSentError",
     "SifenTransportClosedError",
     "SifenTimeoutError",
     "SifenUnexpectedResponseError",
