@@ -224,10 +224,11 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   nuevos. Varios módulos de `sdk/` (`client.py`, `fiscal.py`, `kude.py`,
   `polling.py`, `validation.py`) todavía tienen docstrings en inglés o
   portugués: al tocarlos, se pasan a español.
-- **Compatibilidad.** El engine declara Python 3.10 como mínimo, así que dentro
-  de `kilasifen/engine` no se usan `datetime.UTC`, `typing.Self`, `tomllib` ni
-  otras APIs 3.11+. Ojo: hoy nadie lo verifica en 3.10 (el entorno local usa
-  3.14 y el CI nunca completó una corrida).
+- **Compatibilidad.** Todo el proyecto declara Python 3.10 como mínimo: no usar
+  `datetime.UTC` (usar `timezone.utc`), `typing.Self`, `tomllib`, `StrEnum` ni
+  otras APIs 3.11+, y no pasar a `datetime.fromisoformat` textos con sufijo `Z`
+  sin normalizarlos. Para verificarlo sin un intérprete 3.10, correr la suite
+  con `datetime.UTC` borrado (ver el commit `f4d8315`).
 - **Firma.** `sdk/signer.py` implementa la firma *enveloped* RSA-SHA256 (C14N
   exclusiva, digest SHA-256, sin prefijo `ds:`) y guarda en una caché LRU los
   firmadores PKCS#12 ya decodificados. `firma.sign_xml` es la entrada pública:
@@ -278,8 +279,6 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   cifrados y las respuestas de la API no los devuelven (el emisor expone
   `csc_configured`, no el CSC). Los logs no deben exponer datos sensibles
   (regla 9 de `AGENTS.md`).
-- **Python.** La plataforma usa `datetime.UTC` en 18 módulos, así que en la
-  práctica requiere 3.11+, aunque `pyproject.toml` declare `>=3.10`.
 
 ## Esquemas XSD
 
@@ -405,10 +404,6 @@ Plataforma (hallazgos de auditoría pendientes):
 
 Proyecto:
 
-- `requires-python = ">=3.10"` no refleja que la plataforma necesita 3.11+.
-  Por la misma razón, en 3.10 `tests/test_logging.py` y
-  `tests/test_observability.py` fallarían al importar `kilasifen.logging`, y
-  el job `engine-regressions` del CI los incluye en su matriz 3.10.
 - `tests/test_ares_de_test_xml.py` ejercita
   `docs/examples/send_ares_factura_test.py`, que trae RUC, razón social y
   timbrado con aspecto de datos reales de un contribuyente; el certificado

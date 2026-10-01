@@ -262,12 +262,10 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 - El firmador PKCS12 acepta `bytearray` y `memoryview`, además de `bytes`,
   para el contenido del certificado, la contraseña y el documento a firmar.
 - El autor declarado en los metadatos del paquete es "The KilaSifen Authors".
-- `tests/conftest.py` usa `timezone.utc` en vez de `datetime.UTC`, que no
-  existe en Python 3.10, la versión más baja de la matriz de CI. Eso solo no
-  alcanza para que el job del engine (`pytest tests/test_*.py`) pase en 3.10:
-  `tests/test_logging.py` y `tests/test_observability.py` importan la
-  plataforma, que usa `datetime.UTC` en 18 módulos y en la práctica necesita
-  Python 3.11 o posterior.
+- Python 3.10 vuelve a estar soportado como declara `requires-python`: el
+  código y los tests usan `timezone.utc` en lugar de `datetime.UTC` (3.11+), y
+  `fecha_emision` acepta el sufijo `Z`, que `datetime.fromisoformat` solo
+  interpreta desde 3.11. La suite completa pasa con `datetime.UTC` borrado.
 - La API responde con el envelope de error documentado (`code`, `category`,
   `message`, `correlation_id`, `details`) también ante errores del framework:
   validación del request (`422 request.validation_failed`, con los campos en

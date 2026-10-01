@@ -26,9 +26,9 @@ desde tu propio código.
 - **CI sin resultados todavía.** El workflow `.github/workflows/tests.yml` está
   definido, pero ninguna ejecución llegó a completarse. Hasta que eso cambie, la
   referencia es correr las pruebas en local.
-- **Python.** El motor funciona con 3.10 o superior. La plataforma usa
-  `datetime.UTC`, así que en la práctica requiere **3.11+**, aunque
-  `pyproject.toml` declare `>=3.10`.
+- **Python.** Motor y plataforma declaran y soportan Python 3.10 o superior.
+  La suite completa se verificó simulando 3.10 (sin `datetime.UTC`); el CI
+  todavía no la corrió en esa versión.
 - **Código reescrito desde cero.** El motor se reescribió en modalidad
   clean-room y conserva a propósito el comportamiento anterior, defectos
   incluidos. Esos defectos se van a corregir en commits posteriores y están
@@ -451,7 +451,7 @@ electrónico de dinero no tiene endpoint: la razón está en
 
 ## Desarrollo y pruebas
 
-Para correr todo, incluida la plataforma, usá Python 3.11 o superior:
+Para correr todo, incluida la plataforma, usá Python 3.10 o superior:
 
 ```bash
 pip install -e ".[sign,transmision,test]"
