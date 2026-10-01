@@ -14,6 +14,7 @@ from kilasifen.config import get_settings
 from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
+from kilasifen.domain.events.models import Event
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.models import DocumentNumberingSequenceModel
@@ -311,6 +312,69 @@ def test_cancel_rejects_when_child_dte_not_cancelled(client: TestClient) -> None
     assert body["code"] == "events.cancel.child_dte_not_cancelled"
     assert body["details"]["child_cdcs"] == [
         "01800123450001001000040112026042012345678901"
+    ]
+
+
+def test_the_cancel_window_counts_from_the_approval_in_sifen(
+    client: TestClient,
+) -> None:
+    """DECISIONES F71: sifen_approved_at, not the last update of the row."""
+
+    response = client.post(
+        "/v1/emitters/emitter-1/documents/doc-fe-touched/cancel",
+        headers={"X-API-Key": API_KEY},
+        json={"motivo": "Fuera de plazo desde la aprobacion"},
+    )
+
+    assert response.status_code == 409
+    body = response.json()["error"]
+    assert body["code"] == "events.cancel.deadline_exceeded"
+    assert body["details"]["approved_at_source"] == "sifen"
+    assert body["details"]["remedy"] == "nota_credito"
+
+
+def test_a_second_cancellation_waits_for_the_pending_one(client: TestClient) -> None:
+    """DECISIONES F70: a second request would be a duplicate (4003)."""
+
+    response = client.post(
+        "/v1/emitters/emitter-1/documents/doc-fe-pending-cancel/cancel",
+        headers={"X-API-Key": API_KEY},
+        json={"motivo": "Segundo intento de cancelacion"},
+    )
+
+    assert response.status_code == 409
+    body = response.json()["error"]
+    assert body["code"] == "events.cancel.already_pending"
+    assert body["details"]["event_ids"] == ["event-pending-cancel"]
+
+
+def test_rejected_failed_and_queued_children_do_not_block_the_cancellation(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/v1/emitters/emitter-1/documents/doc-parent-of-rejected/cancel",
+        headers={"X-API-Key": API_KEY},
+        json={"motivo": "Hijos que no son DTE"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["data"]["event"]["status"] == "approved"
+
+
+def test_a_child_that_may_be_at_sifen_blocks_the_cancellation(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/v1/emitters/emitter-1/documents/doc-parent-of-in-flight/cancel",
+        headers={"X-API-Key": API_KEY},
+        json={"motivo": "Hijo en vuelo"},
+    )
+
+    assert response.status_code == 409
+    body = response.json()["error"]
+    assert body["code"] == "events.cancel.child_dte_not_cancelled"
+    assert body["details"]["child_cdcs"] == [
+        "01800123450001001000100112026042012345678901"
     ]
 
 
@@ -624,8 +688,8 @@ class FakeEventGateway:
         self.outcome = outcome or EventSubmissionOutcome(
             response_raw="<event-response/>",
             status="approved",
-            result_code="0300",
-            result_message="Evento procesado",
+            result_code="0600",
+            result_message="Evento registrado correctamente",
             protocol="90001234",
         )
         self.submitted_requests: list[str] = []
@@ -889,6 +953,116 @@ def _seed_event_context(
                 updated_at=_now(),
             )
         )
+        # Touched a minute ago, approved by SIFEN 49 h ago (DECISIONES F71).
+        doc_repo.save(
+            _document(
+                id="doc-fe-touched",
+                emitter_id="emitter-1",
+                document_type="factura",
+                cdc="01800123450001001000070012026042012345678901",
+                sifen_status="approved",
+                internal_status="approved",
+                updated_at=_now(),
+                sifen_approved_at=_now() - timedelta(hours=49),
+            )
+        )
+        doc_repo.save(
+            _document(
+                id="doc-fe-pending-cancel",
+                emitter_id="emitter-1",
+                document_type="factura",
+                cdc="01800123450001001000080012026042012345678901",
+                sifen_status="approved",
+                internal_status="approved",
+                updated_at=_now() - timedelta(hours=2),
+            )
+        )
+        SqlAlchemyEventRepository(session).save(
+            Event(
+                id="event-pending-cancel",
+                emitter_id="emitter-1",
+                document_id="doc-fe-pending-cancel",
+                event_type="cancel_document",
+                input_payload=None,
+                generated_xml="<gGroupGesEve/>",
+                signed_xml="<gGroupGesEve/>",
+                sifen_request_xml="<rEnviEventoDe/>",
+                sifen_response_raw=None,
+                status="retry_pending",
+                sifen_result_code=None,
+                sifen_result_message="timeout",
+                created_at=_now(),
+                updated_at=_now(),
+            )
+        )
+        children_parent_cdc = "01800123450001001000090012026042012345678901"
+        doc_repo.save(
+            _document(
+                id="doc-parent-of-rejected",
+                emitter_id="emitter-1",
+                document_type="factura",
+                cdc=children_parent_cdc,
+                sifen_status="approved",
+                internal_status="approved",
+                updated_at=_now() - timedelta(hours=3),
+            )
+        )
+        rejected_child_cdc = "01800123450001001000090112026042012345678901"
+        for child_id, child_status, child_cdc in (
+            ("doc-child-rejected", "rejected", rejected_child_cdc),
+            ("doc-child-failed", "failed", None),
+            ("doc-child-queued", "queued", None),
+        ):
+            doc_repo.save(
+                _document(
+                    id=child_id,
+                    emitter_id="emitter-1",
+                    document_type="nota_credito",
+                    cdc=child_cdc,
+                    sifen_status=child_status,
+                    internal_status=child_status,
+                    payload_snapshot={
+                        "typed_contract": {
+                            "contract": "nota_credito_v1",
+                            "payload": {
+                                "documento_asociado": {"cdc": children_parent_cdc}
+                            },
+                        }
+                    },
+                    updated_at=_now() - timedelta(hours=1),
+                )
+            )
+        in_flight_parent_cdc = "01800123450001001000100012026042012345678901"
+        doc_repo.save(
+            _document(
+                id="doc-parent-of-in-flight",
+                emitter_id="emitter-1",
+                document_type="factura",
+                cdc=in_flight_parent_cdc,
+                sifen_status="approved",
+                internal_status="approved",
+                updated_at=_now() - timedelta(hours=3),
+            )
+        )
+        doc_repo.save(
+            _document(
+                id="doc-child-in-flight",
+                emitter_id="emitter-1",
+                document_type="nota_credito",
+                cdc="01800123450001001000100112026042012345678901",
+                sifen_status="retry_pending",
+                internal_status="retry_pending",
+                payload_snapshot={
+                    "typed_contract": {
+                        "contract": "nota_credito_v1",
+                        "payload": {
+                            "documento_asociado": {"cdc": in_flight_parent_cdc}
+                        },
+                    }
+                },
+                updated_at=_now() - timedelta(hours=1),
+            )
+        )
 
         session.add(
             DocumentNumberingSequenceModel(
@@ -916,6 +1090,8 @@ def _document(
     establishment: str | None = None,
     point: str | None = None,
     document_number: int | None = None,
+    sifen_approved_at: datetime | None = None,
+    timbrado: str | None = None,
 ) -> Document:
     return Document(
         id=id,
@@ -941,6 +1117,8 @@ def _document(
         establishment=establishment,
         point=point,
         document_number=document_number,
+        sifen_approved_at=sifen_approved_at,
+        timbrado=timbrado,
     )
 
 

@@ -14,7 +14,7 @@ from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.events.attempts import (
     DeferredEventJob,
     FinishedEventJob,
-    send_event_attempt,
+    run_event_attempt,
 )
 from kilasifen.application.events.service import EventService
 from kilasifen.application.jobs.service import JobService
@@ -649,12 +649,14 @@ def process_event_job(
     encryption_key: str | None = None,
     submission_gateway: EventSubmissionGateway | None = None,
     webhook_queue=None,
+    query_gateway: SifenQueryGateway | None = None,
 ) -> dict[str, str | bool | None]:
     """Run one attempt of a fiscal event job outside the HTTP request.
 
     Like documents, the exact request is committed before SIFEN is called and
     the outcome is recorded in a second transaction; nothing is held while
-    SIFEN answers.
+    SIFEN answers. A cancellation that may already be registered is
+    reconciled through its CDC (siConsDE) with ``query_gateway``.
     """
 
     settings = get_settings()
@@ -668,6 +670,9 @@ def process_event_job(
     certificate_store = EncryptedCertificateStore(encryption_key)
     submission_gateway = submission_gateway or KilaSifenEventGateway(
         settings.sifen_environment
+    )
+    query_gateway = query_gateway or KilaSifenQueryGateway(
+        deployment_environment=settings.sifen_environment
     )
 
     def event_service(session: Session) -> EventService:
@@ -696,7 +701,7 @@ def process_event_job(
             payload = claim.payload
         else:
             # The request is committed: nothing is held while SIFEN answers.
-            result = send_event_attempt(submission_gateway, claim)
+            result = run_event_attempt(submission_gateway, query_gateway, claim)
             with session_scope(session_factory) as session:
                 payload = event_service(session).record_event_attempt(
                     attempt=claim,

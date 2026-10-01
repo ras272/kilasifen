@@ -11,14 +11,18 @@ from zoneinfo import ZoneInfo
 
 from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.events.attempts import (
+    CANCEL_EVENT_TYPE,
+    EVENT_RECONCILIATION_REQUIRED_STATUS,
     EVENT_SUBMITTING_STATUS,
+    EVENT_UNCERTAIN_STATUSES,
+    INUTILIZATION_EVENT_TYPE,
     DeferredEventJob,
     EventAttempt,
     EventAttemptResult,
     EventPreparationRefused,
     FinishedEventJob,
     in_flight_until,
-    send_event_attempt,
+    run_event_attempt,
 )
 from kilasifen.application.jobs.service import JobService
 from kilasifen.domain.common.errors import (
@@ -26,13 +30,22 @@ from kilasifen.domain.common.errors import (
     NotFoundError,
     UnprocessableEntityError,
 )
+from kilasifen.domain.common.fiscal_states import (
+    DOCUMENT_APPROVED_STATUSES,
+    DOCUMENT_POSSIBLY_RECEIVED_STATUSES,
+)
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.events.inutilized_ranges import InutilizedNumberRange
 from kilasifen.domain.events.models import Event
 from kilasifen.domain.jobs.models import Job
 from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
+from kilasifen.infrastructure.sifen.de_facts import approval_lower_bound
 from kilasifen.infrastructure.sifen.event import EventSubmissionGateway
+from kilasifen.infrastructure.sifen.query import (
+    DocumentQueryOutcome,
+    SifenQueryGateway,
+)
 from kilasifen.infrastructure.sifen.typed_event_builder import (
     build_signed_cancel_event_group_xml,
     build_signed_inutilization_event_group_xml,
@@ -51,8 +64,8 @@ from kilasifen.repositories.jobs import JobRepository
 
 logger = logging.getLogger(__name__)
 
-_CANCEL_EVENT_TYPE = "cancel_document"
-_INUTILIZATION_EVENT_TYPE = "inutilize_numbers"
+_CANCEL_EVENT_TYPE = CANCEL_EVENT_TYPE
+_INUTILIZATION_EVENT_TYPE = INUTILIZATION_EVENT_TYPE
 
 _DOC_TYPE_TO_ITIDE = {
     "factura": 1,
@@ -65,6 +78,9 @@ _DOC_TYPE_TO_ITIDE = {
     "comprobante_retencion": 8,
 }
 
+#: Cancellation deadline counted from the approval in SIFEN: 48 h for a FE,
+#: 168 h for the other DTE (MT v150 §6.2.1 p. 25; §11.6.1 4009/4010 p. 134;
+#: RG 23/2019 Art. 22).
 _CANCEL_DEADLINE_HOURS = {
     "factura": 48,
     "nota_credito": 168,
@@ -73,7 +89,15 @@ _CANCEL_DEADLINE_HOURS = {
     "autofactura": 168,
 }
 
-_APPROVED_DOCUMENT_STATUSES = {"approved", "approved_with_observation"}
+_APPROVED_DOCUMENT_STATUSES = DOCUMENT_APPROVED_STATUSES
+#: Cancellation events that may still be registered: a second one would be
+#: rejected as a duplicate (4003, MT v150 §11.6.1 p. 134).
+_PENDING_EVENT_STATUSES = frozenset({"queued", *EVENT_UNCERTAIN_STATUSES})
+#: Associated documents that are, or may become, DTE before the parent is
+#: cancelled (MT v150 Tabla J p. 117; Dto 872/2023 Arts. 30 and 40).
+_IN_FLIGHT_DOCUMENT_STATUSES = frozenset(
+    {"processing", *DOCUMENT_POSSIBLY_RECEIVED_STATUSES}
+)
 #: Event states that carry SIFEN's final word; a late attempt never moves them.
 _SIFEN_FINAL_EVENT_STATUSES = frozenset({"approved", "rejected"})
 _MAX_EVENT_ATTEMPTS = 5
@@ -125,6 +149,7 @@ class EventService:
         queue: EventJobQueue | None = None,
         database_url: str | None = None,
         encryption_key: str | None = None,
+        query_gateway: SifenQueryGateway | None = None,
     ):
         self.event_repository = event_repository
         self.emitter_repository = emitter_repository
@@ -140,6 +165,7 @@ class EventService:
         self.queue = queue
         self.database_url = database_url
         self.encryption_key = encryption_key
+        self.query_gateway = query_gateway
 
     def create_event(
         self,
@@ -404,6 +430,9 @@ class EventService:
             return self._defer_attempt(
                 event=event, job=job, until=previous_attempt_until
             )
+        # An earlier attempt may have reached SIFEN without a recorded answer:
+        # a cancellation is then reconciled by CDC before it is sent again.
+        after_uncertain_attempt = event.status in EVENT_UNCERTAIN_STATUSES
 
         attempt_number = job.attempts + 1
         job = self.job_repository.save(
@@ -444,6 +473,9 @@ class EventService:
             emitter=emitter,
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
+            event_type=event.event_type,
+            document_cdc=self._event_document_cdc(event),
+            after_uncertain_attempt=after_uncertain_attempt,
         )
 
     def record_event_attempt(
@@ -483,11 +515,43 @@ class EventService:
                 },
             )
             return _event_job_payload(event=event, job=job, retryable=False)
+        query = getattr(result, "query", None)
+        if query is not None:
+            self._trace_document_query(event=updated_event, query=query)
         return self._save_attempt(
             event=updated_event,
             job=updated_job,
             attempt_number=attempt.attempt_number,
             protocol=protocol,
+        )
+
+    def _event_document_cdc(self, event: Event) -> str | None:
+        if not event.document_id:
+            return None
+        document = self.document_repository.get(event.document_id)
+        return document.cdc if document is not None else None
+
+    def _trace_document_query(
+        self,
+        *,
+        event: Event,
+        query: DocumentQueryOutcome,
+    ) -> None:
+        """Keep the siConsDE that reconciled ``event`` on its document."""
+
+        if not event.document_id:
+            return
+        document = self.document_repository.get(event.document_id)
+        if document is None:
+            return
+        self.document_repository.save(
+            replace(
+                document,
+                last_query_request_xml=query.request_xml,
+                last_query_response_raw=query.response_raw,
+                last_query_at=_now(),
+                updated_at=_now(),
+            )
         )
 
     def _defer_attempt(
@@ -541,9 +605,13 @@ class EventService:
         retryable = job.status == "retry_scheduled"
         if retryable and attempt_number >= _MAX_EVENT_ATTEMPTS:
             retryable = False
+            # An event whose last attempt may have reached SIFEN is left for
+            # an operator, who retries it after a reconciliation; one that
+            # never left fails.
+            uncertain = event.status in EVENT_UNCERTAIN_STATUSES
             event = replace(
                 event,
-                status="failed",
+                status=EVENT_RECONCILIATION_REQUIRED_STATUS if uncertain else "failed",
                 sifen_result_message="event retry attempts exhausted",
                 updated_at=_now(),
             )
@@ -551,7 +619,9 @@ class EventService:
                 job,
                 status="failed",
                 error_snapshot={
-                    "category": "retry_exhausted",
+                    "category": (
+                        "reconciliation_required" if uncertain else "retry_exhausted"
+                    ),
                     "message": "event retry attempts exhausted",
                 },
                 finished_at=_now(),
@@ -684,8 +754,12 @@ class EventService:
             emitter=emitter,
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
+            event_type=event.event_type,
+            document_cdc=self._event_document_cdc(event),
         )
-        return send_event_attempt(self.submission_gateway, attempt).apply(event, job)
+        return run_event_attempt(
+            self.submission_gateway, self.query_gateway, attempt
+        ).apply(event, job)
 
     def _apply_approved_event(self, *, event: Event, protocol: str | None) -> None:
         if event.event_type == _CANCEL_EVENT_TYPE and event.document_id:
@@ -777,40 +851,65 @@ class EventService:
         if document_status not in _APPROVED_DOCUMENT_STATUSES:
             raise ConflictError("events.cancel.document_not_approved")
 
-        approved_cancel_events = self.event_repository.list_for_document(
+        cancel_events = self.event_repository.list_for_document(
             document_id=document.id,
             event_type=_CANCEL_EVENT_TYPE,
-            status="approved",
         )
-        if approved_cancel_events:
+        if any(event.status == "approved" for event in cancel_events):
             raise ConflictError("events.cancel.already_cancelled")
-
-        deadline_hours = _cancel_deadline_hours(document.document_type)
-        approved_at = _ensure_utc_datetime(document.updated_at)
-        deadline = approved_at + timedelta(hours=deadline_hours)
-        now = _now()
-        if now > deadline:
+        pending = [
+            event.id for event in cancel_events if _cancellation_may_register(event)
+        ]
+        if pending:
+            # DECISIONES F70: a second request would be a duplicate (4003).
             raise ConflictError(
-                "events.cancel.deadline_exceeded",
-                details={
-                    "deadline_hours": deadline_hours,
-                    "approved_at": approved_at.isoformat(),
-                },
+                "events.cancel.already_pending",
+                details={"event_ids": pending},
             )
+
+        self._validate_cancellation_deadline(document)
 
         children = self.document_repository.list_by_associated_cdc(
             emitter_id=document.emitter_id,
             associated_cdc=document.cdc,
         )
-        pending_children = [
+        blocking_children = [
             child.cdc or child.id
             for child in children
-            if child.id != document.id and not _is_cancelled_document(child)
+            if child.id != document.id and _blocks_parent_cancellation(child)
         ]
-        if pending_children:
+        if blocking_children:
             raise ConflictError(
                 "events.cancel.child_dte_not_cancelled",
-                details={"child_cdcs": pending_children},
+                details={"child_cdcs": blocking_children},
+            )
+
+    def _validate_cancellation_deadline(self, document: Document) -> None:
+        """48 h (FE) or 168 h (other DTE) from the approval in SIFEN.
+
+        DECISIONES F71: anchored on ``sifen_approved_at`` (``dFecProc``), or
+        on a lower bound of the approval when SIFEN's time is unknown, so the
+        local window never outlives SIFEN's (4009/4010, MT v150 §11.6.1
+        p. 134). Once it passes, the DTE is annulled with a credit note (RG
+        23/2019 Art. 22).
+        """
+
+        deadline_hours = _cancel_deadline_hours(document.document_type)
+        if document.sifen_approved_at is not None:
+            approved_at = _ensure_utc_datetime(document.sifen_approved_at)
+            source = "sifen"
+        else:
+            approved_at = approval_lower_bound(document)
+            source = "lower_bound"
+        if _now() > approved_at + timedelta(hours=deadline_hours):
+            raise ConflictError(
+                "events.cancel.deadline_exceeded",
+                details={
+                    "deadline_hours": deadline_hours,
+                    "approved_at": approved_at.isoformat(),
+                    "approved_at_source": source,
+                    "remedy": "nota_credito",
+                },
             )
 
     def _validate_inutilization_deadline(
@@ -876,7 +975,10 @@ def _now() -> datetime:
 def _event_job_is_finished(event: Event, job: Job) -> bool:
     if event.status in _SIFEN_FINAL_EVENT_STATUSES:
         return True
-    return event.status == "failed" and job.status != "queued"
+    if event.status in {"failed", EVENT_RECONCILIATION_REQUIRED_STATUS}:
+        # Only an operator retry (a queued job) runs it again.
+        return job.status != "queued"
+    return False
 
 
 def _require_row(row):
@@ -934,6 +1036,27 @@ def _is_cancelled_document(document: Document) -> bool:
         document.sifen_status or document.internal_status
     )
     return document_status in _CANCELLED_DOCUMENT_STATUSES
+
+
+def _cancellation_may_register(event: Event) -> bool:
+    """A cancellation not final yet, or failed after its request was stored."""
+
+    if event.status in _PENDING_EVENT_STATUSES:
+        return True
+    return event.status == "failed" and bool(event.sifen_request_xml)
+
+
+def _blocks_parent_cancellation(child: Document) -> bool:
+    """A child DTE, or one that may be at SIFEN or is about to be sent again.
+
+    Rejected, locally failed, cancelled, inutilized and queued children do
+    not block: they are not DTE (MT v150 Tabla J p. 117; DECISIONES F71).
+    """
+
+    status = _normalize_status(child.internal_status)
+    if status in _APPROVED_DOCUMENT_STATUSES or status in _IN_FLIGHT_DOCUMENT_STATUSES:
+        return True
+    return status == "rejected" and child.retryable_server_error
 
 
 def _generate_short_numeric_event_id() -> str:
