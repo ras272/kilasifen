@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import decimal
 import importlib
+import io
 import json
 import os
 import re
@@ -29,6 +30,7 @@ import subprocess
 import sys
 import threading
 import time
+import zipfile
 from collections.abc import Callable, Iterator
 from decimal import Decimal
 from http.client import RemoteDisconnected
@@ -95,6 +97,7 @@ from kilasifen.engine.sdk.errors import (
 )
 from kilasifen.engine.sdk.signer import clear_pkcs12_signer_cache
 from kilasifen.engine.transmision import base
+from kilasifen.engine.transmision import de as modulo_de
 from kilasifen.engine.transmision import evento as modulo_evento
 from kilasifen.engine.transmision.base import TransmisionBase
 from kilasifen.engine.transmision.config import (
@@ -105,12 +108,15 @@ from kilasifen.engine.transmision.config import (
 )
 from kilasifen.engine.transmision.consulta import ConsultaSIFEN, _normalize_ruc
 from kilasifen.engine.transmision.de import (
+    MAX_BYTES_MENSAJE_LOTE,
     MAX_LOTE,
+    NOMBRE_ARCHIVO_LOTE,
     TransmisionDE,
     _build_enviar_de_request_xml,
+    _build_lote_zip,
 )
 from kilasifen.engine.transmision.evento import TransmisionEvento
-from tests._muestras import FACTURA
+from tests._muestras import FACTURA, NOTA_CREDITO
 
 requests = pytest.importorskip(
     "requests", reason="las pruebas de transmision requieren el extra 'transmision'"
@@ -289,6 +295,36 @@ def _rde_sifen(doc_id: str, extra: str = "") -> str:
         f'<rDE xmlns="{NS_SIFEN}"><dVerFor>150</dVerFor>'
         f'<DE Id="{doc_id}"><dDVId>3</dDVId></DE>{extra}</rDE>'
     )
+
+
+def _rde_lote(
+    cdc: str,
+    tipo: str = FACTURA.tipo,
+    ruc: str = FACTURA.ruc_emisor,
+    extra: str = "",
+) -> str:
+    """``rDE`` minimo con lo que valida el lote: CDC, ``iTiDE`` y ``dRucEm``.
+
+    Usa el tipo y el RUC emisor ficticios de la muestra de factura.
+    """
+    return (
+        f'<rDE xmlns="{NS_SIFEN}"><dVerFor>150</dVerFor><DE Id="{cdc}">'
+        f"<gTimb><iTiDE>{tipo}</iTiDE></gTimb>"
+        f"<gDatGralOpe><gEmis><dRucEm>{ruc}</dRucEm></gEmis></gDatGralOpe>"
+        f"</DE>{extra}</rDE>"
+    )
+
+
+def _rde_lote_de_binding(rde: Any, **_kwargs: Any) -> str:
+    """Efecto de ``_serialize`` en las pruebas de lote: ``rDE`` con el ``Id``."""
+    return _rde_lote(rde.DE.Id)
+
+
+def _abrir_zip_lote(datos: bytes) -> tuple[list[str], bytes]:
+    """Nombres de las entradas del ZIP de un lote y el contenido de la primera."""
+    with zipfile.ZipFile(io.BytesIO(datos)) as archivo:
+        nombres = archivo.namelist()
+        return nombres, archivo.read(nombres[0])
 
 
 def _xml_de_binding(objeto: Any) -> str:
@@ -3428,7 +3464,7 @@ class TestConsultaSIFEN:
             ),
             pytest.param(
                 TransmisionDE,
-                lambda i: i.enviar_lote([object()], sign=False),
+                lambda i: i.enviar_lote_xml([_rde_lote(_cdc_ficticio(41))]),
                 RResEnviLoteDe(
                     dFecProc=FECHA_PROCESO,
                     dCodRes="0300",
@@ -3658,8 +3694,7 @@ def _enviar_de_xml(credenciales: dict[str, Any]) -> None:
 
 def _enviar_lote(credenciales: dict[str, Any]) -> None:
     with TransmisionDE(**credenciales) as transmision:
-        documento = REnviConsRuc(dId=91, dRUCCons="4567012")
-        transmision.enviar_lote([documento], lote_id=91, sign=False)
+        transmision.enviar_lote_xml([_rde_lote(_cdc_ficticio(91))], lote_id=91)
 
 
 def _enviar_evento(credenciales: dict[str, Any]) -> None:
@@ -3826,9 +3861,7 @@ OPERACIONES_CON_RESPUESTA = [
     pytest.param(TransmisionDE, _enviar_de_sin_firma, "rRetEnviDe", 1, id="enviar_de"),
     pytest.param(
         TransmisionDE,
-        lambda t: t.enviar_lote(
-            [REnviConsRuc(dId=96, dRUCCons="4567012")], lote_id=96, sign=False
-        ),
+        lambda t: t.enviar_lote_xml([_rde_lote(_cdc_ficticio(96))], lote_id=96),
         "rResEnviLoteDe",
         1,
         id="enviar_lote",
@@ -4179,7 +4212,9 @@ class TestTransmisionDE:
             dProtConsLote=PROTOCOLO_LOTE,
             dTpoProces=3,
         )
-        firmador = Registrador("<rDE><firmado/></rDE>")
+        firmador = Registrador(
+            efecto=lambda _xml, doc_id: _rde_lote(doc_id, extra="<firmado/>")
+        )
         monkeypatch.setattr(TransmisionBase, "_serialize", Registrador("<rDE/>"))
         monkeypatch.setattr(TransmisionBase, "_sign_xml", firmador)
         documentos = [rde_simulado(_cdc_ficticio(n)) for n in (201, 202, 203)]
@@ -4189,8 +4224,10 @@ class TestTransmisionDE:
         assert isinstance(resultado, RResEnviLoteDe)
         assert resultado.dCodRes == "0300"
         assert resultado.dProtConsLote == PROTOCOLO_LOTE
-        assert firmador.veces == 3
+        assert firmador.argumentos == [("<rDE/>", rde.DE.Id) for rde in documentos]
         assert cliente_soap_falso.servicios == ["recep_lote"]
+        _nombres, contenido = _abrir_zip_lote(cliente_soap_falso.envios[0].xDE)
+        assert contenido.count(b"<firmado/>") == 3
 
     def test_enviar_de_sin_firma_no_invoca_firmador(self, transmision_de: Any) -> None:
         """L21."""
@@ -4474,7 +4511,7 @@ class TestTransmisionDE:
     ) -> None:
         """N60."""
         cliente_soap_falso.respuesta = RResEnviLoteDe(dCodRes="0300")
-        firmador = Registrador("<rDE/>")
+        firmador = Registrador(efecto=lambda _xml, doc_id: _rde_lote(doc_id))
         monkeypatch.setattr(TransmisionBase, "_serialize", Registrador("<rDE/>"))
         monkeypatch.setattr(TransmisionBase, "_sign_xml", firmador)
         documentos = [rde_simulado(_cdc_ficticio(600 + n)) for n in range(MAX_LOTE)]
@@ -4482,6 +4519,8 @@ class TestTransmisionDE:
         transmision_de.enviar_lote(documentos)
 
         assert firmador.veces == 50
+        _nombres, contenido = _abrir_zip_lote(cliente_soap_falso.envios[0].xDE)
+        assert contenido.count(b"<rDE ") == MAX_LOTE
 
     @pytest.mark.parametrize(
         "cantidad, fragmento",
@@ -4509,17 +4548,17 @@ class TestTransmisionDE:
         assert firmador.veces == 0
         assert cliente_soap_falso.servicios == []
 
-    def test_enviar_lote_payload_base64_y_did(
+    def test_enviar_lote_payload_zip_y_did(
         self,
         transmision_de: Any,
         cliente_soap_falso: ClienteSoapFalso,
         rde_simulado: Callable[[Any], SimpleNamespace],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """N62."""
+        """N62: el ``xDE`` del binding son los bytes de un ZIP con el lote."""
 
         def firmar(xml: str, doc_id: str) -> str:
-            return f"<rDE><DE Id='{doc_id}'/><firma>\u00f1-{doc_id[-2:]}</firma></rDE>"
+            return _rde_lote(doc_id, extra=f"<firma>ñ-{doc_id[-2:]}</firma>")
 
         cliente_soap_falso.respuesta = RResEnviLoteDe(dCodRes="0300")
         monkeypatch.setattr(TransmisionBase, "_serialize", Registrador("<rDE/>"))
@@ -4534,43 +4573,51 @@ class TestTransmisionDE:
         (envio,) = cliente_soap_falso.envios
         assert isinstance(envio, REnvioLote)
         assert envio.dId == 5150
-        esperado = "\n".join(firmar("", cdc) for cdc in identificadores)
-        assert base64.b64decode(envio.xDE) == esperado.encode("utf-8")
+        assert envio.xDE.startswith(b"PK")
+        nombres, contenido = _abrir_zip_lote(envio.xDE)
+        assert nombres == [NOMBRE_ARCHIVO_LOTE]
+        raiz = etree.fromstring(contenido)
+        assert raiz.tag == "rLoteDE"
+        assert [rde.find(f"{{{NS_SIFEN}}}DE").get("Id") for rde in raiz] == (
+            identificadores
+        )
+        assert "ñ-24".encode() in contenido
 
-    def test_enviar_lote_empaquetado_doble_base64(
+    def test_enviar_lote_base64_una_sola_vez_en_el_cable(
         self,
         transmision_de: Any,
         cliente_soap_falso: ClienteSoapFalso,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Empaquetado heredado (D02/P2): base64 en el objeto y otra vez en el
-        cable; sin ZIP."""
+        """El binding codifica el ZIP en base64 una sola vez (antes eran dos)."""
         cliente_soap_falso.respuesta = RResEnviLoteDe(dCodRes="0300")
-        monkeypatch.setattr(
-            TransmisionBase, "_serialize", Registrador(efecto=Secuencia("<a/>", "<b/>"))
-        )
+        documentos = [_rde_lote(_cdc_ficticio(n)) for n in (651, 652)]
 
-        transmision_de.enviar_lote([object(), object()], lote_id=7, sign=False)
+        transmision_de.enviar_lote_xml(documentos, lote_id=7)
 
         (envio,) = cliente_soap_falso.envios
         assert envio.dId == 7
-        assert envio.xDE == b"PGEvPgo8Yi8+"
+        assert envio.xDE == _build_lote_zip(documentos)
         cable = ET.fromstring(_xml_de_binding(envio).encode("utf-8"))
-        assert _hijo_local(cable, "xDE").text == "UEdFdlBnbzhZaTgr"
+        assert base64.b64decode(_hijo_local(cable, "xDE").text) == envio.xDE
 
     @pytest.mark.parametrize("lote_id", [None, 0], ids=["None", "cero"])
     def test_enviar_lote_sin_lote_id_genera_identificador(
         self,
         transmision_de: Any,
         cliente_soap_falso: ClienteSoapFalso,
+        rde_simulado: Callable[[Any], SimpleNamespace],
         monkeypatch: pytest.MonkeyPatch,
         lote_id: int | None,
     ) -> None:
         """N63."""
         cliente_soap_falso.respuesta = RResEnviLoteDe(dCodRes="0300")
-        monkeypatch.setattr(TransmisionBase, "_serialize", Registrador("<rDE/>"))
+        monkeypatch.setattr(
+            TransmisionBase, "_serialize", Registrador(efecto=_rde_lote_de_binding)
+        )
 
-        transmision_de.enviar_lote([object()], lote_id=lote_id, sign=False)
+        transmision_de.enviar_lote(
+            [rde_simulado(_cdc_ficticio(631))], lote_id=lote_id, sign=False
+        )
 
         (envio,) = cliente_soap_falso.envios
         assert isinstance(envio.dId, int)
@@ -4588,9 +4635,7 @@ class TestTransmisionDE:
         firmador = Registrador()
         monkeypatch.setattr(TransmisionBase, "_sign_xml", firmador)
         monkeypatch.setattr(
-            TransmisionBase,
-            "_serialize",
-            Registrador(efecto=lambda rde, **_kw: f"<rDE><DE Id='{rde.DE.Id}'/></rDE>"),
+            TransmisionBase, "_serialize", Registrador(efecto=_rde_lote_de_binding)
         )
         identificadores = [_cdc_ficticio(n) for n in (641, 642)]
 
@@ -4599,9 +4644,9 @@ class TestTransmisionDE:
         )
 
         assert firmador.veces == 0
-        decodificado = base64.b64decode(cliente_soap_falso.envios[0].xDE).decode()
+        _nombres, contenido = _abrir_zip_lote(cliente_soap_falso.envios[0].xDE)
         for cdc in identificadores:
-            assert f"<rDE><DE Id='{cdc}'/></rDE>" in decodificado
+            assert f'<DE Id="{cdc}">'.encode() in contenido
 
     @pytest.mark.parametrize("d_id, xml_de, esperado", CASOS_SOLICITUD_DORADOS)
     def test_build_enviar_de_request_xml_ejemplos_dorados(
@@ -4736,6 +4781,241 @@ class TestTransmisionDE:
         transmision_de.enviar_de(rde)
 
         assert serializaciones.llamadas == [((rde,), {"ns_map": {None: NS_SIFEN}})]
+
+
+# ---------------------------------------------------------------------------
+# Lote asincrono: formato oficial (MT v150 sec. 7.2 y 9.2; Guia oct-2024)
+# ---------------------------------------------------------------------------
+
+_DECLARACION_LOTE = b'<?xml version="1.0" encoding="UTF-8"?>'
+
+
+def _cuerpo_lote_recibido() -> str:
+    """``rResEnviLoteDe`` 0300 con prefijo propio, como responde el SIFEN."""
+    return (
+        f'<l:rResEnviLoteDe xmlns:l="{NS_SIFEN}">'
+        f"<l:dFecProc>{FECHA_PROCESO}</l:dFecProc><l:dCodRes>0300</l:dCodRes>"
+        "<l:dMsgRes>Lote recibido con exito</l:dMsgRes>"
+        f"<l:dProtConsLote>{PROTOCOLO_LOTE}</l:dProtConsLote>"
+        "<l:dTpoProces>0</l:dTpoProces></l:rResEnviLoteDe>"
+    )
+
+
+def _xde_en_el_cable(solicitud: bytes) -> bytes:
+    """Bytes de ``xDE`` decodificados UNA vez desde el sobre SOAP enviado."""
+    raiz = etree.fromstring(solicitud)
+    xde = raiz.find(f".//{{{NS_SIFEN}}}xDE")
+    assert xde is not None, "la solicitud no contiene rEnvioLote/xDE"
+    return base64.b64decode(xde.text, validate=True)
+
+
+class TestLoteFormatoOficial:
+    def test_zip_con_una_entrada_y_una_sola_declaracion(self) -> None:
+        """MT sec. 7.2.1 y 9.2.1; Guia pp. 8-9: ZIP de un XML ``rLoteDE``."""
+        primero = _rde_lote(_cdc_ficticio(801))
+        segundo = '<?xml version="1.0" encoding="UTF-8"?>\n' + _rde_lote(
+            _cdc_ficticio(802)
+        )
+
+        datos = _build_lote_zip([primero, segundo])
+
+        with zipfile.ZipFile(io.BytesIO(datos)) as archivo:
+            (entrada,) = archivo.infolist()
+            assert entrada.filename == NOMBRE_ARCHIVO_LOTE
+            assert entrada.filename.endswith(".xml")
+            assert entrada.compress_type == zipfile.ZIP_DEFLATED
+            contenido = archivo.read(entrada)
+        assert contenido.startswith(_DECLARACION_LOTE + b"<rLoteDE><rDE ")
+        assert contenido.endswith(b"</rDE></rLoteDE>")
+        assert contenido.count(b"<?xml") == 1
+        assert re.search(rb">\s+<", contenido) is None
+
+    def test_rlotede_sin_namespace_y_cada_rde_con_el_suyo(self) -> None:
+        """MT sec. 7.2.2.2: cada ``rDE`` declara su namespace; Guia p. 8."""
+        identificadores = [_cdc_ficticio(n) for n in (811, 812, 813)]
+
+        _nombres, contenido = _abrir_zip_lote(
+            _build_lote_zip([_rde_lote(cdc) for cdc in identificadores])
+        )
+
+        raiz = etree.fromstring(contenido)
+        assert raiz.tag == "rLoteDE"
+        assert raiz.nsmap == {}
+        assert len(raiz) == len(identificadores)
+        for rde, cdc in zip(raiz, identificadores):
+            assert rde.tag == f"{{{NS_SIFEN}}}rDE"
+            assert rde.nsmap[None] == NS_SIFEN
+            assert rde.get(f"{{{NS_XSI}}}schemaLocation") == (
+                f"{NS_SIFEN} siRecepDE_v150.xsd"
+            )
+            assert rde.find(f"{{{NS_SIFEN}}}DE").get("Id") == cdc
+        apertura = f'<rDE xmlns="{NS_SIFEN}" xmlns:xsi="{NS_XSI}"'.encode()
+        assert contenido.count(apertura) == len(identificadores)
+
+    def test_zip_determinista(self) -> None:
+        documentos = [_rde_lote(_cdc_ficticio(n)) for n in (821, 822)]
+        assert _build_lote_zip(documentos) == _build_lote_zip(list(documentos))
+
+    @pytest.mark.parametrize(
+        "segundo, fragmento",
+        [
+            pytest.param(
+                _rde_lote(_cdc_ficticio(832), tipo=NOTA_CREDITO.tipo),
+                "un solo tipo de DE",
+                id="tipos_distintos",
+            ),
+            pytest.param(
+                _rde_lote(_cdc_ficticio(832), ruc=FACTURA.ruc_receptor),
+                "un solo RUC emisor",
+                id="ruc_distintos",
+            ),
+            pytest.param(
+                _rde_lote(_cdc_ficticio(831)),
+                "no puede repetirse",
+                id="cdc_repetido",
+            ),
+        ],
+    )
+    def test_composicion_invalida_no_se_envia(
+        self,
+        transmision_de: Any,
+        cliente_soap_falso: ClienteSoapFalso,
+        segundo: str,
+        fragmento: str,
+    ) -> None:
+        """MT sec. 9.2.2; Guia p. 6 (causas a y b de 0301) y p. 7 (causa g)."""
+        with pytest.raises(ValueError, match=fragmento):
+            transmision_de.enviar_lote_xml([_rde_lote(_cdc_ficticio(831)), segundo])
+        assert cliente_soap_falso.envios == []
+
+    @pytest.mark.parametrize(
+        "documento, fragmento",
+        [
+            pytest.param(
+                _rde_lote(_cdc_ficticio(841)).replace("><DE", ">\n  <DE"),
+                "blancos entre etiquetas",
+                id="salto_de_linea",
+            ),
+            pytest.param(
+                _rde_lote(_cdc_ficticio(841)).replace("</gTimb>", "</gTimb>\t"),
+                "blancos entre etiquetas",
+                id="tab",
+            ),
+            pytest.param(
+                f'<rDE xmlns="{NS_SIFEN}"><dVerFor>150</dVerFor></rDE>',
+                "DE con Id",
+                id="sin_de",
+            ),
+            pytest.param(
+                _rde_lote(_cdc_ficticio(841)).replace("<iTiDE>1</iTiDE>", ""),
+                "iTiDE",
+                id="sin_tipo",
+            ),
+            pytest.param(
+                _rde_lote(_cdc_ficticio(841)).replace(
+                    f"<dRucEm>{FACTURA.ruc_emisor}</dRucEm>", ""
+                ),
+                "dRucEm",
+                id="sin_ruc",
+            ),
+            pytest.param(
+                _rde_lote(_cdc_ficticio(841)).replace(f' xmlns="{NS_SIFEN}"', ""),
+                "no es un rDE del SIFEN",
+                id="sin_namespace",
+            ),
+        ],
+    )
+    def test_documento_invalido_no_se_envia(
+        self,
+        transmision_de: Any,
+        cliente_soap_falso: ClienteSoapFalso,
+        documento: str,
+        fragmento: str,
+    ) -> None:
+        """Un lote con contenido no valido bloquea el RUC (Guia p. 7, causa f)."""
+        with pytest.raises(ValueError, match=fragmento):
+            transmision_de.enviar_lote_xml([documento])
+        assert cliente_soap_falso.envios == []
+
+    @pytest.mark.parametrize(
+        "cantidad, fragmento",
+        [(MAX_LOTE + 1, "como maximo 50"), (0, "al menos un documento")],
+        ids=["51", "0"],
+    )
+    def test_enviar_lote_xml_valida_la_cantidad(
+        self,
+        transmision_de: Any,
+        cliente_soap_falso: ClienteSoapFalso,
+        cantidad: int,
+        fragmento: str,
+    ) -> None:
+        documentos = [_rde_lote(_cdc_ficticio(850 + n)) for n in range(cantidad)]
+        with pytest.raises(ValueError, match=fragmento):
+            transmision_de.enviar_lote_xml(documentos)
+        assert cliente_soap_falso.envios == []
+
+    def test_tope_de_1000_kb_sobre_el_mensaje_completo(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Guia p. 6 (causa e de 0301): se mide el sobre SOAP que se envia."""
+        assert MAX_BYTES_MENSAJE_LOTE == 1_000_000
+        documentos = [_rde_lote(_cdc_ficticio(861))]
+        red = red_simulada(
+            RespuestaHttpFalsa(_sobre_soap12(_cuerpo_lote_recibido()))
+        )
+        with TransmisionDE(**credenciales_ficticias) as transmision:
+            transmision.enviar_lote_xml(documentos, lote_id=861)
+        tamano_en_el_cable = len(red.llamadas[0].data)
+
+        monkeypatch.setattr(
+            modulo_de, "MAX_BYTES_MENSAJE_LOTE", tamano_en_el_cable - 1
+        )
+        with TransmisionDE(**credenciales_ficticias) as transmision:
+            with pytest.raises(ValueError, match="1000 KB"):
+                transmision.enviar_lote_xml(documentos, lote_id=861)
+        assert len(red.llamadas) == 1
+
+        monkeypatch.setattr(modulo_de, "MAX_BYTES_MENSAJE_LOTE", tamano_en_el_cable)
+        with TransmisionDE(**credenciales_ficticias) as transmision:
+            transmision.enviar_lote_xml(documentos, lote_id=861)
+        assert len(red.llamadas) == 2
+
+    def test_cable_lleva_el_zip_en_base64_una_sola_vez_y_la_firma_verifica(
+        self,
+        pfx_de_prueba: bytes,
+        red_simulada: Callable[..., RedSimulada],
+    ) -> None:
+        """De punta a punta: binding real firmado, cliente xsdata y transporte
+        reales; solo el POST es simulado."""
+        red = red_simulada(
+            RespuestaHttpFalsa(_sobre_soap12(_cuerpo_lote_recibido()))
+        )
+        with TransmisionDE(
+            ambiente=TEST,
+            pkcs12_data=pfx_de_prueba,
+            pkcs12_password=CONTRASENA_CERTIFICADO_PRUEBA,
+        ) as transmision:
+            respuesta = transmision.enviar_lote(
+                [RDe.from_path(FACTURA.ruta)], lote_id=870
+            )
+
+        assert respuesta.dCodRes == "0300"
+        assert respuesta.dProtConsLote == PROTOCOLO_LOTE
+        (llamada,) = red.llamadas
+        assert llamada.url == get_endpoint(TEST, "recep_lote")
+        datos_zip = _xde_en_el_cable(llamada.data)
+        assert datos_zip.startswith(b"PK\x03\x04")
+        nombres, contenido = _abrir_zip_lote(datos_zip)
+        assert nombres == [NOMBRE_ARCHIVO_LOTE]
+        assert contenido.startswith(_DECLARACION_LOTE + b"<rLoteDE><rDE ")
+        assert re.search(rb">\s+<", contenido) is None
+        assert not re.search(rb"<\w+:", contenido)
+        (rde,) = etree.fromstring(contenido)
+        assert rde.find(f"{{{NS_SIFEN}}}DE").get("Id") == FACTURA.cdc
+        _verificar_firma(rde, _certificado_pem(pfx_de_prueba))
 
 
 # ---------------------------------------------------------------------------
