@@ -8,6 +8,8 @@ Jobs are the operational ledger for retries, observability, and support.
 ## Core statuses
 
 - `queued`: created and waiting execution
+- `processing`: an attempt is running (committed before the SIFEN call; a
+  job that stays here after its worker died needs an operator retry)
 - `retry_scheduled`: transient failure, can be retried
 - `succeeded`: completed successfully
 - `failed`: terminal failure or non-retryable rejection

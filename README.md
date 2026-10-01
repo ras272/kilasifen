@@ -512,6 +512,13 @@ Hallazgos de una auditoría reciente, que se corregirán a continuación:
 - Solo el código `0260` (o el estado "Aprobado") cuenta como aprobación;
   cualquier otro código se clasifica como rechazo, así que nunca se produce
   `approved_with_observation` a partir de una respuesta real.
+- Un evento (cancelación o inutilización) con resultado incierto se vuelve a
+  enviar en el intento siguiente, sin consultar antes; la regla definitiva
+  depende de cómo trata el SIFEN un evento duplicado.
+- Si el worker muere mientras espera al SIFEN, el job queda `processing` (el
+  documento, `submitting`) hasta que un operador lo reencola desde la consola;
+  ese reintento consulta el CDC antes de decidir. No hay un proceso que
+  detecte esos jobs solo.
 
 KilaSifen no certifica conformidad fiscal. Probá cada flujo en el ambiente
 de pruebas de la SET antes de habilitar producción.

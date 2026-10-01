@@ -123,10 +123,11 @@ python -m pytest tests/api tests/application tests/domain tests/infrastructure -
 - Sin `KILA_SIFEN_TEST_DATABASE_URL` los tests de plataforma usan SQLite.
   Apuntándola a PostgreSQL, cada test trabaja en un schema propio; el marcador
   `requires_postgres` identifica los que necesitan ese backend.
-- Referencia medida tras corregir el defecto P3 del engine (Python 3.14, sin
-  `KILA_SIFEN_TEST_DATABASE_URL`, `python -m pytest tests/ -q`): 1227 passed,
-  6 skipped. Ya no queda ningún xfail. Si el número cambia, que sea por tests
-  agregados o quitados a propósito.
+- Referencia medida tras separar en dos transacciones los intentos de
+  documentos y eventos (Python 3.14, sin `KILA_SIFEN_TEST_DATABASE_URL`,
+  `python -m pytest tests/ -q`): 1293 passed, 9 skipped (tres de ellos solo
+  corren contra PostgreSQL). Ya no queda ningún xfail. Si el número cambia,
+  que sea por tests agregados o quitados a propósito.
 - Chequeo de versiones nuevas de los XSD en la SET (hace red; se corre a mano
   o desde el job semanal del workflow):
   `CHECK_SCHEMA_UPDATES=1 python -m pytest tests/test_schema_versions.py::TestSchemaUpdates`.

@@ -100,7 +100,8 @@ La respuesta trae documento `queued` y job; no implica aprobación. Estados de
 documento: `queued`, `submitting`, `submitted`, `retry_pending`,
 `reconciliation_required`, `approved`, `approved_with_observation`, `rejected`,
 `failed`, `cancelled`.
-Jobs: `queued`, `retry_scheduled`, `succeeded`, `failed`.
+Jobs: `queued`, `processing` (un worker está en medio de un intento),
+`retry_scheduled`, `succeeded`, `failed`.
 
 Cliente, ítems, IVA, descuentos/anticipos, moneda/tipo de cambio y condición de
 pago se validan de forma anidada antes de reservar el job. Un `422` significa que
