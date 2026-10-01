@@ -372,6 +372,9 @@ Plataforma (hallazgos de auditoría pendientes):
   código distinto de `0260` se marca como rechazo salvo que `dEstRes` diga
   «Aprobado» sin más texto; no se produce el estado «aprobado con
   observación».
+- Un evento con resultado incierto (timeout, respuesta ilegible) se vuelve
+  a enviar en el próximo intento, sin consultar antes. Qué corresponde según
+  la normativa de eventos duplicados está pendiente de definir.
 - Un job cuyo worker muere durante la llamada al SIFEN queda `processing`
   (documento `submitting`) hasta que un operador lo reencola; no hay reaper
   que lo detecte solo. El reintento consulta el CDC antes de decidir.

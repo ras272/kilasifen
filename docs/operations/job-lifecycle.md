@@ -64,8 +64,18 @@ fails while the document stays `queued` for a manual retry.
    secret is stored in the Redis job payload.
 3. Approved cancelation moves the document to `cancelled`; approved
    inutilization stores its SIFEN protocol and publishes the terminal webhook.
-4. Transport failures become `retry_pending`/`retry_scheduled` and use a bounded
-   five-attempt schedule. Validation/rejection is terminal.
+4. Each attempt mirrors the document flow: transaction 1 locks emitter, event
+   and job, counts the attempt and stores the signed event group and the exact
+   `rEnviEventoDe` (real `dId`) with the event in `submitting`; the request is
+   sent with nothing held; transaction 2 re-reads event and job `FOR UPDATE`
+   and records the outcome (an `approved`/`rejected` event is never moved).
+5. A request that provably never left puts the event back to `queued`
+   (`transport_not_sent`); any other transport failure, SOAP Fault or
+   unreadable answer leaves it `retry_pending` (`transport`). Both use a
+   bounded five-attempt schedule, and today both resend the stored signed
+   event on the next attempt: whether an uncertain event should be queried
+   first is a fiscal decision still pending. Validation/rejection is
+   terminal.
 
 ## Webhook delivery flow
 

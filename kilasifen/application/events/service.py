@@ -10,6 +10,14 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from kilasifen.application.emitters.guards import require_active_emitter
+from kilasifen.application.events.attempts import (
+    EVENT_SUBMITTING_STATUS,
+    EventAttempt,
+    EventAttemptResult,
+    EventPreparationRefused,
+    FinishedEventJob,
+    send_event_attempt,
+)
 from kilasifen.application.jobs.service import JobService
 from kilasifen.domain.common.errors import (
     ConflictError,
@@ -20,11 +28,7 @@ from kilasifen.domain.documents.models import Document
 from kilasifen.domain.events.inutilized_ranges import InutilizedNumberRange
 from kilasifen.domain.events.models import Event
 from kilasifen.domain.jobs.models import Job
-from kilasifen.engine.sdk.errors import (
-    SifenTimeoutError,
-    SifenTransportError,
-    SifenValidationError,
-)
+from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.sifen.event import EventSubmissionGateway
 from kilasifen.infrastructure.sifen.typed_event_builder import (
@@ -68,6 +72,9 @@ _CANCEL_DEADLINE_HOURS = {
 }
 
 _APPROVED_DOCUMENT_STATUSES = {"approved", "approved_with_observation"}
+#: Event states that carry SIFEN's final word; a late attempt never moves them.
+_SIFEN_FINAL_EVENT_STATUSES = frozenset({"approved", "rejected"})
+_MAX_EVENT_ATTEMPTS = 5
 _CANCELLED_DOCUMENT_STATUSES = {"cancelled"}
 
 
@@ -140,7 +147,7 @@ class EventService:
         event_type: str,
         input_payload: dict | None,
     ) -> tuple[Event, Job]:
-        emitter, certificate, certificate_bytes, certificate_password = (
+        emitter, _certificate, certificate_bytes, certificate_password = (
             self._resolve_emitter_and_active_certificate(emitter_id)
         )
 
@@ -152,7 +159,6 @@ class EventService:
             event_type=event_type,
             input_payload=input_payload,
             emitter=emitter,
-            certificate=certificate,
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
         )
@@ -165,7 +171,7 @@ class EventService:
         document_id: str,
         motivo: str,
     ) -> tuple[Event, Job]:
-        emitter, certificate, certificate_bytes, certificate_password = (
+        emitter, _certificate, certificate_bytes, certificate_password = (
             self._resolve_emitter_and_active_certificate(emitter_id)
         )
         document = self._get_document_for_emitter(
@@ -197,7 +203,6 @@ class EventService:
             event_type=_CANCEL_EVENT_TYPE,
             input_payload=payload,
             emitter=emitter,
-            certificate=certificate,
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
         )
@@ -218,7 +223,7 @@ class EventService:
         numero_hasta: int,
         motivo: str,
     ) -> tuple[Event, Job, InutilizedNumberRange]:
-        emitter, certificate, certificate_bytes, certificate_password = (
+        emitter, _certificate, certificate_bytes, certificate_password = (
             self._resolve_emitter_and_active_certificate(emitter_id)
         )
         if self.inutilized_range_repository is None:
@@ -315,7 +320,6 @@ class EventService:
             event_type=_INUTILIZATION_EVENT_TYPE,
             input_payload=payload,
             emitter=emitter,
-            certificate=certificate,
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
         )
@@ -356,8 +360,19 @@ class EventService:
             raise NotFoundError("events.not_found")
         return event, job
 
-    def process_queued_event(self, *, job_id: str) -> dict[str, str | bool | None]:
-        """Submit one persisted fiscal event and return its durable outcome."""
+    def begin_queued_event_attempt(
+        self,
+        *,
+        job_id: str,
+        worker_correlation_id: str | None = None,
+    ) -> EventAttempt | FinishedEventJob:
+        """First transaction of a worker attempt: claim the job, store the request.
+
+        The caller must commit before :func:`send_event_attempt`, so the
+        emitter lock taken here is released while SIFEN answers. A refused
+        event (bad payload, signature that does not verify) is recorded here
+        and nothing is sent.
+        """
 
         job = self.job_service.get_job(job_id)
         if job.related_entity_type != "event" or not job.related_entity_id:
@@ -365,44 +380,119 @@ class EventService:
         event = self.event_repository.get(job.related_entity_id)
         if event is None:
             raise NotFoundError("events.not_found")
+        if _event_job_is_finished(event, job):
+            return FinishedEventJob(
+                _event_job_payload(event=event, job=job, retryable=False)
+            )
 
-        if event.status in {"approved", "rejected"} or (
-            event.status == "failed" and job.status != "queued"
-        ):
-            return _event_job_payload(event=event, job=job, retryable=False)
-
-        emitter, certificate, certificate_bytes, certificate_password = (
+        # Lock order shared by every writer: emitter, then event, then job.
+        emitter, _certificate, certificate_bytes, certificate_password = (
             self._resolve_emitter_and_active_certificate(event.emitter_id)
         )
-        attempt_number = job.attempts + 1
-        processing_job = replace(
-            job,
-            status="processing",
-            attempts=attempt_number,
-            started_at=job.started_at or _now(),
-            updated_at=_now(),
-        )
-        self.job_repository.save(processing_job)
+        event = _require_row(self.event_repository.get_for_update(event.id))
+        job = _require_row(self.job_repository.get_for_update(job.id))
+        if _event_job_is_finished(event, job):
+            return FinishedEventJob(
+                _event_job_payload(event=event, job=job, retryable=False)
+            )
 
-        updated_event, updated_job, protocol = self._submit_event(
-            saved_event=event,
-            job=processing_job,
+        attempt_number = job.attempts + 1
+        job = self.job_repository.save(
+            replace(
+                job,
+                status="processing",
+                attempts=attempt_number,
+                started_at=job.started_at or _now(),
+                worker_correlation_id=worker_correlation_id
+                or job.worker_correlation_id,
+                updated_at=_now(),
+            )
+        )
+        try:
+            event, request_xml = self._store_prepared_submission(
+                event=event,
+                emitter=emitter,
+                certificate_bytes=certificate_bytes,
+                certificate_password=certificate_password,
+            )
+        except SifenValidationError as exc:
+            updated_event, updated_job, protocol = EventPreparationRefused(
+                str(exc)
+            ).apply(event, job)
+            return FinishedEventJob(
+                self._save_attempt(
+                    event=updated_event,
+                    job=updated_job,
+                    attempt_number=attempt_number,
+                    protocol=protocol,
+                )
+            )
+        return EventAttempt(
+            job_id=job.id,
+            event_id=event.id,
+            attempt_number=attempt_number,
+            request_xml=request_xml,
             emitter=emitter,
-            certificate=certificate,
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
         )
-        retryable = updated_job.status == "retry_scheduled"
-        if retryable and attempt_number >= 5:
+
+    def record_event_attempt(
+        self,
+        *,
+        attempt: EventAttempt,
+        result: EventAttemptResult,
+    ) -> dict[str, str | bool | None]:
+        """Second transaction of a worker attempt: record the SIFEN step.
+
+        Event and job are re-read with ``FOR UPDATE``. An event that already
+        carries SIFEN's final word is never moved, and a non-final outcome is
+        dropped when a newer attempt claimed the job meanwhile.
+        """
+
+        event = _require_row(self.event_repository.get_for_update(attempt.event_id))
+        job = _require_row(self.job_repository.get_for_update(attempt.job_id))
+        updated_event, updated_job, protocol = result.apply(event, job)
+        superseded = job.attempts != attempt.attempt_number
+        if event.status in _SIFEN_FINAL_EVENT_STATUSES or (
+            superseded and updated_event.status not in _SIFEN_FINAL_EVENT_STATUSES
+        ):
+            logger.warning(
+                "events.attempt_outcome_superseded",
+                extra={
+                    "job_id": job.id,
+                    "event_id": event.id,
+                    "attempt": attempt.attempt_number,
+                    "event_status": event.status,
+                },
+            )
+            return _event_job_payload(event=event, job=job, retryable=False)
+        return self._save_attempt(
+            event=updated_event,
+            job=updated_job,
+            attempt_number=attempt.attempt_number,
+            protocol=protocol,
+        )
+
+    def _save_attempt(
+        self,
+        *,
+        event: Event,
+        job: Job,
+        attempt_number: int,
+        protocol: str | None,
+    ) -> dict[str, str | bool | None]:
+        retryable = job.status == "retry_scheduled"
+        if retryable and attempt_number >= _MAX_EVENT_ATTEMPTS:
             retryable = False
-            updated_event = replace(
-                updated_event,
+            event = replace(
+                event,
                 status="failed",
                 sifen_result_message="event retry attempts exhausted",
                 updated_at=_now(),
             )
-            updated_job = replace(
-                updated_job,
+            job = replace(
+                job,
                 status="failed",
                 error_snapshot={
                     "category": "retry_exhausted",
@@ -411,22 +501,41 @@ class EventService:
                 finished_at=_now(),
                 updated_at=_now(),
             )
-        elif updated_job.status in {"succeeded", "failed"}:
-            updated_job = replace(
-                updated_job,
-                finished_at=_now(),
+        elif job.status in {"succeeded", "failed"}:
+            job = replace(job, finished_at=_now(), updated_at=_now())
+
+        self.event_repository.save(event)
+        self.job_repository.save(job)
+        if event.status == "approved":
+            self._apply_approved_event(event=event, protocol=protocol)
+        return _event_job_payload(event=event, job=job, retryable=retryable)
+
+    def _store_prepared_submission(
+        self,
+        *,
+        event: Event,
+        emitter,
+        certificate_bytes: bytes,
+        certificate_password: str,
+    ) -> tuple[Event, str]:
+        """Persist the signed event and its exact request as ``submitting``."""
+
+        prepared = self.submission_gateway.prepare_event(
+            event=event,
+            emitter=emitter,
+            certificate_bytes=certificate_bytes,
+            certificate_password=certificate_password,
+        )
+        stored = self.event_repository.save(
+            replace(
+                event,
+                signed_xml=prepared.signed_xml,
+                sifen_request_xml=prepared.request_xml,
+                status=EVENT_SUBMITTING_STATUS,
                 updated_at=_now(),
             )
-
-        self.event_repository.save(updated_event)
-        self.job_repository.save(updated_job)
-        if updated_event.status == "approved":
-            self._apply_approved_event(event=updated_event, protocol=protocol)
-        return _event_job_payload(
-            event=updated_event,
-            job=updated_job,
-            retryable=retryable,
         )
+        return stored, prepared.request_xml
 
     def _create_and_submit_event(
         self,
@@ -436,7 +545,6 @@ class EventService:
         event_type: str,
         input_payload: dict | None,
         emitter,
-        certificate,
         certificate_bytes: bytes,
         certificate_password: str,
     ) -> tuple[Event, Job, str | None]:
@@ -476,11 +584,10 @@ class EventService:
             )
             return saved_event, job, None
 
-        updated_event, updated_job, protocol = self._submit_event(
-            saved_event=saved_event,
+        updated_event, updated_job, protocol = self._submit_inline(
+            event=saved_event,
             job=job,
             emitter=emitter,
-            certificate=certificate,
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
         )
@@ -488,91 +595,41 @@ class EventService:
         self.job_repository.save(updated_job)
         return updated_event, updated_job, protocol
 
-    def _submit_event(
+    def _submit_inline(
         self,
         *,
-        saved_event: Event,
+        event: Event,
         job: Job,
         emitter,
-        certificate,
         certificate_bytes: bytes,
         certificate_password: str,
     ) -> tuple[Event, Job, str | None]:
-        protocol = None
+        """Submit within the caller's transaction (only without a job queue).
+
+        The API always wires a queue, so requests never reach this path; it
+        serves direct uses of the service. The same steps as a worker attempt
+        run in a single transaction.
+        """
 
         try:
-            outcome = self.submission_gateway.submit_event(
-                event=saved_event,
+            event, request_xml = self._store_prepared_submission(
+                event=event,
                 emitter=emitter,
-                certificate=certificate,
                 certificate_bytes=certificate_bytes,
                 certificate_password=certificate_password,
             )
-            protocol = outcome.protocol
-            updated_event = replace(
-                saved_event,
-                generated_xml=outcome.generated_xml,
-                signed_xml=outcome.signed_xml,
-                sifen_request_xml=outcome.request_xml,
-                sifen_response_raw=outcome.response_raw,
-                status=outcome.status,
-                sifen_result_code=outcome.result_code,
-                sifen_result_message=outcome.result_message,
-                updated_at=_now(),
-            )
-            if outcome.status == "rejected":
-                updated_job = replace(
-                    job,
-                    status="failed",
-                    error_snapshot={
-                        "category": "sifen_rejection",
-                        "code": outcome.result_code,
-                        "message": outcome.result_message or "event rejected by sifen",
-                    },
-                    updated_at=_now(),
-                )
-            elif outcome.status == "approved":
-                updated_job = replace(
-                    job, status="succeeded", error_snapshot=None, updated_at=_now()
-                )
-            else:
-                updated_job = replace(
-                    job,
-                    status="retry_scheduled",
-                    error_snapshot={
-                        "category": "sifen_pending",
-                        "code": outcome.result_code,
-                        "message": outcome.result_message,
-                    },
-                    updated_at=_now(),
-                )
         except SifenValidationError as exc:
-            updated_event = replace(
-                saved_event,
-                status="failed",
-                sifen_result_message=str(exc),
-                updated_at=_now(),
-            )
-            updated_job = replace(
-                job,
-                status="failed",
-                error_snapshot={"category": "fiscal_validation", "message": str(exc)},
-                updated_at=_now(),
-            )
-        except (SifenTimeoutError, SifenTransportError) as exc:
-            updated_event = replace(
-                saved_event,
-                status="retry_pending",
-                sifen_result_message=str(exc),
-                updated_at=_now(),
-            )
-            updated_job = replace(
-                job,
-                status="retry_scheduled",
-                error_snapshot={"category": "transport", "message": str(exc)},
-                updated_at=_now(),
-            )
-        return updated_event, updated_job, protocol
+            return EventPreparationRefused(str(exc)).apply(event, job)
+        attempt = EventAttempt(
+            job_id=job.id,
+            event_id=event.id,
+            attempt_number=job.attempts,
+            request_xml=request_xml,
+            emitter=emitter,
+            certificate_bytes=certificate_bytes,
+            certificate_password=certificate_password,
+        )
+        return send_event_attempt(self.submission_gateway, attempt).apply(event, job)
 
     def _apply_approved_event(self, *, event: Event, protocol: str | None) -> None:
         if event.event_type == _CANCEL_EVENT_TYPE and event.document_id:
@@ -758,6 +815,18 @@ class EventService:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _event_job_is_finished(event: Event, job: Job) -> bool:
+    if event.status in _SIFEN_FINAL_EVENT_STATUSES:
+        return True
+    return event.status == "failed" and job.status != "queued"
+
+
+def _require_row(row):
+    if row is None:
+        raise NotFoundError("events.not_found")
+    return row
 
 
 def _event_job_payload(

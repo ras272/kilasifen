@@ -61,6 +61,12 @@ revisar la guía de migración de esta sección.
   `signed_xml`. Se eliminan `EmissionOutcome` y
   `EmissionTransportUncertainError`; aparece `PreparedSubmission`. Solo afecta
   a quien implemente motores o transportes propios para los workers.
+- Plataforma: `EventSubmissionGateway.submit_event` se reemplaza por
+  `prepare_event` y `submit_prepared(request_xml=...)`; aparece
+  `PreparedEventSubmission` y `EventSubmissionOutcome` deja de llevar
+  `generated_xml`, `signed_xml` y `request_xml`. `EventService.
+  process_queued_event` se reemplaza por `begin_queued_event_attempt` y
+  `record_event_attempt`, que el worker llama en transacciones separadas.
 
 ### Guía de migración
 
@@ -181,6 +187,17 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   pasa a `reconciliation_required` (antes podía quedar `failed` y un
   reintento manual lo reenviaba). Un documento que quedó en `submitting`
   porque el worker murió se reconcilia por CDC en el intento siguiente.
+- Plataforma: los eventos (cancelación e inutilización) siguen el mismo
+  esquema de dos transacciones. El worker guarda el grupo firmado
+  (`signed_xml`, antes vacío) y el `rEnviEventoDe` exacto con el evento en
+  `submitting` antes de enviarlo, y registra el resultado en una segunda
+  transacción, sin retener el bloqueo del emisor durante la llamada. Un
+  request que no salió deja el evento en `queued` (`transport_not_sent`);
+  cualquier otro fallo, en `retry_pending` (`transport`). Una respuesta de
+  eventos que no es `rRetEnviEventoDe` (SOAP Fault, HTML, cuerpo truncado)
+  ahora es `SifenUnexpectedResponseError`, resultado incierto, y ya no un
+  error de validación que marcaba el evento como `failed`. El reintento de
+  un evento incierto sigue reenviándolo, como antes.
 - La firma de un `rDE` ya no se invalida al armar el `rEnviDe` (defecto P3).
   `_build_enviar_de_request_xml` inserta el `rDE` como texto, con sus propias
   declaraciones de namespace y sus prefijos, en lugar de moverlo como árbol

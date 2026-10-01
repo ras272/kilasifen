@@ -10,6 +10,10 @@ from rq import get_current_job
 from sqlalchemy.orm import Session
 
 from kilasifen.application.emitters.guards import require_active_emitter
+from kilasifen.application.events.attempts import (
+    FinishedEventJob,
+    send_event_attempt,
+)
 from kilasifen.application.events.service import EventService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.sandbox.service import SandboxOutcomePolicy
@@ -570,7 +574,12 @@ def process_event_job(
     submission_gateway: EventSubmissionGateway | None = None,
     webhook_queue=None,
 ) -> dict[str, str | bool | None]:
-    """Process one persisted fiscal event outside the HTTP request lifecycle."""
+    """Run one attempt of a fiscal event job outside the HTTP request.
+
+    Like documents, the exact request is committed before SIFEN is called and
+    the outcome is recorded in a second transaction; nothing is held while
+    SIFEN answers.
+    """
 
     settings = get_settings()
     database_url, encryption_key = _worker_runtime_secrets(
@@ -579,88 +588,112 @@ def process_event_job(
     )
     ensure_worker_observability()
     correlation_token, worker_correlation_id = _bind_worker_correlation_id()
-    engine = build_engine(database_url)
-    session_factory = build_session_factory(engine)
+    session_factory = build_session_factory(build_engine(database_url))
     certificate_store = EncryptedCertificateStore(encryption_key)
     submission_gateway = submission_gateway or KilaSifenEventGateway(
         settings.sifen_environment
     )
-    retryable = False
+
+    def event_service(session: Session) -> EventService:
+        return _build_event_service(
+            session,
+            settings=settings,
+            certificate_store=certificate_store,
+            submission_gateway=submission_gateway,
+            webhook_queue=webhook_queue,
+            database_url=database_url,
+            encryption_key=encryption_key,
+        )
 
     try:
         with session_scope(session_factory) as session:
-            job_repository = SqlAlchemyJobRepository(session)
-            job = job_repository.get(job_id)
-            if job is not None:
-                job_repository.save(
-                    replace(job, worker_correlation_id=worker_correlation_id)
-                )
-
-            webhook_publisher = None
-            if settings.document_publish_webhooks:
-                queue_adapter = webhook_queue or _build_webhook_outbox(session)
-                webhook_publisher = WebhookService(
-                    webhook_repository=SqlAlchemyWebhookRepository(session),
-                    emitter_repository=SqlAlchemyEmitterRepository(
-                        session, certificate_store
-                    ),
-                    job_repository=job_repository,
-                    secret_store=certificate_store,
-                    queue=queue_adapter,
-                    deliverer=WebhookDeliverer(
-                        url_policy=WebhookUrlPolicy.for_environment(
-                            settings.environment
-                        )
-                    ),
-                    database_url=database_url,
-                    encryption_key=encryption_key,
-                )
-
-            service = EventService(
-                event_repository=SqlAlchemyEventRepository(session),
-                emitter_repository=SqlAlchemyEmitterRepository(
-                    session, certificate_store
-                ),
-                document_repository=SqlAlchemyDocumentRepository(session),
-                certificate_repository=SqlAlchemyCertificateRepository(session),
-                job_repository=job_repository,
-                certificate_store=certificate_store,
-                submission_gateway=submission_gateway,
-                inutilized_range_repository=(
-                    SqlAlchemyInutilizedNumberRangeRepository(session)
-                ),
-                webhook_publisher=webhook_publisher,
+            claim = event_service(session).begin_queued_event_attempt(
+                job_id=job_id,
+                worker_correlation_id=worker_correlation_id,
             )
-            payload = service.process_queued_event(job_id=job_id)
-            retryable = bool(payload["retryable"])
-            if retryable:
-                retry_job = job_repository.get(job_id)
-                if retry_job is None:
-                    raise RuntimeError("Persisted event retry job is missing")
-                retry_job = replace(
-                    retry_job,
-                    scheduled_at=_retry_at(
-                        attempt_number=retry_job.attempts,
-                        delays=_EVENT_RETRY_DELAYS,
-                    ),
-                    updated_at=_now(),
+        if isinstance(claim, FinishedEventJob):
+            payload = claim.payload
+        else:
+            # The request is committed: nothing is held while SIFEN answers.
+            result = send_event_attempt(submission_gateway, claim)
+            with session_scope(session_factory) as session:
+                payload = event_service(session).record_event_attempt(
+                    attempt=claim,
+                    result=result,
                 )
-                job_repository.save(retry_job)
-                _stage_retry_outbox(session, retry_job)
-            logger.info(
-                "worker.event_job.finished",
-                extra={
-                    "job_id": payload["job_id"],
-                    "event_id": payload["event_id"],
-                    "event_type": payload["event_type"],
-                    "job_status": payload["job_status"],
-                    "event_status": payload["event_status"],
-                },
-            )
+                if payload["retryable"]:
+                    _schedule_event_retry(session, job_id)
+        logger.info(
+            "worker.event_job.finished",
+            extra={
+                "job_id": payload["job_id"],
+                "event_id": payload["event_id"],
+                "event_type": payload["event_type"],
+                "job_status": payload["job_status"],
+                "event_status": payload["event_status"],
+            },
+        )
         return payload
     finally:
         if correlation_token is not None:
             reset_correlation_id(correlation_token)
+
+
+def _build_event_service(
+    session: Session,
+    *,
+    settings: Settings,
+    certificate_store: EncryptedCertificateStore,
+    submission_gateway: EventSubmissionGateway,
+    webhook_queue,
+    database_url: str,
+    encryption_key: str,
+) -> EventService:
+    job_repository = SqlAlchemyJobRepository(session)
+    webhook_publisher = None
+    if settings.document_publish_webhooks:
+        webhook_publisher = WebhookService(
+            webhook_repository=SqlAlchemyWebhookRepository(session),
+            emitter_repository=SqlAlchemyEmitterRepository(session, certificate_store),
+            job_repository=job_repository,
+            secret_store=certificate_store,
+            queue=webhook_queue or _build_webhook_outbox(session),
+            deliverer=WebhookDeliverer(
+                url_policy=WebhookUrlPolicy.for_environment(settings.environment)
+            ),
+            database_url=database_url,
+            encryption_key=encryption_key,
+        )
+    return EventService(
+        event_repository=SqlAlchemyEventRepository(session),
+        emitter_repository=SqlAlchemyEmitterRepository(session, certificate_store),
+        document_repository=SqlAlchemyDocumentRepository(session),
+        certificate_repository=SqlAlchemyCertificateRepository(session),
+        job_repository=job_repository,
+        certificate_store=certificate_store,
+        submission_gateway=submission_gateway,
+        inutilized_range_repository=SqlAlchemyInutilizedNumberRangeRepository(
+            session
+        ),
+        webhook_publisher=webhook_publisher,
+    )
+
+
+def _schedule_event_retry(session: Session, job_id: str) -> None:
+    job_repository = SqlAlchemyJobRepository(session)
+    retry_job = job_repository.get(job_id)
+    if retry_job is None:
+        raise RuntimeError("Persisted event retry job is missing")
+    retry_job = replace(
+        retry_job,
+        scheduled_at=_retry_at(
+            attempt_number=retry_job.attempts,
+            delays=_EVENT_RETRY_DELAYS,
+        ),
+        updated_at=_now(),
+    )
+    job_repository.save(retry_job)
+    _stage_retry_outbox(session, retry_job)
 
 
 class _NoopWebhookQueue:

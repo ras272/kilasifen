@@ -7,6 +7,12 @@ icon: Ban
 Los eventos responden `201` con un evento y un job en cola. El request HTTP no
 espera a SIFEN.
 
+El worker guarda el evento firmado y el request exacto antes de enviarlo
+(estado `submitting`). Si el request no llegó a SIFEN el evento vuelve a
+`queued`; ante un timeout o una respuesta ilegible queda `retry_pending`. En
+ambos casos el job reintenta (hasta cinco intentos) y el estado final es
+`approved`, `rejected` o `failed`.
+
 ## Cancelar un documento
 
 ```bash
