@@ -5,6 +5,7 @@ from pathlib import Path
 
 from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.sdk.validation import resolve_schema_path, validate_xml
+from tests._muestras import FACTURA
 
 SAMPLE_PATH = (
     Path(__file__).resolve().parents[1]
@@ -15,6 +16,7 @@ SAMPLE_PATH = (
     / "v150"
     / "factura_electronica.xml"
 )
+_ITEM_1, _ITEM_2 = FACTURA.items
 
 
 def _build_valid_rde_xml() -> str:
@@ -22,64 +24,64 @@ def _build_valid_rde_xml() -> str:
     xml = SAMPLE_PATH.read_text(encoding="utf-8")
     replacements = [
         (
-            "<dFecFirma>2024-11-29T17:59:57</dFecFirma>\n    <gOpeDE>",
+            f"<dFecFirma>{FACTURA.fecha_firma}</dFecFirma>\n    <gOpeDE>",
             (
-                "<dFecFirma>2024-11-29T17:59:57</dFecFirma>\n"
+                f"<dFecFirma>{FACTURA.fecha_firma}</dFecFirma>\n"
                 "    <dSisFact>1</dSisFact>\n"
                 "    <gOpeDE>"
             ),
         ),
-        ("<dFeFinT>2025-12-31</dFeFinT>", ""),
+        (f"<dFeFinT>{FACTURA.fin_timbrado}</dFeFinT>", ""),
         (
             "<gValorItem>\n"
-            "          <dPUniProSer>500000</dPUniProSer>\n"
+            f"          <dPUniProSer>{_ITEM_1.precio_unitario}</dPUniProSer>\n"
             "          <dDescItem>0</dDescItem>\n"
-            "          <dTotOpeItem>1000000</dTotOpeItem>\n"
-            "          <dTotOpeGs>1000000</dTotOpeGs>\n"
+            f"          <dTotOpeItem>{_ITEM_1.total}</dTotOpeItem>\n"
+            f"          <dTotOpeGs>{_ITEM_1.total}</dTotOpeGs>\n"
             "        </gValorItem>",
             (
                 "<gValorItem>\n"
-                "          <dPUniProSer>500000</dPUniProSer>\n"
-                "          <dTotBruOpeItem>1000000</dTotBruOpeItem>\n"
+                f"          <dPUniProSer>{_ITEM_1.precio_unitario}</dPUniProSer>\n"
+                f"          <dTotBruOpeItem>{_ITEM_1.total}</dTotBruOpeItem>\n"
                 "          <gValorRestaItem>\n"
                 "            <dDescItem>0</dDescItem>\n"
-                "            <dTotOpeItem>1000000</dTotOpeItem>\n"
-                "            <dTotOpeGs>1000000</dTotOpeGs>\n"
+                f"            <dTotOpeItem>{_ITEM_1.total}</dTotOpeItem>\n"
+                f"            <dTotOpeGs>{_ITEM_1.total}</dTotOpeGs>\n"
                 "          </gValorRestaItem>\n"
                 "        </gValorItem>"
             ),
         ),
         (
             "<gValorItem>\n"
-            "          <dPUniProSer>150000</dPUniProSer>\n"
+            f"          <dPUniProSer>{_ITEM_2.precio_unitario}</dPUniProSer>\n"
             "          <dDescItem>0</dDescItem>\n"
-            "          <dTotOpeItem>150000</dTotOpeItem>\n"
-            "          <dTotOpeGs>150000</dTotOpeGs>\n"
+            f"          <dTotOpeItem>{_ITEM_2.total}</dTotOpeItem>\n"
+            f"          <dTotOpeGs>{_ITEM_2.total}</dTotOpeGs>\n"
             "        </gValorItem>",
             (
                 "<gValorItem>\n"
-                "          <dPUniProSer>150000</dPUniProSer>\n"
-                "          <dTotBruOpeItem>150000</dTotBruOpeItem>\n"
+                f"          <dPUniProSer>{_ITEM_2.precio_unitario}</dPUniProSer>\n"
+                f"          <dTotBruOpeItem>{_ITEM_2.total}</dTotBruOpeItem>\n"
                 "          <gValorRestaItem>\n"
                 "            <dDescItem>0</dDescItem>\n"
-                "            <dTotOpeItem>150000</dTotOpeItem>\n"
-                "            <dTotOpeGs>150000</dTotOpeGs>\n"
+                f"            <dTotOpeItem>{_ITEM_2.total}</dTotOpeItem>\n"
+                f"            <dTotOpeGs>{_ITEM_2.total}</dTotOpeGs>\n"
                 "          </gValorRestaItem>\n"
                 "        </gValorItem>"
             ),
         ),
         (
-            "<dLiqIVAItem>90909</dLiqIVAItem>\n        </gCamIVA>",
+            f"<dLiqIVAItem>{_ITEM_1.iva}</dLiqIVAItem>\n        </gCamIVA>",
             (
-                "<dLiqIVAItem>90909</dLiqIVAItem>\n"
+                f"<dLiqIVAItem>{_ITEM_1.iva}</dLiqIVAItem>\n"
                 "          <dBasExe>0</dBasExe>\n"
                 "        </gCamIVA>"
             ),
         ),
         (
-            "<dLiqIVAItem>13636</dLiqIVAItem>\n        </gCamIVA>",
+            f"<dLiqIVAItem>{_ITEM_2.iva}</dLiqIVAItem>\n        </gCamIVA>",
             (
-                "<dLiqIVAItem>13636</dLiqIVAItem>\n"
+                f"<dLiqIVAItem>{_ITEM_2.iva}</dLiqIVAItem>\n"
                 "          <dBasExe>0</dBasExe>\n"
                 "        </gCamIVA>"
             ),
@@ -96,20 +98,20 @@ def _build_valid_rde_xml() -> str:
         ),
         (
             (
-                "<dTotGralOpe>1150000</dTotGralOpe>\n"
-                "      <dIVA10>104545</dIVA10>\n"
-                "      <dBaseGrav10>1045455</dBaseGrav10>\n"
-                "      <dTBasGraIVA>1045455</dTBasGraIVA>\n"
-                "      <dTotIVA>104545</dTotIVA>\n"
-                "      <dTotalGs>1150000</dTotalGs>"
+                f"<dTotGralOpe>{FACTURA.total_general}</dTotGralOpe>\n"
+                f"      <dIVA10>{FACTURA.iva_10}</dIVA10>\n"
+                f"      <dBaseGrav10>{FACTURA.base_gravada_10}</dBaseGrav10>\n"
+                f"      <dTBasGraIVA>{FACTURA.base_gravada_10}</dTBasGraIVA>\n"
+                f"      <dTotIVA>{FACTURA.total_iva}</dTotIVA>\n"
+                f"      <dTotalGs>{FACTURA.total_general}</dTotalGs>"
             ),
             (
-                "<dTotGralOpe>1150000</dTotGralOpe>\n"
-                "      <dIVA10>104545</dIVA10>\n"
-                "      <dTotIVA>104545</dTotIVA>\n"
-                "      <dBaseGrav10>1045455</dBaseGrav10>\n"
-                "      <dTBasGraIVA>1045455</dTBasGraIVA>\n"
-                "      <dTotalGs>1150000</dTotalGs>"
+                f"<dTotGralOpe>{FACTURA.total_general}</dTotGralOpe>\n"
+                f"      <dIVA10>{FACTURA.iva_10}</dIVA10>\n"
+                f"      <dTotIVA>{FACTURA.total_iva}</dTotIVA>\n"
+                f"      <dBaseGrav10>{FACTURA.base_gravada_10}</dBaseGrav10>\n"
+                f"      <dTBasGraIVA>{FACTURA.base_gravada_10}</dTBasGraIVA>\n"
+                f"      <dTotalGs>{FACTURA.total_general}</dTotalGs>"
             ),
         ),
         (
