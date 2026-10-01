@@ -5,8 +5,6 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from xsdata.exceptions import ParserError
-
 from kilasifen.engine.de.bindings.v150.ws_si_cons_de_v141 import (
     REnviConsDeRequest,
     REnviConsDeResponse,
@@ -27,6 +25,7 @@ from kilasifen.engine.de.bindings.v150.ws_si_cons_ruc_v141 import (
     REnviConsRuc,
     RResEnviConsRuc,
 )
+from kilasifen.engine.sdk.errors import SifenUnexpectedResponseError
 from kilasifen.engine.transmision.base import TransmisionBase, _generate_id
 
 __all__ = ["ConsultaSIFEN"]
@@ -130,7 +129,7 @@ class ConsultaSIFEN(TransmisionBase):
         cliente = self._get_client("cons_ruc")
         try:
             respuesta = cliente.send(solicitud)
-        except ParserError:
+        except SifenUnexpectedResponseError:
             self._cleanup_transport()
             return self._send_safe_query("cons_ruc", solicitud, RResEnviConsRuc)
         return self._como_respuesta(respuesta, RResEnviConsRuc)

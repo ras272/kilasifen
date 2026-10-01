@@ -49,9 +49,10 @@ revisar la guía de migración de esta sección.
 - Los mensajes de error de `kilasifen.engine.transmision`,
   `kilasifen.engine.firma` y del firmador PKCS12
   (`kilasifen.engine.sdk.signer`) ahora están en español. El código que compare
-  el texto de esos mensajes tiene que ajustarse. Queda una excepción:
-  `SifenUnexpectedResponseError`, que la transmisión lanza pero se define en
-  `kilasifen.engine.sdk.errors`, sigue con su texto en inglés.
+  el texto de esos mensajes tiene que ajustarse. Eso incluye
+  `SifenUnexpectedResponseError` (definida en `kilasifen.engine.sdk.errors`):
+  su mensaje pasa de `Unexpected SIFEN response: expected X, received Y` a
+  `Respuesta inesperada del SIFEN: se esperaba X y se recibio Y`.
 - Los extras `sign` y `transmision` exigen `signxml>=5.1` (antes `>=3.0`).
 
 ### Guía de migración
@@ -126,6 +127,16 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   el primer intento. Antes, con `max_retries > 0`, esos errores provocaban un
   reenvío que podía duplicar la operación. `ConsultaSIFEN` conserva la
   política anterior y reintenta también esos errores.
+- Un SOAP Fault (en HTTP 200 o 5xx), el sobre de otra operación, HTML de un
+  proxy o un cuerpo que no se puede leer ya no escapan como `ParserError` o
+  `TypeError` de xsdata: `enviar_de`, `enviar_de_xml`, `enviar_lote`,
+  `enviar_evento` y todas las consultas lanzan
+  `SifenUnexpectedResponseError` (subclase de `SifenTransportError`, es
+  decir, resultado incierto). La excepción gana el atributo `raw_body`, con
+  el comienzo del cuerpo recibido (hasta 4096 caracteres) como texto; no se
+  incluye en el mensaje. Las respuestas se validan por el nombre de su raíz
+  antes de parsearlas, y `consultar_ruc` reabre la conexión ante esta
+  excepción en lugar de ante `ParserError`.
 - El firmador PKCS12 acepta `bytearray` y `memoryview`, además de `bytes`,
   para el contenido del certificado, la contraseña y el documento a firmar.
 - El autor declarado en los metadatos del paquete es "The KilaSifen Authors".

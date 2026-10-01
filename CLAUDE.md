@@ -359,8 +359,6 @@ mantener el mismo comportamiento; se corrigen en commits posteriores):
   firma inválida (es el xfail estricto). La plataforma usa `enviar_de_xml`.
 - `enviar_lote` codifica en base64 dos veces y sin ZIP: no cumple la
   especificación. La plataforma no lo usa.
-- Un SOAP Fault o una respuesta ilegible aparece como error de parseo y no
-  como error de transporte con resultado incierto.
 - `consultar_dte_async` se reintenta como si fuera una consulta de solo
   lectura.
 - El único binding `RDe` tiene el layout v141 (sin `dSisFact`).

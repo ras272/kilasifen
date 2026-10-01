@@ -116,6 +116,9 @@ class TransmisionDE(TransmisionBase):
             UnicodeDecodeError: si ``xml_de`` son bytes que no son UTF-8.
             lxml.etree.XMLSyntaxError: si el XML esta mal formado; en ese caso
                 no se envia nada.
+            SifenUnexpectedResponseError: si la respuesta es un SOAP Fault,
+                el sobre de otra operacion o un cuerpo ilegible (resultado
+                incierto).
         """
         if isinstance(xml_de, bytes):
             xml_de = xml_de.decode("utf-8")

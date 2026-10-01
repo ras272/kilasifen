@@ -32,6 +32,7 @@ from types import ModuleType
 from typing import Any, TypeVar
 from xml.etree import ElementTree as ET
 
+from xsdata.exceptions import ParserError
 from xsdata.formats.dataclass.parsers import XmlParser
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
@@ -108,6 +109,12 @@ _ETIQUETAS_MENSAJE = frozenset({"dMsgRes", "dMsgResLot"})
 
 #: Raiz informada cuando una respuesta no es XML bien formado.
 _RAIZ_INVALIDA = "invalid_xml"
+
+#: Errores de xsdata al convertir un cuerpo en su binding: ``ParserError``
+#: (elementos desconocidos o XML ilegible), ``TypeError`` (falta un campo
+#: obligatorio) y ``ValueError``/``SyntaxError`` (conversiones, XML mal
+#: formado para lxml).
+_ERRORES_DE_PARSEO = (ParserError, TypeError, ValueError, SyntaxError)
 
 _MSG_CERRADA = "La transmision SIFEN ya esta cerrada; cree una nueva instancia"
 _MSG_TIMEOUT = "Se agoto el tiempo de espera de la solicitud SOAP al SIFEN"
@@ -338,6 +345,79 @@ def _get_service_models(servicio: str) -> tuple[type, type]:
     if servicio not in _MODELOS_POR_SERVICIO:
         raise ValueError(f"Servicio SIFEN sin modelos SOAP asociados: {servicio!r}")
     return _MODELOS_POR_SERVICIO[servicio]
+
+
+# ---------------------------------------------------------------------------
+# Respuestas
+# ---------------------------------------------------------------------------
+
+
+def _nombre_raiz(clase: type) -> str:
+    """Nombre local del elemento raiz de un binding de respuesta."""
+    meta = getattr(clase, "Meta", None)
+    return getattr(meta, "name", None) or clase.__name__
+
+
+def _respuesta_inesperada(
+    datos: bytes, raiz_esperada: str
+) -> SifenUnexpectedResponseError:
+    """Arma el error para un cuerpo que no es la respuesta esperada."""
+    raiz, codigo, mensaje = _response_identity(datos)
+    return SifenUnexpectedResponseError(
+        expected_root=raiz_esperada,
+        actual_root=raiz,
+        code=codigo,
+        response_message=mensaje,
+        raw_body=datos,
+    )
+
+
+def _parsear_respuesta(respuesta: bytes | str, clase: type) -> Any:
+    """Convierte el cuerpo de una respuesta del SIFEN en una instancia de ``clase``.
+
+    Antes de parsear comprueba que el elemento raiz sea el de ``clase``
+    (xsdata no lo verifica). Un SOAP Fault, el sobre de otra operacion, un
+    cuerpo que no es XML o un XML que el binding no acepta terminan en
+    :class:`SifenUnexpectedResponseError`, con el comienzo del cuerpo en
+    ``raw_body``; nunca en un error de xsdata.
+    """
+    if isinstance(respuesta, str):
+        datos = respuesta.encode("utf-8")
+    else:
+        datos = bytes(respuesta)
+    raiz_esperada = _nombre_raiz(clase)
+    if _response_identity(datos)[0] != raiz_esperada:
+        raise _respuesta_inesperada(datos, raiz_esperada)
+    try:
+        return _parser().from_bytes(datos, clase)
+    except _ERRORES_DE_PARSEO as exc:
+        raise _respuesta_inesperada(datos, raiz_esperada) from exc
+
+
+class _ParserDeRespuestas(XmlParser):
+    """Parser que el cliente SOAP de xsdata usa para leer las respuestas.
+
+    El cliente llama ``from_bytes(respuesta, modelo_de_salida)``; este parser
+    lo resuelve con :func:`_parsear_respuesta`, de modo que las operaciones
+    que pasan por el cliente informan las respuestas inesperadas igual que
+    las que envian XML crudo.
+    """
+
+    def from_bytes(
+        self,
+        source: bytes,
+        clazz: type | None = None,
+        ns_map: dict[str, str] | None = None,
+    ) -> Any:
+        if clazz is None:
+            return super().from_bytes(source, clazz, ns_map)
+        return _parsear_respuesta(source, clazz)
+
+
+@lru_cache(maxsize=1)
+def _parser_de_respuestas() -> _ParserDeRespuestas:
+    """Parser de respuestas compartido por los clientes SOAP del proceso."""
+    return _ParserDeRespuestas()
 
 
 # ---------------------------------------------------------------------------
@@ -708,12 +788,16 @@ class TransmisionBase:
         return _parser().from_string(xml, clazz)
 
     def _como_respuesta(self, respuesta: Any, clase: type) -> Any:
-        """Normaliza lo devuelto por el transporte o el cliente a ``clase``."""
+        """Normaliza lo devuelto por el transporte o el cliente a ``clase``.
+
+        Raises:
+            SifenUnexpectedResponseError: si el cuerpo no es una respuesta de
+                ``clase`` (SOAP Fault, sobre de otra operacion, cuerpo
+                ilegible).
+        """
         if isinstance(respuesta, clase):
             return respuesta
-        if isinstance(respuesta, str):
-            return self._parse(respuesta, clase)
-        return self._parse(respuesta.decode("utf-8"), clase)
+        return _parsear_respuesta(respuesta, clase)
 
     # -- transporte y clientes SOAP ----------------------------------------
 
@@ -740,7 +824,9 @@ class TransmisionBase:
     def _get_client(self, servicio: str) -> Any:
         """Devuelve el cliente SOAP de xsdata para ``servicio`` (cacheado).
 
-        Todos los clientes de la instancia comparten el mismo transporte.
+        Todos los clientes de la instancia comparten el mismo transporte. Las
+        respuestas se leen con :class:`_ParserDeRespuestas`: una respuesta
+        inesperada llega como :class:`SifenUnexpectedResponseError`.
         """
         self._ensure_open()
         if servicio in self._clients:
@@ -760,7 +846,11 @@ class TransmisionBase:
             output=modelo_salida,
             encoding=None,
         )
-        cliente = cliente_xsdata.Client(config=configuracion, transport=transporte)
+        cliente = cliente_xsdata.Client(
+            config=configuracion,
+            transport=transporte,
+            parser=_parser_de_respuestas(),
+        )
         self._clients[servicio] = cliente
         return cliente
 
@@ -783,30 +873,24 @@ class TransmisionBase:
         fiscal, ante esa situacion se abre una conexion nueva y se vuelve a
         enviar el mismo request (mismo ``dId``), hasta ``max_retries + 1``
         veces. Si nunca llega la respuesta esperada se lanza
-        :class:`SifenUnexpectedResponseError`.
+        :class:`SifenUnexpectedResponseError`. Una respuesta con la raiz
+        esperada que el binding no acepta no se reintenta: se informa enseguida
+        con el mismo error.
         """
         _validar_max_retries(self.max_retries)
 
         texto = self._serialize(request)
-        raiz_esperada = response_type.Meta.name
+        raiz_esperada = _nombre_raiz(response_type)
         total_intentos = self.max_retries + 1
 
         for intento in range(total_intentos):
             respuesta = self._send_raw_xml(servicio, texto)
-            raiz, codigo, mensaje = _response_identity(respuesta)
-            if raiz == raiz_esperada:
-                if not isinstance(respuesta, str):
-                    respuesta = respuesta.decode("utf-8")
-                return self._parse(respuesta, response_type)
-
-            error = SifenUnexpectedResponseError(
-                expected_root=raiz_esperada,
-                actual_root=raiz,
-                code=codigo,
-                response_message=mensaje,
-            )
-            if intento == total_intentos - 1:
-                raise error
+            try:
+                return _parsear_respuesta(respuesta, response_type)
+            except SifenUnexpectedResponseError as error:
+                otra_operacion = error.actual_root != raiz_esperada
+                if not otra_operacion or intento == total_intentos - 1:
+                    raise
             self._cleanup_transport()
             espera = self.retry_backoff * 2**intento
             if espera > 0:

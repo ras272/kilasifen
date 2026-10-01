@@ -83,6 +83,7 @@ from kilasifen.engine.de.bindings.v150.ws_si_recep_lote_de_v141 import (
     RResEnviLoteDe,
 )
 from kilasifen.engine.sdk.errors import (
+    MAX_CUERPO_CRUDO,
     SifenError,
     SifenRequestNotSentError,
     SifenSignatureError,
@@ -549,9 +550,10 @@ class TransporteFalso:
 class ClienteXsdataFalso:
     """Reemplazo de ``xsdata...client.Client``: solo acepta argumentos nombrados."""
 
-    def __init__(self, *, config: Any, transport: Any) -> None:
+    def __init__(self, *, config: Any, transport: Any, parser: Any) -> None:
         self.config = config
         self.transport = transport
+        self.parser = parser
 
     def send(self, request: Any, /) -> Any:
         return None
@@ -1160,6 +1162,7 @@ class TestTransmisionBase:
 
         assert primero is segundo
         assert primero.transport is fabricas_falsas.transportes[0]
+        assert primero.parser is base._parser_de_respuestas()
         assert len(fabricas_falsas.llamadas_transporte) == 1
         args, kwargs = fabricas_falsas.llamadas_transporte[0]
         assert args == ("cert.pem", "key.pem")
@@ -2926,7 +2929,8 @@ class TestConsultaSegura:
         assert orden == ["limpieza", 0.3]
 
     def test_consulta_segura_error_de_parseo_no_reintenta(self, consulta: Any) -> None:
-        """La raiz coincide pero el contenido no es del binding: se propaga."""
+        """La raiz coincide pero el contenido no es del binding: no se reintenta
+        y se informa como respuesta inesperada, no como error de xsdata."""
         consulta.max_retries = 2
         respuesta = (
             f"<rResEnviConsRUC xmlns='{NS_SIFEN}'><dCodRes>0502</dCodRes>"
@@ -2934,9 +2938,21 @@ class TestConsultaSegura:
             "</rResEnviConsRUC>"
         ).encode("utf-8")
         envios = _programar_envios(consulta, respuesta)
-        with pytest.raises(ParserError):
+        with pytest.raises(SifenUnexpectedResponseError) as error:
             consulta._send_safe_query("cons_ruc", _solicitud_ruc(), RResEnviConsRuc)
         assert envios.veces == 1
+        assert error.value.expected_root == error.value.actual_root == "rResEnviConsRUC"
+        assert error.value.code == "0502"
+        assert error.value.raw_body == respuesta.decode("utf-8")
+        assert isinstance(error.value.__cause__, ParserError)
+
+    def test_consulta_segura_error_incluye_el_cuerpo_recibido(
+        self, consulta: Any
+    ) -> None:
+        _programar_envios(consulta, RESPUESTA_AJENA_0160)
+        with pytest.raises(SifenUnexpectedResponseError) as error:
+            consulta._send_safe_query("cons_ruc", _solicitud_ruc(), RResEnviConsRuc)
+        assert error.value.raw_body == RESPUESTA_AJENA_0160.decode("utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -2953,6 +2969,17 @@ SENTINELA_DTE = SimpleNamespace(descripcion="consulta DTE ficticia")
 
 def _respuesta_ruc() -> RResEnviConsRuc:
     return RResEnviConsRuc(dCodRes="0502", dMsgRes="RUC encontrado")
+
+
+def _sobre_de_otra_operacion() -> SifenUnexpectedResponseError:
+    """Lo que lanza el cliente SOAP cuando llega el sobre de otra operacion."""
+    return SifenUnexpectedResponseError(
+        expected_root="rResEnviConsRUC",
+        actual_root="rRetEnviDe",
+        code="0160",
+        response_message="XML Mal Formado.",
+        raw_body=RESPUESTA_AJENA_0160,
+    )
 
 
 RESPUESTAS_POR_SERVICIO = {
@@ -3099,7 +3126,7 @@ class TestConsultaSIFEN:
         self, consulta: Any, cliente_soap_falso: ClienteSoapFalso
     ) -> None:
         """L32."""
-        cliente_soap_falso.error = ParserError("sobre de otra operacion")
+        cliente_soap_falso.error = _sobre_de_otra_operacion()
         limpiezas = _programar_limpieza(consulta)
         recuperada = _respuesta_ruc()
         consulta_segura = Registrador(recuperada)
@@ -3426,7 +3453,7 @@ class TestConsultaSIFEN:
         self, consulta: Any, cliente_soap_falso: ClienteSoapFalso
     ) -> None:
         """N42."""
-        cliente_soap_falso.error = ParserError("sobre de otra operacion")
+        cliente_soap_falso.error = _sobre_de_otra_operacion()
         _programar_limpieza(consulta)
         consulta_segura = Registrador(_respuesta_ruc())
         consulta._send_safe_query = consulta_segura
@@ -3443,7 +3470,7 @@ class TestConsultaSIFEN:
     def test_consultar_ruc_recuperacion_no_normaliza_respuesta(
         self, consulta: Any, cliente_soap_falso: ClienteSoapFalso
     ) -> None:
-        cliente_soap_falso.error = ParserError("sobre de otra operacion")
+        cliente_soap_falso.error = _sobre_de_otra_operacion()
         _programar_limpieza(consulta)
         centinela = object()
         consulta._send_safe_query = Registrador(centinela)
@@ -3485,18 +3512,20 @@ class TestConsultaSIFEN:
             ),
         ],
     )
-    def test_otras_consultas_no_recuperan_parser_error(
+    def test_otras_consultas_no_recuperan_respuesta_inesperada(
         self,
         consulta: Any,
         cliente_soap_falso: ClienteSoapFalso,
         invocar: Callable[[Any], Any],
     ) -> None:
         """N44."""
-        cliente_soap_falso.error = ParserError("respuesta inesperada")
+        falla = _sobre_de_otra_operacion()
+        cliente_soap_falso.error = falla
         consulta_segura = Registrador()
         consulta._send_safe_query = consulta_segura
-        with pytest.raises(ParserError):
+        with pytest.raises(SifenUnexpectedResponseError) as error:
             invocar(consulta)
+        assert error.value is falla
         assert consulta_segura.veces == 0
 
 
@@ -3714,6 +3743,201 @@ class TestPoliticaDeReintentos:
                 consulta_reintentos.consultar_de(_cdc_ficticio(93))
         assert type(error.value) is tipo_error
         assert len(red.llamadas) == 3
+
+
+# ---------------------------------------------------------------------------
+# Respuestas inesperadas: SOAP Fault, HTML de un proxy, cuerpo ilegible
+# ---------------------------------------------------------------------------
+
+MOTIVO_FAULT = "Error interno del servicio ficticio"
+
+FAULT_SOAP12 = (
+    f'<env:Envelope xmlns:env="{NS_SOAP12}"><env:Body><env:Fault>'
+    "<env:Code><env:Value>env:Receiver</env:Value></env:Code>"
+    f'<env:Reason><env:Text xml:lang="es">{MOTIVO_FAULT}</env:Text></env:Reason>'
+    "</env:Fault></env:Body></env:Envelope>"
+).encode("utf-8")
+
+FAULT_SOAP11 = (
+    f'<s:Envelope xmlns:s="{NS_SOAP11}"><s:Body><s:Fault>'
+    f"<faultcode>s:Server</faultcode><faultstring>{MOTIVO_FAULT}</faultstring>"
+    "</s:Fault></s:Body></s:Envelope>"
+).encode("utf-8")
+
+RESPUESTAS_INESPERADAS = [
+    pytest.param(
+        lambda: RespuestaHttpFalsa(FAULT_SOAP12, 500),
+        "Fault",
+        MOTIVO_FAULT,
+        id="fault_soap12_http500",
+    ),
+    pytest.param(
+        lambda: RespuestaHttpFalsa(FAULT_SOAP12, 200),
+        "Fault",
+        MOTIVO_FAULT,
+        id="fault_soap12_http200",
+    ),
+    pytest.param(
+        lambda: RespuestaHttpFalsa(FAULT_SOAP11, 500),
+        "Fault",
+        MOTIVO_FAULT,
+        id="fault_soap11",
+    ),
+    pytest.param(
+        lambda: RespuestaHttpFalsa(b"<html><body>502 Bad Gateway</body></html>"),
+        "html",
+        "502 Bad Gateway",
+        id="html_de_proxy",
+    ),
+    pytest.param(
+        lambda: RespuestaHttpFalsa(b"respuesta cortada <rRetEnviDe"),
+        "invalid_xml",
+        "respuesta cortada",
+        id="no_xml",
+    ),
+    pytest.param(lambda: RespuestaHttpFalsa(b""), "invalid_xml", "", id="vacia"),
+]
+
+
+def _enviar_de_sin_firma(transmision: Any) -> Any:
+    transmision._serialize = lambda *_args, **_kwargs: _rde_sifen(_cdc_ficticio(95))
+    return transmision.enviar_de(SimpleNamespace(DE=None), sign=False)
+
+
+OPERACIONES_CON_RESPUESTA = [
+    pytest.param(
+        TransmisionDE,
+        lambda t: t.enviar_de_xml(_rde_sifen(_cdc_ficticio(94))),
+        "rRetEnviDe",
+        1,
+        id="enviar_de_xml",
+    ),
+    pytest.param(TransmisionDE, _enviar_de_sin_firma, "rRetEnviDe", 1, id="enviar_de"),
+    pytest.param(
+        TransmisionDE,
+        lambda t: t.enviar_lote(
+            [REnviConsRuc(dId=96, dRUCCons="4567012")], lote_id=96, sign=False
+        ),
+        "rResEnviLoteDe",
+        1,
+        id="enviar_lote",
+    ),
+    pytest.param(
+        TransmisionEvento,
+        lambda t: t.enviar_evento(TgGroupGesEve()),
+        "rRetEnviEventoDe",
+        1,
+        id="enviar_evento",
+    ),
+    pytest.param(
+        ConsultaSIFEN,
+        lambda t: t.consultar_de(_cdc_ficticio(97)),
+        "rEnviConsDeResponse",
+        1,
+        id="consultar_de",
+    ),
+    pytest.param(
+        ConsultaSIFEN,
+        lambda t: t.consultar_lote(97),
+        "rResEnviConsLoteDe",
+        1,
+        id="consultar_lote",
+    ),
+    pytest.param(
+        ConsultaSIFEN,
+        lambda t: t.consultar_ruc("80024135-5"),
+        "rResEnviConsRUC",
+        2,  # el sobre inesperado activa la reconexion de consultar_ruc
+        id="consultar_ruc",
+    ),
+    pytest.param(
+        ConsultaSIFEN,
+        lambda t: t.consultar_dte(None),
+        "rConsDteResponse",
+        1,
+        id="consultar_dte",
+    ),
+    pytest.param(
+        ConsultaSIFEN,
+        lambda t: t.consultar_dte_async(None),
+        "rEnviConsDteAsyncResponse",
+        1,
+        id="consultar_dte_async",
+    ),
+]
+
+
+class TestRespuestasInesperadas:
+    @pytest.mark.parametrize("fabricar, raiz, fragmento", RESPUESTAS_INESPERADAS)
+    @pytest.mark.parametrize(
+        "clase, operar, raiz_esperada, envios_esperados", OPERACIONES_CON_RESPUESTA
+    )
+    def test_toda_operacion_informa_respuesta_inesperada(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+        clase: type,
+        operar: Callable[[Any], Any],
+        raiz_esperada: str,
+        envios_esperados: int,
+        fabricar: Callable[[], Any],
+        raiz: str,
+        fragmento: str,
+    ) -> None:
+        red = red_simulada(fabricar())
+        with clase(**credenciales_ficticias) as transmision:
+            with pytest.raises(SifenUnexpectedResponseError) as error:
+                operar(transmision)
+        assert isinstance(error.value, SifenTransportError)
+        assert error.value.expected_root == raiz_esperada
+        assert error.value.actual_root == raiz
+        assert error.value.raw_body is not None
+        assert fragmento in error.value.raw_body
+        assert len(red.llamadas) == envios_esperados
+
+    def test_mensaje_en_espanol_sin_el_cuerpo(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+    ) -> None:
+        red_simulada(RespuestaHttpFalsa(FAULT_SOAP12, 500))
+        with TransmisionDE(**credenciales_ficticias) as transmision:
+            with pytest.raises(SifenUnexpectedResponseError) as error:
+                transmision.enviar_de_xml(_rde_sifen(_cdc_ficticio(98)))
+        assert str(error.value) == (
+            "Respuesta inesperada del SIFEN: se esperaba rRetEnviDe y se recibio Fault"
+        )
+        assert MOTIVO_FAULT not in str(error.value)
+
+    def test_raiz_correcta_sin_campo_obligatorio(
+        self,
+        credenciales_ficticias: dict[str, Any],
+        red_simulada: Callable[..., RedSimulada],
+    ) -> None:
+        cuerpo = f'<rRetEnviDe xmlns="{NS_SIFEN}"/>'
+        red_simulada(RespuestaHttpFalsa(_sobre_soap12(cuerpo)))
+        with TransmisionDE(**credenciales_ficticias) as transmision:
+            with pytest.raises(SifenUnexpectedResponseError) as error:
+                transmision.enviar_de_xml(_rde_sifen(_cdc_ficticio(99)))
+        assert error.value.actual_root == "rRetEnviDe"
+        assert isinstance(error.value.__cause__, TypeError)
+
+    def test_cuerpo_largo_se_recorta(self, transmision_de: Any) -> None:
+        relleno = "x" * (2 * MAX_CUERPO_CRUDO)
+        transmision_de._send_raw_xml = Registrador(f"<html>{relleno}</html>".encode())
+        with pytest.raises(SifenUnexpectedResponseError) as error:
+            transmision_de.enviar_de_xml(_rde_sifen(_cdc_ficticio(100)))
+        assert len(error.value.raw_body) == MAX_CUERPO_CRUDO
+        assert error.value.raw_body.startswith("<html>xxx")
+
+    def test_parser_de_respuestas_sin_clase_delega_en_xsdata(self) -> None:
+        texto = f'<rResEnviConsRUC xmlns="{NS_SIFEN}"><dCodRes>0502</dCodRes>'
+        texto += "<dMsgRes>RUC encontrado</dMsgRes></rResEnviConsRUC>"
+        parser = base._parser_de_respuestas()
+        resultado = parser.from_bytes(texto.encode(), RResEnviConsRuc)
+        assert resultado == _respuesta_ruc()
+        with pytest.raises(ParserError):
+            parser.from_bytes(b"<desconocido/>")
 
 
 # ---------------------------------------------------------------------------
@@ -4165,12 +4389,17 @@ class TestTransmisionDE:
         assert resultado.rProtDe.gResProc[0].dMsgRes == "Observacion ficticia"
 
     def test_enviar_de_sobre_ajeno_no_reenvia(self, transmision_de: Any) -> None:
-        """N58: un DE nunca se reenvia automaticamente."""
+        """N58: un DE nunca se reenvia automaticamente; el sobre ajeno deja el
+        resultado incierto."""
         envios = Registrador(RESPUESTA_RUC_0502)
         transmision_de._send_raw_xml = envios
-        with pytest.raises(ParserError) as error:
+        with pytest.raises(SifenUnexpectedResponseError) as error:
             transmision_de.enviar_de_xml(_rde_sifen(_cdc_ficticio(58)))
-        assert not isinstance(error.value, SifenTransportError)
+        assert isinstance(error.value, SifenTransportError)
+        assert error.value.expected_root == "rRetEnviDe"
+        assert error.value.actual_root == "rResEnviConsRUC"
+        assert error.value.code == "0502"
+        assert error.value.raw_body == RESPUESTA_RUC_0502.decode("utf-8")
         assert envios.veces == 1
 
     @pytest.mark.parametrize(

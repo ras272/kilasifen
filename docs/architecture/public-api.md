@@ -87,6 +87,7 @@ Todas las fallas de transporte heredan de `SifenTransportError`
 | --- | --- | --- |
 | `SifenRequestNotSentError` | No se resolvió el nombre del servidor, la conexión fue rechazada o el destino era inalcanzable, se agotó el tiempo al conectar o falló el handshake TLS. | No: es seguro volver a enviar. |
 | `SifenTimeoutError` | Se agotó el tiempo esperando la respuesta (incluye el timeout de lectura). | Sí: resultado incierto. |
+| `SifenUnexpectedResponseError` | La respuesta no es la de la operación: SOAP Fault (`actual_root == "Fault"`), sobre de otra operación, HTML de un proxy, cuerpo que no es XML (`"invalid_xml"`) o XML que el binding no acepta. Trae `expected_root`, `actual_root`, `code`, `response_message` y `raw_body` (comienzo del cuerpo, hasta 4096 caracteres; no forma parte del mensaje). | Sí: resultado incierto. |
 | `SifenTransportError` | Cualquier otro fallo: conexión cortada a mitad de la respuesta, error HTTP sin cuerpo XML, etc. | Sí: resultado incierto. |
 
 El handshake TLS se reconoce porque los sockets del contexto de
@@ -204,9 +205,6 @@ comportamiento anterior. Están pendientes de corrección:
 - `enviar_lote` codifica el contenido en base64 dos veces y no lo comprime en
   ZIP, así que no respeta el formato del servicio de lotes. La plataforma no
   lo usa.
-- Una respuesta SOAP Fault o un cuerpo que no se puede parsear llega como
-  `ParserError` de xsdata, no como `SifenTransportError`, que es lo que la
-  plataforma trata como resultado incierto.
 - `SifenClient` pasa su `max_retries` (por defecto `2`) a `ConsultaSIFEN`, y
   eso incluye `consultar_dte_async`, que registra una consulta nueva en el
   SIFEN: ante un timeout se reintenta como si fuera una consulta de solo

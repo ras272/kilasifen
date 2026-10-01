@@ -305,7 +305,11 @@ pero hoy produce una firma inválida (ver limitaciones).
 llegó al SIFEN (DNS, conexión rechazada, tiempo agotado al conectar o
 handshake TLS fallido) y es seguro volver a enviarla. Cualquier otro error
 (`SifenTimeoutError`, conexión cortada, error HTTP) deja el resultado
-incierto: consultá por CDC antes de volver a transmitir. Por eso
+incierto: consultá por CDC antes de volver a transmitir. Lo mismo vale para
+`SifenUnexpectedResponseError`, que se lanza cuando la respuesta es un SOAP
+Fault, el sobre de otra operación, HTML de un proxy o un cuerpo que no se
+puede leer; su atributo `raw_body` trae el comienzo del cuerpo recibido (no
+aparece en el mensaje, porque puede tener datos del contribuyente). Por eso
 `TransmisionDE` y `TransmisionEvento` usan `max_retries` solo para
 `SifenRequestNotSentError`; las consultas de `ConsultaSIFEN` reintentan
 también los timeouts y los cortes.
@@ -498,11 +502,7 @@ Las reglas para contribuir están en [CONTRIBUTING.md](CONTRIBUTING.md).
 
 3. **`enviar_lote` no respeta el formato del SIFEN.** Codifica el contenido
    dos veces en base64 y no lo comprime en ZIP. La plataforma no lo usa.
-4. **Los SOAP Fault y las respuestas ilegibles llegan como errores de
-   parseo**, no como errores de transporte con resultado incierto. Tratá
-   cualquier excepción posterior al envío como resultado desconocido y
-   consultá antes de reintentar.
-5. **`consultar_dte_async` se reintenta como si fuera una consulta de solo
+4. **`consultar_dte_async` se reintenta como si fuera una consulta de solo
    lectura** (por ejemplo, con el `max_retries` de `SifenClient`), aunque
    registra una solicitud en el SIFEN.
 
