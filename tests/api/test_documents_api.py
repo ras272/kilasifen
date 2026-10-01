@@ -301,7 +301,11 @@ def test_create_factura_typed_endpoint_returns_document_and_job(
                 "punto": "001",
                 "numero": 10,
                 "fecha": "2026-04-25T10:00:00",
-                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                 "items": [
                     {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
                 ],
@@ -326,7 +330,11 @@ def test_create_nota_credito_typed_endpoint_returns_document_and_job(
             "external_id": "erp-nc-1",
             "idempotency_key": "idem-nc-1",
             "nota_credito": {
-                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                 "documento_asociado": {
                     "cdc": "01800123450001001000000012026010112345678901"
                 },
@@ -355,7 +363,11 @@ def test_create_nota_debito_typed_endpoint_returns_document_and_job(
             "idempotency_key": "idem-nd-1",
             "nota_debito": {
                 "motivo_emision": "recupero_costo",
-                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                 "documento_asociado": {
                     "cdc": "01800123450001001000000012026010112345678901"
                 },
@@ -430,7 +442,11 @@ def test_create_factura_typed_endpoint_without_xml_is_accepted(
             "factura": {
                 "numero": 1003,
                 "fecha": "2026-04-25T10:00:00",
-                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                 "items": [
                     {
                         "descripcion": "Producto",
@@ -459,7 +475,11 @@ def test_create_factura_typed_endpoint_without_xml_is_accepted(
             ],
         },
         {
-            "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+            "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
             "items": [
                 {
                     "descripcion": "Neto negativo",
@@ -473,13 +493,21 @@ def test_create_factura_typed_endpoint_without_xml_is_accepted(
             "moneda": "PYG",
             "condicion_tipo_cambio": 1,
             "tipo_cambio": 7300,
-            "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+            "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
             "items": [
                 {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
             ],
         },
         {
-            "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+            "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
             "condicion_operacion": {
                 "tipo": "contado",
                 "formas_pago": [{"tipo": "cheque", "monto": 1000}],
@@ -716,7 +744,11 @@ def test_create_typed_document_ignores_client_number_and_logs_warning(
             "factura": {
                 "numero": 999,
                 "fecha": "2026-04-25T10:00:00",
-                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                 "items": [
                     {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
                 ],
@@ -752,7 +784,11 @@ def test_typed_document_requires_the_emitter_fiscal_profile(
         headers={"X-API-Key": API_KEY},
         json={
             "factura": {
-                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                 "items": [
                     {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
                 ],
@@ -783,7 +819,11 @@ def test_typed_document_cannot_change_the_emitter_identity(
         headers={"X-API-Key": API_KEY},
         json={
             "factura": {
-                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                 "items": [
                     {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
                 ],
@@ -816,7 +856,11 @@ def test_typed_document_outside_the_emission_window_is_rejected(
         json={
             "factura": {
                 "fecha_emision": fecha,
-                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                 "items": [
                     {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
                 ],
@@ -839,7 +883,11 @@ def test_typed_document_far_from_transmission_is_created_with_a_warning(
         json={
             "factura": {
                 "fecha_emision": "2026-04-20T02:00:00",
-                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                 "items": [
                     {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}
                 ],
@@ -857,3 +905,130 @@ def test_typed_document_far_from_transmission_is_created_with_a_warning(
         headers={"X-API-Key": API_KEY},
     ).json()["data"]["document"]
     assert fetched["fiscal_warnings"] == document["fiscal_warnings"]
+
+
+_ITEMS = [{"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}]
+
+
+@pytest.mark.parametrize(
+    ("cliente", "message"),
+    [
+        (
+            {"ruc": "80069563-1", "razon_social": "TIPS S.A"},
+            "documents.cliente.tipo_contribuyente_required",
+        ),
+        (
+            {"ruc": "80069563-2", "razon_social": "TIPS S.A", "tipo_contribuyente": 2},
+            "documents.cliente.dv_mismatch",
+        ),
+        (
+            {
+                "naturaleza": 2,
+                "tipo_operacion": 1,
+                "tipo_documento_identidad": 1,
+                "numero_documento_identidad": "1234567",
+                "nombre": "PERSONA FICTICIA",
+            },
+            "documents.cliente.tipo_operacion_not_allowed",
+        ),
+        (
+            {
+                "naturaleza": 2,
+                "tipo_operacion": 4,
+                "tipo_documento_identidad": 2,
+                "numero_documento_identidad": "X1234567",
+                "nombre": "FOREIGN CUSTOMER LLC",
+                "pais_codigo": "ARG",
+            },
+            "documents.cliente.direccion_required",
+        ),
+    ],
+)
+def test_typed_document_receiver_rules_answer_422(
+    client: TestClient, emitter_id: str, cliente: dict, message: str
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={"factura": {"cliente": cliente, "items": _ITEMS}},
+    )
+
+    assert response.status_code == 422
+    assert message in response.text
+
+
+def test_nota_credito_refuses_an_innominado_receiver(
+    client: TestClient, emitter_id: str
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/notas-credito",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "nota_credito": {
+                "cliente": {
+                    "naturaleza": 2,
+                    "tipo_operacion": 2,
+                    "tipo_documento_identidad": 5,
+                },
+                "documento_asociado": {
+                    "cdc": "01800123450001001000000012026010112345678901"
+                },
+                "items": _ITEMS,
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert "documents.cliente.innominado_not_allowed" in response.text
+
+
+def test_b2g_invoice_without_public_procurement_data_is_accepted(
+    client: TestClient, emitter_id: str
+) -> None:
+    # NT 26: gCompPub is optional in B2G.
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "factura": {
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razon_social": "ENTIDAD PUBLICA FICTICIA",
+                    "tipo_contribuyente": 2,
+                    "tipo_operacion": 3,
+                },
+                "items": _ITEMS,
+            },
+        },
+    )
+
+    assert response.status_code == 201
+
+
+def test_generation_responsible_type_9_needs_its_description(
+    client: TestClient, emitter_id: str
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "factura": {
+                "emisor": {
+                    "responsable_generacion": {
+                        "tipo_documento": 9,
+                        "numero_documento": "LC-1",
+                        "nombre": "RESPONSABLE FICTICIO",
+                        "cargo": "CAJERO",
+                    }
+                },
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razon_social": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
+                "items": _ITEMS,
+            },
+        },
+    )
+
+    assert response.status_code == 422

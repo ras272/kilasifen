@@ -13,6 +13,10 @@ from pydantic import (
     model_validator,
 )
 
+from kilasifen.domain.documents.receiver import ReceiverRuleError, resolve_receiver
+from kilasifen.engine.sdk.catalogos import descripcion_departamento, descripcion_pais
+from kilasifen.engine.sdk.fiscal import calculate_mod11_dv
+
 
 class DocumentCreateRequest(BaseModel):
     """Document creation payload."""
@@ -47,10 +51,33 @@ class EconomicActivityPayload(FiscalContractModel):
 
 
 class GenerationResponsiblePayload(FiscalContractModel):
-    tipo_documento: int = Field(default=1, ge=1, le=9)
-    numero_documento: str = Field(min_length=1, max_length=20)
+    """gRespDE (D140-D145): who generated the DE on behalf of the emitter."""
+
+    tipo_documento: Literal[1, 2, 3, 4, 9] = Field(
+        description=(
+            "iTipIDRespDE (D141): 1 cédula paraguaya, 2 pasaporte, 3 cédula "
+            "extranjera, 4 carnet de residencia, 9 otro."
+        )
+    )
+    descripcion_tipo_documento: str | None = Field(
+        default=None,
+        min_length=9,
+        max_length=41,
+        description="dDTipIDRespDE: obligatoria solo con `tipo_documento` 9.",
+    )
+    numero_documento: str = Field(pattern=r"^[0-9A-Za-z-]{1,20}$")
     nombre: str = Field(min_length=4, max_length=255)
-    cargo: str = Field(min_length=2, max_length=100)
+    cargo: str = Field(min_length=4, max_length=100, description="dCarRespDE (4-100).")
+
+    @model_validator(mode="after")
+    def validate_other_document_type(self) -> "GenerationResponsiblePayload":
+        # NT 10 §2.2 (1265): with 9 the real type is described in 9-41 chars.
+        if (self.tipo_documento == 9) != (self.descripcion_tipo_documento is not None):
+            raise ValueError(
+                "responsable_generacion.descripcion_tipo_documento goes only "
+                "with tipo_documento 9"
+            )
+        return self
 
 
 _IGNORED_EMITTER_FIELD = {
@@ -123,52 +150,105 @@ class EmitterPayload(FiscalContractModel):
 
 
 class CustomerPayload(FiscalContractModel):
-    naturaleza: int | None = Field(default=None, ge=1, le=2)
-    tipo_operacion: int | None = Field(default=None, ge=1, le=4)
-    tipo_contribuyente: int | None = Field(default=None, ge=1, le=2)
-    ruc: str | None = Field(default=None, pattern=r"^\d{5,8}(?:-\d)?$")
-    dv: str | None = Field(default=None, pattern=r"^\d$")
-    tipo_documento_identidad: int | None = Field(default=None, ge=1, le=9)
-    numero_documento_identidad: str | None = Field(default=None, max_length=20)
+    """Receptor (gDatRec). The document validates it with the rules in force.
+
+    See ``kilasifen.domain.documents.receiver``: 1300 (NT 10), 1320/1301,
+    D205-D207 mandatory for a taxpayer, D208-D210 always for a non-taxpayer
+    (NT 23, 1335), innominado only in B2C invoices (1333, 1331), and the
+    address rules of 1318/1330/NT 03.
+    """
+
+    naturaleza: int | None = Field(
+        default=None,
+        ge=1,
+        le=2,
+        description="iNatRec: 1 contribuyente, 2 no contribuyente. Por defecto, "
+        "1 si hay `ruc`.",
+    )
+    tipo_operacion: int | None = Field(
+        default=None,
+        ge=1,
+        le=4,
+        description="iTiOpe: 1 B2B, 2 B2C, 3 B2G, 4 B2F. Un no contribuyente solo "
+        "admite 2 o 4 (1300).",
+    )
+    tipo_contribuyente: int | None = Field(
+        default=None,
+        ge=1,
+        le=2,
+        description="iTiContRec: obligatorio para un contribuyente, sin valor por "
+        "defecto.",
+    )
+    ruc: str | None = Field(
+        default=None,
+        max_length=10,
+        pattern=r"^[1-9][0-9]*[0-9A-D]?(?:-[0-9])?$",
+        description="dRucRec (3-8, XSD `tRuc`), opcionalmente con `-DV`.",
+    )
+    dv: str | None = Field(
+        default=None,
+        pattern=r"^\d$",
+        description="dDVRec: obligatorio con `ruc` (o como `RUC-DV`); módulo 11.",
+    )
+    tipo_documento_identidad: int | None = Field(
+        default=None,
+        ge=1,
+        le=9,
+        description="iTipIDRec: 1-6 o 9; 5 = innominado (solo B2C en facturas).",
+    )
+    descripcion_tipo_documento: str | None = Field(
+        default=None,
+        min_length=9,
+        max_length=41,
+        description="dDTipIDRec del tipo 9: el tipo real de documento (9-41).",
+    )
+    numero_documento_identidad: str | None = Field(
+        default=None,
+        pattern=r"^[0-9A-Za-z-]{1,20}$",
+        description="dNumIDRec. En innominado se envía siempre `0`.",
+    )
     razon_social: str | None = Field(
+        default=None,
+        min_length=4,
+        max_length=255,
+        validation_alias=AliasChoices("razon_social", "razonSocial"),
+        description="dNomRec. En innominado se envía siempre `Sin Nombre`.",
+    )
+    nombre: str | None = Field(default=None, min_length=4, max_length=255)
+    direccion: str | None = Field(
         default=None,
         min_length=1,
         max_length=255,
-        validation_alias=AliasChoices("razon_social", "razonSocial"),
+        description="dDirRec: obligatoria en B2F (1318); con dirección y D202≠4 "
+        "son obligatorios `departamento` y `ciudad` (NT 03).",
     )
-    nombre: str | None = Field(default=None, min_length=1, max_length=255)
-    direccion: str | None = Field(default=None, min_length=1, max_length=255)
     numero_casa: str | int | None = None
-    pais_codigo: str = Field(default="PRY", min_length=3, max_length=3)
-    pais_descripcion: str = Field(default="Paraguay", min_length=3, max_length=100)
+    pais_codigo: str = Field(
+        default="PRY",
+        pattern=r"^[A-Z]{3}$",
+        description="cPaisRec: distinto de PRY solo en B2F (1320).",
+    )
+    pais_descripcion: str | None = Field(
+        default=None,
+        min_length=4,
+        max_length=50,
+        description="dDesPaisRe: se toma del XSD de países; si se envía tiene "
+        "que coincidir (1301).",
+    )
     departamento: int | str | None = None
     descripcion_departamento: str | None = Field(default=None, max_length=100)
     distrito: int | str | None = None
     descripcion_distrito: str | None = Field(default=None, max_length=100)
     ciudad: int | str | None = None
     descripcion_ciudad: str | None = Field(default=None, max_length=100)
-    telefono: str | None = Field(default=None, max_length=15)
-    celular: str | None = Field(default=None, max_length=20)
+    telefono: str | None = Field(default=None, min_length=6, max_length=15)
+    celular: str | None = Field(default=None, min_length=10, max_length=20)
     email: str | None = Field(default=None, max_length=80)
     codigo_cliente: str | None = Field(default=None, min_length=3, max_length=15)
-    compras_publicas: PublicProcurementPayload | None = None
-
-    @model_validator(mode="after")
-    def validate_identity(self) -> "CustomerPayload":
-        naturaleza = self.naturaleza or (1 if self.ruc else 2)
-        tipo_operacion = self.tipo_operacion or (1 if self.ruc else 2)
-        if naturaleza == 1 and not self.ruc:
-            raise ValueError("cliente.ruc is required for a taxpayer receiver")
-        if naturaleza == 2 and tipo_operacion != 4:
-            if self.tipo_documento_identidad is None:
-                raise ValueError("cliente.tipo_documento_identidad is required")
-            if not self.numero_documento_identidad:
-                raise ValueError("cliente.numero_documento_identidad is required")
-        if not self.razon_social and not self.nombre:
-            raise ValueError("cliente.razon_social or cliente.nombre is required")
-        if tipo_operacion == 3 and self.compras_publicas is None:
-            raise ValueError("cliente.compras_publicas is required for B2G")
-        return self
+    compras_publicas: PublicProcurementPayload | None = Field(
+        default=None,
+        description="gCompPub (E020): opcional en B2G desde la NT 26.",
+    )
 
 
 class CardPayload(FiscalContractModel):
@@ -416,6 +496,20 @@ class BaseFiscalDocumentPayload(FiscalContractModel):
             # XSD tiCodSe: minInclusive 1, "tampoco debe contener solo ceros".
             raise ValueError("codigo_seguridad must not be zero")
         return value
+
+    @model_validator(mode="after")
+    def validate_receiver(self) -> "BaseFiscalDocumentPayload":
+        try:
+            resolve_receiver(
+                self.cliente.model_dump(exclude_none=True),
+                document_type=getattr(self, "tipo_documento", 1),
+                country_description=descripcion_pais,
+                department_description=descripcion_departamento,
+                mod11_dv=calculate_mod11_dv,
+            )
+        except ReceiverRuleError as exc:
+            raise ValueError(exc.code) from exc
+        return self
 
     @model_validator(mode="after")
     def validate_currency(self) -> "BaseFiscalDocumentPayload":

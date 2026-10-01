@@ -96,8 +96,9 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
             "idempotency_key": "tenant-a-idempotency",
             "factura": {
                 "cliente": {
-                    "ruc": "80000001-1",
+                    "ruc": "80025298-5",
                     "razon_social": "CLIENTE TENANT A",
+                    "tipo_contribuyente": 2,
                 },
                 "items": [
                     {"descripcion": "Servicio", "cantidad": 1, "precioUnitario": 1}

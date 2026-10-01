@@ -17,6 +17,12 @@ from kilasifen.domain.documents.emitter_identity import (
 )
 from kilasifen.domain.documents.fiscal_dates import parse_sifen_datetime
 from kilasifen.domain.documents.models import Document
+from kilasifen.domain.documents.receiver import (
+    Receiver,
+    ReceiverRuleError,
+    innominado_limit_error,
+    resolve_receiver,
+)
 from kilasifen.domain.documents.security_code import (
     InvalidSecurityCodeError,
     normalize_security_code,
@@ -27,6 +33,10 @@ from kilasifen.domain.emitters.fiscal_profile import (
 )
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
+from kilasifen.engine.sdk.catalogos import (
+    descripcion_departamento,
+    descripcion_pais,
+)
 from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.engine.sdk.fiscal import calculate_mod11_dv, generate_cdc
 from kilasifen.engine.sdk.validation import validate_xml
@@ -192,15 +202,15 @@ _AFFECTATION_DESCRIPTION_BY_CODE = {
     3: "Exento",
     4: "Gravado parcial (Grav- Exento)",
 }
-_DOC_ID_TYPE_DESCRIPTION = {
+#: D141/D142: XSD tiTipIDRespDE ([1-4]|9) and tdDTipIDRespDE. With 9 the
+#: real document type is given in 9-41 characters (NT 10 §2.2, 1265).
+_RESPONSIBLE_ID_TYPE_DESCRIPTION = {
     1: "Cédula paraguaya",
     2: "Pasaporte",
     3: "Cédula extranjera",
     4: "Carnet de residencia",
-    5: "Innominado",
-    6: "Tarjeta Diplomática de exoneración fiscal",
-    9: "Otro",
 }
+_RESPONSIBLE_OTHER_ID_TYPE = 9
 _MOTIVE_CODE_BY_NAME = {
     "devolucion_y_ajuste": 1,
     "devolucion": 2,
@@ -421,6 +431,13 @@ def _build_factura_xml(
         tipo_cambio=tipo_cambio,
     )
     _assert_totals_consistency(totals)
+    receiver = _resolve_receiver(cliente, document_type=1)
+    _assert_innominado_limit(
+        receiver,
+        transaction_type=tipo_transaccion,
+        currency=moneda,
+        totals=totals,
+    )
 
     doc_id = _build_doc_id(
         i_tide=1,
@@ -444,7 +461,7 @@ def _build_factura_xml(
         numero_documento=numero_documento,
         codigo_seguridad=codigo_seguridad,
         typed_payload=typed_payload,
-        cliente=cliente,
+        receiver=receiver,
         tipo_transaccion=tipo_transaccion,
         include_tipo_transaccion=True,
         tipo_impuesto=tipo_impuesto,
@@ -459,7 +476,7 @@ def _build_factura_xml(
     gcam_fe = _sub(dtip, "gCamFE")
     _sub(gcam_fe, "iIndPres", str(indicador_presencia))
     _sub(gcam_fe, "dDesIndPres", _presence_description(indicador_presencia))
-    if _customer_operation_type(cliente) == 3:
+    if receiver.operation_type == 3:
         _append_public_procurement_group(gcam_fe=gcam_fe, cliente=cliente)
 
     _append_condition_node(
@@ -560,6 +577,7 @@ def _build_adjustment_note_xml(
         tipo_cambio=tipo_cambio,
     )
     _assert_totals_consistency(totals)
+    receiver = _resolve_receiver(cliente, document_type=document_type_code)
 
     doc_id = _build_doc_id(
         i_tide=document_type_code,
@@ -583,7 +601,7 @@ def _build_adjustment_note_xml(
         numero_documento=numero_documento,
         codigo_seguridad=codigo_seguridad,
         typed_payload=typed_payload,
-        cliente=cliente,
+        receiver=receiver,
         tipo_transaccion=tipo_transaccion,
         include_tipo_transaccion=False,
         tipo_impuesto=tipo_impuesto,
@@ -646,7 +664,7 @@ def _build_base_document_root(
     numero_documento: int,
     codigo_seguridad: str,
     typed_payload: dict,
-    cliente: dict,
+    receiver: Receiver,
     tipo_transaccion: int,
     include_tipo_transaccion: bool,
     tipo_impuesto: int,
@@ -706,7 +724,7 @@ def _build_base_document_root(
     _append_anticipation_condition(ope=ope, typed_payload=typed_payload)
 
     _append_issuer(gdat=gdat, issuer=issuer, typed_payload=typed_payload)
-    _append_receiver(gdat=gdat, cliente=cliente)
+    _append_receiver(gdat=gdat, receiver=receiver)
     return root
 
 
@@ -795,130 +813,119 @@ def _append_issuer(*, gdat: ET.Element, issuer: _Issuer, typed_payload: dict) ->
 
 
 def _append_generation_responsible(*, emis: ET.Element, responsable: dict) -> None:
-    tipo = _resolve_code(
+    """gRespDE (D140-D145): every value comes from the payload, none defaulted."""
+
+    tipo = _coerce_int(
         _first_non_none(responsable, "tipo_documento", "tipo_id"),
-        mapping={},
-        default=1,
-        min_value=1,
-        max_value=9,
         field_name="emisor.responsable_generacion.tipo_documento",
     )
+    if tipo == _RESPONSIBLE_OTHER_ID_TYPE:
+        descripcion = _clean_text(responsable.get("descripcion_tipo_documento"))
+        if descripcion is None or not 9 <= len(descripcion) <= 41:
+            raise SifenValidationError(
+                "documents.emisor.responsable_generacion.descripcion_tipo_documento"
+            )
+    elif tipo in _RESPONSIBLE_ID_TYPE_DESCRIPTION:
+        descripcion = _RESPONSIBLE_ID_TYPE_DESCRIPTION[tipo]
+    else:
+        raise SifenValidationError(
+            "documents.emisor.responsable_generacion.tipo_documento_invalid"
+        )
     numero = _clean_text(_first_non_none(responsable, "numero_documento", "numero"))
     nombre = _clean_text(_first_non_none(responsable, "nombre", "razon_social"))
     cargo = _clean_text(responsable.get("cargo"))
-    if not numero or not nombre or not cargo:
+    if not numero or not nombre or not cargo or not 4 <= len(cargo) <= 100:
         raise SifenValidationError("documents.emisor.responsable_generacion_invalid")
     gresp = _sub(emis, "gRespDE")
     _sub(gresp, "iTipIDRespDE", str(tipo))
-    _sub(gresp, "dDTipIDRespDE", _doc_identity_description(tipo))
+    _sub(gresp, "dDTipIDRespDE", descripcion)
     _sub(gresp, "dNumIDRespDE", numero)
     _sub(gresp, "dNomRespDE", nombre)
     _sub(gresp, "dCarRespDE", cargo)
 
 
-def _append_receiver(*, gdat: ET.Element, cliente: dict) -> None:
-    naturaleza = _customer_nature(cliente)
-    tipo_operacion = _customer_operation_type(cliente)
+def _resolve_receiver(cliente: dict, *, document_type: int) -> Receiver:
+    """Apply the gDatRec rules in force (see kilasifen.domain.documents.receiver)."""
+
+    try:
+        return resolve_receiver(
+            cliente,
+            document_type=document_type,
+            country_description=descripcion_pais,
+            department_description=descripcion_departamento,
+            mod11_dv=calculate_mod11_dv,
+        )
+    except ReceiverRuleError as exc:
+        raise SifenValidationError(exc.code) from exc
+
+
+def _assert_innominado_limit(
+    receiver: Receiver,
+    *,
+    transaction_type: int,
+    currency: str,
+    totals: _Totals,
+) -> None:
+    """1321 (NT 24): innominado below 7.000.000 Gs (F014, or F023 if not PYG)."""
+
+    error = innominado_limit_error(
+        receiver,
+        transaction_type=transaction_type,
+        currency=currency,
+        total_operation=totals.total_neto,
+        total_guaranies=totals.total_gs,
+    )
+    if error is not None:
+        raise SifenValidationError(error)
+
+
+def _append_receiver(*, gdat: ET.Element, receiver: Receiver) -> None:
     rec = _sub(gdat, "gDatRec")
-    _sub(rec, "iNatRec", str(naturaleza))
-    _sub(rec, "iTiOpe", str(tipo_operacion))
-    _sub(rec, "cPaisRec", _clean_text(cliente.get("pais_codigo")) or "PRY")
-    _sub(rec, "dDesPaisRe", _clean_text(cliente.get("pais_descripcion")) or "Paraguay")
-
-    cliente_tipo_contribuyente = _coerce_int(
-        _first_non_none(cliente, "tipo_contribuyente", "iTiContRec"),
-        field_name="cliente.tipo_contribuyente",
-        default=2,
-        min_value=1,
-        max_value=2,
-    )
-
-    if naturaleza == 1:
-        ruc_rec, dv_rec = _split_ruc_dv(cliente)
-        _sub(rec, "iTiContRec", str(cliente_tipo_contribuyente))
-        _sub(rec, "dRucRec", ruc_rec)
-        if dv_rec:
-            _sub(rec, "dDVRec", dv_rec)
+    _sub(rec, "iNatRec", str(receiver.nature))
+    _sub(rec, "iTiOpe", str(receiver.operation_type))
+    _sub(rec, "cPaisRec", receiver.country_code)
+    _sub(rec, "dDesPaisRe", receiver.country_description)
+    if receiver.nature == 1:
+        _sub(rec, "iTiContRec", str(receiver.taxpayer_type))
+        _sub(rec, "dRucRec", receiver.ruc)
+        _sub(rec, "dDVRec", receiver.dv)
     else:
-        if tipo_operacion != 4:
-            doc_type = _coerce_int(
-                _first_non_none(
-                    cliente,
-                    "tipo_documento_identidad",
-                    "iTipIDRec",
-                    "tipo_documento",
-                ),
-                field_name="cliente.tipo_documento_identidad",
-                min_value=1,
-                max_value=9,
-            )
-            doc_number = _clean_text(
-                _first_non_none(
-                    cliente,
-                    "numero_documento_identidad",
-                    "dNumIDRec",
-                    "numero_documento",
-                )
-            )
-            if not doc_number:
-                raise SifenValidationError(
-                    "documents.cliente.numero_documento_identidad_required"
-                )
-            _sub(rec, "iTipIDRec", str(doc_type))
-            _sub(rec, "dDTipIDRec", _doc_identity_description(doc_type))
-            _sub(rec, "dNumIDRec", doc_number)
-
-    _sub(
-        rec,
-        "dNomRec",
-        _clean_text(_first_non_none(cliente, "razon_social", "nombre")) or "CLIENTE",
-    )
-    ddir = _clean_text(cliente.get("direccion"))
-    if naturaleza == 2 and tipo_operacion != 4 and not ddir:
-        raise SifenValidationError("documents.cliente.direccion_required")
-    if ddir:
-        _sub(rec, "dDirRec", ddir)
-    numero_casa = _clean_text(cliente.get("numero_casa"))
-    if ddir and not numero_casa:
-        raise SifenValidationError("documents.cliente.numero_casa_required")
-    if numero_casa:
-        _sub(rec, "dNumCasRec", numero_casa)
-    dep = _clean_text(cliente.get("departamento"))
-    dep_desc = _clean_text(cliente.get("descripcion_departamento"))
-    if dep:
-        _sub(rec, "cDepRec", dep)
-    if dep_desc:
-        _sub(rec, "dDesDepRec", dep_desc)
-    distrito = _clean_text(cliente.get("distrito"))
-    distrito_desc = _clean_text(cliente.get("descripcion_distrito"))
-    if distrito:
-        _sub(rec, "cDisRec", distrito)
-    if distrito_desc:
-        _sub(rec, "dDesDisRec", distrito_desc)
-    ciudad = _clean_text(cliente.get("ciudad"))
-    ciudad_desc = _clean_text(cliente.get("descripcion_ciudad"))
-    if ciudad:
-        _sub(rec, "cCiuRec", ciudad)
-    if ciudad_desc:
-        _sub(rec, "dDesCiuRec", ciudad_desc)
-    tel = _clean_text(cliente.get("telefono"))
-    if tel:
-        _sub(rec, "dTelRec", tel)
-    cel = _clean_text(cliente.get("celular"))
-    if cel:
-        _sub(rec, "dCelRec", cel)
-    email = _clean_text(cliente.get("email"))
-    if email:
-        _sub(rec, "dEmailRec", email)
-    cod_cliente = _clean_text(cliente.get("codigo_cliente"))
-    if cod_cliente:
-        _sub(rec, "dCodCliente", cod_cliente)
+        _sub(rec, "iTipIDRec", str(receiver.id_type))
+        _sub(rec, "dDTipIDRec", receiver.id_type_description)
+        _sub(rec, "dNumIDRec", receiver.id_number)
+    _sub(rec, "dNomRec", receiver.name)
+    address = receiver.address
+    if address is not None:
+        optional_fields = (
+            ("dDirRec", address.street),
+            ("dNumCasRec", address.house_number),
+            ("cDepRec", address.department_code),
+            ("dDesDepRec", address.department_description),
+            ("cDisRec", address.district_code),
+            ("dDesDisRec", address.district_description),
+            ("cCiuRec", address.city_code),
+            ("dDesCiuRec", address.city_description),
+        )
+        for tag, value in optional_fields:
+            if value is not None:
+                _sub(rec, tag, str(value))
+    for tag, value in (
+        ("dTelRec", receiver.phone),
+        ("dCelRec", receiver.cellphone),
+        ("dEmailRec", receiver.email),
+        ("dCodCliente", receiver.customer_code),
+    ):
+        if value is not None:
+            _sub(rec, tag, value)
 
 
 def _append_public_procurement_group(*, gcam_fe: ET.Element, cliente: dict) -> None:
+    # NT 26 (prod 16/06/2025): E020 gCompPub is optional in B2G.
     compras = cliente.get("compras_publicas")
+    if compras is None:
+        return
     if not isinstance(compras, dict):
-        raise SifenValidationError("documents.cliente.compras_publicas_required")
+        raise SifenValidationError("documents.cliente.compras_publicas_invalid")
     modalidad = _clean_text(_first_non_none(compras, "modalidad_dncp", "modalidad"))
     entidad = _clean_text(compras.get("entidad"))
     anio = _clean_text(compras.get("anio"))
@@ -1919,6 +1926,17 @@ def _resolve_date(raw) -> date:
         raise SifenValidationError("invalid date format") from exc
 
 
+def _split_ruc_dv(cliente: dict) -> tuple[str, str | None]:
+    ruc = _clean_text(cliente.get("ruc"))
+    if not ruc:
+        raise SifenValidationError("cliente.ruc is required")
+    if "-" in ruc:
+        base, dv = ruc.split("-", 1)
+        return base.strip(), dv.strip()
+    dv = _clean_text(cliente.get("dv")) or None
+    return ruc, dv
+
+
 def _normalize_three_digits(value, fallback: str) -> str:
     if value is None:
         value = fallback
@@ -1939,41 +1957,10 @@ def _resolve_security_code(
         raise SifenValidationError(exc.code) from exc
 
 
-def _split_ruc_dv(cliente: dict) -> tuple[str, str | None]:
-    ruc = _clean_text(cliente.get("ruc"))
-    if not ruc:
-        raise SifenValidationError("cliente.ruc is required")
-    if "-" in ruc:
-        base, dv = ruc.split("-", 1)
-        return base.strip(), dv.strip()
-    dv = _clean_text(cliente.get("dv")) or None
-    return ruc, dv
 
 
-def _customer_nature(cliente: dict) -> int:
-    explicit = _coerce_int(
-        _first_non_none(cliente, "naturaleza", "iNatRec"),
-        field_name="cliente.naturaleza",
-        default=None,
-        min_value=1,
-        max_value=2,
-    )
-    if explicit is not None:
-        return explicit
-    return 1 if _clean_text(cliente.get("ruc")) else 2
 
 
-def _customer_operation_type(cliente: dict) -> int:
-    explicit = _coerce_int(
-        _first_non_none(cliente, "tipo_operacion", "iTiOpe"),
-        field_name="cliente.tipo_operacion",
-        default=None,
-        min_value=1,
-        max_value=4,
-    )
-    if explicit is not None:
-        return explicit
-    return 1 if _clean_text(cliente.get("ruc")) else 2
 
 
 def _transaction_description(code: int) -> str:
@@ -2018,10 +2005,6 @@ def _associated_doc_type_description(code: int) -> str:
 
 def _printed_doc_type_description(code: int) -> str:
     return _PRINTED_DOC_TYPE_DESCRIPTION.get(code, _PRINTED_DOC_TYPE_DESCRIPTION[1])
-
-
-def _doc_identity_description(code: int) -> str:
-    return _DOC_ID_TYPE_DESCRIPTION.get(code, "Documento")
 
 
 def _currency_description(code: str) -> str:

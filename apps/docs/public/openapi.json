@@ -438,11 +438,13 @@
       },
       "CustomerPayload": {
         "additionalProperties": false,
+        "description": "Receptor (gDatRec). The document validates it with the rules in force.\n\nSee ``kilasifen.domain.documents.receiver``: 1300 (NT 10), 1320/1301,\nD205-D207 mandatory for a taxpayer, D208-D210 always for a non-taxpayer\n(NT 23, 1335), innominado only in B2C invoices (1333, 1331), and the\naddress rules of 1318/1330/NT 03.",
         "properties": {
           "celular": {
             "anyOf": [
               {
                 "maxLength": 20,
+                "minLength": 10,
                 "type": "string"
               },
               {
@@ -486,7 +488,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "gCompPub (E020): opcional en B2G desde la NT 26."
           },
           "departamento": {
             "anyOf": [
@@ -538,6 +541,20 @@
             ],
             "title": "Descripcion Distrito"
           },
+          "descripcion_tipo_documento": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "minLength": 9,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDTipIDRec del tipo 9: el tipo real de documento (9-41).",
+            "title": "Descripcion Tipo Documento"
+          },
           "direccion": {
             "anyOf": [
               {
@@ -549,6 +566,7 @@
                 "type": "null"
               }
             ],
+            "description": "dDirRec: obligatoria en B2F (1318); con dirección y D202≠4 son obligatorios `departamento` y `ciudad` (NT 03).",
             "title": "Direccion"
           },
           "distrito": {
@@ -575,6 +593,7 @@
                 "type": "null"
               }
             ],
+            "description": "dDVRec: obligatorio con `ruc` (o como `RUC-DV`); módulo 11.",
             "title": "Dv"
           },
           "email": {
@@ -600,13 +619,14 @@
                 "type": "null"
               }
             ],
+            "description": "iNatRec: 1 contribuyente, 2 no contribuyente. Por defecto, 1 si hay `ruc`.",
             "title": "Naturaleza"
           },
           "nombre": {
             "anyOf": [
               {
                 "maxLength": 255,
-                "minLength": 1,
+                "minLength": 4,
                 "type": "string"
               },
               {
@@ -632,58 +652,70 @@
           "numero_documento_identidad": {
             "anyOf": [
               {
-                "maxLength": 20,
+                "pattern": "^[0-9A-Za-z-]{1,20}$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dNumIDRec. En innominado se envía siempre `0`.",
             "title": "Numero Documento Identidad"
           },
           "pais_codigo": {
             "default": "PRY",
-            "maxLength": 3,
-            "minLength": 3,
+            "description": "cPaisRec: distinto de PRY solo en B2F (1320).",
+            "pattern": "^[A-Z]{3}$",
             "title": "Pais Codigo",
             "type": "string"
           },
           "pais_descripcion": {
-            "default": "Paraguay",
-            "maxLength": 100,
-            "minLength": 3,
-            "title": "Pais Descripcion",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 4,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDesPaisRe: se toma del XSD de países; si se envía tiene que coincidir (1301).",
+            "title": "Pais Descripcion"
           },
           "razon_social": {
             "anyOf": [
               {
                 "maxLength": 255,
-                "minLength": 1,
+                "minLength": 4,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dNomRec. En innominado se envía siempre `Sin Nombre`.",
             "title": "Razon Social"
           },
           "ruc": {
             "anyOf": [
               {
-                "pattern": "^\\d{5,8}(?:-\\d)?$",
+                "maxLength": 10,
+                "pattern": "^[1-9][0-9]*[0-9A-D]?(?:-[0-9])?$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dRucRec (3-8, XSD `tRuc`), opcionalmente con `-DV`.",
             "title": "Ruc"
           },
           "telefono": {
             "anyOf": [
               {
                 "maxLength": 15,
+                "minLength": 6,
                 "type": "string"
               },
               {
@@ -703,6 +735,7 @@
                 "type": "null"
               }
             ],
+            "description": "iTiContRec: obligatorio para un contribuyente, sin valor por defecto.",
             "title": "Tipo Contribuyente"
           },
           "tipo_documento_identidad": {
@@ -716,6 +749,7 @@
                 "type": "null"
               }
             ],
+            "description": "iTipIDRec: 1-6 o 9; 5 = innominado (solo B2C en facturas).",
             "title": "Tipo Documento Identidad"
           },
           "tipo_operacion": {
@@ -729,6 +763,7 @@
                 "type": "null"
               }
             ],
+            "description": "iTiOpe: 1 B2B, 2 B2C, 3 B2G, 4 B2F. Un no contribuyente solo admite 2 o 4 (1300).",
             "title": "Tipo Operacion"
           }
         },
@@ -2051,12 +2086,28 @@
       },
       "GenerationResponsiblePayload": {
         "additionalProperties": false,
+        "description": "gRespDE (D140-D145): who generated the DE on behalf of the emitter.",
         "properties": {
           "cargo": {
+            "description": "dCarRespDE (4-100).",
             "maxLength": 100,
-            "minLength": 2,
+            "minLength": 4,
             "title": "Cargo",
             "type": "string"
+          },
+          "descripcion_tipo_documento": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "minLength": 9,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDTipIDRespDE: obligatoria solo con `tipo_documento` 9.",
+            "title": "Descripcion Tipo Documento"
           },
           "nombre": {
             "maxLength": 255,
@@ -2065,20 +2116,25 @@
             "type": "string"
           },
           "numero_documento": {
-            "maxLength": 20,
-            "minLength": 1,
+            "pattern": "^[0-9A-Za-z-]{1,20}$",
             "title": "Numero Documento",
             "type": "string"
           },
           "tipo_documento": {
-            "default": 1,
-            "maximum": 9.0,
-            "minimum": 1.0,
+            "description": "iTipIDRespDE (D141): 1 cédula paraguaya, 2 pasaporte, 3 cédula extranjera, 4 carnet de residencia, 9 otro.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              9
+            ],
             "title": "Tipo Documento",
             "type": "integer"
           }
         },
         "required": [
+          "tipo_documento",
           "numero_documento",
           "nombre",
           "cargo"

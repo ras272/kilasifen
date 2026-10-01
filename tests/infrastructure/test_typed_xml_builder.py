@@ -21,7 +21,11 @@ def test_mapper_builds_factura_xml_from_typed_payload() -> None:
                 "payload": {
                     "numero": 1001,
                     "fecha": "2026-04-25T10:00:00",
-                    "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                    "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                     "items": [
                         {
                             "codigo": "A-001",
@@ -60,7 +64,11 @@ def test_mapper_builds_nota_credito_xml_from_typed_payload() -> None:
                 "payload": {
                     "numero": 77,
                     "fecha": "2026-04-25T10:00:00",
-                    "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                    "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                     "documento_asociado": {
                         "cdc": "01800123450001001000000012026010112345678901"
                     },
@@ -126,6 +134,7 @@ def test_mapper_rejects_receiver_address_without_house_number() -> None:
                     "cliente": {
                         "naturaleza": 1,
                         "tipo_operacion": 1,
+                        "tipo_contribuyente": 2,
                         "ruc": "80069563-1",
                         "razon_social": "TIPS S.A",
                         "direccion": "ASUNCION",
@@ -164,7 +173,11 @@ def test_mapper_accepts_ds_colon_inside_text_content() -> None:
                 "payload": {
                     "numero": 1001,
                     "fecha": "2026-04-25T10:00:00",
-                    "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                    "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                     "items": [
                         {
                             "codigo": "A-001",
@@ -270,7 +283,11 @@ def _minimal_factura_snapshot() -> dict:
             "payload": {
                 "numero": 1001,
                 "fecha": "2026-04-25T10:00:00",
-                "cliente": {"ruc": "80069563-1", "razonSocial": "TIPS S.A"},
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razonSocial": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                 "items": [
                     {
                         "codigo": "A-001",

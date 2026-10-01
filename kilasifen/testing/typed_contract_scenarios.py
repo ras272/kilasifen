@@ -47,6 +47,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -84,10 +87,6 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "naturaleza": 2,
                     "tipo_operacion": 2,
                     "tipo_documento_identidad": 5,
-                    "numero_documento_identidad": "0",
-                    "nombre": "CONSUMIDOR FINAL",
-                    "direccion": "ASUNCION",
-                    "numero_casa": "123",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -144,6 +143,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "items": [
                     {
@@ -187,6 +189,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "items": [
                     {
@@ -221,6 +226,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "condicion_operacion": {
                     "tipo": "credito",
@@ -277,6 +285,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -328,6 +339,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -375,6 +389,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -413,6 +430,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "MINISTERIO TEST",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                     "compras_publicas": {
                         "modalidad": "1",
                         "entidad": "12345",
@@ -453,6 +473,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "documento_asociado": {
                     "tipo": 1,
@@ -490,6 +513,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "documento_asociado": {
                     "tipo": 1,
@@ -536,6 +562,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "documento_asociado": {
                     "tipo": 1,
@@ -573,6 +602,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "documento_asociado": {
                     "tipo": 1,
