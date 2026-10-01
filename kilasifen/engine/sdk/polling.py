@@ -212,7 +212,7 @@ def require_lote_protocol(reception: Any) -> Any:
         raise SifenLoteError(
             code,
             "La recepcion del lote fue 0300 pero no trae dProtConsLote; "
-            "consultar el lote con un CDC enviado en el",
+            "consultar el lote con uno de sus CDC (consultar_lote(cdc=...))",
             reception,
         )
     return protocol

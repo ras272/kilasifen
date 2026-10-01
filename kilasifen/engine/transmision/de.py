@@ -272,9 +272,10 @@ def _build_lote_zip(documentos_xml: Sequence[str | bytes]) -> bytes:
     unica declaracion UTF-8, la raiz ``rLoteDE`` sin namespace y los ``rDE``
     concatenados en el orden recibido, sin nada entre ellos (MT v150 sec.
     7.2.1, 7.2.2.2, 7.2.4 y 9.2.1; Guia de mejores practicas, oct-2024,
-    pp. 8-9). Antes valida la cantidad, el tipo de DE, el RUC emisor y los CDC. Los
-    bytes devueltos no estan en base64: el binding ``REnvioLote.xDE`` los
-    codifica una sola vez al serializar. La salida depende solo de la entrada.
+    pp. 8-9). Antes valida la cantidad, el tipo de DE, el RUC emisor y los
+    CDC. Los bytes devueltos no estan en base64: el binding
+    ``REnvioLote.xDE`` los codifica una sola vez al serializar. La salida
+    depende solo de la entrada.
 
     Raises:
         ValueError: si el lote no cumple alguna de esas reglas.
