@@ -9,7 +9,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
-    { name = "mileo", email = "mileo@kmee.com.br" },
+    { name = "The KilaSifen Authors" },
 ]
 keywords = [
     "sifen", "factura-electronica", "paraguay", "ekuatia",
@@ -36,14 +36,14 @@ Source = "https://github.com/ras272/kilasifen"
 
 [project.optional-dependencies]
 sign = [
-    "signxml>=3.0",
+    "signxml>=5.1",
     "cryptography",
     "lxml",
 ]
 soap = ["xsdata[soap]"]
-transmissao = [
+transmision = [
     "xsdata[soap]",
-    "signxml>=3.0",
+    "signxml>=5.1",
     "cryptography",
     "requests",
     "lxml",

@@ -1,7 +1,7 @@
 """Shared test fixtures that never depend on committed fiscal secrets."""
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -34,8 +34,8 @@ def ephemeral_test_certificate() -> Iterator[None]:
         .issuer_name(issuer)
         .public_key(private_key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime(2025, 1, 1, tzinfo=UTC))
-        .not_valid_after(datetime(2035, 1, 1, tzinfo=UTC))
+        .not_valid_before(datetime(2025, 1, 1, tzinfo=timezone.utc))
+        .not_valid_after(datetime(2035, 1, 1, tzinfo=timezone.utc))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         .sign(private_key, hashes.SHA256())
     )

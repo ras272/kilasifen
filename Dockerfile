@@ -12,7 +12,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md MIT-LICENSE ./
 COPY kilasifen ./kilasifen
 
-RUN uv sync --frozen --no-dev --extra platform --extra transmissao
+RUN uv sync --frozen --no-dev --extra platform --extra transmision
 
 FROM python:3.12.11-slim-bookworm AS runtime
 

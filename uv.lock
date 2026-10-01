@@ -865,7 +865,7 @@ test = [
     { name = "uvicorn" },
     { name = "xmldiff" },
 ]
-transmissao = [
+transmision = [
     { name = "cryptography" },
     { name = "lxml" },
     { name = "requests" },
@@ -878,7 +878,7 @@ requires-dist = [
     { name = "alembic", marker = "extra == 'platform'", specifier = ">=1.14,<2" },
     { name = "alembic", marker = "extra == 'test'", specifier = ">=1.14,<2" },
     { name = "cryptography", marker = "extra == 'sign'" },
-    { name = "cryptography", marker = "extra == 'transmissao'" },
+    { name = "cryptography", marker = "extra == 'transmision'" },
     { name = "fakeredis", marker = "extra == 'platform'", specifier = ">=2,<3" },
     { name = "fakeredis", marker = "extra == 'test'", specifier = ">=2,<3" },
     { name = "fastapi", marker = "extra == 'platform'", specifier = ">=0.115,<1" },
@@ -890,7 +890,7 @@ requires-dist = [
     { name = "jinja2", marker = "extra == 'test'", specifier = ">=3,<4" },
     { name = "lxml", marker = "extra == 'sign'" },
     { name = "lxml", marker = "extra == 'test'" },
-    { name = "lxml", marker = "extra == 'transmissao'" },
+    { name = "lxml", marker = "extra == 'transmision'" },
     { name = "mypy", marker = "extra == 'test'", specifier = "==1.17.1" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'platform'", specifier = ">=3,<4" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'test'", specifier = ">=3,<4" },
@@ -904,14 +904,14 @@ requires-dist = [
     { name = "python-multipart", marker = "extra == 'test'", specifier = ">=0.0.9,<1" },
     { name = "qrcode", extras = ["pil"], marker = "extra == 'platform'", specifier = ">=7.4,<9" },
     { name = "qrcode", extras = ["pil"], marker = "extra == 'test'", specifier = ">=7.4,<9" },
-    { name = "requests", marker = "extra == 'transmissao'" },
+    { name = "requests", marker = "extra == 'transmision'" },
     { name = "rq", marker = "extra == 'platform'", specifier = ">=1.16,<2" },
     { name = "rq", marker = "extra == 'test'", specifier = ">=1.16,<2" },
     { name = "ruff", marker = "extra == 'test'", specifier = "==0.15.12" },
     { name = "sentry-sdk", marker = "extra == 'platform'", specifier = ">=2,<3" },
     { name = "sentry-sdk", marker = "extra == 'test'", specifier = ">=2,<3" },
-    { name = "signxml", marker = "extra == 'sign'", specifier = ">=3.0" },
-    { name = "signxml", marker = "extra == 'transmissao'", specifier = ">=3.0" },
+    { name = "signxml", marker = "extra == 'sign'", specifier = ">=5.1" },
+    { name = "signxml", marker = "extra == 'transmision'", specifier = ">=5.1" },
     { name = "sqlalchemy", marker = "extra == 'platform'", specifier = ">=2,<3" },
     { name = "sqlalchemy", marker = "extra == 'test'", specifier = ">=2,<3" },
     { name = "uvicorn", marker = "extra == 'platform'", specifier = ">=0.30,<1" },
@@ -919,9 +919,9 @@ requires-dist = [
     { name = "xmldiff", marker = "extra == 'test'" },
     { name = "xsdata" },
     { name = "xsdata", extras = ["soap"], marker = "extra == 'soap'" },
-    { name = "xsdata", extras = ["soap"], marker = "extra == 'transmissao'" },
+    { name = "xsdata", extras = ["soap"], marker = "extra == 'transmision'" },
 ]
-provides-extras = ["sign", "soap", "transmissao", "platform", "test"]
+provides-extras = ["sign", "soap", "transmision", "platform", "test"]
 
 [[package]]
 name = "lxml"

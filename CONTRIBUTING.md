@@ -4,8 +4,9 @@ Thanks for contributing.
 
 ## Scope
 
-`kilasifen` is an open-source Python library for SIFEN XML bindings,
-signature, and transport workflows. Contributions should improve:
+`kilasifen` is a headless fiscal API for SIFEN Paraguay plus the Python
+engine it is built on (`kilasifen.engine`: XSD bindings, XMLDSig signing and
+SOAP transport). Contributions should improve:
 
 - correctness against official SIFEN XSD and docs
 - API stability for integrators
@@ -16,14 +17,14 @@ signature, and transport workflows. Contributions should improve:
 ```bash
 python -m venv .venv
 . .venv/bin/activate  # Windows: .venv\\Scripts\\activate
-pip install -e ".[sign,transmissao,test]"
+pip install -e ".[sign,transmision,test]"
 ```
 
 ## Required checks before PR
 
 ```bash
 python -m pytest -q
-python -m ruff check kilasifen.engine tests
+python -m ruff check kilasifen tests
 python -m build
 python -m twine check --strict dist/*
 ```
