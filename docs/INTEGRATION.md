@@ -149,7 +149,11 @@ Cancelación usa `{"motivo": "..."}`; inutilización usa timbrado, tipo,
 establecimiento, punto, rango y motivo. Ambas crean un event/job `queued` con
 `201`; el worker `events` transmite a SIFEN y el ERP consulta el evento/job o
 recibe el webhook terminal. Los endpoints raw `/documents` y `/events` están
-deprecados y son sólo admin.
+deprecados y son sólo admin. En el raw `/documents`, `payload.generated_xml`
+tiene que ser un `rDE` sin firmar que valide contra el XSD oficial (sin
+`DOCTYPE`); KilaSifen lo firma con el certificado del emisor. Un `signed_xml`
+provisto por el caller se rechaza con `422 documents.raw.signed_xml_not_allowed`:
+la plataforma sólo transmite XML que firmó ella misma.
 
 Ante timeout o respuesta ambigua de emisión, Kila persiste el CDC, XML firmado y
 request exactos, y consulta SIFEN sin volver a transmitir el DE. Después de

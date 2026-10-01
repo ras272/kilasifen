@@ -166,6 +166,14 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   falso). Ahora sólo reenvía entregas existentes del mismo emisor, y el evento
   de prueba `webhook.test` tiene `data` fija fuera de los espacios fiscales.
   Las entregas creadas con el contrato anterior quedan almacenadas sin cambios.
+- La ruta raw deprecada `POST /v1/emitters/{emitter_id}/documents` (sólo
+  `platform:admin`) ya no funciona como oráculo de firma ni como canal de XML
+  ajeno: rechaza `signed_xml` (también dentro de `typed_contract`) con
+  `422 documents.raw.signed_xml_not_allowed` y exige que `generated_xml` sea un
+  `rDE` sin `DOCTYPE` que valide contra el XSD oficial
+  (`documents.raw.generated_xml_*`). El worker vuelve a validar ese XML antes
+  de firmarlo e ignora cualquier `signed_xml` del payload: sólo reutiliza el XML
+  que la propia plataforma firmó en un intento anterior.
 - `SECURITY.md` deja un solo canal para reportar vulnerabilidades: el
   private vulnerability reporting de GitHub. Se quitó el correo del mantenedor
   anterior, que figuraba como segunda opción.

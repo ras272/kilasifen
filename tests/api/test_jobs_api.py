@@ -10,6 +10,7 @@ from kilasifen.config import get_settings
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
+from tests._raw_xml import raw_document_payload
 
 API_KEY = "secret-key"
 
@@ -118,10 +119,7 @@ def test_get_job_returns_not_found_for_other_emitter(
             "external_id": "erp-doc-foreign",
             "idempotency_key": "idem-foreign",
             "document_type": "factura",
-            "payload": {
-                "generated_xml": "<rDE><DE Id='FOREIGN'/></rDE>",
-                "doc_id": "FOREIGN",
-            },
+            "payload": raw_document_payload(),
         },
     )
     foreign_job_id = created.json()["data"]["job"]["id"]
@@ -198,7 +196,7 @@ def test_list_jobs_can_filter_by_emitter(client: TestClient) -> None:
             "external_id": "doc-a",
             "idempotency_key": "idem-a",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='A'/></rDE>", "doc_id": "A"},
+            "payload": raw_document_payload(),
         },
     )
     client.post(
@@ -208,7 +206,7 @@ def test_list_jobs_can_filter_by_emitter(client: TestClient) -> None:
             "external_id": "doc-b",
             "idempotency_key": "idem-b",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='B'/></rDE>", "doc_id": "B"},
+            "payload": raw_document_payload(),
         },
     )
 
@@ -260,10 +258,7 @@ def test_list_jobs_without_emitter_filter_returns_system_wide_jobs(
             "external_id": "doc-a-global",
             "idempotency_key": "idem-a-global",
             "document_type": "factura",
-            "payload": {
-                "generated_xml": "<rDE><DE Id='A-GLOBAL'/></rDE>",
-                "doc_id": "A-GLOBAL",
-            },
+            "payload": raw_document_payload(),
         },
     )
     client.post(
@@ -273,10 +268,7 @@ def test_list_jobs_without_emitter_filter_returns_system_wide_jobs(
             "external_id": "doc-b-global",
             "idempotency_key": "idem-b-global",
             "document_type": "factura",
-            "payload": {
-                "generated_xml": "<rDE><DE Id='B-GLOBAL'/></rDE>",
-                "doc_id": "B-GLOBAL",
-            },
+            "payload": raw_document_payload(),
         },
     )
 

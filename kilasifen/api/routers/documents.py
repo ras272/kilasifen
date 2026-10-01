@@ -10,6 +10,7 @@ from kilasifen.api.deps import (
     require_emitter_read,
     require_fiscal_write,
 )
+from kilasifen.api.errors import ApiError
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.documents import (
     DocumentCreateRequest,
@@ -22,6 +23,10 @@ from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.application.documents.service import DocumentService
 from kilasifen.application.jobs.service import JobService
 from kilasifen.domain.sandbox import SandboxOutcome
+from kilasifen.infrastructure.sifen.mapper import (
+    RawDocumentXmlError,
+    validate_raw_document_payload,
+)
 
 router = APIRouter(tags=["documents"])
 
@@ -47,6 +52,12 @@ def get_sandbox_outcome(
     },
     deprecated=True,
     summary="Create a raw document (platform administrators only)",
+    description=(
+        "Deprecado y sólo para `platform:admin`. `payload.generated_xml` debe "
+        "ser un `rDE` sin firmar que valide contra el XSD oficial; la "
+        "plataforma lo firma con el certificado del emisor. `signed_xml` se "
+        "rechaza con `422`."
+    ),
 )
 def create_document(
     emitter_id: str,
@@ -56,6 +67,7 @@ def create_document(
     _principal=Depends(get_admin_principal),
     service: DocumentService = Depends(get_document_service),
 ) -> JSONResponse:
+    _require_signable_raw_payload(payload.payload)
     return _create_document_response(
         request=request,
         service=service,
@@ -286,6 +298,21 @@ def get_document_kude_data(
         data=data,
         correlation_id=request.state.correlation_id,
     )
+
+
+def _require_signable_raw_payload(payload: dict | None) -> None:
+    """Reject raw XML that the platform must not sign or transmit."""
+
+    try:
+        validate_raw_document_payload(payload)
+    except RawDocumentXmlError as exc:
+        raise ApiError(
+            status_code=422,
+            code=exc.code,
+            message="Raw document XML was rejected.",
+            category="validation",
+            details={"errors": list(exc.errors)} if exc.errors else None,
+        ) from exc
 
 
 def _build_typed_payload(contract: str, typed_payload: dict) -> dict:

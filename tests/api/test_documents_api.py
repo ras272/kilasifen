@@ -11,6 +11,7 @@ from kilasifen.config import get_settings
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
+from tests._raw_xml import raw_document_payload
 
 API_KEY = "secret-key"
 
@@ -97,6 +98,87 @@ def test_create_document_returns_document_and_job(
     assert body["document"]["internal_status"] == "queued"
     assert body["job"]["job_type"] == "document.emit"
     assert body["job"]["status"] == "queued"
+
+
+@pytest.mark.parametrize(
+    ("payload", "code"),
+    [
+        ({"signed_xml": "<rDE/>"}, "documents.raw.signed_xml_not_allowed"),
+        (
+            {"generated_xml": "<rDE><DE Id='A1'/></rDE>", "doc_id": "A1"},
+            "documents.raw.generated_xml_root_not_rde",
+        ),
+        (
+            {
+                "generated_xml": (
+                    "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'>"
+                    "<DE Id='A1'/></rDE>"
+                ),
+                "doc_id": "A1",
+            },
+            "documents.raw.generated_xml_invalid_schema",
+        ),
+        (
+            {
+                "typed_contract": {
+                    "contract": "factura_v1",
+                    "payload": {"signed_xml": "<rDE/>"},
+                }
+            },
+            "documents.raw.signed_xml_not_allowed",
+        ),
+    ],
+)
+def test_raw_document_rejects_xml_the_platform_must_not_sign(
+    client: TestClient,
+    emitter_id: str,
+    payload: dict,
+    code: str,
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-raw-xml",
+            "idempotency_key": "idem-raw-xml",
+            "document_type": "factura",
+            "payload": payload,
+        },
+    )
+
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == code
+    assert error["category"] == "validation"
+
+    listed = client.get(
+        f"/v1/emitters/{emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+    )
+    assert listed.json()["data"]["pagination"]["count"] == 0
+
+
+def test_raw_document_accepts_an_unsigned_xsd_valid_rde(
+    client: TestClient,
+    emitter_id: str,
+) -> None:
+    payload = raw_document_payload()
+
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "external_id": "erp-raw-valid",
+            "idempotency_key": "idem-raw-valid",
+            "document_type": "factura",
+            "payload": payload,
+        },
+    )
+
+    assert response.status_code == 201
+    snapshot = response.json()["data"]["document"]["payload_snapshot"]
+    assert snapshot["generated_xml"] == payload["generated_xml"]
+    assert "signed_xml" not in snapshot
 
 
 def test_create_document_is_idempotent_for_same_key(
@@ -412,7 +494,7 @@ def test_list_documents_returns_only_requested_emitter_documents(
             "external_id": "erp-doc-a-1",
             "idempotency_key": "idem-a-1",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='A1'/></rDE>", "doc_id": "A1"},
+            "payload": raw_document_payload(),
         },
     )
     assert response_a.status_code == 201
@@ -423,7 +505,7 @@ def test_list_documents_returns_only_requested_emitter_documents(
             "external_id": "erp-doc-b-1",
             "idempotency_key": "idem-b-1",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='B1'/></rDE>", "doc_id": "B1"},
+            "payload": raw_document_payload(),
         },
     )
     assert response_b.status_code == 201
@@ -451,10 +533,7 @@ def test_get_document_returns_document_and_associated_job(
             "external_id": "erp-doc-detail",
             "idempotency_key": "idem-detail",
             "document_type": "factura",
-            "payload": {
-                "generated_xml": "<rDE><DE Id='DETAIL'/></rDE>",
-                "doc_id": "DETAIL",
-            },
+            "payload": raw_document_payload(),
         },
     )
     document_id = created.json()["data"]["document"]["id"]
@@ -483,10 +562,7 @@ def test_get_document_returns_not_found_for_other_emitter_document(
             "external_id": "erp-doc-detail-b",
             "idempotency_key": "idem-detail-b",
             "document_type": "factura",
-            "payload": {
-                "generated_xml": "<rDE><DE Id='DETAILB'/></rDE>",
-                "doc_id": "DETAILB",
-            },
+            "payload": raw_document_payload(),
         },
     )
     document_id = created.json()["data"]["document"]["id"]
@@ -511,10 +587,7 @@ def test_get_document_requires_valid_api_key(
             "external_id": "erp-doc-auth",
             "idempotency_key": "idem-auth",
             "document_type": "factura",
-            "payload": {
-                "generated_xml": "<rDE><DE Id='AUTH'/></rDE>",
-                "doc_id": "AUTH",
-            },
+            "payload": raw_document_payload(),
         },
     )
     document_id = created.json()["data"]["document"]["id"]
@@ -556,13 +629,7 @@ def test_get_document_xml_returns_signed_or_generated_xml(
             "external_id": "erp-doc-xml",
             "idempotency_key": "idem-xml",
             "document_type": "factura",
-            "payload": {
-                "generated_xml": (
-                    "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'>"
-                    "<DE Id='XML1'/></rDE>"
-                ),
-                "doc_id": "XML1",
-            },
+            "payload": raw_document_payload(),
         },
     )
     document_id = created.json()["data"]["document"]["id"]
@@ -589,13 +656,7 @@ def test_get_document_xml_returns_not_found_for_other_emitter_document(
             "external_id": "erp-doc-xml-b",
             "idempotency_key": "idem-xml-b",
             "document_type": "factura",
-            "payload": {
-                "generated_xml": (
-                    "<rDE xmlns='http://ekuatia.set.gov.py/sifen/xsd'>"
-                    "<DE Id='XMLB'/></rDE>"
-                ),
-                "doc_id": "XMLB",
-            },
+            "payload": raw_document_payload(),
         },
     )
     document_id = created.json()["data"]["document"]["id"]
