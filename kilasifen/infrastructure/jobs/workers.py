@@ -34,6 +34,7 @@ from kilasifen.engine.sdk.errors import (
     SifenRejectionError,
     SifenValidationError,
 )
+from kilasifen.engine.sdk.signer import clear_pkcs12_signer_cache
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.repositories.certificates import (
     SqlAlchemyCertificateRepository,
@@ -187,6 +188,7 @@ def process_document_job(
                 publish_status=publish_status,
             )
     finally:
+        _drop_cached_signing_keys()
         if correlation_token is not None:
             reset_correlation_id(correlation_token)
 
@@ -659,6 +661,7 @@ def process_event_job(
         )
         return payload
     finally:
+        _drop_cached_signing_keys()
         if correlation_token is not None:
             reset_correlation_id(correlation_token)
 
@@ -741,6 +744,19 @@ class DocumentEmissionRetryableError(RuntimeError):
 
 class EventSubmissionRetryableError(RuntimeError):
     """Legacy compatibility alias for callers of the former RQ retry path."""
+
+
+def _drop_cached_signing_keys() -> None:
+    """Evict decrypted PKCS12 keys once a signing job ends.
+
+    The engine keeps decoded signers in a per-process LRU. A worker that runs
+    jobs in its own process (``SimpleWorker``, used on Windows) would
+    otherwise keep the private key of a certificate that was replaced or
+    deactivated until LRU eviction or restart. Forking workers lose the cache
+    with the work horse anyway, so the next job pays one PKCS12 decode.
+    """
+
+    clear_pkcs12_signer_cache()
 
 
 def _now() -> datetime:

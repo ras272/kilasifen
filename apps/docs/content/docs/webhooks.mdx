@@ -34,3 +34,26 @@ v1 + "." + timestamp + "." + delivery_id + "." + event_type + "." + raw_body
 
 Un delivery ID repetido debe responder éxito sin repetir el efecto de negocio.
 KilaSifen reintenta transporte, `408`, `425`, `429` y `5xx`.
+
+## Probar un endpoint y reenviar eventos
+
+`POST /v1/emitters/{emitter_id}/webhooks/{endpoint_id}/test` envía, sin body,
+un evento sintético `webhook.test` firmado con el secreto del endpoint. Su
+`data` es fija (`{"test": true, "endpoint_id": "..."}`) y nunca representa un
+cambio de estado fiscal: respondé `2xx` sin ejecutar lógica de negocio.
+
+`POST /v1/emitters/{emitter_id}/webhooks/{endpoint_id}/deliveries/replay`
+reenvía un evento que KilaSifen ya generó para tu emisor:
+
+```json
+{"delivery_id": "6f9c2d0e-4b1a-4c55-9b0e-2f3c1a7d8e90"}
+```
+
+La entrega nueva copia `type`, `data` y `occurred_at` de la original con otro
+`delivery_id`. El replay no acepta `event_type` ni `payload`; enviarlos
+devuelve `422`. Una entrega de otro emisor responde `404`, y un endpoint que
+no está suscripto al tipo del evento, `409 webhooks.event_not_subscribed`.
+
+Un replay puede llegar después de eventos más nuevos del mismo documento.
+Ordená por `occurred_at`, que el replay conserva, e ignorá un evento más viejo
+que el último estado que ya aplicaste.

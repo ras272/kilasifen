@@ -21,6 +21,8 @@ from kilasifen.api.schemas.documents import (
 from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.application.documents.service import DocumentService
 from kilasifen.application.jobs.service import JobService
+from kilasifen.domain.documents.models import Document
+from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.sandbox import SandboxOutcome
 
 router = APIRouter(tags=["documents"])
@@ -47,6 +49,12 @@ def get_sandbox_outcome(
     },
     deprecated=True,
     summary="Create a raw document (platform administrators only)",
+    description=(
+        "Deprecado y sólo para `platform:admin`. `payload.generated_xml` debe "
+        "ser un `rDE` sin firmar que valide contra el XSD oficial; la "
+        "plataforma lo firma con el certificado del emisor. `signed_xml` se "
+        "rechaza con `422`."
+    ),
 )
 def create_document(
     emitter_id: str,
@@ -56,9 +64,7 @@ def create_document(
     _principal=Depends(get_admin_principal),
     service: DocumentService = Depends(get_document_service),
 ) -> JSONResponse:
-    return _create_document_response(
-        request=request,
-        service=service,
+    document, job, replayed = service.create_raw_document(
         emitter_id=emitter_id,
         external_id=payload.external_id,
         idempotency_key=payload.idempotency_key,
@@ -66,6 +72,7 @@ def create_document(
         payload_snapshot=payload.payload,
         sandbox_outcome=sandbox_outcome,
     )
+    return _document_created_response(request, document, job, replayed)
 
 
 @router.post(
@@ -320,6 +327,15 @@ def _create_document_response(
         payload_snapshot=payload_snapshot,
         sandbox_outcome=sandbox_outcome,
     )
+    return _document_created_response(request, document, job, replayed)
+
+
+def _document_created_response(
+    request: Request,
+    document: Document,
+    job: Job,
+    replayed: bool,
+) -> JSONResponse:
     envelope = SuccessEnvelope(
         data={
             "document": DocumentResponse.model_validate(document).model_dump(

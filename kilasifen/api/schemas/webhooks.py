@@ -62,10 +62,18 @@ class WebhookEndpointResponse(BaseModel):
 
 
 class WebhookReplayRequest(BaseModel):
-    """Replay request payload."""
+    """Replay of an existing delivery; the event content is never caller-made."""
 
-    event_type: str = Field(min_length=1, max_length=64)
-    payload: dict[str, Any] | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    delivery_id: str = Field(
+        min_length=1,
+        max_length=64,
+        description=(
+            "ID de una entrega ya generada para un endpoint de este emisor. "
+            "Se reenvían su tipo, data y occurred_at con un delivery ID nuevo."
+        ),
+    )
 
 
 class WebhookDeliveryResponse(BaseModel):

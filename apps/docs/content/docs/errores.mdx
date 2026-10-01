@@ -4,6 +4,13 @@ description: Usá códigos estables y correlation IDs para decidir la recuperaci
 icon: CircleAlert
 ---
 
+Toda respuesta de error de la API usa el mismo envelope, incluidos los errores
+de validación del request, las rutas o métodos inexistentes y los fallos
+inesperados del servidor. El contrato OpenAPI lo declara como `ErrorEnvelope`
+en las respuestas `401`, `403`, `404`, `422`, `429` y `503` de cada ruta
+autenticada, y además en `409` y `413` en los grupos de rutas que modifican
+recursos.
+
 ```json
 {
   "error": {
@@ -23,13 +30,61 @@ icon: CircleAlert
 | `404` | Revisar el ID y el ownership del emisor. |
 | `409` | Resolver la colisión o reutilizar la intención original. |
 | `422` | Corregir el payload; no ingresó a la cola. |
-| `429` | Respetar el límite y aplicar backoff. |
+| `429` | Esperar los segundos del header `Retry-After` (también en `details.retry_after_seconds`) y aplicar backoff. |
+| `500` | Reintentar con backoff y reportar el `correlation_id` si persiste. |
 | `503` | Reintentar con backoff porque una dependencia no está disponible. |
 
 `emitters.lock_timeout` y `numbering.lock_timeout` (ambos `503`) indican que
 otra operación del mismo emisor retuvo el bloqueo más de 5 segundos. La
 operación no se aplicó: reintentala con backoff y, si crea un documento, con la
 misma `idempotency_key`.
+
+`category` agrupa los códigos para decidir la recuperación sin conocerlos
+todos: `authentication`, `authorization`, `validation`, `invalid_request`
+(método, media type o request mal formado), `not_found`, `conflict`,
+`rate_limit`, `service_unavailable` e `internal`. Los códigos (`code`) son
+la referencia estable; la lista de categorías puede crecer.
+
+## Errores de validación y de ruta
+
+Cuando el body, la query o los parámetros de ruta no cumplen el contrato, la
+API responde `422` con `code: "request.validation_failed"` y la lista de campos
+en `details.errors`. Cada entrada trae `loc` (ubicación del campo), `message` y
+`type`. En `request.validation_failed` la API nunca devuelve el valor enviado,
+para no reflejar secretos en logs del ERP. La excepción es la ruta raw
+deprecada (sólo `platform:admin`): los `details.errors` de
+`documents.raw.generated_xml_invalid_schema` son mensajes del validador XSD y
+pueden citar valores del XML que envió el mismo caller.
+
+```json
+{
+  "error": {
+    "code": "request.validation_failed",
+    "message": "Request validation failed.",
+    "category": "validation",
+    "correlation_id": "7d33c16a-4ec1-4327-90f2-bc5517c120f2",
+    "details": {
+      "errors": [
+        {"loc": ["body", "factura", "items"], "message": "Field required", "type": "missing"}
+      ]
+    }
+  }
+}
+```
+
+| Código | HTTP | Significado |
+| --- | --- | --- |
+| `request.validation_failed` | `422` | El request no cumple el contrato; ver `details.errors`. |
+| `request.route_not_found` | `404` | La ruta no existe. Revisar la URL y el prefijo `/v1`. |
+| `request.method_not_allowed` | `405` | El método no aplica a la ruta; el header `Allow` lista los válidos. |
+| `request.body_too_large` | `413` | El body supera el límite configurado. |
+| `server.internal_error` | `500` | Fallo inesperado. El detalle interno nunca se expone. |
+
+Las respuestas `500` también traen `correlation_id` y el header
+`X-Correlation-ID`. Un proxy intermedio puede devolver `502` o `504` sin JSON:
+tratalos como un `5xx` reintentable. El SDK TypeScript los informa como
+`KilaSifenConnectionError` con `code: "sdk.http_error"`, el `status` original y
+`retryable: true`.
 
 Conservá `correlation_id` en logs del ERP y tickets de soporte. Nunca agregues la
 API key, contraseña del PFX, CSC, XML firmado completo ni datos de tarjeta.

@@ -27,6 +27,7 @@ from kilasifen.security import (
     key_prefix,
 )
 from kilasifen.testing.database import managed_test_database_url
+from tests._raw_xml import raw_document_payload
 
 _KEY_A = "ks_test_consumer_a_000000000000000001"
 _KEY_B = "ks_test_consumer_b_000000000000000002"
@@ -83,7 +84,7 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
             "external_id": "tenant-a-document",
             "idempotency_key": "tenant-a-idempotency",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='A1'/></rDE>", "doc_id": "A1"},
+            "payload": raw_document_payload(),
         },
     )
     create_response = client.post(

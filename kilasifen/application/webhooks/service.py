@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Protocol
 from uuid import uuid4
@@ -29,6 +29,14 @@ from kilasifen.infrastructure.webhooks.security import (
 from kilasifen.repositories.emitters import EmitterRepository
 from kilasifen.repositories.jobs import JobRepository
 from kilasifen.repositories.webhooks import WebhookRepository
+
+WEBHOOK_TEST_EVENT_TYPE = "webhook.test"
+
+
+@dataclass(frozen=True, slots=True)
+class _ReplayableEvent:
+    data: dict
+    occurred_at: str
 
 
 class WebhookJobQueue(Protocol):
@@ -148,51 +156,65 @@ class WebhookService:
             raise NotFoundError("webhooks.endpoint_not_found")
         return updated
 
-    def replay_delivery(
-        self,
-        *,
-        endpoint_id: str,
-        event_type: str,
-        payload: dict | None,
-    ) -> tuple[WebhookDelivery, Job]:
-        endpoint = self.webhook_repository.get_endpoint(endpoint_id)
-        if endpoint is None:
-            raise NotFoundError("webhooks.endpoint_not_found")
-        if not endpoint.is_active:
-            raise ConflictError("webhooks.endpoint_inactive")
-
-        if endpoint.emitter_id is None:
-            raise ConflictError("webhooks.emitter_required")
-        require_active_emitter(self.emitter_repository, endpoint.emitter_id)
-
-        saved_delivery, job = self._create_delivery_job(
-            endpoint=endpoint,
-            event_type=event_type,
-            payload=payload,
-        )
-        self._enqueue_if_configured(job)
-        return saved_delivery, job
-
     def replay_delivery_for_emitter(
         self,
         *,
         emitter_id: str,
         endpoint_id: str,
-        event_type: str,
-        payload: dict | None,
+        delivery_id: str,
     ) -> tuple[WebhookDelivery, Job]:
-        endpoint = self.webhook_repository.get_endpoint(endpoint_id)
-        if endpoint is None or endpoint.emitter_id != emitter_id:
-            raise NotFoundError("webhooks.endpoint_not_found")
-        if not endpoint.is_active:
-            raise ConflictError("webhooks.endpoint_inactive")
+        """Re-deliver one existing event of this emitter to an endpoint.
 
-        require_active_emitter(self.emitter_repository, emitter_id)
+        Only events the platform already generated can be replayed: the new
+        delivery copies ``type``, ``data`` and ``occurred_at`` from the stored
+        source delivery and gets a fresh delivery ID. Callers cannot supply an
+        event type or payload, so a replay can never forge a fiscal event, and
+        the target endpoint must be subscribed to the event type, as it would
+        have to be to receive the event when it was published.
+        """
+
+        endpoint = self._active_endpoint_for_emitter(
+            emitter_id=emitter_id,
+            endpoint_id=endpoint_id,
+        )
+        source, _source_job = self.get_delivery_for_emitter(
+            emitter_id=emitter_id,
+            delivery_id=delivery_id,
+        )
+        event = _replayable_event(source)
+        if not _supports_event(endpoint=endpoint, event_type=source.event_type):
+            raise ConflictError("webhooks.event_not_subscribed")
 
         saved_delivery, job = self._create_delivery_job(
             endpoint=endpoint,
-            event_type=event_type,
-            payload=payload,
+            event_type=source.event_type,
+            payload=event.data,
+            occurred_at=event.occurred_at,
+        )
+        self._enqueue_if_configured(job)
+        return saved_delivery, job
+
+    def send_test_event_for_emitter(
+        self,
+        *,
+        emitter_id: str,
+        endpoint_id: str,
+    ) -> tuple[WebhookDelivery, Job]:
+        """Deliver a synthetic ``webhook.test`` event to verify an endpoint.
+
+        The payload is fixed by the platform and the event type lives outside
+        the fiscal ``document.*``/``event.*`` namespaces, so it cannot be
+        mistaken for a document or event status change.
+        """
+
+        endpoint = self._active_endpoint_for_emitter(
+            emitter_id=emitter_id,
+            endpoint_id=endpoint_id,
+        )
+        saved_delivery, job = self._create_delivery_job(
+            endpoint=endpoint,
+            event_type=WEBHOOK_TEST_EVENT_TYPE,
+            payload={"test": True, "endpoint_id": endpoint.id},
         )
         self._enqueue_if_configured(job)
         return saved_delivery, job
@@ -376,19 +398,34 @@ class WebhookService:
             "retryable": retry_scheduled,
         }
 
+    def _active_endpoint_for_emitter(
+        self,
+        *,
+        emitter_id: str,
+        endpoint_id: str,
+    ) -> WebhookEndpoint:
+        endpoint = self.webhook_repository.get_endpoint(endpoint_id)
+        if endpoint is None or endpoint.emitter_id != emitter_id:
+            raise NotFoundError("webhooks.endpoint_not_found")
+        if not endpoint.is_active:
+            raise ConflictError("webhooks.endpoint_inactive")
+        require_active_emitter(self.emitter_repository, emitter_id)
+        return endpoint
+
     def _create_delivery_job(
         self,
         *,
         endpoint: WebhookEndpoint,
         event_type: str,
         payload: dict | None,
+        occurred_at: str | None = None,
     ) -> tuple[WebhookDelivery, Job]:
         timestamp = _now()
         delivery_id = str(uuid4())
         envelope = {
             "type": event_type,
             "delivery_id": delivery_id,
-            "occurred_at": timestamp.isoformat(),
+            "occurred_at": occurred_at or timestamp.isoformat(),
             "data": payload or {},
         }
         request_body = serialize_webhook_body(envelope)
@@ -426,6 +463,23 @@ class WebhookService:
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _replayable_event(delivery: WebhookDelivery) -> _ReplayableEvent:
+    """Return the stored event of a delivery, or refuse when it is incomplete."""
+
+    snapshot = delivery.payload_snapshot
+    if not isinstance(snapshot, dict):
+        raise ConflictError("webhooks.delivery_not_replayable")
+    data = snapshot.get("data")
+    occurred_at = snapshot.get("occurred_at")
+    if (
+        snapshot.get("type") != delivery.event_type
+        or not isinstance(data, dict)
+        or not isinstance(occurred_at, str)
+    ):
+        raise ConflictError("webhooks.delivery_not_replayable")
+    return _ReplayableEvent(data=data, occurred_at=occurred_at)
 
 
 def _supports_event(*, endpoint: WebhookEndpoint, event_type: str) -> bool:

@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -11,9 +12,13 @@ from fastapi.testclient import TestClient
 from kilasifen.api.app import create_app
 from kilasifen.config import get_settings
 from kilasifen.infrastructure.db.base import Base
-from kilasifen.infrastructure.db.session import build_engine
+from kilasifen.infrastructure.db.repositories.documents import (
+    SqlAlchemyDocumentRepository,
+)
+from kilasifen.infrastructure.db.session import build_engine, session_scope
 from kilasifen.infrastructure.kude.qr_generator import build_sifen_qr_url
 from kilasifen.testing.database import managed_test_database_url
+from tests._raw_xml import golden_signed_xml, raw_document_payload
 
 API_KEY = "secret-key"
 _GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden"
@@ -73,7 +78,6 @@ def _create_emitter(
 def _create_document_with_signed_xml(
     client: TestClient, *, emitter_id: str, scenario_name: str, document_type: str
 ) -> dict:
-    signed_xml = (_GOLDEN_DIR / f"{scenario_name}.xml").read_text(encoding="utf-8")
     response = client.post(
         f"/v1/emitters/{emitter_id}/documents",
         headers={"X-API-Key": API_KEY},
@@ -81,11 +85,29 @@ def _create_document_with_signed_xml(
             "external_id": f"erp-{scenario_name}",
             "idempotency_key": f"idem-{scenario_name}",
             "document_type": document_type,
-            "payload": {"signed_xml": signed_xml},
+            "payload": raw_document_payload(scenario_name),
         },
     )
     assert response.status_code == 201, response.text
-    return response.json()["data"]["document"]
+    document = response.json()["data"]["document"]
+    _store_platform_signed_xml(
+        client,
+        document_id=document["id"],
+        signed_xml=golden_signed_xml(scenario_name),
+    )
+    return document
+
+
+def _store_platform_signed_xml(
+    client: TestClient, *, document_id: str, signed_xml: str
+) -> None:
+    """Persist the signed XML the emission worker would have produced."""
+
+    with session_scope(client.app.state.session_factory) as session:
+        repository = SqlAlchemyDocumentRepository(session)
+        stored = repository.get(document_id)
+        assert stored is not None
+        repository.save(replace(stored, signed_xml=signed_xml))
 
 
 def test_get_kude_returns_pdf(client: TestClient):

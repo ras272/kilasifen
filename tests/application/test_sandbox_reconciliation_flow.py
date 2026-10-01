@@ -160,9 +160,9 @@ class _sandbox_document:
             repository.save(
                 replace(
                     document,
+                    signed_xml=_SIGNED_XML,
                     payload_snapshot={
                         "generated_xml": '<rDE><DE Id="0180012345"/></rDE>',
-                        "signed_xml": _SIGNED_XML,
                         "doc_id": "0180012345",
                         "sandbox": {"version": 1, "outcome": self.outcome},
                     },

@@ -208,11 +208,19 @@ await kila.webhooks.update("emitter_123", endpoint.data.webhook_endpoint.id, {
   is_active: true,
 });
 
+// Signed synthetic `webhook.test` event to check reachability and signature.
+await kila.webhooks.sendTestEvent("emitter_123", endpoint.data.webhook_endpoint.id);
+
+// Re-deliver an event KilaSifen already generated for this emitter.
 await kila.webhooks.replay("emitter_123", endpoint.data.webhook_endpoint.id, {
-  event_type: "document.approved",
-  payload: { document_id: "document_123" },
+  delivery_id: "delivery_123",
 });
 ```
+
+Replay never accepts an event type or payload: it copies the stored event of an
+existing delivery (same `type`, `data` and `occurred_at`) under a new delivery
+ID. Ignore or acknowledge `webhook.test` in your handler; it never carries a
+fiscal state change.
 
 All successful calls return `{ data, correlationId, status }`. Keep the
 correlation ID in application logs when requesting support.
@@ -235,10 +243,15 @@ try {
 }
 ```
 
-`KilaSifenError` represents a valid API error envelope.
-`KilaSifenConnectionError` represents timeouts, network failures or malformed
-responses. Both expose a `retryable` flag, but your retry policy must still use
-the same idempotency key for fiscal mutations.
+`KilaSifenError` represents a valid API error envelope, including request
+validation failures (`422 request.validation_failed`, with the offending fields
+in `details.errors`). `KilaSifenConnectionError` represents timeouts, network
+failures, malformed success bodies (`sdk.invalid_response`) and HTTP errors
+that arrive without the envelope (`sdk.http_error`, for example an HTML `502`
+from a proxy). `sdk.http_error` keeps `status` and the `X-Correlation-ID`
+header, and is retryable for `408`, `425`, `429` and `5xx`, like
+`KilaSifenError`. Both expose a `retryable` flag, but your retry policy must
+still use the same idempotency key for fiscal mutations.
 
 ## Verify webhooks
 

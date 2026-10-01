@@ -60,10 +60,26 @@ un webhook.
 ```
 
 `401` credencial; `403` scope; `404` inexistente/ajeno; `409` conflicto; `422`
-payload; `429` límite; `503` dependencia. Conservar `correlation_id`. Un `503`
-`emitters.lock_timeout` o `numbering.lock_timeout` significa que otra operación
-del mismo emisor retuvo el bloqueo más de 5 s: la intención no se registró y se
-reintenta con backoff y la misma `idempotency_key`.
+payload; `429` límite (esperar `Retry-After` segundos); `503` dependencia.
+Conservar `correlation_id`. Un `503` `emitters.lock_timeout` o
+`numbering.lock_timeout` significa que otra operación del mismo emisor retuvo
+el bloqueo más de 5 s: la intención no se registró y se reintenta con backoff
+y la misma `idempotency_key`.
+
+El mismo envelope cubre los errores del framework y el contrato OpenAPI lo
+declara (`ErrorEnvelope`) en cada ruta autenticada:
+
+- `422 request.validation_failed`: body, query o path inválidos. Los campos van
+  en `details.errors` como `{loc, message, type}`; el valor enviado nunca se
+  devuelve.
+- `404 request.route_not_found` y `405 request.method_not_allowed` (con header
+  `Allow`): ruta o método inexistente.
+- `413 request.body_too_large`: body por encima del límite configurado.
+- `500 server.internal_error`: fallo inesperado, con `correlation_id` y header
+  `X-Correlation-ID`, sin detalle interno. Reintentar con backoff.
+
+Un `502`/`504` de un proxy puede llegar sin JSON: tratarlo como `5xx`
+reintentable.
 
 ## Crear factura
 
@@ -139,7 +155,16 @@ Cancelación usa `{"motivo": "..."}`; inutilización usa timbrado, tipo,
 establecimiento, punto, rango y motivo. Ambas crean un event/job `queued` con
 `201`; el worker `events` transmite a SIFEN y el ERP consulta el evento/job o
 recibe el webhook terminal. Los endpoints raw `/documents` y `/events` están
-deprecados y son sólo admin.
+deprecados y son sólo admin. En el raw `/documents`, `payload.generated_xml`
+tiene que ser un `rDE` sin firmar que valide contra el XSD oficial (sin
+`DOCTYPE`), con `dVerFor`, un solo `DE`, una `Signature` opcional y
+`gCamFuFD` como únicos hijos; KilaSifen firma ese `DE` con el certificado del
+emisor. `payload.doc_id` es opcional y, si se envía, tiene que ser el `Id` de
+ese `DE` (`422 documents.raw.doc_id_mismatch`). Un `signed_xml` provisto por
+el caller se rechaza con `422 documents.raw.signed_xml_not_allowed`: la
+plataforma sólo transmite XML que firmó ella misma. Los `details.errors` de
+`documents.raw.generated_xml_invalid_schema` son mensajes del validador XSD y
+pueden citar valores del XML enviado.
 
 Kila confirma en la base el CDC, el XML firmado y el request exacto (con su
 `dId` real) antes de transmitir, con el documento en `submitting`. Ante
@@ -178,6 +203,12 @@ Registrar URL HTTPS pública, secreto aleatorio ≥32 caracteres, suscripciones 
 `POST /v1/emitters/{emitter_id}/webhooks`. La respuesta sólo informa
 `secret_configured`. Firma exacta, replay y backoff:
 [integrations/webhooks.md](integrations/webhooks.md).
+
+`POST .../webhooks/{endpoint_id}/test` envía un evento sintético
+`webhook.test` para verificar el endpoint. El replay
+(`POST .../webhooks/{endpoint_id}/deliveries/replay`) recibe sólo
+`{"delivery_id": "..."}` y reenvía un evento ya generado para el mismo emisor;
+desde 0.2.0 ya no acepta `event_type` ni `payload` del caller (`422`).
 
 El ERP actualiza por webhook y usa polling de documento/job como recuperación.
 

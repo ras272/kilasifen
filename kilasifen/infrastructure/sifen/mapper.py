@@ -7,12 +7,17 @@ from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine.sdk.errors import SifenValidationError
+from kilasifen.infrastructure.sifen.raw_xml_policy import signable_doc_id
 from kilasifen.infrastructure.sifen.typed_xml_builder import build_typed_document_xml
 
 
 @dataclass(slots=True)
 class KilaSifenEmissionInput:
-    """Minimal emission input for the kilasifen.engine bridge."""
+    """Minimal emission input for the kilasifen.engine bridge.
+
+    ``signed_xml`` is only ever XML the platform signed itself in an earlier
+    attempt (``Document.signed_xml``), never XML supplied by a caller.
+    """
 
     generated_xml: str | None
     signed_xml: str | None
@@ -30,9 +35,16 @@ class KilaSifenPayloadMapper:
         stamping: Stamping | None = None,
     ) -> KilaSifenEmissionInput:
         payload = document.payload_snapshot or {}
-        generated_xml = payload.get("generated_xml") or document.generated_xml
-        signed_xml = payload.get("signed_xml") or document.signed_xml
+        signed_xml = document.signed_xml
+        raw_generated_xml = payload.get("generated_xml")
+        generated_xml = raw_generated_xml or document.generated_xml
         doc_id = payload.get("doc_id") or document.cdc
+        if raw_generated_xml and not signed_xml:
+            # Caller-supplied XML: sign only the DE that passed the policy.
+            doc_id = signable_doc_id(
+                generated_xml=raw_generated_xml,
+                requested_doc_id=payload.get("doc_id"),
+            )
 
         if not generated_xml and not signed_xml:
             if emitter is None or stamping is None:

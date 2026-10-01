@@ -10,6 +10,7 @@ from kilasifen.config import get_settings
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
+from tests._raw_xml import raw_document_payload
 
 API_KEY = "secret-key"
 
@@ -145,7 +146,7 @@ def test_get_emitter_health_returns_operational_snapshot(client: TestClient) -> 
             "external_id": "erp-health-doc-1",
             "idempotency_key": "idem-health-doc-1",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='H1'/></rDE>", "doc_id": "H1"},
+            "payload": raw_document_payload(),
         },
     )
 

@@ -58,6 +58,7 @@ from kilasifen.infrastructure.jobs.outbox import SqlAlchemyJobOutboxQueue
 from kilasifen.infrastructure.limits.redis import RedisRequestLimiter
 from kilasifen.infrastructure.sifen.event import KilaSifenEventGateway
 from kilasifen.infrastructure.sifen.query import KilaSifenQueryGateway
+from kilasifen.infrastructure.sifen.raw_xml_policy import require_signable_raw_payload
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
 from kilasifen.security import (
@@ -215,6 +216,7 @@ async def enforce_request_limits(
                 message="Request limit exceeded. Retry later.",
                 category="rate_limit",
                 details={"retry_after_seconds": lease.retry_after_seconds},
+                headers={"Retry-After": str(lease.retry_after_seconds)},
             )
         yield
     finally:
@@ -346,6 +348,7 @@ def get_document_service(
         database_url=settings.database_url,
         encryption_key=settings.encryption_key,
         sandbox_policy=SandboxOutcomePolicy(settings.environment),
+        raw_payload_policy=require_signable_raw_payload,
     )
 
 

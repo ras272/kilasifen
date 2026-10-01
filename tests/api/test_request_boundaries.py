@@ -8,6 +8,7 @@ from starlette.requests import Request
 
 from kilasifen.api.app import create_app
 from kilasifen.api.deps import enforce_request_limits
+from kilasifen.api.errors import ApiError
 from kilasifen.api.middleware import (
     NetworkIdentityResolver,
     PreAuthRateLimitMiddleware,
@@ -246,6 +247,35 @@ async def test_post_auth_budget_cannot_be_bypassed_with_emitter_path(
     second_rate_key = redis.eval.await_args_list[2].args[2]
     assert first_rate_key == second_rate_key
     redis.aclose.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_post_auth_limit_rejection_sends_retry_after(monkeypatch) -> None:
+    redis = AsyncMock()
+    redis.eval.return_value = [0, 121, 42, 0]
+    settings = Settings.model_construct(
+        environment="production",
+        redis_url="redis://limits.internal:6379/0",
+        rate_limit_requests=120,
+        rate_limit_window_seconds=60,
+        max_concurrent_requests=8,
+        request_lease_seconds=120,
+    )
+    monkeypatch.setattr("kilasifen.api.deps.get_settings", lambda: settings)
+    principal = ApiKeyPrincipal(
+        key_id="key-1",
+        consumer_id="consumer-1",
+        scopes=frozenset(),
+        emitter_ids=frozenset(),
+    )
+
+    with pytest.raises(ApiError) as raised:
+        await _acquire_post_auth_limit(redis, principal, "owned-emitter")
+
+    assert raised.value.status_code == 429
+    assert raised.value.code == "limits.rate_exceeded"
+    assert raised.value.details == {"retry_after_seconds": 42}
+    assert raised.value.headers == {"Retry-After": "42"}
 
 
 async def _acquire_post_auth_limit(

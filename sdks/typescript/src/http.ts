@@ -79,40 +79,62 @@ export class HttpClient {
       timeout.dispose();
     }
 
-    const payload = await parseJson(response);
+    const body = await readJson(response);
     if (!response.ok) {
-      if (isErrorEnvelope(payload)) {
-        throw new KilaSifenError(payload.error, response.status);
-      }
+      throw errorFromResponse(response, body);
+    }
+    if (!body.parsed) {
       throw new KilaSifenConnectionError(
         "sdk.invalid_response",
-        `KilaSifen returned HTTP ${response.status} without a valid error envelope`,
+        `KilaSifen returned a non-JSON response with HTTP ${response.status}`,
+        { cause: body.error },
       );
     }
-    if (!isSuccessEnvelope<T>(payload)) {
+    if (!isSuccessEnvelope<T>(body.value)) {
       throw new KilaSifenConnectionError(
         "sdk.invalid_response",
         "KilaSifen returned an invalid success envelope",
       );
     }
     return {
-      data: payload.data,
-      correlationId: payload.correlation_id,
+      data: body.value.data,
+      correlationId: body.value.correlation_id,
       status: response.status,
     };
   }
 }
 
-async function parseJson(response: Response): Promise<unknown> {
+type JsonBody = { parsed: true; value: unknown } | { parsed: false; error: unknown };
+
+async function readJson(response: Response): Promise<JsonBody> {
   try {
-    return await response.json();
+    return { parsed: true, value: await response.json() };
   } catch (error) {
-    throw new KilaSifenConnectionError(
-      "sdk.invalid_response",
-      `KilaSifen returned a non-JSON response with HTTP ${response.status}`,
-      { cause: error },
-    );
+    return { parsed: false, error };
   }
+}
+
+/**
+ * Map a non-2xx response. The API always answers with the error envelope;
+ * anything else (an HTML page from a proxy, an empty 502) keeps its HTTP
+ * status so 5xx stay retryable.
+ */
+function errorFromResponse(
+  response: Response,
+  body: JsonBody,
+): KilaSifenError | KilaSifenConnectionError {
+  if (body.parsed && isErrorEnvelope(body.value)) {
+    return new KilaSifenError(body.value.error, response.status);
+  }
+  return new KilaSifenConnectionError(
+    "sdk.http_error",
+    `KilaSifen returned HTTP ${response.status} without a valid error envelope`,
+    {
+      status: response.status,
+      correlationId: response.headers.get("X-Correlation-ID"),
+      ...(body.parsed ? {} : { cause: body.error }),
+    },
+  );
 }
 
 function isSuccessEnvelope<T>(value: unknown): value is ApiSuccess<T> {
