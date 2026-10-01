@@ -64,9 +64,10 @@ revisar la guía de migración de esta sección.
 - Plataforma: `EventSubmissionGateway.submit_event` se reemplaza por
   `prepare_event` y `submit_prepared(request_xml=...)`; aparece
   `PreparedEventSubmission` y `EventSubmissionOutcome` deja de llevar
-  `generated_xml`, `signed_xml` y `request_xml`. `EventService.
-  process_queued_event` se reemplaza por `begin_queued_event_attempt` y
-  `record_event_attempt`, que el worker llama en transacciones separadas.
+  `generated_xml`, `signed_xml` y `request_xml`.
+  `EventService.process_queued_event` se reemplaza por
+  `begin_queued_event_attempt` y `record_event_attempt`, que el worker llama
+  en transacciones separadas.
 
 ### Guía de migración
 
