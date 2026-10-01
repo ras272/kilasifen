@@ -25,6 +25,7 @@ from enum import Enum
 from typing import Protocol
 
 from kilasifen.domain.common.fiscal_states import (
+    DOCUMENT_APPROVED_STATUSES,
     DOCUMENT_POSSIBLY_RECEIVED_STATUSES,
     DOCUMENT_SUBMITTING_STATUS,
     DOCUMENT_TERMINAL_STATUSES,
@@ -32,6 +33,7 @@ from kilasifen.domain.common.fiscal_states import (
 )
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.jobs.models import Job
+from kilasifen.infrastructure.sifen.de_facts import approval_lower_bound
 from kilasifen.infrastructure.sifen.engine import PreparedSubmission, SubmissionOutcome
 from kilasifen.infrastructure.sifen.query import DocumentQueryOutcome
 
@@ -128,21 +130,49 @@ class AttemptResult(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class SifenAnswered:
-    """SIFEN answered the submission."""
+    """SIFEN answered the submission.
+
+    The transport already classified the answer by ``dEstRes`` (DECISIONES
+    F60). An approval keeps ``dProtAut`` and ``dFecProc``, the start of the
+    cancellation window (MT v150 §6.2.1 p. 25); without ``dFecProc`` a lower
+    bound of the approval is kept instead. An answer the platform cannot
+    classify is never read as a rejection: the CDC is queried next.
+    """
 
     outcome: SubmissionOutcome
 
     def apply(self, document: Document, job: Job) -> tuple[Document, Job]:
-        updated = replace(
+        outcome = self.outcome
+        answered = replace(
             document,
-            sifen_response_raw=self.outcome.response_raw,
-            internal_status=self.outcome.sifen_status,
-            sifen_status=self.outcome.sifen_status,
-            sifen_result_code=self.outcome.result_code,
-            sifen_result_message=self.outcome.result_message,
+            sifen_response_raw=outcome.response_raw,
+            sifen_result_code=outcome.result_code,
+            sifen_result_message=outcome.result_message,
+            sifen_messages=[message.as_dict() for message in outcome.messages]
+            or None,
             updated_at=_now(),
         )
-        return updated, _job_following(job, updated, pending_category="sifen_pending")
+        if outcome.sifen_status in DOCUMENT_APPROVED_STATUSES:
+            approved = replace(
+                answered,
+                internal_status=outcome.sifen_status,
+                sifen_status=outcome.sifen_status,
+                sifen_protocol=outcome.protocol or document.sifen_protocol,
+                sifen_approved_at=outcome.processed_at
+                or approval_lower_bound(document),
+            )
+            return approved, _succeed(job)
+        if outcome.sifen_status == "rejected":
+            rejected = replace(
+                answered, internal_status="rejected", sifen_status="rejected"
+            )
+            return rejected, _rejected_job(job, rejected)
+        pending = replace(
+            answered, internal_status="retry_pending", sifen_status="retry_pending"
+        )
+        return pending, _job_following(
+            job, pending, pending_category="sifen_unclassified"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -428,6 +458,21 @@ def _job_following(job: Job, document: Document, *, pending_category: str) -> Jo
         status="retry_scheduled",
         error_snapshot={
             "category": pending_category,
+            "code": document.sifen_result_code,
+            "message": document.sifen_result_message,
+        },
+        updated_at=_now(),
+    )
+
+
+def _rejected_job(job: Job, document: Document) -> Job:
+    """Job state after SIFEN's final rejection of ``document``."""
+
+    return replace(
+        job,
+        status="failed",
+        error_snapshot={
+            "category": "sifen_rejection",
             "code": document.sifen_result_code,
             "message": document.sifen_result_message,
         },

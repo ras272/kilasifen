@@ -49,7 +49,9 @@ def upgrade() -> None:
             server_default=sa.false(),
         ),
     )
-    op.add_column("documents", sa.Column("timbrado", sa.String(length=8), nullable=True))
+    op.add_column(
+        "documents", sa.Column("timbrado", sa.String(length=8), nullable=True)
+    )
 
 
 def downgrade() -> None:

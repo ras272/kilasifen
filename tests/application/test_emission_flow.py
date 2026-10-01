@@ -419,7 +419,7 @@ def test_process_document_job_marks_rejected_outcome_without_engine_exception(
         assert job.error_snapshot["category"] == "sifen_rejection"
 
 
-def test_process_document_job_keeps_submitted_outcome_reconcilable(tmp_path) -> None:
+def test_an_unclassified_answer_is_reconciled_not_rejected(tmp_path) -> None:
     with managed_test_database_url(
         tmp_path=tmp_path,
         name="emission_submitted_outcome",
@@ -462,10 +462,12 @@ def test_process_document_job_keeps_submitted_outcome_reconcilable(tmp_path) -> 
         assert outbox.status == "pending"
         assert outbox.available_at == job.scheduled_at
         assert job.error_snapshot == {
-            "category": "sifen_pending",
+            "category": "sifen_unclassified",
             "code": "0300",
             "message": "Procesamiento pendiente",
         }
+        # DECISIONES F60: without a recognizable dEstRes the CDC is queried.
+        assert payload["document_status"] == "retry_pending"
 
 
 def test_transport_uncertainty_persists_exact_payload_before_retry(tmp_path) -> None:

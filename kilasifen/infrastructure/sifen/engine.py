@@ -10,27 +10,33 @@ exact payload durable before anything reaches SIFEN:
    unchanged and normalizes the answer.
 
 Between both steps the worker commits the prepared request, so a crash, a
-timeout or an unreadable answer can always be reconciled by CDC.
+timeout or an unreadable answer can always be reconciled by CDC. A document
+that SIFEN may receive again (a request that never left, a CDC SIFEN reported
+as not approved, a 0161/0162 server failure) travels again through
+:meth:`DocumentEmissionEngine.wrap_signed_document`: the same signed ``rDE``
+in a new ``rEnviDe`` with a fresh ``dId``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 
-from xsdata.formats.dataclass.serializers import XmlSerializer
-from xsdata.formats.dataclass.serializers.config import SerializerConfig
-
+from kilasifen.domain.common.sifen_results import classify_reception
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine import PRODUCCION, TEST, TransmisionDE, sign_xml
-from kilasifen.engine.de.bindings.v150.ws_si_recep_de_v150 import RRetEnviDe
 from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.engine.transmision.base import _generate_id
 from kilasifen.engine.transmision.de import _build_enviar_de_request_xml
 from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
 from kilasifen.infrastructure.sifen.mapper import KilaSifenPayloadMapper
+from kilasifen.infrastructure.sifen.responses import (
+    SifenMessage,
+    read_reception_answer,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,12 +51,21 @@ class PreparedSubmission:
 
 @dataclass(slots=True)
 class SubmissionOutcome:
-    """Normalized result returned by a SIFEN document transport."""
+    """Normalized result returned by a SIFEN document transport.
+
+    ``sifen_status`` is ``approved``, ``approved_with_observation``,
+    ``rejected`` or ``unknown`` (an answer the platform cannot classify, to be
+    reconciled by CDC). ``protocol`` is ``dProtAut``, ``processed_at`` is
+    ``dFecProc`` and ``messages`` holds every ``gResProc``.
+    """
 
     response_raw: str | None
     sifen_status: str
     result_code: str | None
     result_message: str | None
+    protocol: str | None = None
+    processed_at: datetime | None = None
+    messages: tuple[SifenMessage, ...] = ()
 
 
 class DocumentEmissionEngine(Protocol):
@@ -69,6 +84,13 @@ class DocumentEmissionEngine(Protocol):
 
         Raises:
             SifenValidationError: if the document cannot be emitted as is.
+        """
+
+    def wrap_signed_document(self, *, signed_xml: str) -> str:
+        """Wrap an already signed ``rDE`` in a new ``rEnviDe`` (fresh ``dId``).
+
+        Used to send the same document again: never re-signs, never
+        contacts SIFEN.
         """
 
     def submit_prepared(
@@ -104,11 +126,6 @@ class DocumentSubmissionTransport(Protocol):
 class KilaSifenDocumentTransport:
     """Live document transport backed by ``kilasifen.engine``."""
 
-    def __init__(self) -> None:
-        self.serializer = XmlSerializer(
-            config=SerializerConfig(xml_declaration=True, encoding="UTF-8")
-        )
-
     def submit(
         self,
         *,
@@ -127,15 +144,7 @@ class KilaSifenDocumentTransport:
             max_retries=0,
         ) as transmision:
             body = transmision._send_raw_xml("recep_de", request_xml)
-            response = transmision._como_respuesta(body, RRetEnviDe)
-
-        result_code, result_message, status = _normalize_response(response)
-        return SubmissionOutcome(
-            response_raw=self.serializer.render(response),
-            sifen_status=status,
-            result_code=result_code,
-            result_message=result_message,
-        )
+        return outcome_from_reception_body(body)
 
 
 class KilaSifenEmissionEngine:
@@ -186,12 +195,19 @@ class KilaSifenEmissionEngine:
             # Without a CDC a lost answer could never be reconciled.
             raise SifenValidationError("document payload must include doc_id")
 
-        request_xml = _build_enviar_de_request_xml(_generate_id(), signed_xml)
         return PreparedSubmission(
             generated_xml=generated_xml,
             signed_xml=signed_xml,
-            request_xml=request_xml.decode("utf-8"),
+            request_xml=self.wrap_signed_document(signed_xml=signed_xml),
             cdc=emission_input.doc_id,
+        )
+
+    def wrap_signed_document(self, *, signed_xml: str) -> str:
+        # The dId rules (unique? sequential? validated?) are NO DETERMINADO:
+        # MT v150 only calls it "autoincremental" and no rejection code uses
+        # it. A new one per request never reuses a dId that reached SIFEN.
+        return _build_enviar_de_request_xml(_generate_id(), signed_xml).decode(
+            "utf-8"
         )
 
     def submit_prepared(
@@ -210,35 +226,30 @@ class KilaSifenEmissionEngine:
         )
 
 
-def _normalize_response(response) -> tuple[str | None, str | None, str]:
-    result_code = None
-    result_message = None
-    status = "submitted"
+def outcome_from_reception_body(body: bytes | str) -> SubmissionOutcome:
+    """Classify a siRecepDE answer (DECISIONES F60).
 
-    prot = (
-        getattr(response, "rProtDe", None)
-        or getattr(response, "gRespProc", None)
-        or response
+    ``dEstRes`` decides, normalized (MT v150 §9.1.3 PP050 p. 46, cap. 12
+    p. 145); without it only 0260 proves an approval and anything else is
+    ``unknown``. The reported code and message are those of the first
+    ``gResProc`` (the first error of a rejection, Dto 872/2023 Art. 29).
+
+    Raises:
+        SifenUnexpectedResponseError: if ``body`` is not an ``rRetEnviDe``.
+    """
+
+    answer = read_reception_answer(body)
+    first = answer.messages[0] if answer.messages else None
+    raw = body.decode("utf-8", errors="replace") if isinstance(body, bytes) else body
+    return SubmissionOutcome(
+        response_raw=raw,
+        sifen_status=classify_reception(answer.state_text, answer.codes).value,
+        result_code=first.code if first else None,
+        result_message=first.message if first else None,
+        protocol=answer.protocol,
+        processed_at=answer.processed_at,
+        messages=answer.messages,
     )
-    result_node = _first_result_node(prot)
-    for attr in ("dCodRes", "dCodResLot", "dCodResC"):
-        value = getattr(result_node, attr, None) or getattr(prot, attr, None)
-        if value:
-            result_code = str(value)
-            break
-    for attr in ("dMsgRes", "dMsgResLot", "dMsgResC"):
-        value = getattr(result_node, attr, None) or getattr(prot, attr, None)
-        if value:
-            result_message = str(value)
-            break
-
-    status_text = str(getattr(prot, "dEstRes", "") or "").strip().lower()
-    if result_code == "0260" or status_text == "aprobado":
-        status = "approved"
-    elif result_code or status_text == "rechazado":
-        status = "rejected"
-
-    return result_code, result_message, status
 
 
 def _require_deployment_environment(emitter: Emitter, expected: str) -> None:
@@ -246,10 +257,3 @@ def _require_deployment_environment(emitter: Emitter, expected: str) -> None:
         raise SifenValidationError(
             "Emitter tax environment does not match this deployment"
         )
-
-
-def _first_result_node(prot):
-    result = getattr(prot, "gResProc", None)
-    if isinstance(result, list):
-        return result[0] if result else prot
-    return result or prot

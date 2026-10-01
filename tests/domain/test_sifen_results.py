@@ -24,9 +24,8 @@ from kilasifen.domain.common.sifen_results import (
 def test_every_official_spelling_of_an_observed_approval_is_recognized(
     literal: str,
 ) -> None:
-    assert (
-        classify_reception(literal, ["1005"]) is ReceptionState.APPROVED_WITH_OBSERVATION
-    )
+    state = classify_reception(literal, ["1005"])
+    assert state is ReceptionState.APPROVED_WITH_OBSERVATION
 
 
 def test_an_observed_approval_is_never_a_rejection_whatever_its_code() -> None:
