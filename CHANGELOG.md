@@ -121,6 +121,17 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   plataforma, que usa `datetime.UTC` en 18 módulos y en la práctica necesita
   Python 3.11 o posterior.
 
+### Fixed
+
+- Docker Compose: `worker`, `outbox` y `migrate` deshabilitan el
+  `HEALTHCHECK` HTTP (`/v1/health`) que heredaban de la imagen. Ninguno sirve
+  HTTP, así que Docker los marcaba `unhealthy` aunque funcionaran. La API lo
+  conserva.
+- Docker Compose: Redis guarda sus datos con AOF (`appendfsync everysec`) en
+  el volumen `kila-redis-data`. Antes un reinicio del contenedor perdía los
+  jobs encolados, los leases y el heartbeat del outbox. `docker compose down -v`
+  borra también este volumen.
+
 ### Security
 
 - Firmador XMLDSig (`kilasifen.engine.sdk.signer`) reescrito desde la

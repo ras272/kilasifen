@@ -109,10 +109,12 @@ curl http://127.0.0.1:8000/v1/health   # el proceso responde
 curl http://127.0.0.1:8000/v1/ready    # PostgreSQL y Redis (workers: solo en staging/production)
 ```
 
-Compose levanta PostgreSQL, Redis, un paso de migración
+Compose levanta PostgreSQL, Redis (con AOF en un volumen, así que los jobs
+encolados sobreviven a un reinicio), un paso de migración
 (`alembic upgrade head`), la API en `127.0.0.1:8000`, el worker RQ (colas
-`documents`, `events` y `webhooks`) y el despachador del outbox. Todo queda
-publicado solo en loopback. Con `.env.example` el SIFEN apunta al ambiente de
+`documents`, `events` y `webhooks`) y el despachador del outbox. Sólo la API
+conserva el healthcheck HTTP de la imagen; worker, outbox y migración no sirven
+HTTP y lo tienen deshabilitado. Todo queda publicado solo en loopback. Con `.env.example` el SIFEN apunta al ambiente de
 pruebas. Para apuntar a producción (`KILA_SIFEN_SIFEN_ENVIRONMENT=production`)
 la configuración exige además `KILA_SIFEN_ENVIRONMENT=production` y
 `KILA_SIFEN_ENABLE_PRODUCTION=true`; si falta alguna, la configuración se
