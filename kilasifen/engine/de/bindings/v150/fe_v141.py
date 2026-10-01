@@ -6,7 +6,7 @@ from enum import Enum
 
 from xsdata.models.datatype import XmlDate
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.de.bindings.v150.departamentos_v141 import (
     TDepartamentos,
     TDesDepartamento,
@@ -69,7 +69,7 @@ __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class TgActEco(CommonMixin):
+class TgActEco(BindingMixin):
     """
     Grupo de Campos de la Actividad Economica.
     """
@@ -99,12 +99,13 @@ class TgActEco(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamFuFd(CommonMixin):
+class TgCamFuFd(BindingMixin):
     """
     Campos fuera de la firma digital.
 
-    :ivar dCarQR: Caracteres correspondiente al codigo QR
-    :ivar dInfAdic: Información adicional de interés para el emisor
+    Attributes:
+        dCarQR: Caracteres correspondiente al codigo QR
+        dInfAdic: Información adicional de interés para el emisor
     """
 
     class Meta:
@@ -134,13 +135,14 @@ class TgCamFuFd(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamGen(CommonMixin):
+class TgCamGen(BindingMixin):
     """
     Campos complementarios comerciales de uso general.
 
-    :ivar dOrdCompra: Numero de orden de compra
-    :ivar dOrdVta: Numero de orden de venta
-    :ivar dAsiento: Número de asiento contable
+    Attributes:
+        dOrdCompra: Numero de orden de compra
+        dOrdVta: Numero de orden de venta
+        dAsiento: Número de asiento contable
     """
 
     class Meta:
@@ -179,7 +181,7 @@ class TgCamGen(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCompPub(CommonMixin):
+class TgCompPub(BindingMixin):
     """
     Campos que describen informaciones de compras publicas.
     """
@@ -231,7 +233,7 @@ class TgCompPub(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCuotas(CommonMixin):
+class TgCuotas(BindingMixin):
     """
     Campos que describen las cuotas.
     """
@@ -260,16 +262,17 @@ class TgCuotas(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgGrupAdi(CommonMixin):
+class TgGrupAdi(BindingMixin):
     """
     Grupo de datos adicionales de uso comercial.
 
-    :ivar dCiclo:
-    :ivar dFecIniC:
-    :ivar dFecFinC:
-    :ivar dVencPag:
-    :ivar dContrato: Numero de contrato
-    :ivar dSalAnt:
+    Attributes:
+        dCiclo:
+        dFecIniC:
+        dFecFinC:
+        dVencPag:
+        dContrato: Numero de contrato
+        dSalAnt:
     """
 
     class Meta:
@@ -334,16 +337,17 @@ class TgGrupAdi(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgGrupEner(CommonMixin):
+class TgGrupEner(BindingMixin):
     """
     Grupo del sector de energia electrica.
 
-    :ivar dNroMed: Numero de medidor
-    :ivar dActiv: Codigo de actividad
-    :ivar dCateg: Codigo de categoría
-    :ivar dLecAnt:
-    :ivar dLecAct:
-    :ivar dConKwh:
+    Attributes:
+        dNroMed: Numero de medidor
+        dActiv: Codigo de actividad
+        dCateg: Codigo de categoría
+        dLecAnt:
+        dLecAct:
+        dConKwh:
     """
 
     class Meta:
@@ -410,16 +414,16 @@ class TgGrupEner(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgGrupSeg(CommonMixin):
+class TgGrupSeg(BindingMixin):
     """
     Datos del sector de seguros.
 
-    :ivar dCodEmpSeg: Codigo de la empresa de seguros en la
-        Superintedencia Nacional de Seguros
-    :ivar dPoliza:
-    :ivar dUnidVig: Descripción de la unidad de tiempo de vigencia
-    :ivar dVigencia:
-    :ivar dNumPoliza: Número de la póliza
+    Attributes:
+        dCodEmpSeg: Codigo de la empresa de seguros en la Superintedencia Nacional de Seguros
+        dPoliza:
+        dUnidVig: Descripción de la unidad de tiempo de vigencia
+        dVigencia:
+        dNumPoliza: Número de la póliza
     """
 
     class Meta:
@@ -476,15 +480,16 @@ class TgGrupSeg(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgGrupSup(CommonMixin):
+class TgGrupSup(BindingMixin):
     """
     Grupo del sector de supermercados.
 
-    :ivar dNomCaj: Nombre del cajero
-    :ivar dEfectivo:
-    :ivar dVuelto: Vuelto
-    :ivar dDonac: Monto de la donacion
-    :ivar dDesDonac: Descripcion de la donacion
+    Attributes:
+        dNomCaj: Nombre del cajero
+        dEfectivo:
+        dVuelto: Vuelto
+        dDonac: Monto de la donacion
+        dDesDonac: Descripcion de la donacion
     """
 
     class Meta:
@@ -545,10 +550,9 @@ class TgGrupSup(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgPagCheq(CommonMixin):
+class TgPagCheq(BindingMixin):
     """
-    Campos que describen el pago o entrega inicial de la operación con
-    cheque.
+    Campos que describen el pago o entrega inicial de la operación con cheque.
     """
 
     class Meta:
@@ -580,13 +584,14 @@ class TgPagCredICondCred(Enum):
 
 
 @dataclass(kw_only=True)
-class TgRasMerc(CommonMixin):
+class TgRasMerc(BindingMixin):
     """
     Grupo de rastreo de la mercaderia.
 
-    :ivar dNumLote:
-    :ivar dVencMerc:
-    :ivar dNSerie: Numero de serie
+    Attributes:
+        dNumLote:
+        dVencMerc:
+        dNSerie: Numero de serie
     """
 
     class Meta:
@@ -623,38 +628,37 @@ class TgRasMerc(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgTotSub(CommonMixin):
+class TgTotSub(BindingMixin):
     """
     F.
 
-    Campos que describen los subtotales y totales de la transacción
-    documentada.
+    Campos que describen los subtotales y totales de la transacción documentada.
 
-    :ivar dSubExe:
-    :ivar dSubExo:
-    :ivar dSub5:
-    :ivar dSub10:
-    :ivar dSubISC:
-    :ivar dTotOpe:
-    :ivar dTotDesc:
-    :ivar dPorcDescTotal: Porcentaje de descuento sobre total de la
-        operacion
-    :ivar dDescTotal:
-    :ivar dAnticipo:
-    :ivar dRedon:
-    :ivar dTotGralOpe:
-    :ivar dIVA5:
-    :ivar dIVA10:
-    :ivar dTotIVA:
-    :ivar dBaseGrav5:
-    :ivar dBaseGrav10:
-    :ivar dTBasGraIVA:
-    :ivar dLTotISC:
-    :ivar dTBasGravISC:
-    :ivar dTotalGs:
-    :ivar dTotCom:
-    :ivar dComi:
-    :ivar dIVAComi:
+    Attributes:
+        dSubExe:
+        dSubExo:
+        dSub5:
+        dSub10:
+        dSubISC:
+        dTotOpe:
+        dTotDesc:
+        dPorcDescTotal: Porcentaje de descuento sobre total de la operacion
+        dDescTotal:
+        dAnticipo:
+        dRedon:
+        dTotGralOpe:
+        dIVA5:
+        dIVA10:
+        dTotIVA:
+        dBaseGrav5:
+        dBaseGrav10:
+        dTBasGraIVA:
+        dLTotISC:
+        dTBasGravISC:
+        dTotalGs:
+        dTotCom:
+        dComi:
+        dIVAComi:
     """
 
     class Meta:
@@ -920,16 +924,17 @@ class TgTotSub(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgValorItem(CommonMixin):
+class TgValorItem(BindingMixin):
     """
     Campos que describen los precios, descuentos y valor total por item.
 
-    :ivar dPUniProSer:
-    :ivar dDescItem:
-    :ivar dPorcDesIt: Porcentaje de descuento por item
-    :ivar dTotOpeItem:
-    :ivar dTiCamIt: Tipo de cambio por ítem
-    :ivar dTotOpeGs:
+    Attributes:
+        dPUniProSer:
+        dDescItem:
+        dPorcDesIt: Porcentaje de descuento por item
+        dTotOpeItem:
+        dTiCamIt: Tipo de cambio por ítem
+        dTotOpeGs:
     """
 
     class Meta:
@@ -1001,7 +1006,7 @@ class TgValorItem(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCopeDe(CommonMixin):
+class TgCopeDe(BindingMixin):
     """
     Campos de la operacion del Documento Electronico.
     """
@@ -1053,33 +1058,34 @@ class TgCopeDe(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamAe(CommonMixin):
+class TgCamAe(BindingMixin):
     """
     Campos que componen la Autofatura electrónica.
 
-    :ivar iTipCons:
-    :ivar dDesTipCons:
-    :ivar dNumCons: Numero de constancia
-    :ivar dNumControl: Numero de control
-    :ivar iTipIDVen:
-    :ivar dDTipIDVen:
-    :ivar dNumIDVen:
-    :ivar dNomVen:
-    :ivar dDirVen:
-    :ivar dNumCasVen:
-    :ivar cDepVen:
-    :ivar dDesDepVen:
-    :ivar cDisVen:
-    :ivar dDesDisVen:
-    :ivar cCiuVen:
-    :ivar dDesCiuVen:
-    :ivar dDirProv:
-    :ivar cDepProv:
-    :ivar dDesDepProv:
-    :ivar cDisProv:
-    :ivar dDesDisProv:
-    :ivar cCiuProv:
-    :ivar dDesCiuProv:
+    Attributes:
+        iTipCons:
+        dDesTipCons:
+        dNumCons: Numero de constancia
+        dNumControl: Numero de control
+        iTipIDVen:
+        dDTipIDVen:
+        dNumIDVen:
+        dNomVen:
+        dDirVen:
+        dNumCasVen:
+        cDepVen:
+        dDesDepVen:
+        cDisVen:
+        dDesDisVen:
+        cCiuVen:
+        dDesCiuVen:
+        dDirProv:
+        cDepProv:
+        dDesDepProv:
+        cDisProv:
+        dDesDisProv:
+        cCiuProv:
+        dDesCiuProv:
     """
 
     class Meta:
@@ -1270,22 +1276,23 @@ class TgCamAe(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamDeasoc(CommonMixin):
+class TgCamDeasoc(BindingMixin):
     """
     Campos que identifican al documento asociado.
 
-    :ivar iTipDocAso:
-    :ivar dDesTipDocAso:
-    :ivar dCdCDERef:
-    :ivar dNTimDI:
-    :ivar dEstDocAso:
-    :ivar dPExpDocAso: Punto de expedicion
-    :ivar dNumDocAso: Numero del documento
-    :ivar iTipoDocAso:
-    :ivar dDTipoDocAso:
-    :ivar dFecEmiDI:
-    :ivar dNumComRet: Numero de comprobante de retencion
-    :ivar dNumResCF: Numero de resolucion de Credito Fiscal
+    Attributes:
+        iTipDocAso:
+        dDesTipDocAso:
+        dCdCDERef:
+        dNTimDI:
+        dEstDocAso:
+        dPExpDocAso: Punto de expedicion
+        dNumDocAso: Numero del documento
+        iTipoDocAso:
+        dDTipoDocAso:
+        dFecEmiDI:
+        dNumComRet: Numero de comprobante de retencion
+        dNumResCF: Numero de resolucion de Credito Fiscal
     """
 
     class Meta:
@@ -1392,21 +1399,22 @@ class TgCamDeasoc(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamEnt(CommonMixin):
+class TgCamEnt(BindingMixin):
     """
     Campos que identifican el local de entrega de las mercaderías.
 
-    :ivar dDirLocEnt:
-    :ivar dNumCasEnt: Numero de casa
-    :ivar dComp1Ent:
-    :ivar dComp2Ent:
-    :ivar cDepEnt:
-    :ivar dDesDepEnt:
-    :ivar cDisEnt:
-    :ivar dDesDisEnt:
-    :ivar cCiuEnt:
-    :ivar dDesCiuEnt:
-    :ivar dTelEnt:
+    Attributes:
+        dDirLocEnt:
+        dNumCasEnt: Numero de casa
+        dComp1Ent:
+        dComp2Ent:
+        cDepEnt:
+        dDesDepEnt:
+        cDisEnt:
+        dDesDisEnt:
+        cCiuEnt:
+        dDesCiuEnt:
+        dTelEnt:
     """
 
     class Meta:
@@ -1510,7 +1518,7 @@ class TgCamEnt(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamFe(CommonMixin):
+class TgCamFe(BindingMixin):
     """
     Campos que componen la factura electronica.
     """
@@ -1541,13 +1549,14 @@ class TgCamFe(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamFee(CommonMixin):
+class TgCamFee(BindingMixin):
     """
     Campos que componen la factura electronica de exportacion.
 
-    :ivar cFleExp:
-    :ivar dDesFleExp:
-    :ivar dPuEmb: Puerto de embarque
+    Attributes:
+        cFleExp:
+        dDesFleExp:
+        dPuEmb: Puerto de embarque
     """
 
     class Meta:
@@ -1582,7 +1591,7 @@ class TgCamFee(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamFei(CommonMixin):
+class TgCamFei(BindingMixin):
     """
     Campos que componen la factura electronica de importacion FEI.
     """
@@ -1762,7 +1771,7 @@ class TgCamFei(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamIsc(CommonMixin):
+class TgCamIsc(BindingMixin):
     """
     Campos que describen el ISC de la operacion por ítem.
     """
@@ -1811,7 +1820,7 @@ class TgCamIsc(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamIva(CommonMixin):
+class TgCamIva(BindingMixin):
     """
     Campos que describen el IVA de la operación por ítem.
     """
@@ -1871,7 +1880,7 @@ class TgCamIva(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamNcde(CommonMixin):
+class TgCamNcde(BindingMixin):
     """
     Campos que componen la Nota de credito/Debito Electronica.
     """
@@ -1894,14 +1903,15 @@ class TgCamNcde(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamNre(CommonMixin):
+class TgCamNre(BindingMixin):
     """
     Campos que componen la nora de remision electronica.
 
-    :ivar iMotEmiNR:
-    :ivar dDesMotEmiNR:
-    :ivar iRespEmiNR:
-    :ivar dKmR: Kilometros estimados de recorrido
+    Attributes:
+        iMotEmiNR:
+        dDesMotEmiNR:
+        iRespEmiNR:
+        dKmR: Kilometros estimados de recorrido
     """
 
     class Meta:
@@ -1943,21 +1953,22 @@ class TgCamNre(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamSal(CommonMixin):
+class TgCamSal(BindingMixin):
     """
     Campos que identifican el local de salida de las mercaderías.
 
-    :ivar dDirLocSal:
-    :ivar dNumCasSal: Numero de casa
-    :ivar dComp1Sal:
-    :ivar dComp2Sal:
-    :ivar cDepSal:
-    :ivar dDesDepSal:
-    :ivar cDisSal:
-    :ivar dDesDisSal:
-    :ivar cCiuSal:
-    :ivar dDesCiuSal:
-    :ivar dTelSal:
+    Attributes:
+        dDirLocSal:
+        dNumCasSal: Numero de casa
+        dComp1Sal:
+        dComp2Sal:
+        cDepSal:
+        dDesDepSal:
+        cDisSal:
+        dDesDisSal:
+        cCiuSal:
+        dDesCiuSal:
+        dTelSal:
     """
 
     class Meta:
@@ -2061,21 +2072,22 @@ class TgCamSal(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamTrans(CommonMixin):
+class TgCamTrans(BindingMixin):
     """
     Campos que identifican al transportista (persona física o jurídica).
 
-    :ivar iNatTrans:
-    :ivar dNomTrans: Nombre o razon social del transportista
-    :ivar dRucTrans:
-    :ivar dDVTrans:
-    :ivar iTipIDTrans:
-    :ivar dDTipIDTrans:
-    :ivar dNumIDTrans:
-    :ivar cNacTrans:
-    :ivar dDesNacTrans:
-    :ivar dNumIDChof:
-    :ivar dNomChof:
+    Attributes:
+        iNatTrans:
+        dNomTrans: Nombre o razon social del transportista
+        dRucTrans:
+        dDVTrans:
+        iTipIDTrans:
+        dDTipIDTrans:
+        dNumIDTrans:
+        cNacTrans:
+        dDesNacTrans:
+        dNumIDChof:
+        dNomChof:
     """
 
     class Meta:
@@ -2178,7 +2190,7 @@ class TgCamTrans(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgDtim(CommonMixin):
+class TgDtim(BindingMixin):
     """
     Campos de datos del timbrado.
     """
@@ -2251,27 +2263,28 @@ class TgDtim(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgDatRec(CommonMixin):
+class TgDatRec(BindingMixin):
     """
     Campos que identifican al receptor del Documento Electrónico DE.
 
-    :ivar iNatRec:
-    :ivar iTiOpe:
-    :ivar cPaisRec:
-    :ivar dDesPaisRe:
-    :ivar iTiContRec:
-    :ivar dRucRec:
-    :ivar dDVRec:
-    :ivar iTipIDRec:
-    :ivar dDTipIDRec:
-    :ivar dNumIDRec:
-    :ivar dNomRec:
-    :ivar dNomFanRec:
-    :ivar dDirRec:
-    :ivar dTelRec:
-    :ivar dCelRec:
-    :ivar dEmailRec:
-    :ivar dCodCliente: Codigo del Cliente
+    Attributes:
+        iNatRec:
+        iTiOpe:
+        cPaisRec:
+        dDesPaisRe:
+        iTiContRec:
+        dRucRec:
+        dDVRec:
+        iTipIDRec:
+        dDTipIDRec:
+        dNumIDRec:
+        dNomRec:
+        dNomFanRec:
+        dDirRec:
+        dTelRec:
+        dCelRec:
+        dEmailRec:
+        dCodCliente: Codigo del Cliente
     """
 
     class Meta:
@@ -2430,30 +2443,31 @@ class TgDatRec(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgEmis(CommonMixin):
+class TgEmis(BindingMixin):
     """
     Campos que identifican al emisor del Documento Electrónico DE.
 
-    :ivar dRucEm:
-    :ivar dDVEmi:
-    :ivar iTipCont:
-    :ivar cTipReg:
-    :ivar dNomEmi: Nombre o razon social del emisor del DE
-    :ivar dNomFanEmi: Nombre de fantasía
-    :ivar dDirEmi:
-    :ivar dNumCas: Numero de casa
-    :ivar dCompDir1:
-    :ivar dCompDir2:
-    :ivar cDepEmi:
-    :ivar dDesDepEmi:
-    :ivar cDisEmi:
-    :ivar dDesDisEmi:
-    :ivar cCiuEmi:
-    :ivar dDesCiuEmi:
-    :ivar dTelEmi:
-    :ivar dEmailE:
-    :ivar dDenSuc: Denominación comercial de la sucursal
-    :ivar gActEco:
+    Attributes:
+        dRucEm:
+        dDVEmi:
+        iTipCont:
+        cTipReg:
+        dNomEmi: Nombre o razon social del emisor del DE
+        dNomFanEmi: Nombre de fantasía
+        dDirEmi:
+        dNumCas: Numero de casa
+        dCompDir1:
+        dCompDir2:
+        cDepEmi:
+        dDesDepEmi:
+        cDisEmi:
+        dDesDisEmi:
+        cCiuEmi:
+        dDesCiuEmi:
+        dTelEmi:
+        dEmailE:
+        dDenSuc: Denominación comercial de la sucursal
+        gActEco:
     """
 
     class Meta:
@@ -2640,18 +2654,19 @@ class TgEmis(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgOpeCom(CommonMixin):
+class TgOpeCom(BindingMixin):
     """
     Campos inherentes a la operacion comercial.
 
-    :ivar iTipTra:
-    :ivar dDesTipTra:
-    :ivar iTImp:
-    :ivar dDesTImp:
-    :ivar cMoneOpe:
-    :ivar dDesMoneOpe: Descripcion de la moneda de la operacion
-    :ivar dCondTiCam:
-    :ivar dTiCam: Tipo de cambio
+    Attributes:
+        iTipTra:
+        dDesTipTra:
+        iTImp:
+        dDesTImp:
+        cMoneOpe:
+        dDesMoneOpe: Descripcion de la moneda de la operacion
+        dCondTiCam:
+        dTiCam: Tipo de cambio
     """
 
     class Meta:
@@ -2720,16 +2735,17 @@ class TgOpeCom(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgPagCred(CommonMixin):
+class TgPagCred(BindingMixin):
     """
     Campos que describen la operación a crédito.
 
-    :ivar iCondCred: Condicion de la operacion de credito
-    :ivar dDCondCred:
-    :ivar dPlazoCre: Plazo del crédito
-    :ivar dCuotas: Cantidad de cuotas
-    :ivar dMonEnt:
-    :ivar gCuotas:
+    Attributes:
+        iCondCred: Condicion de la operacion de credito
+        dDCondCred:
+        dPlazoCre: Plazo del crédito
+        dCuotas: Cantidad de cuotas
+        dMonEnt:
+        gCuotas:
     """
 
     class Meta:
@@ -2788,20 +2804,21 @@ class TgPagCred(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgPagTarCd(CommonMixin):
+class TgPagTarCd(BindingMixin):
     """
-    Campos que describen el pago o entrega inicial de la operación con
-    tarjeta de crédito/débito.
+    Campos que describen el pago o entrega inicial de la operación con tarjeta de
+    crédito/débito.
 
-    :ivar iDenTarj:
-    :ivar dDesDenTarj:
-    :ivar dRSProTar: Razón social de la procesadora de tarjeta
-    :ivar dRUCProTar:
-    :ivar dDVProTar:
-    :ivar iForProPa:
-    :ivar dCodAuOpe:
-    :ivar dNomTit: Nombre del titular de la tarjeta
-    :ivar dNumTarj: Numero de la tarjeta
+    Attributes:
+        iDenTarj:
+        dDesDenTarj:
+        dRSProTar: Razón social de la procesadora de tarjeta
+        dRUCProTar:
+        dDVProTar:
+        iForProPa:
+        dCodAuOpe:
+        dNomTit: Nombre del titular de la tarjeta
+        dNumTarj: Numero de la tarjeta
     """
 
     class Meta:
@@ -2886,25 +2903,26 @@ class TgPagTarCd(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgVehNuevo(CommonMixin):
+class TgVehNuevo(BindingMixin):
     """
     Detalle de vehiculos nuevos.
 
-    :ivar iTipOpVN:
-    :ivar dDesTipOpVN:
-    :ivar dChasis:
-    :ivar dColor:
-    :ivar dPotencia: Potencia del motor (CV)
-    :ivar dCapMot: Capacidad del motor (cc)
-    :ivar dPNet: Peso Neto (Toneladas)
-    :ivar dPBruto: Peso bruto (Toneladas)
-    :ivar iTipCom:
-    :ivar dDesTipCom:
-    :ivar dNroMotor: Numero de motor
-    :ivar dCapTracc: Capacidad maxima de traccion
-    :ivar dAnoFab: Anho de fabricacion
-    :ivar cTipVeh:
-    :ivar dCapac: Capacidad máxima de pasajeros
+    Attributes:
+        iTipOpVN:
+        dDesTipOpVN:
+        dChasis:
+        dColor:
+        dPotencia: Potencia del motor (CV)
+        dCapMot: Capacidad del motor (cc)
+        dPNet: Peso Neto (Toneladas)
+        dPBruto: Peso bruto (Toneladas)
+        iTipCom:
+        dDesTipCom:
+        dNroMotor: Numero de motor
+        dCapTracc: Capacidad maxima de traccion
+        dAnoFab: Anho de fabricacion
+        cTipVeh:
+        dCapac: Capacidad máxima de pasajeros
     """
 
     class Meta:
@@ -3042,15 +3060,16 @@ class TgVehNuevo(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgVehTras(CommonMixin):
+class TgVehTras(BindingMixin):
     """
     Campos que identifican el vehículo de traslado de mercaderías.
 
-    :ivar dTiVehTras:
-    :ivar dMarVeh: Marca
-    :ivar dNroIDVeh: Número de identificación del vehículo
-    :ivar dAdicVeh: Datos adicionales del vehículo
-    :ivar dNroVuelo: Tipo de vehiculo
+    Attributes:
+        dTiVehTras:
+        dMarVeh: Marca
+        dNroIDVeh: Número de identificación del vehículo
+        dAdicVeh: Datos adicionales del vehículo
+        dNroVuelo: Tipo de vehiculo
     """
 
     class Meta:
@@ -3102,7 +3121,7 @@ class TgVehTras(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamEsp(CommonMixin):
+class TgCamEsp(BindingMixin):
     """
     Campos complementarios comerciales de uso especifico.
     """
@@ -3148,7 +3167,7 @@ class TgCamEsp(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamItem(CommonMixin):
+class TgCamItem(BindingMixin):
     """
     Campos que describen los items de la operacion.
     """
@@ -3300,7 +3319,7 @@ class TgCamItem(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgDaGoc(CommonMixin):
+class TgDaGoc(BindingMixin):
     """
     Campos Generales del Documento Electrónico DE.
     """
@@ -3337,18 +3356,19 @@ class TgDaGoc(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgPagCont(CommonMixin):
+class TgPagCont(BindingMixin):
     """
     Campos que describen la forma de pago al contado.
 
-    :ivar iTiPago:
-    :ivar dDesTiPag:
-    :ivar dMonTiPag:
-    :ivar cMoneTiPag:
-    :ivar dDMoneTiPag: Descripcion de la moneda por tipo de pago
-    :ivar dTiCamTiPag: Tipo de cambio
-    :ivar gPagTarCD:
-    :ivar gPagCheq:
+    Attributes:
+        iTiPago:
+        dDesTiPag:
+        dMonTiPag:
+        cMoneTiPag:
+        dDMoneTiPag: Descripcion de la moneda por tipo de pago
+        dTiCamTiPag: Tipo de cambio
+        gPagTarCD:
+        gPagCheq:
     """
 
     class Meta:
@@ -3419,27 +3439,28 @@ class TgPagCont(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgTransp(CommonMixin):
+class TgTransp(BindingMixin):
     """
     Campos que describen el transporte de mercaderias.
 
-    :ivar iTipTrans:
-    :ivar dDesTipTrans:
-    :ivar iModTrans:
-    :ivar dDesModTrans:
-    :ivar iRespFlete:
-    :ivar cCondNeg:
-    :ivar dNuManif: Número de manifiesto o conocimiento de carga/
-        declaración de tránsito aduanero/ Carta de porte internacional
-    :ivar dNuDespImp: Numero de despacho de importación
-    :ivar dIniTras:
-    :ivar dFinTras:
-    :ivar cPaisDest:
-    :ivar dDesPaisDest:
-    :ivar gCamSal:
-    :ivar gCamEnt:
-    :ivar gVehTras:
-    :ivar gCamTrans:
+    Attributes:
+        iTipTrans:
+        dDesTipTrans:
+        iModTrans:
+        dDesModTrans:
+        iRespFlete:
+        cCondNeg:
+        dNuManif: Número de manifiesto o conocimiento de carga/ declaración de tránsito
+            aduanero/ Carta de porte internacional
+        dNuDespImp: Numero de despacho de importación
+        dIniTras:
+        dFinTras:
+        cPaisDest:
+        dDesPaisDest:
+        gCamSal:
+        gCamEnt:
+        gVehTras:
+        gCamTrans:
     """
 
     class Meta:
@@ -3570,7 +3591,7 @@ class TgTransp(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamCond(CommonMixin):
+class TgCamCond(BindingMixin):
     """
     Campos que describen la condición de la operación.
     """
@@ -3608,7 +3629,7 @@ class TgCamCond(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgDtipDe(CommonMixin):
+class TgDtipDe(BindingMixin):
     """
     Campos específicos por tipo de documento electronico.
     """
@@ -3691,7 +3712,7 @@ class TgDtipDe(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TDe(CommonMixin):
+class TDe(BindingMixin):
     """
     Campos firmados del DE.
     """
@@ -3770,12 +3791,13 @@ class TDe(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class RDe(CommonMixin):
+class RDe(BindingMixin):
     """
-    :ivar dVerFor:
-    :ivar DE:
-    :ivar Signature: Firma Digital del DE
-    :ivar gCamFuFD:
+    Attributes:
+        dVerFor:
+        DE:
+        Signature: Firma Digital del DE
+        gCamFuFD:
     """
 
     class Meta:

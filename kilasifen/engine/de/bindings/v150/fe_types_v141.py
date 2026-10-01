@@ -21,17 +21,18 @@ class TcCondNeg(Enum):
     """
     Condicion de la negociacion.
 
-    :cvar CFR: Costo y flete
-    :cvar CIF: Costo, seguro y flete
-    :cvar CIP: Transporte y seguros pagados hasta
-    :cvar CPT: Transporte pagado hasta
-    :cvar DAP: Entregada en el lugar convenido
-    :cvar DAT: Entregada en terminal
-    :cvar DDP: Entregada derechos pagados
-    :cvar EXW: En fabrica
-    :cvar FAS: Franco al costado del buque
-    :cvar FCA: Franco transportista
-    :cvar FOB: Franco a bordo
+    Attributes:
+        CFR: Costo y flete
+        CIF: Costo, seguro y flete
+        CIP: Transporte y seguros pagados hasta
+        CPT: Transporte pagado hasta
+        DAP: Entregada en el lugar convenido
+        DAT: Entregada en terminal
+        DDP: Entregada derechos pagados
+        EXW: En fabrica
+        FAS: Franco al costado del buque
+        FCA: Franco transportista
+        FOB: Franco a bordo
     """
 
     CFR = "CFR"
@@ -100,12 +101,8 @@ class TdDmotivTrasValue(Enum):
     TRASLADO_POR_COMPRA = "Traslado por Compra"
     IMPORTACI_N = "Importación"
     TRASLADO_POR_DEVOLUCI_N = "Traslado por devolución"
-    TRASLADO_ENTRE_LOCALES_DE_LA_EMPRESA = (
-        "Traslado entre locales de la empresa"
-    )
-    TRASLADO_DE_BIENES_POR_TRANSFORMACI_N = (
-        "Traslado de bienes por transformación"
-    )
+    TRASLADO_ENTRE_LOCALES_DE_LA_EMPRESA = "Traslado entre locales de la empresa"
+    TRASLADO_DE_BIENES_POR_TRANSFORMACI_N = "Traslado de bienes por transformación"
     TRASLADO_DE_BIENES_PARA_REPARACION = "Traslado de bienes para reparacion"
     TRASLADO_POR_EMISOR_M_VIL = "Traslado por emisor móvil"
     EXHIBICI_N_O_DEMOSTRACI_N = "Exhibición o Demostración"
@@ -133,16 +130,12 @@ class TdDesCatIsc(Enum):
     SECCION_I_CIGARRILLOS_TABACOS_ESENCIAS_Y_OTROS_DERIVADOS_DEL_TABACO = (
         "SECCION I-(Cigarrillos,Tabacos,Esencias y Otros derivados del Tabaco)"
     )
-    SECCION_II_BEBIDAS_CON_Y_SIN_ALCOHOL = (
-        "SECCION II - (Bebidas con y sin alcohol)"
-    )
+    SECCION_II_BEBIDAS_CON_Y_SIN_ALCOHOL = "SECCION II - (Bebidas con y sin alcohol)"
     SECCION_III_ALCOHOLES_Y_DERIVADOS_DEL_ALCOHOL = (
         "SECCION III - (Alcoholes y Derivados del alcohol)"
     )
     SECCION_IV_COMBUSTIBLES = "SECCION IV - (Combustibles)"
-    SECCION_V_ART_CULOS_CONSIDERADOS_DE_LUJO = (
-        "SECCION V - (Artículos considerados de lujo)"
-    )
+    SECCION_V_ART_CULOS_CONSIDERADOS_DE_LUJO = "SECCION V - (Artículos considerados de lujo)"
 
 
 class TdDesDenTarjValue(Enum):
@@ -193,7 +186,8 @@ class TdDesTimp(Enum):
     """
     Descripcion del tipo de impuesto.
 
-    :cvar IVA: Corresponde al codigo 1 del campo dDesTimp
+    Attributes:
+        IVA: Corresponde al codigo 1 del campo dDesTimp
     """
 
     IVA = "IVA"
@@ -260,9 +254,7 @@ class TdDesTiTran(Enum):
 
     VENTA_DE_MERCADER_A = "Venta de mercadería"
     PRESTACI_N_DE_SERVICIOS = "Prestación de servicios"
-    MIXTO_VENTA_DE_MERCADER_A_Y_SERVICIOS = (
-        "Mixto (Venta de mercadería y servicios)"
-    )
+    MIXTO_VENTA_DE_MERCADER_A_Y_SERVICIOS = "Mixto (Venta de mercadería y servicios)"
     VENTA_DE_ACTIVO_FIJO = "Venta de activo fijo"
     VENTA_DE_DIVISAS = "Venta de divisas"
     COMPRA_DE_DIVISAS = "Compra de divisas"
@@ -341,8 +333,7 @@ class TdTipCons(Enum):
 
 class TiAfecIva(Enum):
     """
-    Forma de afectacion del IVA 1(Gravado), 2(Exonerado), 3(Exento),
-    4(Gravado parcial).
+    Forma de afectacion del IVA 1(Gravado), 2(Exonerado), 3(Exento), 4(Gravado parcial).
     """
 
     VALUE_1 = 1
@@ -355,8 +346,9 @@ class TiCondOpe(Enum):
     """
     Condicion de la operacion.
 
-    :cvar VALUE_1: Contado
-    :cvar VALUE_2: Crédito
+    Attributes:
+        VALUE_1: Contado
+        VALUE_2: Crédito
     """
 
     VALUE_1 = 1
@@ -453,9 +445,10 @@ class TiRespEmiNr(Enum):
     """
     Responsable por la emision de la Nota de remision electronica.
 
-    :cvar VALUE_1: Emisor de la factura
-    :cvar VALUE_2: Receptor de la factura
-    :cvar VALUE_3: Empresa Transportista
+    Attributes:
+        VALUE_1: Emisor de la factura
+        VALUE_2: Receptor de la factura
+        VALUE_3: Empresa Transportista
     """
 
     VALUE_1 = 1

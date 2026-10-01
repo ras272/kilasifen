@@ -2,18 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.de.bindings.v150.si_consulta_dteasync import RConsultaDte
 
 __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class RConsDteResponse(CommonMixin):
+class RConsDteResponse(BindingMixin):
     """
-    :ivar dFecProc:
-    :ivar dMsgRes: Mensaje del resultado de la consulta
-    :ivar rConsDte: Archivo zip generado en la consulta de mis DTEs
+    Attributes:
+        dFecProc:
+        dMsgRes: Mensaje del resultado de la consulta
+        rConsDte: Archivo zip generado en la consulta de mis DTEs
     """
 
     class Meta:
@@ -43,7 +44,7 @@ class RConsDteResponse(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class RConsDteRequest(CommonMixin):
+class RConsDteRequest(BindingMixin):
     class Meta:
         name = "rConsDteRequest"
         namespace = "http://ekuatia.set.gov.py/sifen/xsd"

@@ -1,4 +1,4 @@
-"""Testes do módulo de assinatura digital XML."""
+"""Firma XMLDSig de documentos del SIFEN con el certificado de prueba."""
 import os
 
 import pytest
@@ -40,12 +40,12 @@ def sample_rde():
 
 
 class TestSignXml:
-    """Testes de assinatura XML com signxml."""
+    """Firma XML con signxml a traves de kilasifen.engine.firma."""
 
     def test_reuses_pkcs12_parsing_for_repeated_signatures(
         self, cert_data, sample_rde, monkeypatch
     ):
-        """Reaproveita o estado PKCS12 para assinaturas repetidas."""
+        """Reutiliza el PKCS12 ya decodificado en firmas repetidas."""
         from cryptography.hazmat.primitives.serialization import pkcs12
 
         from kilasifen.engine.firma import sign_xml
@@ -78,7 +78,7 @@ class TestSignXml:
     def test_sign_xml_with_test_cert(
         self, cert_data, sample_rde
     ):
-        """Assina XML de amostra e verifica Signature."""
+        """Firma el XML de ejemplo y verifica el nodo Signature."""
         from kilasifen.engine.firma import sign_xml
 
         xml = sample_rde.to_xml()
@@ -105,7 +105,7 @@ class TestSignXml:
         assert len(root.findall(".//ds:Signature", ns)) == 1
 
     def test_sign_xml_sha256(self, cert_data, sample_rde):
-        """Verifica que usa SHA256 (não SHA1)."""
+        """Verifica que usa SHA256 (no SHA1)."""
         from kilasifen.engine.firma import sign_xml
 
         xml = sample_rde.to_xml()
@@ -144,7 +144,7 @@ class TestSignXml:
     def test_sign_xml_reference_uri(
         self, cert_data, sample_rde
     ):
-        """Verifica que Reference URI aponta para o CDC."""
+        """Verifica que la Reference URI apunta al CDC."""
         from lxml import etree
 
         from kilasifen.engine.firma import sign_xml
@@ -162,7 +162,7 @@ class TestSignXml:
         assert any(f"#{doc_id}" in uri for uri in uris)
 
     def test_sign_xml_roundtrip(self, cert_data, sample_rde):
-        """Assina, parseia de volta, verifica estrutura."""
+        """Firma, vuelve a parsear y verifica la estructura."""
         from lxml import etree
 
         from kilasifen.engine.firma import sign_xml
@@ -172,21 +172,21 @@ class TestSignXml:
             xml, cert_data, "test1234", sample_rde.DE.Id
         )
 
-        # Deve ser XML válido
+        # Debe ser XML valido
         root = etree.fromstring(signed.encode())
         assert root is not None
 
-        # Deve conter elemento Signature
+        # Debe contener el elemento Signature
         ns = {"ds": "http://www.w3.org/2000/09/xmldsig#"}
         sig = root.find(".//ds:Signature", ns)
         assert sig is not None
 
-        # Deve conter SignedInfo, SignatureValue, KeyInfo
+        # Debe contener SignedInfo, SignatureValue y KeyInfo
         assert sig.find("ds:SignedInfo", ns) is not None
         assert sig.find("ds:SignatureValue", ns) is not None
 
     def test_sign_xml_invalid_cert(self, sample_rde):
-        """Testa erro com certificado inválido."""
+        """Falla con un certificado invalido."""
         from kilasifen.engine.firma import sign_xml
 
         xml = sample_rde.to_xml()
@@ -198,7 +198,7 @@ class TestSignXml:
     def test_sign_xml_bytes_input(
         self, cert_data, sample_rde
     ):
-        """Aceita XML como bytes."""
+        """Acepta el XML como bytes."""
         from kilasifen.engine.firma import sign_xml
 
         xml = sample_rde.to_xml().encode()
@@ -210,7 +210,7 @@ class TestSignXml:
     def test_sign_xml_bytes_password(
         self, cert_data, sample_rde
     ):
-        """Aceita senha como bytes."""
+        """Acepta la contrasena como bytes."""
         from kilasifen.engine.firma import sign_xml
 
         xml = sample_rde.to_xml()
@@ -220,7 +220,7 @@ class TestSignXml:
         assert "SignatureValue" in signed
 
     def test_sign_via_mixin(self, cert_data, sample_rde):
-        """Testa assinatura via CommonMixin.sign_xml()."""
+        """Firma a traves de BindingMixin.sign_xml()."""
         xml = sample_rde.to_xml()
         signed = sample_rde.sign_xml(
             xml, cert_data, "test1234", sample_rde.DE.Id

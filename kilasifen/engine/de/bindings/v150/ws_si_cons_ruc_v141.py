@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 
 __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class REnviConsRuc(CommonMixin):
+class REnviConsRuc(BindingMixin):
     class Meta:
         name = "rEnviConsRUC"
         namespace = "http://ekuatia.set.gov.py/sifen/xsd"
@@ -30,7 +30,7 @@ class REnviConsRuc(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TContenedorRuc(CommonMixin):
+class TContenedorRuc(BindingMixin):
     """
     Respuesta del protocolo de procesamiento del DE.
     """
@@ -80,11 +80,12 @@ class TContenedorRuc(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class RResEnviConsRuc(CommonMixin):
+class RResEnviConsRuc(BindingMixin):
     """
-    :ivar dCodRes:
-    :ivar dMsgRes: Mensaje del resultado de procesamiento
-    :ivar xContRUC: Contenedor del RUC
+    Attributes:
+        dCodRes:
+        dMsgRes: Mensaje del resultado de procesamiento
+        xContRUC: Contenedor del RUC
     """
 
     class Meta:

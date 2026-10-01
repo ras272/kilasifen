@@ -7,255 +7,256 @@ __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 class PaisType(Enum):
     """
-    :cvar MKD: Macedonia del Norte
-    :cvar TWN: Taiwán (Provincia de China)
-    :cvar DZA: Argelia
-    :cvar EGY: Egipto
-    :cvar LBY: Libia
-    :cvar MAR: Marruecos
-    :cvar SDN: Sudán
-    :cvar TUN: Túnez
-    :cvar ESH: Sáhara Occidental
-    :cvar IOT: Territorio Británico del Océano Índico
-    :cvar BDI: Burundi
-    :cvar COM: Comoras
-    :cvar DJI: Djibouti
-    :cvar ERI: Eritrea
-    :cvar ETH: Etiopía
-    :cvar ATF: Territorio de las Tierras Australes Francesas
-    :cvar KEN: Kenya
-    :cvar MDG: Madagascar
-    :cvar MWI: Malawi
-    :cvar MUS: Mauricio
-    :cvar MYT: Mayotte
-    :cvar MOZ: Mozambique
-    :cvar REU: Reunión
-    :cvar RWA: Rwanda
-    :cvar SYC: Seychelles
-    :cvar SOM: Somalia
-    :cvar SSD: Sudán del Sur
-    :cvar UGA: Uganda
-    :cvar TZA: República Unida de Tanzanía
-    :cvar ZMB: Zambia
-    :cvar ZWE: Zimbabwe
-    :cvar AGO: Angola
-    :cvar CMR: Camerún
-    :cvar CAF: República Centroafricana
-    :cvar TCD: Chad
-    :cvar COG: Congo
-    :cvar COD: República Democrática del Congo
-    :cvar GNQ: Guinea Ecuatorial
-    :cvar GAB: Gabón
-    :cvar STP: Santo Tomé y Príncipe
-    :cvar BWA: Botswana
-    :cvar LSO: Lesotho
-    :cvar NAM: Namibia
-    :cvar ZAF: Sudáfrica
-    :cvar SWZ: Swazilandia
-    :cvar BEN: Benin
-    :cvar BFA: Burkina Faso
-    :cvar CPV: Cabo Verde
-    :cvar CIV: Côte d'Ivoire
-    :cvar GMB: Gambia
-    :cvar GHA: Ghana
-    :cvar GIN: Guinea
-    :cvar GNB: Guinea-Bissau
-    :cvar LBR: Liberia
-    :cvar MLI: Malí
-    :cvar MRT: Mauritania
-    :cvar NER: Níger
-    :cvar NGA: Nigeria
-    :cvar SHN: Santa Elena
-    :cvar SEN: Senegal
-    :cvar SLE: Sierra Leona
-    :cvar TGO: Togo
-    :cvar AIA: Anguila
-    :cvar ATG: Antigua y Barbuda
-    :cvar ABW: Aruba
-    :cvar BHS: Bahamas
-    :cvar BRB: Barbados
-    :cvar BES: Bonaire, San Eustaquio y Saba
-    :cvar VGB: Islas Vírgenes Británicas
-    :cvar CYM: Islas Caimán
-    :cvar CUB: CUBA
-    :cvar CUW: Curaçao
-    :cvar DMA: Dominica
-    :cvar DOM: República Dominicana
-    :cvar GRD: Granada
-    :cvar GLP: Guadalupe
-    :cvar HTI: Haití
-    :cvar JAM: Jamaica
-    :cvar MTQ: Martinica
-    :cvar MSR: Montserrat
-    :cvar PRI: Puerto Rico
-    :cvar BLM: San Bartolomé
-    :cvar KNA: Saint Kitts y Nevis
-    :cvar LCA: Santa Lucía
-    :cvar MAF: San Martín (parte francesa)
-    :cvar VCT: San Vicente y las Granadinas
-    :cvar SXM: San Martín (parte holandés)
-    :cvar TTO: Trinidad y Tabago
-    :cvar TCA: Islas Turcas y Caicos
-    :cvar VIR: Islas Vírgenes de los Estados Unidos
-    :cvar BLZ: Belice
-    :cvar CRI: Costa Rica
-    :cvar SLV: El Salvador
-    :cvar GTM: Guatemala
-    :cvar HND: Honduras
-    :cvar MEX: México
-    :cvar NIC: Nicaragua
-    :cvar PAN: Panamá
-    :cvar ARG: Argentina
-    :cvar BOL: Bolivia (Estado Plurinacional de)
-    :cvar BRA: Brasil
-    :cvar CHL: Chile
-    :cvar COL: Colombia
-    :cvar ECU: Ecuador
-    :cvar FLK: Islas Malvinas (Falkland)
-    :cvar GUF: Guayana Francesa
-    :cvar GUY: Guyana
-    :cvar PRY: Paraguay
-    :cvar PER: Perú
-    :cvar SGS: Georgia del Sur y las Islas Sandwich del Sur
-    :cvar SUR: Suriname
-    :cvar URY: Uruguay
-    :cvar VEN: Venezuela (República Bolivariana de)
-    :cvar BMU: Bermuda
-    :cvar CAN: Canadá
-    :cvar GRL: Groenlandia
-    :cvar SPM: Saint Pierre y Miquelon
-    :cvar USA: Estados Unidos de América
-    :cvar ATA: Antártida
-    :cvar KAZ: Kazajstán
-    :cvar KGZ: Kirguistán
-    :cvar TJK: Tayikistán
-    :cvar TKM: Turkmenistán
-    :cvar UZB: Uzbekistán
-    :cvar CHN: China
-    :cvar HKG: Hong Kong
-    :cvar MAC: Macao
-    :cvar PRK: República Popular Democrática de Corea
-    :cvar JPN: Japón
-    :cvar MNG: Mongolia
-    :cvar KOR: República de Corea
-    :cvar BRN: Brunei Darussalam
-    :cvar KHM: Camboya
-    :cvar IDN: Indonesia
-    :cvar LAO: República Democrática Popular Lao
-    :cvar MYS: Malasia
-    :cvar MMR: Myanmar
-    :cvar PHL: Filipinas
-    :cvar SGP: Singapur
-    :cvar THA: Tailandia
-    :cvar TLS: Timor-Leste
-    :cvar VNM: Viet Nam
-    :cvar AFG: Afganistán
-    :cvar BGD: Bangladesh
-    :cvar BTN: Bhután
-    :cvar IND: India
-    :cvar IRN: Irán (República Islámica del)
-    :cvar MDV: Maldivas
-    :cvar NPL: Nepal
-    :cvar PAK: Pakistán
-    :cvar LKA: Sri Lanka
-    :cvar ARM: Armenia
-    :cvar AZE: Azerbaiyán
-    :cvar BHR: Bahrein
-    :cvar CYP: Chipre
-    :cvar GEO: Georgia
-    :cvar IRQ: Iraq
-    :cvar ISR: Israel
-    :cvar JOR: Jordania
-    :cvar KWT: Kuwait
-    :cvar LBN: Líbano
-    :cvar OMN: Omán
-    :cvar QAT: Qatar
-    :cvar SAU: Arabia Saudita
-    :cvar PSE: Estado de Palestina
-    :cvar SYR: República Árabe Siria
-    :cvar TUR: Turquía
-    :cvar ARE: Emiratos Árabes Unidos
-    :cvar YEM: Yemen
-    :cvar BLR: Belarús
-    :cvar BGR: Bulgaria
-    :cvar CZE: Chequia
-    :cvar HUN: Hungría
-    :cvar POL: Polonia
-    :cvar MDA: República de Moldova
-    :cvar ROU: Rumania
-    :cvar RUS: Federación de Rusia
-    :cvar SVK: Eslovaquia
-    :cvar UKR: Ucrania
-    :cvar ALA: Islas Åland
-    :cvar GGY: Guernsey
-    :cvar JEY: Jersey
-    :cvar DNK: Dinamarca
-    :cvar EST: Estonia
-    :cvar FRO: Islas Feroe
-    :cvar FIN: Finlandia
-    :cvar ISL: Islandia
-    :cvar IRL: Irlanda
-    :cvar IMN: Isla de Man
-    :cvar LVA: Letonia
-    :cvar LTU: Lituania
-    :cvar NOR: Noruega
-    :cvar SJM: Islas Svalbard y Jan Mayen
-    :cvar SWE: Suecia
-    :cvar GBR: Reino Unido de Gran Bretaña e Irlanda del Norte
-    :cvar ALB: Albania
-    :cvar AND: Andorra
-    :cvar BIH: Bosnia y Herzegovina
-    :cvar HRV: Croacia
-    :cvar GIB: Gibraltar
-    :cvar GRC: Grecia
-    :cvar VAT: Santa Sede
-    :cvar ITA: Italia
-    :cvar MLT: Malta
-    :cvar MNE: Montenegro
-    :cvar PRT: Portugal
-    :cvar SMR: San Marino
-    :cvar SRB: Serbia
-    :cvar SVN: Eslovenia
-    :cvar ESP: España
-    :cvar AUT: Austria
-    :cvar BEL: Bélgica
-    :cvar FRA: Francia
-    :cvar DEU: Alemania
-    :cvar LIE: Liechtenstein
-    :cvar LUX: Luxemburgo
-    :cvar MCO: Mónaco
-    :cvar NLD: Países Bajos
-    :cvar CHE: Suiza
-    :cvar AUS: Australia
-    :cvar CXR: Isla de Navidad
-    :cvar CCK: Islas Cocos (Keeling)
-    :cvar HMD: Islas Heard y McDonald
-    :cvar NZL: Nueva Zelandia
-    :cvar NFK: Islas Norfolk
-    :cvar FJI: Fiji
-    :cvar NCL: Nueva Caledonia
-    :cvar PNG: Papua Nueva Guinea
-    :cvar SLB: Islas Salomón
-    :cvar VUT: Vanuatu
-    :cvar GUM: Guam
-    :cvar KIR: Kiribati
-    :cvar MHL: Islas Marshall
-    :cvar FSM: Micronesia (Estados Federados de)
-    :cvar NRU: Nauru
-    :cvar MNP: Islas Marianas Septentrionales
-    :cvar PLW: Palau
-    :cvar UMI: Islas menores alejadas de Estados Unidos
-    :cvar ASM: Samoa Americana
-    :cvar COK: Islas Cook
-    :cvar PYF: Polinesia Francesa
-    :cvar NIU: Niue
-    :cvar PCN: Pitcairn
-    :cvar WSM: Samoa
-    :cvar TKL: Tokelau
-    :cvar TON: Tonga
-    :cvar TUV: Tuvalu
-    :cvar WLF: Islas Wallis y Futuna
-    :cvar NN: NO EXISTE
+    Attributes:
+        MKD: Macedonia del Norte
+        TWN: Taiwán (Provincia de China)
+        DZA: Argelia
+        EGY: Egipto
+        LBY: Libia
+        MAR: Marruecos
+        SDN: Sudán
+        TUN: Túnez
+        ESH: Sáhara Occidental
+        IOT: Territorio Británico del Océano Índico
+        BDI: Burundi
+        COM: Comoras
+        DJI: Djibouti
+        ERI: Eritrea
+        ETH: Etiopía
+        ATF: Territorio de las Tierras Australes Francesas
+        KEN: Kenya
+        MDG: Madagascar
+        MWI: Malawi
+        MUS: Mauricio
+        MYT: Mayotte
+        MOZ: Mozambique
+        REU: Reunión
+        RWA: Rwanda
+        SYC: Seychelles
+        SOM: Somalia
+        SSD: Sudán del Sur
+        UGA: Uganda
+        TZA: República Unida de Tanzanía
+        ZMB: Zambia
+        ZWE: Zimbabwe
+        AGO: Angola
+        CMR: Camerún
+        CAF: República Centroafricana
+        TCD: Chad
+        COG: Congo
+        COD: República Democrática del Congo
+        GNQ: Guinea Ecuatorial
+        GAB: Gabón
+        STP: Santo Tomé y Príncipe
+        BWA: Botswana
+        LSO: Lesotho
+        NAM: Namibia
+        ZAF: Sudáfrica
+        SWZ: Swazilandia
+        BEN: Benin
+        BFA: Burkina Faso
+        CPV: Cabo Verde
+        CIV: Côte d'Ivoire
+        GMB: Gambia
+        GHA: Ghana
+        GIN: Guinea
+        GNB: Guinea-Bissau
+        LBR: Liberia
+        MLI: Malí
+        MRT: Mauritania
+        NER: Níger
+        NGA: Nigeria
+        SHN: Santa Elena
+        SEN: Senegal
+        SLE: Sierra Leona
+        TGO: Togo
+        AIA: Anguila
+        ATG: Antigua y Barbuda
+        ABW: Aruba
+        BHS: Bahamas
+        BRB: Barbados
+        BES: Bonaire, San Eustaquio y Saba
+        VGB: Islas Vírgenes Británicas
+        CYM: Islas Caimán
+        CUB: CUBA
+        CUW: Curaçao
+        DMA: Dominica
+        DOM: República Dominicana
+        GRD: Granada
+        GLP: Guadalupe
+        HTI: Haití
+        JAM: Jamaica
+        MTQ: Martinica
+        MSR: Montserrat
+        PRI: Puerto Rico
+        BLM: San Bartolomé
+        KNA: Saint Kitts y Nevis
+        LCA: Santa Lucía
+        MAF: San Martín (parte francesa)
+        VCT: San Vicente y las Granadinas
+        SXM: San Martín (parte holandés)
+        TTO: Trinidad y Tabago
+        TCA: Islas Turcas y Caicos
+        VIR: Islas Vírgenes de los Estados Unidos
+        BLZ: Belice
+        CRI: Costa Rica
+        SLV: El Salvador
+        GTM: Guatemala
+        HND: Honduras
+        MEX: México
+        NIC: Nicaragua
+        PAN: Panamá
+        ARG: Argentina
+        BOL: Bolivia (Estado Plurinacional de)
+        BRA: Brasil
+        CHL: Chile
+        COL: Colombia
+        ECU: Ecuador
+        FLK: Islas Malvinas (Falkland)
+        GUF: Guayana Francesa
+        GUY: Guyana
+        PRY: Paraguay
+        PER: Perú
+        SGS: Georgia del Sur y las Islas Sandwich del Sur
+        SUR: Suriname
+        URY: Uruguay
+        VEN: Venezuela (República Bolivariana de)
+        BMU: Bermuda
+        CAN: Canadá
+        GRL: Groenlandia
+        SPM: Saint Pierre y Miquelon
+        USA: Estados Unidos de América
+        ATA: Antártida
+        KAZ: Kazajstán
+        KGZ: Kirguistán
+        TJK: Tayikistán
+        TKM: Turkmenistán
+        UZB: Uzbekistán
+        CHN: China
+        HKG: Hong Kong
+        MAC: Macao
+        PRK: República Popular Democrática de Corea
+        JPN: Japón
+        MNG: Mongolia
+        KOR: República de Corea
+        BRN: Brunei Darussalam
+        KHM: Camboya
+        IDN: Indonesia
+        LAO: República Democrática Popular Lao
+        MYS: Malasia
+        MMR: Myanmar
+        PHL: Filipinas
+        SGP: Singapur
+        THA: Tailandia
+        TLS: Timor-Leste
+        VNM: Viet Nam
+        AFG: Afganistán
+        BGD: Bangladesh
+        BTN: Bhután
+        IND: India
+        IRN: Irán (República Islámica del)
+        MDV: Maldivas
+        NPL: Nepal
+        PAK: Pakistán
+        LKA: Sri Lanka
+        ARM: Armenia
+        AZE: Azerbaiyán
+        BHR: Bahrein
+        CYP: Chipre
+        GEO: Georgia
+        IRQ: Iraq
+        ISR: Israel
+        JOR: Jordania
+        KWT: Kuwait
+        LBN: Líbano
+        OMN: Omán
+        QAT: Qatar
+        SAU: Arabia Saudita
+        PSE: Estado de Palestina
+        SYR: República Árabe Siria
+        TUR: Turquía
+        ARE: Emiratos Árabes Unidos
+        YEM: Yemen
+        BLR: Belarús
+        BGR: Bulgaria
+        CZE: Chequia
+        HUN: Hungría
+        POL: Polonia
+        MDA: República de Moldova
+        ROU: Rumania
+        RUS: Federación de Rusia
+        SVK: Eslovaquia
+        UKR: Ucrania
+        ALA: Islas Åland
+        GGY: Guernsey
+        JEY: Jersey
+        DNK: Dinamarca
+        EST: Estonia
+        FRO: Islas Feroe
+        FIN: Finlandia
+        ISL: Islandia
+        IRL: Irlanda
+        IMN: Isla de Man
+        LVA: Letonia
+        LTU: Lituania
+        NOR: Noruega
+        SJM: Islas Svalbard y Jan Mayen
+        SWE: Suecia
+        GBR: Reino Unido de Gran Bretaña e Irlanda del Norte
+        ALB: Albania
+        AND: Andorra
+        BIH: Bosnia y Herzegovina
+        HRV: Croacia
+        GIB: Gibraltar
+        GRC: Grecia
+        VAT: Santa Sede
+        ITA: Italia
+        MLT: Malta
+        MNE: Montenegro
+        PRT: Portugal
+        SMR: San Marino
+        SRB: Serbia
+        SVN: Eslovenia
+        ESP: España
+        AUT: Austria
+        BEL: Bélgica
+        FRA: Francia
+        DEU: Alemania
+        LIE: Liechtenstein
+        LUX: Luxemburgo
+        MCO: Mónaco
+        NLD: Países Bajos
+        CHE: Suiza
+        AUS: Australia
+        CXR: Isla de Navidad
+        CCK: Islas Cocos (Keeling)
+        HMD: Islas Heard y McDonald
+        NZL: Nueva Zelandia
+        NFK: Islas Norfolk
+        FJI: Fiji
+        NCL: Nueva Caledonia
+        PNG: Papua Nueva Guinea
+        SLB: Islas Salomón
+        VUT: Vanuatu
+        GUM: Guam
+        KIR: Kiribati
+        MHL: Islas Marshall
+        FSM: Micronesia (Estados Federados de)
+        NRU: Nauru
+        MNP: Islas Marianas Septentrionales
+        PLW: Palau
+        UMI: Islas menores alejadas de Estados Unidos
+        ASM: Samoa Americana
+        COK: Islas Cook
+        PYF: Polinesia Francesa
+        NIU: Niue
+        PCN: Pitcairn
+        WSM: Samoa
+        TKL: Tokelau
+        TON: Tonga
+        TUV: Tuvalu
+        WLF: Islas Wallis y Futuna
+        NN: NO EXISTE
     """
 
     MKD = "MKD"

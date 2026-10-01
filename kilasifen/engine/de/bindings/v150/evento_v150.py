@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.de.bindings.v150.evento_types_v150 import (
     TcMotDet,
     TcMotImp,
@@ -32,7 +32,7 @@ __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class RGeEvenAntRem(CommonMixin):
+class RGeEvenAntRem(BindingMixin):
     """
     Grupo de Datos que identifican al Evento anticipo ó remision.
     """
@@ -51,10 +51,9 @@ class RGeEvenAntRem(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeDeVtr(CommonMixin):
+class TrGeDeVtr(BindingMixin):
     """
-    Grupo de Datos que identifican al Evento por actualización de datos del
-    transporte.
+    Grupo de Datos que identifican al Evento por actualización de datos del transporte.
     """
 
     class Meta:
@@ -300,10 +299,10 @@ class TrGeDeVtr(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeDevCcff(CommonMixin):
+class TrGeDevCcff(BindingMixin):
     """
-    Grupo de Datos que identifican al Evento de devolución de créditos
-    fiscales - Cuestionado ó Devuelto.
+    Grupo de Datos que identifican al Evento de devolución de créditos fiscales - Cuestionado ó
+    Devuelto.
     """
 
     class Meta:
@@ -362,7 +361,7 @@ class TrGeDevCcff(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeCcff(CommonMixin):
+class TrGeVeCcff(BindingMixin):
     """
     Grupo de Datos que identifican al Evento de créditos fiscales.
     """
@@ -395,7 +394,7 @@ class TrGeVeCcff(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeCan(CommonMixin):
+class TrGeVeCan(BindingMixin):
     """
     Grupo de Datos que identifican al evento de Cancelación del DTE.
     """
@@ -422,7 +421,7 @@ class TrGeVeCan(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeDisconf(CommonMixin):
+class TrGeVeDisconf(BindingMixin):
     """
     Grupo de Datos que identifican al evento receptor Disconformidad.
     """
@@ -449,7 +448,7 @@ class TrGeVeDisconf(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeRetAce(CommonMixin):
+class TrGeVeRetAce(BindingMixin):
     """
     Grupo de Datos que identifican al Evento de retención.
     """
@@ -535,7 +534,7 @@ class TrGeVeRetAce(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeRetAnu(CommonMixin):
+class TrGeVeRetAnu(BindingMixin):
     """
     Grupo de Datos que identifican al Evento de retención anulación.
     """
@@ -628,36 +627,37 @@ class TrGeVeRetAnu(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeveNom(CommonMixin):
+class TrGeveNom(BindingMixin):
     """
     Grupo de Datos que identifican al Evento de Nominación.
 
-    :ivar Id:
-    :ivar mOtEve:
-    :ivar iNatRec:
-    :ivar iTiOpe:
-    :ivar cPaisRec:
-    :ivar dDesPaisRe:
-    :ivar iTiContRec:
-    :ivar dRucRec:
-    :ivar dDVRec:
-    :ivar iTipIDRec:
-    :ivar dDTipIDRec:
-    :ivar dNumIDRec:
-    :ivar dNomRec:
-    :ivar dNomFanRec:
-    :ivar dDirRec:
-    :ivar dNumCasRec:
-    :ivar cDepRec:
-    :ivar dDesDepRec:
-    :ivar cDisRec:
-    :ivar dDesDisRec:
-    :ivar cCiuRec:
-    :ivar dDesCiuRec:
-    :ivar dTelRec:
-    :ivar dCelRec:
-    :ivar dEmailRec:
-    :ivar dCodCliente: Codigo del Cliente
+    Attributes:
+        Id:
+        mOtEve:
+        iNatRec:
+        iTiOpe:
+        cPaisRec:
+        dDesPaisRe:
+        iTiContRec:
+        dRucRec:
+        dDVRec:
+        iTipIDRec:
+        dDTipIDRec:
+        dNumIDRec:
+        dNomRec:
+        dNomFanRec:
+        dDirRec:
+        dNumCasRec:
+        cDepRec:
+        dDesDepRec:
+        cDisRec:
+        dDesDisRec:
+        cCiuRec:
+        dDesCiuRec:
+        dTelRec:
+        dCelRec:
+        dEmailRec:
+        dCodCliente: Codigo del Cliente
     """
 
     class Meta:
@@ -890,7 +890,7 @@ class TrGeveNom(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeConf(CommonMixin):
+class TrGeVeConf(BindingMixin):
     """
     Grupo de Datos que identifican al evento receptor Conformidad.
     """
@@ -923,7 +923,7 @@ class TrGeVeConf(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeDescon(CommonMixin):
+class TrGeVeDescon(BindingMixin):
     """
     Grupo de Datos que identifican al evento receptor Desconocimiento.
     """
@@ -1014,10 +1014,9 @@ class TrGeVeDescon(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeDet(CommonMixin):
+class TrGeVeDet(BindingMixin):
     """
-    Grupo de Datos que identifican al Evento Origen Set Determinacion del
-    DTE.
+    Grupo de Datos que identifican al Evento Origen Set Determinacion del DTE.
     """
 
     class Meta:
@@ -1062,7 +1061,7 @@ class TrGeVeDet(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeEnd(CommonMixin):
+class TrGeVeEnd(BindingMixin):
     """
     Grupo de Datos que identifican al Evento de Endoso.
     """
@@ -1273,10 +1272,9 @@ class TrGeVeEnd(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeImp(CommonMixin):
+class TrGeVeImp(BindingMixin):
     """
-    Grupo de Datos que identifican al Evento Origen Set Impugnacion del
-    DTE.
+    Grupo de Datos que identifican al Evento Origen Set Impugnacion del DTE.
     """
 
     class Meta:
@@ -1321,10 +1319,9 @@ class TrGeVeImp(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeInu(CommonMixin):
+class TrGeVeInu(BindingMixin):
     """
-    Grupo de Datos que identifican al evento de Inutilización de numero de
-    un DE.
+    Grupo de Datos que identifican al evento de Inutilización de numero de un DE.
     """
 
     class Meta:
@@ -1398,10 +1395,9 @@ class TrGeVeInu(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeNotRec(CommonMixin):
+class TrGeVeNotRec(BindingMixin):
     """
-    Grupo de Datos que identifican al evento receptor Notificación -
-    Recepción de un DE/DTE.
+    Grupo de Datos que identifican al evento receptor Notificación - Recepción de un DE/DTE.
     """
 
     class Meta:
@@ -1492,7 +1488,7 @@ class TrGeVeNotRec(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeOa(CommonMixin):
+class TrGeVeOa(BindingMixin):
     """
     Grupo de Datos que identifican al Evento Origen Set Objeto de Analisis.
     """
@@ -1539,7 +1535,7 @@ class TrGeVeOa(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVePc(CommonMixin):
+class TrGeVePc(BindingMixin):
     """
     Grupo de Datos que identifican al Evento Origen Set Proceso de Control.
     """
@@ -1586,7 +1582,7 @@ class TrGeVePc(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGeVeTr(CommonMixin):
+class TrGeVeTr(BindingMixin):
     """
     Grupo de Datos que identifican al Evento de Transporte.
     """
@@ -1846,7 +1842,7 @@ class TrGeVeTr(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgGroupEvt(CommonMixin):
+class TgGroupEvt(BindingMixin):
     """
     Grupo del evento.
     """
@@ -1920,7 +1916,7 @@ class TgGroupEvt(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgGroupEvtEmi(CommonMixin):
+class TgGroupEvtEmi(BindingMixin):
     """
     Grupo del evento Emisores.
     """
@@ -1987,7 +1983,7 @@ class TgGroupEvtEmi(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgGroupEvtRecep(CommonMixin):
+class TgGroupEvtRecep(BindingMixin):
     """
     Grupo del evento Receptores.
     """
@@ -2026,7 +2022,7 @@ class TgGroupEvtRecep(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgGroupEvtSet(CommonMixin):
+class TgGroupEvtSet(BindingMixin):
     """
     Grupo del evento Origen SET.
     """
@@ -2065,7 +2061,7 @@ class TgGroupEvtSet(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrEve(CommonMixin):
+class TrEve(BindingMixin):
     class Meta:
         name = "trEve"
 
@@ -2101,7 +2097,7 @@ class TrEve(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrEveEmi(CommonMixin):
+class TrEveEmi(BindingMixin):
     class Meta:
         name = "trEveEmi"
 
@@ -2129,7 +2125,7 @@ class TrEveEmi(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrEveRecep(CommonMixin):
+class TrEveRecep(BindingMixin):
     class Meta:
         name = "trEveRecep"
 
@@ -2157,7 +2153,7 @@ class TrEveRecep(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrEveSet(CommonMixin):
+class TrEveSet(BindingMixin):
     class Meta:
         name = "trEveSet"
 
@@ -2185,10 +2181,11 @@ class TrEveSet(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGesEve(CommonMixin):
+class TrGesEve(BindingMixin):
     """
-    :ivar rEve:
-    :ivar Signature: Firma Digital del DE
+    Attributes:
+        rEve:
+        Signature: Firma Digital del DE
     """
 
     class Meta:
@@ -2209,7 +2206,7 @@ class TrGesEve(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGesEveEmi(CommonMixin):
+class TrGesEveEmi(BindingMixin):
     class Meta:
         name = "trGesEveEmi"
 
@@ -2222,7 +2219,7 @@ class TrGesEveEmi(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGesEveRecep(CommonMixin):
+class TrGesEveRecep(BindingMixin):
     class Meta:
         name = "trGesEveRecep"
 
@@ -2235,7 +2232,7 @@ class TrGesEveRecep(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TrGesEveSet(CommonMixin):
+class TrGesEveSet(BindingMixin):
     class Meta:
         name = "trGesEveSet"
 
@@ -2248,7 +2245,7 @@ class TrGesEveSet(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgGroupGesEve(CommonMixin):
+class TgGroupGesEve(BindingMixin):
     class Meta:
         name = "tgGroupGesEve"
 

@@ -3,18 +3,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 
 __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class REnvioLote(CommonMixin):
+class REnvioLote(BindingMixin):
     """
     Recepcion de Documentos Electronicos por Lote.
 
-    :ivar dId: Identificador de control de envio
-    :ivar xDE: XML del Documento Electronico Transferido
+    Attributes:
+        dId: Identificador de control de envio
+        xDE: XML del Documento Electronico Transferido
     """
 
     class Meta:
@@ -37,15 +38,16 @@ class REnvioLote(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class RResEnviLoteDe(CommonMixin):
+class RResEnviLoteDe(BindingMixin):
     """
     Respuesta de la recepcion de Documentos Electronicos por Lote.
 
-    :ivar dFecProc:
-    :ivar dCodRes: Código del resultado de recepción
-    :ivar dMsgRes: Mensaje del resultado de recepción
-    :ivar dProtConsLote: Número de Lote
-    :ivar dTpoProces: Tiempo medio de procesamiento en segundos
+    Attributes:
+        dFecProc:
+        dCodRes: Código del resultado de recepción
+        dMsgRes: Mensaje del resultado de recepción
+        dProtConsLote: Número de Lote
+        dTpoProces: Tiempo medio de procesamiento en segundos
     """
 
     class Meta:

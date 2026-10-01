@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.de.bindings.v150.de_types_v150 import (
     TdDesForPagValue,
     TdDtipIdrespDeValue,
@@ -30,17 +30,18 @@ class TgCamCargValue(Enum):
 
 
 @dataclass(kw_only=True)
-class TgGrupPolSeg(CommonMixin):
+class TgGrupPolSeg(BindingMixin):
     """
     Póliza de seguros.
 
-    :ivar dPoliza:
-    :ivar dUnidVig: Descripción de la unidad de tiempo de vigencia
-    :ivar dVigencia:
-    :ivar dNumPoliza: Número de la póliza
-    :ivar dFecIniVig:
-    :ivar dFecFinVig:
-    :ivar dCodInt: Código interno del ítem
+    Attributes:
+        dPoliza:
+        dUnidVig: Descripción de la unidad de tiempo de vigencia
+        dVigencia:
+        dNumPoliza: Número de la póliza
+        dFecIniVig:
+        dFecFinVig:
+        dCodInt: Código interno del ítem
     """
 
     class Meta:
@@ -114,7 +115,7 @@ class TgGrupPolSeg(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgOblAfe(CommonMixin):
+class TgOblAfe(BindingMixin):
     """
     Grupo de campos que identifican las obligaciones afectadas.
     """
@@ -144,7 +145,7 @@ class TgOblAfe(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgValorRestaItem(CommonMixin):
+class TgValorRestaItem(BindingMixin):
     """
     Campos que describen los descuentos, anticipos y valor total por item.
     """
@@ -231,18 +232,19 @@ class TgValorRestaItem(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamCarg(CommonMixin):
+class TgCamCarg(BindingMixin):
     """
     Campos generales de la carga.
 
-    :ivar cUniMedTotVol:
-    :ivar dDesUniMedTotVol:
-    :ivar dTotVolMerc: Total volumen de la mercaderia
-    :ivar cUniMedTotPes:
-    :ivar dDesUniMedTotPes:
-    :ivar dTotPesMerc: Total peso de la mercadería
-    :ivar iCarCarga:
-    :ivar dDesCarCarga:
+    Attributes:
+        cUniMedTotVol:
+        dDesUniMedTotVol:
+        dTotVolMerc: Total volumen de la mercaderia
+        cUniMedTotPes:
+        dDesUniMedTotPes:
+        dTotPesMerc: Total peso de la mercadería
+        iCarCarga:
+        dDesCarCarga:
     """
 
     class Meta:
@@ -309,18 +311,19 @@ class TgCamCarg(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgCamRde(CommonMixin):
+class TgCamRde(BindingMixin):
     """
     Campos que componen el Recibo de Dinero Electrónico.
 
-    :ivar iForPag:
-    :ivar dDesForPag:
-    :ivar dNumTrans: Número de Transacción
-    :ivar dConc: Concepto/Observación
-    :ivar dRucEntFin:
-    :ivar dDvEntFin:
-    :ivar dNomEntFin: Nombre o Razón Social de la Entidad Financiera
-    :ivar dImpPag:
+    Attributes:
+        iForPag:
+        dDesForPag:
+        dNumTrans: Número de Transacción
+        dConc: Concepto/Observación
+        dRucEntFin:
+        dDvEntFin:
+        dNomEntFin: Nombre o Razón Social de la Entidad Financiera
+        dImpPag:
     """
 
     class Meta:
@@ -404,7 +407,7 @@ class TgCamRde(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgRespDe(CommonMixin):
+class TgRespDe(BindingMixin):
     """
     Grupo de Campos que identifican al responsable de la generación del DE.
     """

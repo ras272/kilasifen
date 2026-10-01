@@ -2,18 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.de.bindings.v150.si_consulta_dteasync import RConsultaDte
 
 __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class REnviConsDteAsyncResponse(CommonMixin):
+class REnviConsDteAsyncResponse(BindingMixin):
     """
-    :ivar dFecProc:
-    :ivar dProtConsDTEAsync:
-    :ivar dMsgRes: Mensaje del resultado de la consulta
+    Attributes:
+        dFecProc:
+        dProtConsDTEAsync:
+        dMsgRes: Mensaje del resultado de la consulta
     """
 
     class Meta:
@@ -41,7 +42,7 @@ class REnviConsDteAsyncResponse(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class REnviConsDteAsyncRequest(CommonMixin):
+class REnviConsDteAsyncRequest(BindingMixin):
     class Meta:
         name = "rEnviConsDteAsyncRequest"
         namespace = "http://ekuatia.set.gov.py/sifen/xsd"

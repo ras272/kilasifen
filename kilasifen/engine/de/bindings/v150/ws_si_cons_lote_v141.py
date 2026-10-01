@@ -3,20 +3,21 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.de.bindings.v150.prot_proces_eventos_v141 import TgResProc
 
 __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class REnviConsLoteDe(CommonMixin):
+class REnviConsLoteDe(BindingMixin):
     """
     Recepcion de Documentos Para Consulta de Lote.
 
-    :ivar dId:
-    :ivar dProtConsLote: Número de Lote
-    :ivar dCDC:
+    Attributes:
+        dId:
+        dProtConsLote: Número de Lote
+        dCDC:
     """
 
     class Meta:
@@ -49,14 +50,15 @@ class REnviConsLoteDe(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgResProcLote(CommonMixin):
+class TgResProcLote(BindingMixin):
     """
     Grupo de resultado de procesamiento.
 
-    :ivar id: CDC del DE procesado
-    :ivar dEstRes: Estado del resultado
-    :ivar dProtAut: Número de transacción
-    :ivar gResProc:
+    Attributes:
+        id: CDC del DE procesado
+        dEstRes: Estado del resultado
+        dProtAut: Número de transacción
+        gResProc:
     """
 
     class Meta:
@@ -98,14 +100,15 @@ class TgResProcLote(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class RResEnviConsLoteDe(CommonMixin):
+class RResEnviConsLoteDe(BindingMixin):
     """
     Respuesta de la Consulta de Documentos Electronicos por Lote.
 
-    :ivar dFecProc:
-    :ivar dCodResLot: Código de resultado de procesamiento del lote
-    :ivar dMsgResLot: Mensaje del resultado de recepción
-    :ivar gResProcLote:
+    Attributes:
+        dFecProc:
+        dCodResLot: Código de resultado de procesamiento del lote
+        dMsgResLot: Mensaje del resultado de recepción
+        gResProcLote:
     """
 
     class Meta:

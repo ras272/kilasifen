@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 
 __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class REnviConsDeRequest(CommonMixin):
+class REnviConsDeRequest(BindingMixin):
     class Meta:
         name = "rEnviConsDeRequest"
         namespace = "http://ekuatia.set.gov.py/sifen/xsd"
@@ -29,12 +29,13 @@ class REnviConsDeRequest(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class REnviConsDeResponse(CommonMixin):
+class REnviConsDeResponse(BindingMixin):
     """
-    :ivar dFecProc:
-    :ivar dCodRes:
-    :ivar dMsgRes: Mensaje del resultado de procesamiento
-    :ivar xContenDE: Contenedor del DE
+    Attributes:
+        dFecProc:
+        dCodRes:
+        dMsgRes: Mensaje del resultado de procesamiento
+        xContenDE: Contenedor del DE
     """
 
     class Meta:

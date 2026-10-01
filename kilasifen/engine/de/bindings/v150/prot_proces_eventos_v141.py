@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 
 __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class TgResProc(CommonMixin):
+class TgResProc(BindingMixin):
     """
     Grupo Resultado de Procesamiento.
     """
@@ -34,7 +34,7 @@ class TgResProc(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TgResProcEve(CommonMixin):
+class TgResProcEve(BindingMixin):
     """
     Grupo de resultado de procesamiento.
     """

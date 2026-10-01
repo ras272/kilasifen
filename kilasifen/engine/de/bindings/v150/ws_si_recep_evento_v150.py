@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.de.bindings.v150.evento_v150 import TgGroupGesEve
 from kilasifen.engine.de.bindings.v150.prot_proces_eventos_v141 import TgResProcEve
 
@@ -10,12 +10,13 @@ __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class REnviEventoDe(CommonMixin):
+class REnviEventoDe(BindingMixin):
     """
     Recepcion de Eventos de Documentos Electronicos.
 
-    :ivar dId: Identificador de control de envio
-    :ivar dEvReg: Evento a ser registrado
+    Attributes:
+        dId: Identificador de control de envio
+        dEvReg: Evento a ser registrado
     """
 
     class Meta:
@@ -35,7 +36,7 @@ class REnviEventoDe(CommonMixin):
     )
 
     @dataclass(kw_only=True)
-    class DEvReg(CommonMixin):
+    class DEvReg(BindingMixin):
         gGroupGesEve: TgGroupGesEve = field(
             metadata={
                 "type": "Element",
@@ -44,12 +45,13 @@ class REnviEventoDe(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class RRetEnviEventoDe(CommonMixin):
+class RRetEnviEventoDe(BindingMixin):
     """
     Respuesta de Eventos.
 
-    :ivar dFecProc:
-    :ivar gResProcEVe: Grupo Resultado de Procesamiento del Evento
+    Attributes:
+        dFecProc:
+        gResProcEVe: Grupo Resultado de Procesamiento del Evento
     """
 
     class Meta:

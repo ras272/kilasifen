@@ -2,17 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.de.bindings.v150.xmldsig_core_schema import Signature
 
 __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class RConsultaDte(CommonMixin):
+class RConsultaDte(BindingMixin):
     """
-    :ivar ConsultaDTE:
-    :ivar Signature: Firma Digital de la ConsultaDTE
+    Attributes:
+        ConsultaDTE:
+        Signature: Firma Digital de la ConsultaDTE
     """
 
     class Meta:
@@ -32,7 +33,7 @@ class RConsultaDte(CommonMixin):
     )
 
     @dataclass(kw_only=True)
-    class ConsultaDte(CommonMixin):
+    class ConsultaDte(BindingMixin):
         dRuc: str = field(
             metadata={
                 "type": "Element",

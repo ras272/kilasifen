@@ -9,26 +9,27 @@ class TDepartamentos(Enum):
     """
     Código del departamento donde se realiza la transacción.
 
-    :cvar VALUE_1: CAPITAL
-    :cvar VALUE_2: CONCEPCION
-    :cvar VALUE_3: SAN PEDRO
-    :cvar VALUE_4: CORDILLERA
-    :cvar VALUE_5: GUAIRA
-    :cvar VALUE_6: CAAGUAZU
-    :cvar VALUE_7: CAAZAPA
-    :cvar VALUE_8: ITAPUA
-    :cvar VALUE_9: MISIONES
-    :cvar VALUE_10: PARAGUARI
-    :cvar VALUE_11: ALTO PARANA
-    :cvar VALUE_12: CENTRAL
-    :cvar VALUE_13: NEEMBUCU
-    :cvar VALUE_14: AMAMBAY
-    :cvar VALUE_15: PTE. HAYES
-    :cvar VALUE_16: BOQUERON
-    :cvar VALUE_17: ALTO PARAGUAY
-    :cvar VALUE_18: CANINDEYU
-    :cvar VALUE_19: CHACO
-    :cvar VALUE_20: NUEVA ASUNCION
+    Attributes:
+        VALUE_1: CAPITAL
+        VALUE_2: CONCEPCION
+        VALUE_3: SAN PEDRO
+        VALUE_4: CORDILLERA
+        VALUE_5: GUAIRA
+        VALUE_6: CAAGUAZU
+        VALUE_7: CAAZAPA
+        VALUE_8: ITAPUA
+        VALUE_9: MISIONES
+        VALUE_10: PARAGUARI
+        VALUE_11: ALTO PARANA
+        VALUE_12: CENTRAL
+        VALUE_13: NEEMBUCU
+        VALUE_14: AMAMBAY
+        VALUE_15: PTE. HAYES
+        VALUE_16: BOQUERON
+        VALUE_17: ALTO PARAGUAY
+        VALUE_18: CANINDEYU
+        VALUE_19: CHACO
+        VALUE_20: NUEVA ASUNCION
     """
 
     VALUE_1 = 1

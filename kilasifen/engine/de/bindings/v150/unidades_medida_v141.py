@@ -7,70 +7,71 @@ __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 class TcUniMed(Enum):
     """
-    :cvar VALUE_87: Metros - m
-    :cvar VALUE_2366: Costo Por Mil - CPM
-    :cvar VALUE_2329: Unidad Internacional - UI
-    :cvar VALUE_110: Metros cúbicos - M3
-    :cvar VALUE_77: Unidad - UNI
-    :cvar VALUE_86: Gramos - g
-    :cvar VALUE_89: Litros - LT
-    :cvar VALUE_90: Miligramos - MG
-    :cvar VALUE_91: Centimetros - CM
-    :cvar VALUE_92: Centimetros cuadrados - CM2
-    :cvar VALUE_93: Centimetros cubicos - CM3
-    :cvar VALUE_94: Pulgadas - PUL
-    :cvar VALUE_96: Milímetros cuadrados - MM2
-    :cvar VALUE_79: Kilogramos s/ metro cuadrado - kg/m2
-    :cvar VALUE_97: Año - AA
-    :cvar VALUE_98: Mes - ME
-    :cvar VALUE_99: Tonelada - TN
-    :cvar VALUE_100: Hora - Hs
-    :cvar VALUE_101: Minuto - Mi
-    :cvar VALUE_104: Determinación - DET
-    :cvar VALUE_103: Yardas - Ya
-    :cvar VALUE_108: Metros - MT
-    :cvar VALUE_109: Metros cuadrados - M2
-    :cvar VALUE_95: Milímetros - MM
-    :cvar VALUE_666: Segundo - Se
-    :cvar VALUE_102: Día - Di
-    :cvar VALUE_83: Kilogramos - kg
-    :cvar VALUE_88: Mililitros - ML
-    :cvar VALUE_625: Kilómetros - Km
-    :cvar VALUE_660: Metro lineal - ml
-    :cvar VALUE_885: Unidad Medida Global - GL
-    :cvar VALUE_891: Por Milaje - pm
-    :cvar VALUE_869: Hectáreas - ha
-    :cvar VALUE_569: Ración - ración
-    :cvar VALUE_111: Bovinas - 4A
-    :cvar VALUE_112: Curie - Ci
-    :cvar VALUE_113: Docena - DOC
-    :cvar VALUE_114: Galones (US) (3,7843 LT) - GLL
-    :cvar VALUE_115: Gruesas - GRO
-    :cvar VALUE_116: Kilogramo Bruto - E4
-    :cvar VALUE_117: Kits - KT
-    :cvar VALUE_118: Microcurie - M5
-    :cvar VALUE_119: Milicurie - MCU
-    :cvar VALUE_120: Millar - MIL
-    :cvar VALUE_121: Par - PAR
-    :cvar VALUE_122: Pies - FOT
-    :cvar VALUE_123: Pies Cuadradas - FTK
-    :cvar VALUE_124: Piezas - PCE
-    :cvar VALUE_125: Quilate - KLT
-    :cvar VALUE_126: Resmas - RM
-    :cvar VALUE_127: Rollos - RO
-    :cvar VALUE_128: 1000 Kilowatt Hora - kWh
-    :cvar VALUE_129: Mazos - U(JGO)
-    :cvar VALUE_130: Tambores - DR
-    :cvar VALUE_131: Caja - BX
-    :cvar VALUE_132: Juego - SET
-    :cvar VALUE_133: Paquete - PK
-    :cvar VALUE_134: Bolsa - BG
-    :cvar VALUE_135: Docena Par - DPC
-    :cvar VALUE_136: Pote - JR
-    :cvar VALUE_137: Fardos - BL
-    :cvar VALUE_138: Bulto - AB
-    :cvar VALUE_139: Cesta - BK
-    :cvar VALUE_140: Peso Base - BW
+    Attributes:
+        VALUE_87: Metros - m
+        VALUE_2366: Costo Por Mil - CPM
+        VALUE_2329: Unidad Internacional - UI
+        VALUE_110: Metros cúbicos - M3
+        VALUE_77: Unidad - UNI
+        VALUE_86: Gramos - g
+        VALUE_89: Litros - LT
+        VALUE_90: Miligramos - MG
+        VALUE_91: Centimetros - CM
+        VALUE_92: Centimetros cuadrados - CM2
+        VALUE_93: Centimetros cubicos - CM3
+        VALUE_94: Pulgadas - PUL
+        VALUE_96: Milímetros cuadrados - MM2
+        VALUE_79: Kilogramos s/ metro cuadrado - kg/m2
+        VALUE_97: Año - AA
+        VALUE_98: Mes - ME
+        VALUE_99: Tonelada - TN
+        VALUE_100: Hora - Hs
+        VALUE_101: Minuto - Mi
+        VALUE_104: Determinación - DET
+        VALUE_103: Yardas - Ya
+        VALUE_108: Metros - MT
+        VALUE_109: Metros cuadrados - M2
+        VALUE_95: Milímetros - MM
+        VALUE_666: Segundo - Se
+        VALUE_102: Día - Di
+        VALUE_83: Kilogramos - kg
+        VALUE_88: Mililitros - ML
+        VALUE_625: Kilómetros - Km
+        VALUE_660: Metro lineal - ml
+        VALUE_885: Unidad Medida Global - GL
+        VALUE_891: Por Milaje - pm
+        VALUE_869: Hectáreas - ha
+        VALUE_569: Ración - ración
+        VALUE_111: Bovinas - 4A
+        VALUE_112: Curie - Ci
+        VALUE_113: Docena - DOC
+        VALUE_114: Galones (US) (3,7843 LT) - GLL
+        VALUE_115: Gruesas - GRO
+        VALUE_116: Kilogramo Bruto - E4
+        VALUE_117: Kits - KT
+        VALUE_118: Microcurie - M5
+        VALUE_119: Milicurie - MCU
+        VALUE_120: Millar - MIL
+        VALUE_121: Par - PAR
+        VALUE_122: Pies - FOT
+        VALUE_123: Pies Cuadradas - FTK
+        VALUE_124: Piezas - PCE
+        VALUE_125: Quilate - KLT
+        VALUE_126: Resmas - RM
+        VALUE_127: Rollos - RO
+        VALUE_128: 1000 Kilowatt Hora - kWh
+        VALUE_129: Mazos - U(JGO)
+        VALUE_130: Tambores - DR
+        VALUE_131: Caja - BX
+        VALUE_132: Juego - SET
+        VALUE_133: Paquete - PK
+        VALUE_134: Bolsa - BG
+        VALUE_135: Docena Par - DPC
+        VALUE_136: Pote - JR
+        VALUE_137: Fardos - BL
+        VALUE_138: Bulto - AB
+        VALUE_139: Cesta - BK
+        VALUE_140: Peso Base - BW
     """
 
     VALUE_87 = 87
@@ -141,70 +142,71 @@ class TcUniMed(Enum):
 
 class TdDesUniMed(Enum):
     """
-    :cvar M: Metros
-    :cvar CPM: Costo Por Mil
-    :cvar UI: Unidad Internacional
-    :cvar M3: Metros cúbicos
-    :cvar UNI: Unidad
-    :cvar G: Gramos
-    :cvar LT: Litros
-    :cvar MG: Miligramos
-    :cvar CM: Centimetros
-    :cvar CM2: Centimetros cuadrados
-    :cvar CM3: Centimetros cubicos
-    :cvar PUL: Pulgadas
-    :cvar MM2: Milímetros cuadrados
-    :cvar KG_M2: Kilogramos s/ metro cuadrado
-    :cvar AA: Año
-    :cvar ME: Mes
-    :cvar TN: Tonelada
-    :cvar HS: Hora
-    :cvar MI: Minuto
-    :cvar DET: Determinación
-    :cvar YA: Yardas
-    :cvar MT: Metros
-    :cvar M2: Metros cuadrados
-    :cvar MM: Milímetros
-    :cvar SE: Segundo
-    :cvar DI: Día
-    :cvar KG: Kilogramos
-    :cvar ML: Mililitros
-    :cvar KM: Kilómetros
-    :cvar ML_1: Metro lineal
-    :cvar GL: Unidad Medida Global
-    :cvar PM: Por Milaje
-    :cvar HA: Hectáreas
-    :cvar RACI_N: Ración
-    :cvar VALUE_4_A: Bovinas
-    :cvar CI: Curie
-    :cvar DOC: Docena
-    :cvar GLL: Galones (US) (3,7843 LT)
-    :cvar GRO: Gruesas
-    :cvar E4: Kilogramo Bruto
-    :cvar KT: Kits
-    :cvar M5: Microcurie
-    :cvar MCU: Milicurie
-    :cvar MIL: Millar
-    :cvar PAR: Par
-    :cvar FOT: Pies
-    :cvar FTK: Pies Cuadradas
-    :cvar PCE: Piezas
-    :cvar KLT: Quilate
-    :cvar RM: Resmas
-    :cvar RO: Rollos
-    :cvar K_WH: 1000 Kilowatt Hora
-    :cvar U_JGO: Mazos
-    :cvar DR: Tambores
-    :cvar BX: Caja
-    :cvar SET: Juego
-    :cvar PK: Paquete
-    :cvar BG: Bolsa
-    :cvar DPC: Docena Par
-    :cvar JR: Pote
-    :cvar BL: Fardos
-    :cvar AB: Bulto
-    :cvar BK: Cesta
-    :cvar BW: Peso Base
+    Attributes:
+        M: Metros
+        CPM: Costo Por Mil
+        UI: Unidad Internacional
+        M3: Metros cúbicos
+        UNI: Unidad
+        G: Gramos
+        LT: Litros
+        MG: Miligramos
+        CM: Centimetros
+        CM2: Centimetros cuadrados
+        CM3: Centimetros cubicos
+        PUL: Pulgadas
+        MM2: Milímetros cuadrados
+        KG_M2: Kilogramos s/ metro cuadrado
+        AA: Año
+        ME: Mes
+        TN: Tonelada
+        HS: Hora
+        MI: Minuto
+        DET: Determinación
+        YA: Yardas
+        MT: Metros
+        M2: Metros cuadrados
+        MM: Milímetros
+        SE: Segundo
+        DI: Día
+        KG: Kilogramos
+        ML: Mililitros
+        KM: Kilómetros
+        ML_1: Metro lineal
+        GL: Unidad Medida Global
+        PM: Por Milaje
+        HA: Hectáreas
+        RACI_N: Ración
+        VALUE_4_A: Bovinas
+        CI: Curie
+        DOC: Docena
+        GLL: Galones (US) (3,7843 LT)
+        GRO: Gruesas
+        E4: Kilogramo Bruto
+        KT: Kits
+        M5: Microcurie
+        MCU: Milicurie
+        MIL: Millar
+        PAR: Par
+        FOT: Pies
+        FTK: Pies Cuadradas
+        PCE: Piezas
+        KLT: Quilate
+        RM: Resmas
+        RO: Rollos
+        K_WH: 1000 Kilowatt Hora
+        U_JGO: Mazos
+        DR: Tambores
+        BX: Caja
+        SET: Juego
+        PK: Paquete
+        BG: Bolsa
+        DPC: Docena Par
+        JR: Pote
+        BL: Fardos
+        AB: Bulto
+        BK: Cesta
+        BW: Peso Base
     """
 
     M = "m"

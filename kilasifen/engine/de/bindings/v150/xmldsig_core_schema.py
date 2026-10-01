@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 
 __NAMESPACE__ = "http://www.w3.org/2000/09/xmldsig#"
 
 
 @dataclass(kw_only=True)
-class CanonicalizationMethodType(CommonMixin):
+class CanonicalizationMethodType(BindingMixin):
     Algorithm: str = field(
         metadata={
             "type": "Attribute",
@@ -25,7 +25,7 @@ class CanonicalizationMethodType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class DsakeyValueType(CommonMixin):
+class DsakeyValueType(BindingMixin):
     class Meta:
         name = "DSAKeyValueType"
 
@@ -87,7 +87,7 @@ class DsakeyValueType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class DigestMethodType(CommonMixin):
+class DigestMethodType(BindingMixin):
     Algorithm: str = field(
         metadata={
             "type": "Attribute",
@@ -104,7 +104,7 @@ class DigestMethodType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class DigestValue(CommonMixin):
+class DigestValue(BindingMixin):
     class Meta:
         namespace = "http://www.w3.org/2000/09/xmldsig#"
 
@@ -117,7 +117,7 @@ class DigestValue(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class KeyName(CommonMixin):
+class KeyName(BindingMixin):
     class Meta:
         namespace = "http://www.w3.org/2000/09/xmldsig#"
 
@@ -125,7 +125,7 @@ class KeyName(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class MgmtData(CommonMixin):
+class MgmtData(BindingMixin):
     class Meta:
         namespace = "http://www.w3.org/2000/09/xmldsig#"
 
@@ -133,7 +133,7 @@ class MgmtData(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class ObjectType(CommonMixin):
+class ObjectType(BindingMixin):
     Id: None | str = field(
         default=None,
         metadata={
@@ -163,7 +163,7 @@ class ObjectType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class PgpdataType(CommonMixin):
+class PgpdataType(BindingMixin):
     class Meta:
         name = "PGPDataType"
 
@@ -194,7 +194,7 @@ class PgpdataType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class RsakeyValueType(CommonMixin):
+class RsakeyValueType(BindingMixin):
     class Meta:
         name = "RSAKeyValueType"
 
@@ -215,7 +215,7 @@ class RsakeyValueType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class SpkidataType(CommonMixin):
+class SpkidataType(BindingMixin):
     class Meta:
         name = "SPKIDataType"
 
@@ -240,7 +240,7 @@ class SpkidataType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class SignatureMethodType(CommonMixin):
+class SignatureMethodType(BindingMixin):
     Algorithm: str = field(
         metadata={
             "type": "Attribute",
@@ -264,7 +264,7 @@ class SignatureMethodType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class SignaturePropertyType(CommonMixin):
+class SignaturePropertyType(BindingMixin):
     Target: str = field(
         metadata={
             "type": "Attribute",
@@ -287,7 +287,7 @@ class SignaturePropertyType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class SignatureValueType(CommonMixin):
+class SignatureValueType(BindingMixin):
     value: bytes = field(
         default=b"",
         metadata={
@@ -303,7 +303,7 @@ class SignatureValueType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TransformType(CommonMixin):
+class TransformType(BindingMixin):
     Algorithm: str = field(
         metadata={
             "type": "Attribute",
@@ -327,7 +327,7 @@ class TransformType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class X509IssuerSerialType(CommonMixin):
+class X509IssuerSerialType(BindingMixin):
     X509IssuerName: str = field(
         metadata={
             "type": "Element",
@@ -413,7 +413,7 @@ class Transform(TransformType):
 
 
 @dataclass(kw_only=True)
-class X509DataType(CommonMixin):
+class X509DataType(BindingMixin):
     X509IssuerSerial: list[X509IssuerSerialType] = field(
         default_factory=list,
         metadata={
@@ -468,7 +468,7 @@ class X509DataType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class KeyValueType(CommonMixin):
+class KeyValueType(BindingMixin):
     content: list[object] = field(
         default_factory=list,
         metadata={
@@ -492,7 +492,7 @@ class KeyValueType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class SignaturePropertiesType(CommonMixin):
+class SignaturePropertiesType(BindingMixin):
     SignatureProperty: list[SignatureProperty] = field(
         default_factory=list,
         metadata={
@@ -510,7 +510,7 @@ class SignaturePropertiesType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class TransformsType(CommonMixin):
+class TransformsType(BindingMixin):
     Transform: list[Transform] = field(
         default_factory=list,
         metadata={
@@ -546,7 +546,7 @@ class Transforms(TransformsType):
 
 
 @dataclass(kw_only=True)
-class ReferenceType(CommonMixin):
+class ReferenceType(BindingMixin):
     Transforms: None | Transforms = field(
         default=None,
         metadata={
@@ -587,7 +587,7 @@ class ReferenceType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class RetrievalMethodType(CommonMixin):
+class RetrievalMethodType(BindingMixin):
     Transforms: None | Transforms = field(
         default=None,
         metadata={
@@ -622,7 +622,7 @@ class RetrievalMethod(RetrievalMethodType):
 
 
 @dataclass(kw_only=True)
-class KeyInfoType(CommonMixin):
+class KeyInfoType(BindingMixin):
     Id: None | str = field(
         default=None,
         metadata={
@@ -677,7 +677,7 @@ class KeyInfoType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class ManifestType(CommonMixin):
+class ManifestType(BindingMixin):
     Reference: list[Reference] = field(
         default_factory=list,
         metadata={
@@ -695,7 +695,7 @@ class ManifestType(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class SignedInfoType(CommonMixin):
+class SignedInfoType(BindingMixin):
     CanonicalizationMethod: CanonicalizationMethod = field(
         metadata={
             "type": "Element",
@@ -743,7 +743,7 @@ class SignedInfo(SignedInfoType):
 
 
 @dataclass(kw_only=True)
-class SignatureType(CommonMixin):
+class SignatureType(BindingMixin):
     SignedInfo: SignedInfo = field(
         metadata={
             "type": "Element",

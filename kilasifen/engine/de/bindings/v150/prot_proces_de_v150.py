@@ -2,23 +2,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.de.bindings.v150.prot_proces_eventos_v141 import TgResProc
 
 __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class RProtDe(CommonMixin):
+class RProtDe(BindingMixin):
     """
     Respuesta del protocolo de procesamiento del DE.
 
-    :ivar Id: cdc resultado
-    :ivar dFecProc:
-    :ivar dDigVal: Valor hash del DE procesado
-    :ivar dEstRes: Estado del resultado
-    :ivar dProtAut:
-    :ivar gResProc:
+    Attributes:
+        Id: cdc resultado
+        dFecProc:
+        dDigVal: Valor hash del DE procesado
+        dEstRes: Estado del resultado
+        dProtAut:
+        gResProc:
     """
 
     class Meta:

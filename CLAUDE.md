@@ -4,7 +4,7 @@
 
 Biblioteca Python que gera automaticamente bindings (dataclasses) a partir dos schemas XSD oficiais do **SIFEN** (Sistema Integrado de Facturación Electrónica Nacional) do Paraguai, usando **xsdata**, no mesmo padrão da [nfelib](https://github.com/akretion/nfelib) da Akretion.
 
-**Princípio central:** Zero código manual para o schema. Todo binding é gerado pelo xsdata a partir dos XSD oficiais da SET. Código escrito à mão se limita ao `CommonMixin`, `assinatura`, `transmissao`, testes e scripts de geração.
+**Princípio central:** Zero código manual para o schema. Todo binding é gerado pelo xsdata a partir dos XSD oficiais da SET. Código escrito à mão se limita ao `BindingMixin` (`binding.py`), `firma`, `transmissao`, testes e `scripts/generate_bindings.py`.
 
 ## Metadados
 
@@ -19,15 +19,14 @@ Biblioteca Python que gera automaticamente bindings (dataclasses) a partir dos s
 
 ```
 kilasifen/
-├── .xsdata.xml                    # Configuração do xsdata (originalCase, CommonMixin extension)
 ├── pyproject.toml                 # Build config (setuptools)
-├── script.sh                      # Script de geração de bindings
+├── scripts/generate_bindings.py   # Geração de bindings (config xsdata + BindingMixin, --check)
 ├── README.md
 ├── MIT-LICENSE
 ├── kilasifen/engine/
-│   ├── __init__.py                # __version__ = "0.1.1"
-│   ├── CommonMixin.py             # Mixin: from_xml, to_xml, from_path, validate_xml, sign_xml
-│   ├── assinatura.py              # sign_xml() — signxml direto com RSA-SHA256
+│   ├── __init__.py                # Fachada pública (re-exporta kilasifen.__version__)
+│   ├── binding.py                 # BindingMixin: from_xml, to_xml, from_path, validate_xml, sign_xml
+│   ├── firma.py                   # sign_xml() — XMLDSig RSA-SHA256 via sdk.signer
 │   ├── de/                        # Documento Electrónico
 │   │   ├── schemas/v150/          # XSD originais da SET (com schemaLocation local)
 │   │   ├── bindings/v150/         # Bindings gerados pelo xsdata (NÃO editar manualmente)
@@ -43,7 +42,9 @@ kilasifen/
 │   ├── conftest.py                # Gera PKCS#12 autofirmado efêmero para testes
 │   ├── test_de.py                 # Testes de leitura/escrita DE
 │   ├── test_generate_de.py        # Testes de geração programática, round-trip, validação XSD
-│   ├── test_assinatura.py         # Testes de assinatura digital com signxml
+│   ├── test_firma.py              # Testes do módulo firma e do BindingMixin
+│   ├── test_firma_xmldsig.py      # Testes de assinatura XMLDSig com signxml
+│   ├── test_binding_cache.py      # Reuso de parser/serializer no BindingMixin
 │   ├── test_transmissao.py        # Testes de transmissão SOAP (mocked)
 │   ├── test_eventos.py            # Testes de eventos
 │   ├── test_ws.py                 # Testes de schemas WS
@@ -57,8 +58,9 @@ kilasifen/
 # Instalar em modo dev (com assinatura e testes)
 pip install -e ".[sign,test]"
 
-# Gerar/regenerar bindings (após alterar XSD ou .xsdata.xml)
-./script.sh
+# Gerar/regenerar bindings (após alterar XSD); requer xsdata[cli]==26.2
+python scripts/generate_bindings.py
+python scripts/generate_bindings.py --check  # detecta deriva
 
 # Rodar testes
 pytest tests/ -v
@@ -72,9 +74,9 @@ ruff check kilasifen/engine/ tests/
 ### Código
 - **Bindings são gerados automaticamente** — NUNCA editar arquivos em `kilasifen/engine/de/bindings/` manualmente
 - **FieldName originalCase** — campos mantêm nomes do XSD (ex: `iTipEmi`, `dDesTipEmi`, `gOpeDE`)
-- **CommonMixin** é injetado em todas as classes via `.xsdata.xml` Extension
+- **BindingMixin** é injetado em todas as classes pela extensão configurada em `scripts/generate_bindings.py`
 - **Um arquivo .py por arquivo .xsd** (Structure: filenames)
-- **Assinatura centralizada** — `kilasifen/engine/assinatura.py` é o ponto único de assinatura, usado tanto por `CommonMixin.sign_xml()` quanto por `TransmissaoBase._sign_xml()`
+- **Assinatura centralizada** — `kilasifen/engine/firma.py` é o ponto único de assinatura, usado tanto por `BindingMixin.sign_xml()` quanto pela plataforma
 
 ### Schemas XSD
 - Fonte oficial: `https://ekuatia.set.gov.py/sifen/xsd/`
@@ -99,7 +101,7 @@ ruff check kilasifen/engine/ tests/
 ### Estilo
 - Ruff para lint (rules: E, F, I, W)
 - Target: Python 3.10
-- Max line length: 79 (para bindings gerados)
+- Line length: padrão do ruff (88); bindings gerados com 100 e E501 ignorado em `kilasifen/engine/de/bindings/`
 
 ## Tipos de Documento Electrónico (DE)
 
@@ -139,11 +141,11 @@ errors = rde.validate_xml()
 ### Assinatura digital (RSA-SHA256)
 
 ```python
-# Via CommonMixin (em qualquer binding)
+# Via BindingMixin (em qualquer binding)
 signed = rde.sign_xml(xml, pkcs12_data, password, doc_id)
 
 # Via função direta
-from kilasifen.engine.assinatura import sign_xml
+from kilasifen.engine.firma import sign_xml
 signed = sign_xml(xml, pkcs12_data, password, doc_id)
 ```
 
@@ -193,7 +195,7 @@ resultado = e.enviar_evento(evento)
 
 O plano detalhado está em `plano-sifenlib.md`. Resumo:
 
-0. Setup inicial (git, pyproject.toml, .xsdata.xml) ✓
+0. Setup inicial (git, pyproject.toml, config xsdata) ✓
 1. Download e organização dos XSD (ajustar schemaLocation para paths relativos) ✓
 2. Geração dos bindings com xsdata ✓
 3. XMLs de exemplo para tipos 1, 4, 5 e 7 ✓ (faltam 2, 3, 6 e 8)

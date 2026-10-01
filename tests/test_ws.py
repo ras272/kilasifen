@@ -94,7 +94,7 @@ class TestWsProtocolo:
 
 
 class TestWsMixin:
-    """Verifica que CommonMixin está nas classes WS."""
+    """Verifica que BindingMixin esta en las clases WS."""
 
     def test_ws_has_mixin(self):
         from kilasifen.engine.de.bindings.v150.ws_si_recep_de_v150 import REnviDe

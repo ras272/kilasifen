@@ -310,8 +310,8 @@ class TestSerialization:
         assert len(xml_compact) < len(xml_pretty)
 
 
-class TestCommonMixin:
-    """Testes do CommonMixin."""
+class TestBindingMixin:
+    """Metodos que BindingMixin agrega a cada binding."""
 
     def test_mixin_methods_exist(self):
         from kilasifen.engine.de.bindings.v150.fe_v141 import RDe

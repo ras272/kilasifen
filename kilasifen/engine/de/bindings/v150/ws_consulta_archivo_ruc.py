@@ -4,20 +4,21 @@ from dataclasses import dataclass, field
 
 from xsdata.models.datatype import XmlDate
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.de.bindings.v150.si_consulta_archivo_ruc import RConsultaArchivo
 
 __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class REnviConsArchivoRucresponse(CommonMixin):
+class REnviConsArchivoRucresponse(BindingMixin):
     """
-    :ivar dFecProc:
-    :ivar dFecArchivo:
-    :ivar dCodRes: Codigo de Respuesta
-    :ivar dMsgRes: Mensaje del resultado de la consulta
-    :ivar rConsDte: Archivo zip generado en la consulta de mis DTEs
+    Attributes:
+        dFecProc:
+        dFecArchivo:
+        dCodRes: Codigo de Respuesta
+        dMsgRes: Mensaje del resultado de la consulta
+        rConsDte: Archivo zip generado en la consulta de mis DTEs
     """
 
     class Meta:
@@ -60,7 +61,7 @@ class REnviConsArchivoRucresponse(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class REnviConsArchivoRucrequest(CommonMixin):
+class REnviConsArchivoRucrequest(BindingMixin):
     class Meta:
         name = "rEnviConsArchivoRUCRequest"
         namespace = "http://ekuatia.set.gov.py/sifen/xsd"

@@ -2,19 +2,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from kilasifen.engine.CommonMixin import CommonMixin
+from kilasifen.engine.binding import BindingMixin
 from kilasifen.engine.de.bindings.v150.prot_proces_de_v150 import RProtDe
 
 __NAMESPACE__ = "http://ekuatia.set.gov.py/sifen/xsd"
 
 
 @dataclass(kw_only=True)
-class REnviDe(CommonMixin):
+class REnviDe(BindingMixin):
     """
     Recepcion de Documentos Electronicos.
 
-    :ivar dId: Identificador de control de envio
-    :ivar xDE: XML del Documento Electronico Transferido
+    Attributes:
+        dId: Identificador de control de envio
+        xDE: XML del Documento Electronico Transferido
     """
 
     class Meta:
@@ -34,7 +35,7 @@ class REnviDe(CommonMixin):
     )
 
     @dataclass(kw_only=True)
-    class XDe(CommonMixin):
+    class XDe(BindingMixin):
         ekuatia_set_gov_pysifenxsd_element: None | object = field(
             default=None,
             metadata={
@@ -45,11 +46,12 @@ class REnviDe(CommonMixin):
 
 
 @dataclass(kw_only=True)
-class RRetEnviDe(CommonMixin):
+class RRetEnviDe(BindingMixin):
     """
     Respuesta de la recepcion de Documentos Electronicos.
 
-    :ivar rProtDe: Protocolo de procesamiento de DE
+    Attributes:
+        rProtDe: Protocolo de procesamiento de DE
     """
 
     class Meta:

@@ -365,12 +365,16 @@ client.save_kude_html(rde, "outputs/kude_factura.html")
 
 ## Regenerar Bindings
 
-Si los XSD se actualizan:
+Si los XSD se actualizan (los bindings versionados se generaron con xsdata 26.2):
 
 ```bash
-pip install xsdata[cli,lxml]
-./script.sh
+pip install "xsdata[cli]==26.2"
+python scripts/generate_bindings.py          # regenera kilasifen/engine/de/bindings/v150
+python scripts/generate_bindings.py --check  # falla si lo versionado no coincide con los XSD
 ```
+
+Cada clase generada hereda de `kilasifen.engine.binding.BindingMixin`
+(`from_xml`, `from_path`, `to_xml`, `validate_xml`, `sign_xml`).
 
 ## Desarrollo
 
