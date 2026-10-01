@@ -1,52 +1,52 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">
   <dVerFor>150</dVerFor>
-  <DE Id="01800695631001001000001412025021212121212121">
-    <dDVId>4</dDVId>
-    <dFecFirma>2025-02-12T12:12:12</dFecFirma>
+  <DE Id="06801726492001001000000922026032419173645205">
+    <dDVId>5</dDVId>
+    <dFecFirma>2026-03-24T11:30:52</dFecFirma>
     <gOpeDE>
       <iTipEmi>1</iTipEmi>
       <dDesTipEmi>Normal</dDesTipEmi>
-      <dCodSeg>000000002</dCodSeg>
+      <dCodSeg>917364520</dCodSeg>
     </gOpeDE>
     <gTimb>
       <iTiDE>6</iTiDE>
-      <dDesTiDE>Nota de crédito electrónica</dDesTiDE>
-      <dNumTim>12345678</dNumTim>
+      <dDesTiDE>Nota de débito electrónica</dDesTiDE>
+      <dNumTim>16482039</dNumTim>
       <dEst>001</dEst>
       <dPunExp>001</dPunExp>
-      <dNumDoc>0000002</dNumDoc>
-      <dFeIniT>2024-01-01</dFeIniT>
-      <dFeFinT>2025-12-31</dFeFinT>
+      <dNumDoc>0000009</dNumDoc>
+      <dFeIniT>2025-11-03</dFeIniT>
+      <dFeFinT>2026-12-31</dFeFinT>
     </gTimb>
     <gDatGralOpe>
-      <dFeEmiDE>2025-02-12T12:12:12</dFeEmiDE>
+      <dFeEmiDE>2026-03-24T11:30:18</dFeEmiDE>
       <gOpeCom>
-        <iTipTra>1</iTipTra>
-        <dDesTipTra>Venta de mercadería</dDesTipTra>
         <iTImp>1</iTImp>
         <dDesTImp>IVA</dDesTImp>
         <cMoneOpe>PYG</cMoneOpe>
         <dDesMoneOpe>Guarani</dDesMoneOpe>
       </gOpeCom>
       <gEmis>
-        <dRucEm>80069563</dRucEm>
-        <dDVEmi>1</dDVEmi>
-        <iTipCont>1</iTipCont>
-        <dNomEmi>Empresa Demo S.A.</dNomEmi>
-        <dDirEmi>Av. España 1234</dDirEmi>
-        <dNumCas>1234</dNumCas>
+        <dRucEm>80172649</dRucEm>
+        <dDVEmi>2</dDVEmi>
+        <iTipCont>2</iTipCont>
+        <dNomEmi>Lapacho Sur Comercial S.A.</dNomEmi>
+        <dNomFanEmi>Lapacho Sur</dNomFanEmi>
+        <dDirEmi>Calle Yvyrá Pytã esquina Los Lapachos</dDirEmi>
+        <dNumCas>1180</dNumCas>
         <cDepEmi>1</cDepEmi>
         <dDesDepEmi>CAPITAL</dDesDepEmi>
         <cDisEmi>1</cDisEmi>
         <dDesDisEmi>ASUNCION (DISTRITO)</dDesDisEmi>
         <cCiuEmi>1</cCiuEmi>
         <dDesCiuEmi>ASUNCION (DISTRITO)</dDesCiuEmi>
-        <dTelEmi>021123456</dTelEmi>
-        <dEmailE>demo@empresa.com.py</dEmailE>
+        <dTelEmi>021558904</dTelEmi>
+        <dEmailE>facturacion@lapachosur.example</dEmailE>
+        <dDenSuc>Casa matriz</dDenSuc>
         <gActEco>
-          <cActEco>47111</cActEco>
-          <dDesActEco>Venta al por menor</dDesActEco>
+          <cActEco>46699</cActEco>
+          <dDesActEco>Venta al por mayor de artículos de riego y jardinería</dDesActEco>
         </gActEco>
       </gEmis>
       <gDatRec>
@@ -54,83 +54,80 @@
         <iTiOpe>1</iTiOpe>
         <cPaisRec>PRY</cPaisRec>
         <dDesPaisRe>Paraguay</dDesPaisRe>
-        <iTiContRec>1</iTiContRec>
-        <dRucRec>4192083</dRucRec>
-        <dDVRec>5</dDVRec>
-        <dNomRec>Cliente Demo S.A.</dNomRec>
+        <iTiContRec>2</iTiContRec>
+        <dRucRec>80293518</dRucRec>
+        <dDVRec>4</dDVRec>
+        <dNomRec>Viveros Tres Arroyos S.R.L.</dNomRec>
+        <dDirRec>Calle Ñasaindy 452, barrio Tembetary</dDirRec>
+        <dTelRec>021667301</dTelRec>
+        <dEmailRec>compras@tresarroyos.example</dEmailRec>
+        <dCodCliente>CLI-0457</dCodCliente>
       </gDatRec>
     </gDatGralOpe>
     <gDtipDE>
       <gCamNCDE>
-        <iMotEmi>2</iMotEmi>
-        <dDesMotEmi>Devolución y Ajuste de precios</dDesMotEmi>
+        <iMotEmi>7</iMotEmi>
+        <dDesMotEmi>Recupero de gasto</dDesMotEmi>
       </gCamNCDE>
-      <gCamCond>
-        <iCondOpe>1</iCondOpe>
-        <dDCondOpe>Contado</dDCondOpe>
-        <gPaConEIni>
-          <iTiPago>1</iTiPago>
-          <dDesTiPag>Efectivo</dDesTiPag>
-          <dMonTiPag>500000</dMonTiPag>
-          <cMoneTiPag>PYG</cMoneTiPag>
-          <dDMoneTiPag>Guarani</dDMoneTiPag>
-        </gPaConEIni>
-      </gCamCond>
       <gCamItem>
-        <dCodInt>PROD001</dCodInt>
-        <dDesProSer>Producto devuelto</dDesProSer>
+        <dCodInt>LS-FL01</dCodInt>
+        <dDesProSer>Recupero de gasto de flete no incluido en la factura</dDesProSer>
         <cUniMed>77</cUniMed>
         <dDesUniMed>UNI</dDesUniMed>
         <dCantProSer>1</dCantProSer>
         <gValorItem>
-          <dPUniProSer>500000</dPUniProSer>
+          <dPUniProSer>60000</dPUniProSer>
           <dDescItem>0</dDescItem>
-          <dTotOpeItem>500000</dTotOpeItem>
-          <dTotOpeGs>500000</dTotOpeGs>
+          <dTotOpeItem>60000</dTotOpeItem>
+          <dTotOpeGs>60000</dTotOpeGs>
         </gValorItem>
         <gCamIVA>
           <iAfecIVA>1</iAfecIVA>
           <dDesAfecIVA>Gravado IVA</dDesAfecIVA>
           <dPropIVA>100</dPropIVA>
           <dTasaIVA>10</dTasaIVA>
-          <dBasGravIVA>454545</dBasGravIVA>
-          <dLiqIVAItem>45455</dLiqIVAItem>
+          <dBasGravIVA>54545</dBasGravIVA>
+          <dLiqIVAItem>5455</dLiqIVAItem>
         </gCamIVA>
       </gCamItem>
     </gDtipDE>
     <gTotSub>
-      <dSub10>500000</dSub10>
-      <dTotOpe>500000</dTotOpe>
+      <dSub10>60000</dSub10>
+      <dTotOpe>60000</dTotOpe>
       <dTotDesc>0</dTotDesc>
       <dPorcDescTotal>0</dPorcDescTotal>
       <dDescTotal>0</dDescTotal>
       <dAnticipo>0</dAnticipo>
       <dRedon>0</dRedon>
-      <dTotGralOpe>500000</dTotGralOpe>
-      <dIVA10>45455</dIVA10>
-      <dBaseGrav10>454545</dBaseGrav10>
-      <dTBasGraIVA>454545</dTBasGraIVA>
-      <dTotIVA>45455</dTotIVA>
-      <dTotalGs>500000</dTotalGs>
+      <dTotGralOpe>60000</dTotGralOpe>
+      <dIVA10>5455</dIVA10>
+      <dTotIVA>5455</dTotIVA>
+      <dBaseGrav10>54545</dBaseGrav10>
+      <dTBasGraIVA>54545</dTBasGraIVA>
+      <dTotalGs>60000</dTotalGs>
     </gTotSub>
     <gCamDEAsoc>
       <iTipDocAso>1</iTipDocAso>
       <dDesTipDocAso>Electrónico</dDesTipDocAso>
-      <dCdCDERef>01800695631001001000000612024112917595714694</dCdCDERef>
+      <dCdCDERef>01801726492001001000014822026031214829130767</dCdCDERef>
     </gCamDEAsoc>
   </DE>
   <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
     <ds:SignedInfo>
-      <ds:CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+      <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
       <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
-      <ds:Reference URI="">
+      <ds:Reference URI="#06801726492001001000000922026032419173645205">
+        <ds:Transforms>
+          <ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+          <ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+        </ds:Transforms>
         <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
-        <ds:DigestValue>PLACEHOLDER</ds:DigestValue>
+        <ds:DigestValue>FXIVslaplSUhybD+nkbj/Xc5Ql/XiI48b8YjTa5xicU=</ds:DigestValue>
       </ds:Reference>
     </ds:SignedInfo>
-    <ds:SignatureValue>PLACEHOLDER</ds:SignatureValue>
+    <ds:SignatureValue>q+JIeDdVSQaRgoceBXtHRLCOM4MGNdDE0quXaGWxO7+6jFsBvabhZYa6eL5xhzGUVaA+yQVHOMpLKQHLRU/vnUV7z4SHJSSeOrZtH4lJ6CDbRY5iRnRwdxBHH7t8OhUMfuuj9RTx93iT3QUbAPyCtoRpnmGIRSH/8uRy9qQuCKXwNHUlf1Qh9E7wyNwBQnbAVp0KhXchFopyQhw2Sl8CDw9oLYwirx9FO2hHOxWUx7Bj9en0PUZv/g446TaGyBeDXuGhCB4wGYhtSEKANQip9rTumzyE7gbTxUYWjTW3E8wasC92Lu6iTw1SBdojDQIFIzE3d+3JsYHp3Y5oesZc8Q==</ds:SignatureValue>
   </ds:Signature>
   <gCamFuFD>
-    <dCarQR>https://ekuatia.set.gov.py/consultas/qr?nVersion=150</dCarQR>
+    <dCarQR>https://ekuatia.set.gov.py/consultas/qr?nVersion=150&amp;Id=06801726492001001000000922026032419173645205&amp;dFeEmiDE=323032362d30332d32345431313a33303a3138&amp;dRucRec=80293518&amp;dTotGralOpe=60000.00000000&amp;dTotIVA=5455.00000000&amp;cItems=1&amp;DigestValue=46584956736c61706c5355687962442b6e6b626a2f586335516c2f58694934386238596a546135786963553d&amp;IdCSC=0001&amp;cHashQR=82fc9204bea2d0b27499d0701e9cd976a2626023b42833aa52406177bcc58008</dCarQR>
   </gCamFuFD>
 </rDE>
