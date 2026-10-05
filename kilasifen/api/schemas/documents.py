@@ -15,9 +15,9 @@ from pydantic import (
 
 from kilasifen.api.schemas.common import Pagination, SuccessEnvelope
 from kilasifen.api.schemas.jobs import JobResponse
-from kilasifen.domain.documents.receiver import ReceiverRuleError, resolve_receiver
+from kilasifen.domain.common.errors import FiscalRuleError
+from kilasifen.domain.documents.receiver import resolve_receiver
 from kilasifen.domain.documents.totals import (
-    TotalsRuleError,
     compute_document_amounts,
     resolve_payment_plan,
 )
@@ -84,9 +84,10 @@ class GenerationResponsiblePayload(FiscalContractModel):
     def validate_other_document_type(self) -> "GenerationResponsiblePayload":
         # NT 10 §2.2 (1265): with 9 the real type is described in 9-41 chars.
         if (self.tipo_documento == 9) != (self.descripcion_tipo_documento is not None):
-            raise ValueError(
+            raise FiscalRuleError(
+                "documents.responsable_generacion.descripcion_tipo_documento_invalid",
                 "responsable_generacion.descripcion_tipo_documento goes only "
-                "with tipo_documento 9"
+                "with tipo_documento 9",
             )
         return self
 
@@ -104,9 +105,10 @@ def _official_currency(value: str | None) -> str | None:
     code = value.strip().upper()
     description = descripcion_moneda(code)
     if description is None or not 3 <= len(description) <= _CURRENCY_DESCRIPTION_MAX:
-        raise ValueError(
+        raise FiscalRuleError(
+            "documents.currency.moneda_invalid",
             "moneda must be an ISO 4217 code of the XSD cMondT whose official "
-            "name fits the 20 characters of its description"
+            "name fits the 20 characters of its description",
         )
     return code
 
@@ -296,7 +298,10 @@ class CardPayload(FiscalContractModel):
     @classmethod
     def validate_last_four(cls, value: str | int | None) -> str | int | None:
         if value is not None and (not str(value).isdigit() or len(str(value)) != 4):
-            raise ValueError("tarjeta.ultimos_4 must contain exactly four digits")
+            raise FiscalRuleError(
+                "documents.condicion_operacion.formas_pago.tarjeta.ultimos_4_invalid",
+                "tarjeta.ultimos_4 must contain exactly four digits",
+            )
         return value
 
 
@@ -348,15 +353,24 @@ class PaymentPayload(FiscalContractModel):
     def validate_payment_details(self) -> "PaymentPayload":
         if self.moneda == "PYG" and self.tipo_cambio is not None:
             # MT v150 1557: no E611 for a payment in guaranies.
-            raise ValueError("tipo_cambio is not allowed for a payment in PYG")
+            raise FiscalRuleError(
+                "documents.condicion_operacion.formas_pago.tipo_cambio_not_allowed",
+                "tipo_cambio is not allowed for a payment in PYG",
+            )
         normalized = str(self.tipo).strip().lower()
         if normalized in {"2", "cheque"} and (
             self.numero_cheque is None or not self.banco
         ):
-            raise ValueError("numero_cheque and banco are required for cheque payments")
+            raise FiscalRuleError(
+                "documents.condicion_operacion.formas_pago.cheque_incomplete",
+                "numero_cheque and banco are required for cheque payments",
+            )
         if normalized in {"3", "4", "tarjeta_credito", "tarjeta_debito"}:
             if self.tarjeta is None:
-                raise ValueError("tarjeta is required for card payments")
+                raise FiscalRuleError(
+                    "documents.condicion_operacion.formas_pago.tarjeta_required",
+                    "tarjeta is required for card payments",
+                )
         return self
 
 
@@ -402,9 +416,15 @@ class CreditPayload(FiscalContractModel):
         if normalized in {"1", "plazo"} and not (
             self.descripcion or self.plazo_descripcion
         ):
-            raise ValueError("credito.descripcion is required for plazo")
+            raise FiscalRuleError(
+                "documents.condicion_operacion.credito.descripcion_required",
+                "credito.descripcion is required for plazo",
+            )
         if normalized in {"2", "cuotas"} and not self.cuotas:
-            raise ValueError("credito.cuotas is required for installment credit")
+            raise FiscalRuleError(
+                "documents.condicion_operacion.credito.cuotas_required",
+                "credito.cuotas is required for installment credit",
+            )
         return self
 
 
@@ -425,9 +445,15 @@ class OperationConditionPayload(FiscalContractModel):
     def validate_condition_details(self) -> "OperationConditionPayload":
         normalized = str(self.tipo).strip().lower()
         if normalized in {"2", "credito"} and self.credito is None:
-            raise ValueError("condicion_operacion.credito is required")
+            raise FiscalRuleError(
+                "documents.condicion_operacion.credito_required",
+                "condicion_operacion.credito is required",
+            )
         if normalized in {"1", "contado"} and self.credito is not None:
-            raise ValueError("condicion_operacion.credito is not allowed for contado")
+            raise FiscalRuleError(
+                "documents.condicion_operacion.credito_not_allowed",
+                "condicion_operacion.credito is not allowed for contado",
+            )
         return self
 
 
@@ -503,9 +529,15 @@ class ItemPayload(FiscalContractModel):
         affectation = str(self.afectacion).strip().lower()
         if affectation in {"1", "4", "gravado", "gravado_parcial"}:
             if self.tasa not in {5, 10}:
-                raise ValueError("items.tasa must be 5 or 10 for taxable IVA items")
+                raise FiscalRuleError(
+                    "documents.items.tasa_invalid",
+                    "items.tasa must be 5 or 10 for taxable IVA items",
+                )
         elif self.tasa != 0:
-            raise ValueError("items.tasa must be 0 for exempt or exonerated items")
+            raise FiscalRuleError(
+                "documents.items.tasa_invalid",
+                "items.tasa must be 0 for exempt or exonerated items",
+            )
         deductions = (
             self.descuento_particular
             + (self.descuento_global or Decimal("0"))
@@ -513,7 +545,10 @@ class ItemPayload(FiscalContractModel):
             + self.anticipo_global
         )
         if deductions > self.precio_unitario:
-            raise ValueError("item discounts and advances exceed precio_unitario")
+            raise FiscalRuleError(
+                "documents.items.net_unit_negative",
+                "item discounts and advances exceed precio_unitario",
+            )
         return self
 
 
@@ -534,7 +569,10 @@ class AssociatedDocumentPayload(FiscalContractModel):
     def validate_associated_identity(self) -> "AssociatedDocumentPayload":
         normalized = str(self.tipo).strip().lower()
         if normalized in {"1", "electronico"} and not self.cdc:
-            raise ValueError("documento_asociado.cdc is required for electronic DTE")
+            raise FiscalRuleError(
+                "documents.documento_asociado.cdc_required",
+                "documento_asociado.cdc is required for electronic DTE",
+            )
         if normalized in {"2", "impreso"} and not all(
             value is not None
             for value in (
@@ -545,11 +583,17 @@ class AssociatedDocumentPayload(FiscalContractModel):
                 self.fecha_emision,
             )
         ):
-            raise ValueError("printed documento_asociado identity is incomplete")
+            raise FiscalRuleError(
+                "documents.documento_asociado.impreso_incomplete",
+                "printed documento_asociado identity is incomplete",
+            )
         if normalized in {"3", "constancia_electronica"} and not (
             self.numero_constancia and self.numero_control
         ):
-            raise ValueError("electronic constancia identity is incomplete")
+            raise FiscalRuleError(
+                "documents.documento_asociado.constancia_incomplete",
+                "electronic constancia identity is incomplete",
+            )
         return self
 
 
@@ -661,24 +705,27 @@ class BaseFiscalDocumentPayload(FiscalContractModel):
             return value
         text = str(value)
         if not text.isdigit() or len(text) > 9:
-            raise ValueError("codigo_seguridad must contain at most nine digits")
+            raise FiscalRuleError(
+                "documents.codigo_seguridad.invalid_format",
+                "codigo_seguridad must contain at most nine digits",
+            )
         if int(text) == 0:
             # XSD tiCodSe: minInclusive 1, "tampoco debe contener solo ceros".
-            raise ValueError("codigo_seguridad must not be zero")
+            raise FiscalRuleError(
+                "documents.codigo_seguridad.zero", "codigo_seguridad must not be zero"
+            )
         return value
 
     @model_validator(mode="after")
     def validate_receiver(self) -> "BaseFiscalDocumentPayload":
-        try:
-            resolve_receiver(
-                self.cliente.model_dump(exclude_none=True),
-                document_type=getattr(self, "tipo_documento", 1),
-                country_description=descripcion_pais,
-                department_description=descripcion_departamento,
-                mod11_dv=calculate_mod11_dv,
-            )
-        except ReceiverRuleError as exc:
-            raise ValueError(exc.code) from exc
+        # A ReceiverRuleError is a FiscalRuleError: the 422 entry carries its code.
+        resolve_receiver(
+            self.cliente.model_dump(exclude_none=True),
+            document_type=getattr(self, "tipo_documento", 1),
+            country_description=descripcion_pais,
+            department_description=descripcion_departamento,
+            mod11_dv=calculate_mod11_dv,
+        )
         return self
 
     @model_validator(mode="after")
@@ -687,11 +734,20 @@ class BaseFiscalDocumentPayload(FiscalContractModel):
         if currency == "PYG" and (
             self.condicion_tipo_cambio is not None or self.tipo_cambio is not None
         ):
-            raise ValueError("exchange-rate fields are not allowed for PYG")
+            raise FiscalRuleError(
+                "documents.currency.tipo_cambio_not_allowed",
+                "exchange-rate fields are not allowed for PYG",
+            )
         if currency != "PYG" and self.condicion_tipo_cambio is None:
-            raise ValueError("condicion_tipo_cambio is required for foreign currency")
+            raise FiscalRuleError(
+                "documents.currency.condicion_tipo_cambio_required",
+                "condicion_tipo_cambio is required for foreign currency",
+            )
         if self.condicion_tipo_cambio == 1 and self.tipo_cambio is None:
-            raise ValueError("tipo_cambio is required when condicion_tipo_cambio is 1")
+            raise FiscalRuleError(
+                "documents.currency.tipo_cambio_required",
+                "tipo_cambio is required when condicion_tipo_cambio is 1",
+            )
         return self
 
     @model_validator(mode="after")
@@ -702,17 +758,15 @@ class BaseFiscalDocumentPayload(FiscalContractModel):
         E733 (1904-1906), EA003/EA004 (1861/1862, NT 01), ``redondeo`` (MT v150
         §F), ISC (1902) and, in a factura, gPaConEIni (1551/1552), E611 by the
         currency of the payment (1556/1557) and payments adding up to the
-        total. The rule code travels in the 422 message.
+        total. A TotalsRuleError is a FiscalRuleError: the 422 entry carries
+        its code.
         """
 
         payload = self.model_dump(mode="json")
-        try:
-            amounts = compute_document_amounts(payload)
-            if getattr(self, "tipo_documento", 1) == 1:
-                # gCamCond (E600) only goes in a factura (C002 = 1).
-                resolve_payment_plan(payload, amounts)
-        except TotalsRuleError as exc:
-            raise ValueError(exc.code) from exc
+        amounts = compute_document_amounts(payload)
+        if getattr(self, "tipo_documento", 1) == 1:
+            # gCamCond (E600) only goes in a factura (C002 = 1).
+            resolve_payment_plan(payload, amounts)
         return self
 
 

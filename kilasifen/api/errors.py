@@ -17,6 +17,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from kilasifen.api.schemas.common import ErrorEnvelope, ErrorPayload
 from kilasifen.domain.common.errors import (
     ConflictError,
+    FiscalRuleError,
     NotFoundError,
     ServiceUnavailableError,
     UnprocessableEntityError,
@@ -273,16 +274,25 @@ async def unprocessable_entity_error_handler(
 
 
 def _validation_errors(exc: RequestValidationError) -> list[dict[str, Any]]:
-    """Keep location, message and type; never echo submitted values back."""
+    """Keep location, message and type; never echo submitted values back.
 
-    return [
-        {
-            "loc": list(error.get("loc", ())),
-            "message": str(error.get("msg", "")),
-            "type": str(error.get("type", "")),
-        }
-        for error in exc.errors()
-    ]
+    An entry produced by a :class:`FiscalRuleError` also carries its ``code``,
+    the stable name of the fiscal rule the payload breaks.
+    """
+
+    return [_validation_error(error) for error in exc.errors()]
+
+
+def _validation_error(error: dict[str, Any]) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "loc": list(error.get("loc", ())),
+        "message": str(error.get("msg", "")),
+        "type": str(error.get("type", "")),
+    }
+    cause = (error.get("ctx") or {}).get("error")
+    if isinstance(cause, FiscalRuleError):
+        entry["code"] = cause.code
+    return entry
 
 
 def _http_error(status_code: int) -> tuple[str, str, str]:

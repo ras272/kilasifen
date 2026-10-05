@@ -54,7 +54,9 @@ class ErrorPayload(BaseModel):
         default=None,
         description=(
             "Datos propios del código. En `request.validation_failed`, "
-            "`errors` lista cada problema con `loc`, `message` y `type`."
+            "`errors` lista cada problema con `loc`, `message` y `type`, y con "
+            "`code` cuando incumple una regla fiscal con nombre (por ejemplo "
+            "`documents.cliente.tipo_contribuyente_required`)."
         ),
     )
 
