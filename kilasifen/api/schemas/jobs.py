@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from kilasifen.api.schemas.common import Pagination, SuccessEnvelope
+
 
 class JobResponse(BaseModel):
     """Job response payload."""
@@ -25,3 +27,24 @@ class JobResponse(BaseModel):
     worker_correlation_id: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class JobData(BaseModel):
+    """Job consultado."""
+
+    job: JobResponse
+
+
+class JobListData(BaseModel):
+    """Página de jobs."""
+
+    jobs: list[JobResponse]
+    pagination: Pagination
+
+
+class JobEnvelope(SuccessEnvelope[JobData]):
+    """Respuesta con un job."""
+
+
+class JobListEnvelope(SuccessEnvelope[JobListData]):
+    """Respuesta con una página de jobs."""

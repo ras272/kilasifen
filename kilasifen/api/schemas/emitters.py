@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.domain.emitters.fiscal_profile import (
     EconomicActivity,
     EmitterFiscalProfile,
@@ -252,3 +253,23 @@ class EmitterHealthResponse(BaseModel):
     last_document_id: str | None
     last_document_status: str | None
     checked_at: datetime
+
+
+class EmitterData(BaseModel):
+    """Emisor."""
+
+    emitter: EmitterResponse
+
+
+class EmitterHealthData(BaseModel):
+    """Preparación operativa del emisor."""
+
+    health: EmitterHealthResponse
+
+
+class EmitterEnvelope(SuccessEnvelope[EmitterData]):
+    """Respuesta con un emisor."""
+
+
+class EmitterHealthEnvelope(SuccessEnvelope[EmitterHealthData]):
+    """Respuesta con la preparación del emisor."""

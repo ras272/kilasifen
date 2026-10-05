@@ -97,3 +97,51 @@ def test_openapi_declares_the_error_envelope_for_client_errors(monkeypatch) -> N
     assert "HTTPValidationError" not in schema["components"]["schemas"]
 
     get_settings.cache_clear()
+
+
+def test_openapi_types_the_data_of_every_json_success_response(monkeypatch) -> None:
+    monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    get_settings.cache_clear()
+    schema = create_app().openapi()
+    components = schema["components"]["schemas"]
+
+    untyped = []
+    for path, path_item in schema["paths"].items():
+        for method, operation in path_item.items():
+            for status, response in operation["responses"].items():
+                content = response.get("content", {})
+                if not status.startswith("2") or "application/json" not in content:
+                    continue
+                ref = content["application/json"]["schema"].get("$ref", "")
+                envelope = components.get(ref.rsplit("/", 1)[-1], {})
+                data = envelope.get("properties", {}).get("data", {})
+                required = set(envelope.get("required", []))
+                if required != {"data", "correlation_id"} or "$ref" not in data:
+                    untyped.append(f"{method.upper()} {path} {status}")
+    assert untyped == []
+
+    created = schema["paths"]["/v1/emitters/{emitter_id}/documents/facturas"]["post"]
+    for status in ("200", "201"):
+        ref = created["responses"][status]["content"]["application/json"]["schema"]
+        assert ref == {"$ref": "#/components/schemas/CreatedDocumentEnvelope"}
+    assert set(components["CreatedDocumentData"]["required"]) == {"document", "job"}
+    assert "fiscal_warnings" in components["DocumentResponse"]["properties"]
+
+    get_settings.cache_clear()
+
+
+def test_openapi_declares_the_media_type_of_downloads(monkeypatch) -> None:
+    monkeypatch.setenv("KILA_SIFEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+    get_settings.cache_clear()
+    paths = create_app().openapi()["paths"]
+    prefix = "/v1/emitters/{emitter_id}/documents/{document_id}"
+
+    xml = paths[f"{prefix}/xml"]["get"]["responses"]["200"]["content"]
+    kude = paths[f"{prefix}/kude"]["get"]["responses"]["200"]["content"]
+
+    assert xml == {"application/xml": {"schema": {"type": "string"}}}
+    assert kude == {
+        "application/pdf": {"schema": {"type": "string", "format": "binary"}}
+    }
+
+    get_settings.cache_clear()

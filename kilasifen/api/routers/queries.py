@@ -8,10 +8,13 @@ from kilasifen.api.deps import (
     require_fiscal_write,
 )
 from kilasifen.api.errors import ApiError
-from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.queries import (
+    DocumentQueryData,
+    DocumentQueryEnvelope,
     DocumentQueryResponse,
     RegisteredEventResponse,
+    RucQueryData,
+    RucQueryEnvelope,
     RucQueryResponse,
     TaxpayerResponse,
 )
@@ -20,14 +23,14 @@ from kilasifen.application.queries.service import QueryService
 router = APIRouter(prefix="/emitters/{emitter_id}/queries", tags=["queries"])
 
 
-@router.get("/ruc/{ruc}", response_model=SuccessEnvelope)
+@router.get("/ruc/{ruc}", response_model=RucQueryEnvelope)
 def query_ruc(
     emitter_id: str,
     ruc: str,
     request: Request,
     _principal=Depends(require_emitter_read),
     service: QueryService = Depends(get_query_service),
-) -> SuccessEnvelope:
+) -> RucQueryEnvelope:
     try:
         outcome = service.query_ruc(emitter_id=emitter_id, ruc=ruc)
     except ValueError as exc:
@@ -48,28 +51,30 @@ def query_ruc(
             electronic_taxpayer=outcome.electronic_taxpayer,
         )
 
-    return SuccessEnvelope(
-        data={
-            "ruc_query": RucQueryResponse(
+    return RucQueryEnvelope(
+        data=RucQueryData(
+            ruc_query=RucQueryResponse(
                 queried_ruc=outcome.queried_ruc,
                 status=outcome.status,
                 result_code=outcome.result_code,
                 result_message=outcome.result_message,
                 taxpayer=taxpayer,
-            ).model_dump(mode="json")
-        },
+            )
+        ),
         correlation_id=request.state.correlation_id,
     )
 
 
-@router.get("/documents/{document_id}", response_model=SuccessEnvelope)
+@router.get(
+    "/documents/{document_id}", response_model=DocumentQueryEnvelope
+)
 def query_document(
     emitter_id: str,
     document_id: str,
     request: Request,
     _principal=Depends(require_emitter_read),
     service: QueryService = Depends(get_query_service),
-) -> SuccessEnvelope:
+) -> DocumentQueryEnvelope:
     return _query_document_response(
         emitter_id=emitter_id,
         document_id=document_id,
@@ -79,14 +84,17 @@ def query_document(
     )
 
 
-@router.post("/documents/{document_id}/reconcile", response_model=SuccessEnvelope)
+@router.post(
+    "/documents/{document_id}/reconcile",
+    response_model=DocumentQueryEnvelope,
+)
 def reconcile_document(
     emitter_id: str,
     document_id: str,
     request: Request,
     _principal=Depends(require_fiscal_write),
     service: QueryService = Depends(get_query_service),
-) -> SuccessEnvelope:
+) -> DocumentQueryEnvelope:
     """Consulta el CDC y registra la respuesta del SIFEN; no envia nada.
 
     Con 0422 un documento pendiente queda aprobado (o cancelado si hay una
@@ -111,7 +119,7 @@ def _query_document_response(
     request: Request,
     service: QueryService,
     reconcile: bool,
-) -> SuccessEnvelope:
+) -> DocumentQueryEnvelope:
     try:
         document, outcome = service.query_document(
             emitter_id=emitter_id,
@@ -126,9 +134,9 @@ def _query_document_response(
             category="invalid_request",
         ) from exc
 
-    return SuccessEnvelope(
-        data={
-            "document_query": DocumentQueryResponse(
+    return DocumentQueryEnvelope(
+        data=DocumentQueryData(
+            document_query=DocumentQueryResponse(
                 document_id=document.id,
                 cdc=outcome.cdc,
                 status=outcome.status,
@@ -148,7 +156,7 @@ def _query_document_response(
                         outcome.container.events if outcome.container else ()
                     )
                 ],
-            ).model_dump(mode="json")
-        },
+            )
+        ),
         correlation_id=request.state.correlation_id,
     )

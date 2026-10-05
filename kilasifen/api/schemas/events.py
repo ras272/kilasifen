@@ -5,6 +5,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from kilasifen.api.schemas.common import SuccessEnvelope
+from kilasifen.api.schemas.jobs import JobResponse
+
 
 class EventCreateRequest(BaseModel):
     """Event creation payload."""
@@ -94,3 +97,41 @@ class InutilizedRangeResponse(BaseModel):
     sifen_protocol: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class CreatedEventData(BaseModel):
+    """Evento creado y el job que lo transmite."""
+
+    event: EventResponse
+    job: JobResponse
+
+
+class EventWithJobData(BaseModel):
+    """Evento y su job, si tiene."""
+
+    event: EventResponse
+    job: JobResponse | None
+
+
+class CreatedInutilizationData(CreatedEventData):
+    """Inutilización creada, su rango y los avisos."""
+
+    inutilization: InutilizedRangeResponse
+    warnings: list[str] = Field(
+        description=(
+            "Avisos que no impiden la inutilización, por ejemplo "
+            "`inutilization.extemporaneous`."
+        )
+    )
+
+
+class CreatedEventEnvelope(SuccessEnvelope[CreatedEventData]):
+    """Respuesta de la creación de un evento."""
+
+
+class EventWithJobEnvelope(SuccessEnvelope[EventWithJobData]):
+    """Respuesta con un evento."""
+
+
+class CreatedInutilizationEnvelope(SuccessEnvelope[CreatedInutilizationData]):
+    """Respuesta de la creación de una inutilización."""

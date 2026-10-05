@@ -13,6 +13,8 @@ from pydantic import (
     model_validator,
 )
 
+from kilasifen.api.schemas.common import Pagination, SuccessEnvelope
+from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.domain.documents.receiver import ReceiverRuleError, resolve_receiver
 from kilasifen.domain.documents.totals import (
     TotalsRuleError,
@@ -807,3 +809,93 @@ class DocumentResponse(BaseModel):
     )
     created_at: datetime
     updated_at: datetime
+
+
+class CreatedDocumentData(BaseModel):
+    """Documento creado (o reproducido por idempotencia) y su job de emisión."""
+
+    document: DocumentResponse
+    job: JobResponse
+
+
+class DocumentWithJobData(BaseModel):
+    """Documento y su job de emisión, si tiene."""
+
+    document: DocumentResponse
+    job: JobResponse | None
+
+
+class DocumentListData(BaseModel):
+    """Página de documentos del emisor."""
+
+    documents: list[DocumentWithJobData]
+    pagination: Pagination
+
+
+class KudeContent(BaseModel):
+    """Contenido del KuDE con los literales del XML firmado.
+
+    Montos, cantidades y fechas son el texto del XML: imprimilos completos,
+    sin redondear (MT v150 §13.2).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    tipo: str = Field(
+        description=(
+            "`factura_electronica`, `nota_credito_electronica` o "
+            "`nota_debito_electronica`."
+        )
+    )
+    tipo_label: str
+    ambiente: Literal["test", "produccion"]
+    ambiente_warning: str | None = Field(
+        description="Leyenda de un DE del ambiente de prueba; `null` en producción."
+    )
+    cdc: dict[str, Any] = Field(
+        description="`raw` (44 dígitos) y `groups` (de a 4, para imprimir)."
+    )
+    emisor: dict[str, Any] = Field(description="Datos de gEmis.")
+    timbrado: dict[str, Any] = Field(description="Datos de gTimb.")
+    datos_generales: dict[str, Any] = Field(
+        description="Fecha de emisión, condición de la operación y moneda."
+    )
+    receptor: dict[str, Any] = Field(description="Datos de gDatRec.")
+    documento_asociado: dict[str, Any] | None = Field(
+        description="gCamDEAsoc de una nota de crédito o de débito."
+    )
+    nota_credito: dict[str, Any] | None = Field(
+        description="Motivo de emisión (iMotEmi) de una nota de crédito."
+    )
+    nota_debito: dict[str, Any] | None = Field(
+        description="Motivo de emisión (iMotEmi) de una nota de débito."
+    )
+    items: list[dict[str, Any]] = Field(description="Ítems (gCamItem).")
+    totales: dict[str, Any] = Field(description="Subtotales y totales (gTotSub).")
+    qr: dict[str, Any] = Field(description="`url` del QR (dCarQR) y `ambiente`.")
+    consulta_publica: dict[str, Any] = Field(
+        description="`portal_url` de la consulta pública de e-Kuatia."
+    )
+    informacion_adicional: str | None
+
+
+class KudeData(BaseModel):
+    """Datos para armar el KuDE propio del integrador."""
+
+    kude: KudeContent
+
+
+class CreatedDocumentEnvelope(SuccessEnvelope[CreatedDocumentData]):
+    """Respuesta de la creación de un documento."""
+
+
+class DocumentWithJobEnvelope(SuccessEnvelope[DocumentWithJobData]):
+    """Respuesta con un documento."""
+
+
+class DocumentListEnvelope(SuccessEnvelope[DocumentListData]):
+    """Respuesta con una página de documentos."""
+
+
+class KudeEnvelope(SuccessEnvelope[KudeData]):
+    """Respuesta con los datos del KuDE."""

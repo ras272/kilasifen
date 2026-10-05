@@ -8,10 +8,13 @@ from kilasifen.api.deps import (
     get_emitter_health_service,
     get_emitter_service,
 )
-from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.emitters import (
     EmitterCreateRequest,
+    EmitterData,
+    EmitterEnvelope,
     EmitterFiscalProfileModel,
+    EmitterHealthData,
+    EmitterHealthEnvelope,
     EmitterHealthResponse,
     EmitterResponse,
     EmitterUpdateRequest,
@@ -30,13 +33,17 @@ from kilasifen.security import (
 router = APIRouter(prefix="/emitters", tags=["emitters"])
 
 
-@router.post("", response_model=SuccessEnvelope, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=EmitterEnvelope,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_emitter(
     payload: EmitterCreateRequest,
     request: Request,
     principal: ApiKeyPrincipal = Depends(get_admin_principal),
     service: EmitterService = Depends(get_emitter_service),
-) -> SuccessEnvelope:
+) -> EmitterEnvelope:
     create_payload = payload.model_dump(
         exclude={"owner_consumer_id", "fiscal_profile"}
     )
@@ -48,27 +55,27 @@ def create_emitter(
     return _envelope(request, emitter)
 
 
-@router.get("/{emitter_id}", response_model=SuccessEnvelope)
+@router.get("/{emitter_id}", response_model=EmitterEnvelope)
 def get_emitter(
     emitter_id: str,
     request: Request,
     principal: ApiKeyPrincipal = Depends(get_api_key_principal),
     service: EmitterService = Depends(get_emitter_service),
-) -> SuccessEnvelope:
+) -> EmitterEnvelope:
     principal.require_scope(TENANT_READ_SCOPE)
     principal.require_emitter(emitter_id)
     emitter = service.get_emitter(emitter_id)
     return _envelope(request, emitter)
 
 
-@router.patch("/{emitter_id}", response_model=SuccessEnvelope)
+@router.patch("/{emitter_id}", response_model=EmitterEnvelope)
 def update_emitter(
     emitter_id: str,
     payload: EmitterUpdateRequest,
     request: Request,
     principal: ApiKeyPrincipal = Depends(get_api_key_principal),
     service: EmitterService = Depends(get_emitter_service),
-) -> SuccessEnvelope:
+) -> EmitterEnvelope:
     principal.require_scope(TENANT_WRITE_SCOPE)
     principal.require_emitter(emitter_id)
     if payload.csc is not None or payload.csc_id is not None:
@@ -81,35 +88,36 @@ def update_emitter(
     return _envelope(request, emitter)
 
 
-@router.post("/{emitter_id}/deactivate", response_model=SuccessEnvelope)
+@router.post(
+    "/{emitter_id}/deactivate", response_model=EmitterEnvelope
+)
 def deactivate_emitter(
     emitter_id: str,
     request: Request,
     principal: ApiKeyPrincipal = Depends(get_api_key_principal),
     service: EmitterService = Depends(get_emitter_service),
-) -> SuccessEnvelope:
+) -> EmitterEnvelope:
     principal.require_scope(TENANT_WRITE_SCOPE)
     principal.require_emitter(emitter_id)
     emitter = service.deactivate_emitter(emitter_id)
     return _envelope(request, emitter)
 
 
-@router.get("/{emitter_id}/health", response_model=SuccessEnvelope)
+@router.get(
+    "/{emitter_id}/health",
+    response_model=EmitterHealthEnvelope,
+)
 def get_emitter_health(
     emitter_id: str,
     request: Request,
     principal: ApiKeyPrincipal = Depends(get_api_key_principal),
     service: EmitterHealthService = Depends(get_emitter_health_service),
-) -> SuccessEnvelope:
+) -> EmitterHealthEnvelope:
     principal.require_scope(TENANT_READ_SCOPE)
     principal.require_emitter(emitter_id)
     health = service.get_health(emitter_id=emitter_id)
-    return SuccessEnvelope(
-        data={
-            "health": EmitterHealthResponse.model_validate(health).model_dump(
-                mode="json"
-            )
-        },
+    return EmitterHealthEnvelope(
+        data=EmitterHealthData(health=EmitterHealthResponse.model_validate(health)),
         correlation_id=request.state.correlation_id,
     )
 
@@ -123,7 +131,7 @@ def _profile_to_domain(
 def _envelope(
     request: Request,
     emitter: Emitter | EmitterSummary,
-) -> SuccessEnvelope:
+) -> EmitterEnvelope:
     csc_configured = (
         emitter.csc_configured
         if isinstance(emitter, EmitterSummary)
@@ -148,7 +156,7 @@ def _envelope(
         created_at=emitter.created_at,
         updated_at=emitter.updated_at,
     )
-    return SuccessEnvelope(
-        data={"emitter": response.model_dump(mode="json")},
+    return EmitterEnvelope(
+        data=EmitterData(emitter=response),
         correlation_id=request.state.correlation_id,
     )

@@ -5,6 +5,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
+from kilasifen.api.schemas.common import Pagination, SuccessEnvelope
+from kilasifen.api.schemas.jobs import JobResponse
+
 
 class WebhookRetryPolicy(BaseModel):
     """Bounded automatic retry policy for one endpoint."""
@@ -93,3 +96,56 @@ class WebhookDeliveryResponse(BaseModel):
     final_status: str
     created_at: datetime
     updated_at: datetime
+
+
+class WebhookEndpointData(BaseModel):
+    """Endpoint de webhook."""
+
+    webhook_endpoint: WebhookEndpointResponse
+
+
+class WebhookEndpointListData(BaseModel):
+    """Endpoints de webhook del emisor."""
+
+    webhook_endpoints: list[WebhookEndpointResponse]
+
+
+class CreatedWebhookDeliveryData(BaseModel):
+    """Entrega creada y el job que la envía."""
+
+    delivery: WebhookDeliveryResponse
+    job: JobResponse
+
+
+class WebhookDeliveryWithJobData(BaseModel):
+    """Entrega y su job, si tiene."""
+
+    delivery: WebhookDeliveryResponse
+    job: JobResponse | None
+
+
+class WebhookDeliveryListData(BaseModel):
+    """Página de entregas de webhook."""
+
+    deliveries: list[WebhookDeliveryResponse]
+    pagination: Pagination
+
+
+class WebhookEndpointEnvelope(SuccessEnvelope[WebhookEndpointData]):
+    """Respuesta con un endpoint de webhook."""
+
+
+class WebhookEndpointListEnvelope(SuccessEnvelope[WebhookEndpointListData]):
+    """Respuesta con los endpoints de webhook."""
+
+
+class CreatedWebhookDeliveryEnvelope(SuccessEnvelope[CreatedWebhookDeliveryData]):
+    """Respuesta de la creación de una entrega."""
+
+
+class WebhookDeliveryWithJobEnvelope(SuccessEnvelope[WebhookDeliveryWithJobData]):
+    """Respuesta con una entrega de webhook."""
+
+
+class WebhookDeliveryListEnvelope(SuccessEnvelope[WebhookDeliveryListData]):
+    """Respuesta con una página de entregas."""

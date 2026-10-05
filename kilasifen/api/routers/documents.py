@@ -10,11 +10,19 @@ from kilasifen.api.deps import (
     require_emitter_read,
     require_fiscal_write,
 )
-from kilasifen.api.schemas.common import SuccessEnvelope
+from kilasifen.api.schemas.common import Pagination
 from kilasifen.api.schemas.documents import (
+    CreatedDocumentData,
+    CreatedDocumentEnvelope,
     DocumentCreateRequest,
+    DocumentListData,
+    DocumentListEnvelope,
     DocumentResponse,
+    DocumentWithJobData,
+    DocumentWithJobEnvelope,
     FacturaCreateRequest,
+    KudeData,
+    KudeEnvelope,
     NotaCreditoCreateRequest,
     NotaDebitoCreateRequest,
 )
@@ -26,6 +34,27 @@ from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.sandbox import SandboxOutcome
 
 router = APIRouter(tags=["documents"])
+
+
+def _download_response(media_type: str, description: str) -> dict:
+    """Declare a non-JSON 200 so the reference does not show it as JSON."""
+
+    schema = {"type": "string"}
+    if media_type == "application/pdf":
+        schema["format"] = "binary"
+    return {"description": description, "content": {media_type: {"schema": schema}}}
+
+
+# A replayed idempotency key answers 200 with the same envelope as the 201.
+_REPLAY_RESPONSES: dict[int | str, dict] = {
+    200: {
+        "model": CreatedDocumentEnvelope,
+        "description": (
+            "Reintento idempotente: el documento y el job ya existentes con esa "
+            "`idempotency_key`; no se crea otro documento."
+        ),
+    }
+}
 
 
 def get_sandbox_outcome(
@@ -42,11 +71,9 @@ def get_sandbox_outcome(
 
 @router.post(
     "/emitters/{emitter_id}/documents",
-    response_model=SuccessEnvelope,
+    response_model=CreatedDocumentEnvelope,
     status_code=status.HTTP_201_CREATED,
-    responses={
-        200: {"description": "Idempotent replay of the existing document and job."}
-    },
+    responses=_REPLAY_RESPONSES,
     deprecated=True,
     summary="Create a raw document (platform administrators only)",
     description=(
@@ -77,11 +104,9 @@ def create_document(
 
 @router.post(
     "/emitters/{emitter_id}/documents/facturas",
-    response_model=SuccessEnvelope,
+    response_model=CreatedDocumentEnvelope,
     status_code=status.HTTP_201_CREATED,
-    responses={
-        200: {"description": "Idempotent replay of the existing document and job."}
-    },
+    responses=_REPLAY_RESPONSES,
 )
 def create_factura_document(
     emitter_id: str,
@@ -106,11 +131,9 @@ def create_factura_document(
 
 @router.post(
     "/emitters/{emitter_id}/documents/notas-credito",
-    response_model=SuccessEnvelope,
+    response_model=CreatedDocumentEnvelope,
     status_code=status.HTTP_201_CREATED,
-    responses={
-        200: {"description": "Idempotent replay of the existing document and job."}
-    },
+    responses=_REPLAY_RESPONSES,
 )
 def create_nota_credito_document(
     emitter_id: str,
@@ -135,11 +158,9 @@ def create_nota_credito_document(
 
 @router.post(
     "/emitters/{emitter_id}/documents/notas-debito",
-    response_model=SuccessEnvelope,
+    response_model=CreatedDocumentEnvelope,
     status_code=status.HTTP_201_CREATED,
-    responses={
-        200: {"description": "Idempotent replay of the existing document and job."}
-    },
+    responses=_REPLAY_RESPONSES,
 )
 def create_nota_debito_document(
     emitter_id: str,
@@ -163,7 +184,8 @@ def create_nota_debito_document(
 
 
 @router.get(
-    "/emitters/{emitter_id}/documents/{document_id}", response_model=SuccessEnvelope
+    "/emitters/{emitter_id}/documents/{document_id}",
+    response_model=DocumentWithJobEnvelope,
 )
 def get_document(
     emitter_id: str,
@@ -172,25 +194,21 @@ def get_document(
     _principal=Depends(require_emitter_read),
     service: DocumentService = Depends(get_document_service),
     job_service: JobService = Depends(get_job_service),
-) -> SuccessEnvelope:
+) -> DocumentWithJobEnvelope:
     document = service.get_document_for_emitter(
         emitter_id=emitter_id, document_id=document_id
     )
     job = job_service.get_for_entity("document", document.id)
-    return SuccessEnvelope(
-        data={
-            "document": DocumentResponse.model_validate(document).model_dump(
-                mode="json"
-            ),
-            "job": JobResponse.model_validate(job).model_dump(mode="json")
-            if job
-            else None,
-        },
+    return DocumentWithJobEnvelope(
+        data=_document_with_job(document, job),
         correlation_id=request.state.correlation_id,
     )
 
 
-@router.get("/emitters/{emitter_id}/documents", response_model=SuccessEnvelope)
+@router.get(
+    "/emitters/{emitter_id}/documents",
+    response_model=DocumentListEnvelope,
+)
 def list_documents(
     emitter_id: str,
     request: Request,
@@ -203,7 +221,7 @@ def list_documents(
     _principal=Depends(require_emitter_read),
     service: DocumentService = Depends(get_document_service),
     job_service: JobService = Depends(get_job_service),
-) -> SuccessEnvelope:
+) -> DocumentListEnvelope:
     documents = service.list_documents(
         emitter_id=emitter_id,
         limit=limit,
@@ -213,34 +231,31 @@ def list_documents(
         external_id=external_id,
         cdc=cdc,
     )
-    jobs_by_document_id = {
-        document.id: job_service.get_for_entity("document", document.id)
-        for document in documents
-    }
-    return SuccessEnvelope(
-        data={
-            "documents": [
-                {
-                    "document": DocumentResponse.model_validate(document).model_dump(
-                        mode="json"
-                    ),
-                    "job": (
-                        JobResponse.model_validate(
-                            jobs_by_document_id[document.id]
-                        ).model_dump(mode="json")
-                        if jobs_by_document_id[document.id]
-                        else None
-                    ),
-                }
+    return DocumentListEnvelope(
+        data=DocumentListData(
+            documents=[
+                _document_with_job(
+                    document, job_service.get_for_entity("document", document.id)
+                )
                 for document in documents
             ],
-            "pagination": {"limit": limit, "offset": offset, "count": len(documents)},
-        },
+            pagination=Pagination(limit=limit, offset=offset, count=len(documents)),
+        ),
         correlation_id=request.state.correlation_id,
     )
 
 
-@router.get("/emitters/{emitter_id}/documents/{document_id}/xml")
+@router.get(
+    "/emitters/{emitter_id}/documents/{document_id}/xml",
+    response_class=Response,
+    responses={
+        200: _download_response(
+            "application/xml",
+            "XML firmado del DE; antes de firmarlo, el XML generado. Sin ninguno "
+            "de los dos responde `409 documents.xml_not_available`.",
+        )
+    },
+)
 def get_document_xml(
     emitter_id: str,
     document_id: str,
@@ -267,6 +282,13 @@ _KUDE_AVAILABILITY = (
 
 @router.get(
     "/emitters/{emitter_id}/documents/{document_id}/kude",
+    response_class=Response,
+    responses={
+        200: _download_response(
+            "application/pdf",
+            "PDF del KuDE (`Content-Disposition: inline`).",
+        )
+    },
     description=(
         "KuDE en PDF del XML firmado, con el código QR en la primera página. "
         + _KUDE_AVAILABILITY
@@ -293,7 +315,7 @@ def get_document_kude(
 
 @router.get(
     "/emitters/{emitter_id}/documents/{document_id}/kude/data",
-    response_model=SuccessEnvelope,
+    response_model=KudeEnvelope,
     description=(
         "Datos del KuDE leídos del XML firmado; montos y fechas van con el "
         "texto literal del XML. " + _KUDE_AVAILABILITY
@@ -305,13 +327,13 @@ def get_document_kude_data(
     request: Request,
     _principal=Depends(require_emitter_read),
     service: DocumentService = Depends(get_document_service),
-) -> SuccessEnvelope:
+) -> KudeEnvelope:
     data = service.get_document_kude_data(
         emitter_id=emitter_id,
         document_id=document_id,
     )
-    return SuccessEnvelope(
-        data=data,
+    return KudeEnvelope(
+        data=KudeData.model_validate(data),
         correlation_id=request.state.correlation_id,
     )
 
@@ -357,16 +379,21 @@ def _document_created_response(
     job: Job,
     replayed: bool,
 ) -> JSONResponse:
-    envelope = SuccessEnvelope(
-        data={
-            "document": DocumentResponse.model_validate(document).model_dump(
-                mode="json"
-            ),
-            "job": JobResponse.model_validate(job).model_dump(mode="json"),
-        },
+    envelope = CreatedDocumentEnvelope(
+        data=CreatedDocumentData(
+            document=DocumentResponse.model_validate(document),
+            job=JobResponse.model_validate(job),
+        ),
         correlation_id=request.state.correlation_id,
     )
     return JSONResponse(
         status_code=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED,
-        content=envelope.model_dump(),
+        content=envelope.model_dump(mode="json"),
+    )
+
+
+def _document_with_job(document: Document, job: Job | None) -> DocumentWithJobData:
+    return DocumentWithJobData(
+        document=DocumentResponse.model_validate(document),
+        job=JobResponse.model_validate(job) if job else None,
     )

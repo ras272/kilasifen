@@ -40,7 +40,7 @@ from kilasifen.api.routers.jobs import router as jobs_router
 from kilasifen.api.routers.queries import router as queries_router
 from kilasifen.api.routers.stampings import router as stampings_router
 from kilasifen.api.routers.webhooks import router as webhooks_router
-from kilasifen.api.schemas.common import SuccessEnvelope
+from kilasifen.api.schemas.access import AuthCheckData, AuthCheckEnvelope
 from kilasifen.application.health.service import ReadinessProbeCache
 from kilasifen.config import get_settings
 from kilasifen.domain.common.errors import (
@@ -183,7 +183,7 @@ def create_app() -> FastAPI:
 
     @app.get(
         f"/{settings.api_version}/auth/check",
-        response_model=SuccessEnvelope,
+        response_model=AuthCheckEnvelope,
         tags=["auth"],
         responses=error_responses(401, 429, 503),
     )
@@ -191,9 +191,9 @@ def create_app() -> FastAPI:
         request: Request,
         _principal=Depends(get_api_key_principal),
         _limit=Depends(enforce_request_limits),
-    ) -> SuccessEnvelope:
-        return SuccessEnvelope(
-            data={"authenticated": True},
+    ) -> AuthCheckEnvelope:
+        return AuthCheckEnvelope(
+            data=AuthCheckData(authenticated=True),
             correlation_id=request.state.correlation_id,
         )
 

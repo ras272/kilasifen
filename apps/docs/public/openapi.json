@@ -158,6 +158,40 @@
         "title": "AssociatedDocumentPayload",
         "type": "object"
       },
+      "AuthCheckData": {
+        "description": "Resultado de la comprobación de la API key.",
+        "properties": {
+          "authenticated": {
+            "const": true,
+            "title": "Authenticated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "authenticated"
+        ],
+        "title": "AuthCheckData",
+        "type": "object"
+      },
+      "AuthCheckEnvelope": {
+        "description": "Respuesta de la comprobación de la API key.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/AuthCheckData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "AuthCheckEnvelope",
+        "type": "object"
+      },
       "Body_upload_certificate_v1_emitters__emitter_id__certificates_post": {
         "properties": {
           "file": {
@@ -312,6 +346,194 @@
         "title": "CardPayload",
         "type": "object"
       },
+      "CertificateData": {
+        "description": "Certificado del emisor.",
+        "properties": {
+          "certificate": {
+            "$ref": "#/components/schemas/CertificateResponse"
+          }
+        },
+        "required": [
+          "certificate"
+        ],
+        "title": "CertificateData",
+        "type": "object"
+      },
+      "CertificateEnvelope": {
+        "description": "Respuesta con un certificado.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CertificateData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "CertificateEnvelope",
+        "type": "object"
+      },
+      "CertificateListData": {
+        "description": "Certificados del emisor.",
+        "properties": {
+          "certificates": {
+            "items": {
+              "$ref": "#/components/schemas/CertificateResponse"
+            },
+            "title": "Certificates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "certificates"
+        ],
+        "title": "CertificateListData",
+        "type": "object"
+      },
+      "CertificateListEnvelope": {
+        "description": "Respuesta con los certificados del emisor.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CertificateListData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "CertificateListEnvelope",
+        "type": "object"
+      },
+      "CertificateResponse": {
+        "description": "Certificate metadata returned by the API.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "detected_ruc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detected Ruc"
+          },
+          "emitter_id": {
+            "title": "Emitter Id",
+            "type": "string"
+          },
+          "fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fingerprint"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "logical_name": {
+            "title": "Logical Name",
+            "type": "string"
+          },
+          "serial_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial Number"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "subject_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subject Summary"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "valid_from": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid From"
+          },
+          "valid_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Valid Until"
+          }
+        },
+        "required": [
+          "id",
+          "emitter_id",
+          "logical_name",
+          "fingerprint",
+          "serial_number",
+          "subject_summary",
+          "detected_ruc",
+          "valid_from",
+          "valid_until",
+          "is_active",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CertificateResponse",
+        "type": "object"
+      },
       "ConsumerCreateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -326,6 +548,230 @@
           "name"
         ],
         "title": "ConsumerCreateRequest",
+        "type": "object"
+      },
+      "ConsumerData": {
+        "description": "Consumidor de la API.",
+        "properties": {
+          "consumer": {
+            "$ref": "#/components/schemas/ConsumerResponse"
+          }
+        },
+        "required": [
+          "consumer"
+        ],
+        "title": "ConsumerData",
+        "type": "object"
+      },
+      "ConsumerEnvelope": {
+        "description": "Respuesta con un consumidor.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ConsumerData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "ConsumerEnvelope",
+        "type": "object"
+      },
+      "ConsumerResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConsumerResponse",
+        "type": "object"
+      },
+      "CreatedDocumentData": {
+        "description": "Documento creado (o reproducido por idempotencia) y su job de emisión.",
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/DocumentResponse"
+          },
+          "job": {
+            "$ref": "#/components/schemas/JobResponse"
+          }
+        },
+        "required": [
+          "document",
+          "job"
+        ],
+        "title": "CreatedDocumentData",
+        "type": "object"
+      },
+      "CreatedDocumentEnvelope": {
+        "description": "Respuesta de la creación de un documento.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CreatedDocumentData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "CreatedDocumentEnvelope",
+        "type": "object"
+      },
+      "CreatedEventData": {
+        "description": "Evento creado y el job que lo transmite.",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/EventResponse"
+          },
+          "job": {
+            "$ref": "#/components/schemas/JobResponse"
+          }
+        },
+        "required": [
+          "event",
+          "job"
+        ],
+        "title": "CreatedEventData",
+        "type": "object"
+      },
+      "CreatedEventEnvelope": {
+        "description": "Respuesta de la creación de un evento.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CreatedEventData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "CreatedEventEnvelope",
+        "type": "object"
+      },
+      "CreatedInutilizationData": {
+        "description": "Inutilización creada, su rango y los avisos.",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/EventResponse"
+          },
+          "inutilization": {
+            "$ref": "#/components/schemas/InutilizedRangeResponse"
+          },
+          "job": {
+            "$ref": "#/components/schemas/JobResponse"
+          },
+          "warnings": {
+            "description": "Avisos que no impiden la inutilización, por ejemplo `inutilization.extemporaneous`.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "event",
+          "job",
+          "inutilization",
+          "warnings"
+        ],
+        "title": "CreatedInutilizationData",
+        "type": "object"
+      },
+      "CreatedInutilizationEnvelope": {
+        "description": "Respuesta de la creación de una inutilización.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CreatedInutilizationData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "CreatedInutilizationEnvelope",
+        "type": "object"
+      },
+      "CreatedWebhookDeliveryData": {
+        "description": "Entrega creada y el job que la envía.",
+        "properties": {
+          "delivery": {
+            "$ref": "#/components/schemas/WebhookDeliveryResponse"
+          },
+          "job": {
+            "$ref": "#/components/schemas/JobResponse"
+          }
+        },
+        "required": [
+          "delivery",
+          "job"
+        ],
+        "title": "CreatedWebhookDeliveryData",
+        "type": "object"
+      },
+      "CreatedWebhookDeliveryEnvelope": {
+        "description": "Respuesta de la creación de una entrega.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CreatedWebhookDeliveryData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "CreatedWebhookDeliveryEnvelope",
         "type": "object"
       },
       "CredentialCreateRequest": {
@@ -352,6 +798,91 @@
           "scopes"
         ],
         "title": "CredentialCreateRequest",
+        "type": "object"
+      },
+      "CredentialData": {
+        "description": "Credencial, sin la API key.",
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/CredentialResponse"
+          }
+        },
+        "required": [
+          "credential"
+        ],
+        "title": "CredentialData",
+        "type": "object"
+      },
+      "CredentialEnvelope": {
+        "description": "Respuesta con una credencial.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/CredentialData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "CredentialEnvelope",
+        "type": "object"
+      },
+      "CredentialResponse": {
+        "properties": {
+          "consumer_id": {
+            "title": "Consumer Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key_prefix": {
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "consumer_id",
+          "name",
+          "key_prefix",
+          "scopes",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CredentialResponse",
         "type": "object"
       },
       "CreditPayload": {
@@ -771,6 +1302,36 @@
         "title": "CustomerPayload",
         "type": "object"
       },
+      "DependencyCheckResponse": {
+        "description": "Safe dependency state exposed by readiness.",
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "down",
+              "not_required"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "DependencyCheckResponse",
+        "type": "object"
+      },
       "DocumentCreateRequest": {
         "description": "Document creation payload.",
         "properties": {
@@ -821,6 +1382,477 @@
           "document_type"
         ],
         "title": "DocumentCreateRequest",
+        "type": "object"
+      },
+      "DocumentListData": {
+        "description": "Página de documentos del emisor.",
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentWithJobData"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "documents",
+          "pagination"
+        ],
+        "title": "DocumentListData",
+        "type": "object"
+      },
+      "DocumentListEnvelope": {
+        "description": "Respuesta con una página de documentos.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DocumentListData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "DocumentListEnvelope",
+        "type": "object"
+      },
+      "DocumentQueryData": {
+        "description": "Resultado de la consulta del CDC en el SIFEN.",
+        "properties": {
+          "document_query": {
+            "$ref": "#/components/schemas/DocumentQueryResponse"
+          }
+        },
+        "required": [
+          "document_query"
+        ],
+        "title": "DocumentQueryData",
+        "type": "object"
+      },
+      "DocumentQueryEnvelope": {
+        "description": "Respuesta de la consulta del CDC.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DocumentQueryData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "DocumentQueryEnvelope",
+        "type": "object"
+      },
+      "DocumentQueryResponse": {
+        "description": "Normalized response for a document query.",
+        "properties": {
+          "cancelled": {
+            "default": false,
+            "description": "True si xContEv tiene una cancelacion registrada del CDC.",
+            "title": "Cancelled",
+            "type": "boolean"
+          },
+          "cdc": {
+            "title": "Cdc",
+            "type": "string"
+          },
+          "content_xml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "xContenDE tal como lo envio el SIFEN (contenedor rContDe).",
+            "title": "Content Xml"
+          },
+          "document_id": {
+            "title": "Document Id",
+            "type": "string"
+          },
+          "events": {
+            "description": "Eventos registrados del CDC (xContEv).",
+            "items": {
+              "$ref": "#/components/schemas/RegisteredEventResponse"
+            },
+            "title": "Events",
+            "type": "array"
+          },
+          "processed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Processed At"
+          },
+          "result_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Code"
+          },
+          "result_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Message"
+          },
+          "sifen_protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dProtAut del DTE leido del contenedor.",
+            "title": "Sifen Protocol"
+          },
+          "status": {
+            "description": "found (0422: el CDC es un DTE aprobado), not_found_or_not_approved (0420: no existe o no esta aprobado) o error (cualquier otro codigo).",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "document_id",
+          "cdc",
+          "status",
+          "result_code",
+          "result_message",
+          "content_xml",
+          "processed_at"
+        ],
+        "title": "DocumentQueryResponse",
+        "type": "object"
+      },
+      "DocumentResponse": {
+        "description": "Document response payload.",
+        "properties": {
+          "cdc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cdc"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "document_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Number"
+          },
+          "document_type": {
+            "title": "Document Type",
+            "type": "string"
+          },
+          "emitter_id": {
+            "title": "Emitter Id",
+            "type": "string"
+          },
+          "establishment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Establishment"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "fiscal_warnings": {
+            "description": "Avisos fiscales detectados al crear el documento, por ejemplo `documents.transmission.emission_far_from_now`: la fecha de emisión queda a más de 120 h de la transmisión y el SIFEN la aprobará con observación 1005 (transmisión extemporánea).",
+            "items": {
+              "type": "string"
+            },
+            "title": "Fiscal Warnings",
+            "type": "array"
+          },
+          "generated_xml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated Xml"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "idempotency_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Idempotency Key"
+          },
+          "internal_status": {
+            "title": "Internal Status",
+            "type": "string"
+          },
+          "last_query_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Query At"
+          },
+          "last_query_request_xml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Query Request Xml"
+          },
+          "last_query_response_raw": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Query Response Raw"
+          },
+          "payload_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload Snapshot"
+          },
+          "point": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Point"
+          },
+          "sifen_request_xml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sifen Request Xml"
+          },
+          "sifen_response_raw": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sifen Response Raw"
+          },
+          "sifen_result_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sifen Result Code"
+          },
+          "sifen_result_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sifen Result Message"
+          },
+          "sifen_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sifen Status"
+          },
+          "signed_xml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed Xml"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "emitter_id",
+          "external_id",
+          "idempotency_key",
+          "document_type",
+          "payload_snapshot",
+          "generated_xml",
+          "signed_xml",
+          "sifen_request_xml",
+          "sifen_response_raw",
+          "last_query_request_xml",
+          "last_query_response_raw",
+          "last_query_at",
+          "cdc",
+          "internal_status",
+          "sifen_status",
+          "sifen_result_code",
+          "sifen_result_message",
+          "establishment",
+          "point",
+          "document_number",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "DocumentResponse",
+        "type": "object"
+      },
+      "DocumentWithJobData": {
+        "description": "Documento y su job de emisión, si tiene.",
+        "properties": {
+          "document": {
+            "$ref": "#/components/schemas/DocumentResponse"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "document",
+          "job"
+        ],
+        "title": "DocumentWithJobData",
+        "type": "object"
+      },
+      "DocumentWithJobEnvelope": {
+        "description": "Respuesta con un documento.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/DocumentWithJobData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "DocumentWithJobEnvelope",
         "type": "object"
       },
       "EconomicActivityPayload": {
@@ -975,6 +2007,38 @@
         "title": "EmitterCreateRequest",
         "type": "object"
       },
+      "EmitterData": {
+        "description": "Emisor.",
+        "properties": {
+          "emitter": {
+            "$ref": "#/components/schemas/EmitterResponse"
+          }
+        },
+        "required": [
+          "emitter"
+        ],
+        "title": "EmitterData",
+        "type": "object"
+      },
+      "EmitterEnvelope": {
+        "description": "Respuesta con un emisor.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EmitterData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "EmitterEnvelope",
+        "type": "object"
+      },
       "EmitterFiscalProfileModel": {
         "additionalProperties": false,
         "description": "Datos fiscales del emisor tal como figuran en su RUC (gEmis).\n\nEs la única fuente de `gEmis`: sin este perfil no se puede crear un\ndocumento. Se reemplaza completo en cada actualización.",
@@ -1046,6 +2110,143 @@
           "domicilio"
         ],
         "title": "EmitterFiscalProfileModel",
+        "type": "object"
+      },
+      "EmitterHealthData": {
+        "description": "Preparación operativa del emisor.",
+        "properties": {
+          "health": {
+            "$ref": "#/components/schemas/EmitterHealthResponse"
+          }
+        },
+        "required": [
+          "health"
+        ],
+        "title": "EmitterHealthData",
+        "type": "object"
+      },
+      "EmitterHealthEnvelope": {
+        "description": "Respuesta con la preparación del emisor.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EmitterHealthData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "EmitterHealthEnvelope",
+        "type": "object"
+      },
+      "EmitterHealthResponse": {
+        "description": "Emitter operational health payload.",
+        "properties": {
+          "certificate_valid_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Certificate Valid Until"
+          },
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "emitter_id": {
+            "title": "Emitter Id",
+            "type": "string"
+          },
+          "emitter_status": {
+            "title": "Emitter Status",
+            "type": "string"
+          },
+          "has_active_certificate": {
+            "title": "Has Active Certificate",
+            "type": "boolean"
+          },
+          "has_active_stamping": {
+            "title": "Has Active Stamping",
+            "type": "boolean"
+          },
+          "last_document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Document Id"
+          },
+          "last_document_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Document Status"
+          },
+          "queue_failed_count": {
+            "title": "Queue Failed Count",
+            "type": "integer"
+          },
+          "queue_queued_count": {
+            "title": "Queue Queued Count",
+            "type": "integer"
+          },
+          "queue_retry_count": {
+            "title": "Queue Retry Count",
+            "type": "integer"
+          },
+          "stamping_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stamping Number"
+          },
+          "stamping_valid_on": {
+            "format": "date",
+            "title": "Stamping Valid On",
+            "type": "string"
+          }
+        },
+        "required": [
+          "emitter_id",
+          "emitter_status",
+          "has_active_certificate",
+          "certificate_valid_until",
+          "has_active_stamping",
+          "stamping_number",
+          "stamping_valid_on",
+          "queue_queued_count",
+          "queue_retry_count",
+          "queue_failed_count",
+          "last_document_id",
+          "last_document_status",
+          "checked_at"
+        ],
+        "title": "EmitterHealthResponse",
         "type": "object"
       },
       "EmitterPayload": {
@@ -1298,6 +2499,103 @@
         "title": "EmitterPayload",
         "type": "object"
       },
+      "EmitterResponse": {
+        "description": "Emitter response payload.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "csc_configured": {
+            "title": "Csc Configured",
+            "type": "boolean"
+          },
+          "csc_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Csc Id"
+          },
+          "dv": {
+            "title": "Dv",
+            "type": "string"
+          },
+          "external_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Id"
+          },
+          "fiscal_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmitterFiscalProfileModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fiscal_profile_complete": {
+            "description": "Falso mientras falte el perfil fiscal: no se puede emitir.",
+            "title": "Fiscal Profile Complete",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "legal_name": {
+            "title": "Legal Name",
+            "type": "string"
+          },
+          "ruc": {
+            "title": "Ruc",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "tax_environment": {
+            "title": "Tax Environment",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "external_id",
+          "ruc",
+          "dv",
+          "legal_name",
+          "tax_environment",
+          "status",
+          "csc_configured",
+          "csc_id",
+          "fiscal_profile",
+          "fiscal_profile_complete",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "EmitterResponse",
+        "type": "object"
+      },
       "EmitterUpdateRequest": {
         "description": "Emitter update payload.",
         "properties": {
@@ -1372,7 +2670,7 @@
         "type": "object"
       },
       "ErrorEnvelope": {
-        "description": "Standard error response envelope.",
+        "description": "Respuesta de error: el detalle va en `error`.",
         "properties": {
           "error": {
             "$ref": "#/components/schemas/ErrorPayload"
@@ -1385,17 +2683,20 @@
         "type": "object"
       },
       "ErrorPayload": {
-        "description": "Standard error payload.",
+        "description": "Error de la API.",
         "properties": {
           "category": {
+            "description": "Grupo del código: `authentication`, `authorization`, `validation`, `invalid_request`, `not_found`, `conflict`, `rate_limit`, `service_unavailable` o `internal`. La lista puede crecer.",
             "title": "Category",
             "type": "string"
           },
           "code": {
+            "description": "Código estable del error, por ejemplo `documents.not_found`. Decidí la recuperación con este campo y con `details`.",
             "title": "Code",
             "type": "string"
           },
           "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
             "title": "Correlation Id",
             "type": "string"
           },
@@ -1409,9 +2710,11 @@
                 "type": "null"
               }
             ],
+            "description": "Datos propios del código. En `request.validation_failed`, `errors` lista cada problema con `loc`, `message` y `type`.",
             "title": "Details"
           },
           "message": {
+            "description": "Texto orientativo en inglés, casi siempre genérico (por ejemplo «Request validation failed.»). No es estable: no lo uses para decidir.",
             "title": "Message",
             "type": "string"
           }
@@ -1610,6 +2913,187 @@
           "event_type"
         ],
         "title": "EventCreateRequest",
+        "type": "object"
+      },
+      "EventResponse": {
+        "description": "Event response payload.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "document_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Id"
+          },
+          "emitter_id": {
+            "title": "Emitter Id",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "generated_xml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated Xml"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Payload"
+          },
+          "sifen_request_xml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sifen Request Xml"
+          },
+          "sifen_response_raw": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sifen Response Raw"
+          },
+          "sifen_result_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sifen Result Code"
+          },
+          "sifen_result_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sifen Result Message"
+          },
+          "signed_xml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signed Xml"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "emitter_id",
+          "document_id",
+          "event_type",
+          "input_payload",
+          "generated_xml",
+          "signed_xml",
+          "sifen_request_xml",
+          "sifen_response_raw",
+          "status",
+          "sifen_result_code",
+          "sifen_result_message",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "EventResponse",
+        "type": "object"
+      },
+      "EventWithJobData": {
+        "description": "Evento y su job, si tiene.",
+        "properties": {
+          "event": {
+            "$ref": "#/components/schemas/EventResponse"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "event",
+          "job"
+        ],
+        "title": "EventWithJobData",
+        "type": "object"
+      },
+      "EventWithJobEnvelope": {
+        "description": "Respuesta con un evento.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EventWithJobData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "EventWithJobEnvelope",
         "type": "object"
       },
       "FacturaContractPayload": {
@@ -2171,6 +3655,40 @@
         "title": "GenerationResponsiblePayload",
         "type": "object"
       },
+      "HealthData": {
+        "description": "Liveness del proceso de la API.",
+        "properties": {
+          "status": {
+            "const": "ok",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "HealthData",
+        "type": "object"
+      },
+      "HealthEnvelope": {
+        "description": "Respuesta de liveness.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/HealthData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "HealthEnvelope",
+        "type": "object"
+      },
       "InstallmentPayload": {
         "additionalProperties": false,
         "properties": {
@@ -2293,6 +3811,174 @@
           "motivo"
         ],
         "title": "InutilizeRequest",
+        "type": "object"
+      },
+      "InutilizedRangeResponse": {
+        "description": "API response payload for one inutilized range.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "document_type": {
+            "title": "Document Type",
+            "type": "string"
+          },
+          "emitter_id": {
+            "title": "Emitter Id",
+            "type": "string"
+          },
+          "establishment": {
+            "title": "Establishment",
+            "type": "string"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "numero_desde": {
+            "title": "Numero Desde",
+            "type": "integer"
+          },
+          "numero_hasta": {
+            "title": "Numero Hasta",
+            "type": "integer"
+          },
+          "point": {
+            "title": "Point",
+            "type": "string"
+          },
+          "sifen_protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sifen Protocol"
+          },
+          "timbrado": {
+            "title": "Timbrado",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "emitter_id",
+          "document_type",
+          "establishment",
+          "point",
+          "numero_desde",
+          "numero_hasta",
+          "timbrado",
+          "event_id",
+          "sifen_protocol",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "InutilizedRangeResponse",
+        "type": "object"
+      },
+      "IssuedCredentialData": {
+        "description": "Credencial recién emitida: `api_key` se muestra sólo esta vez.",
+        "properties": {
+          "credential": {
+            "$ref": "#/components/schemas/IssuedCredentialResponse"
+          }
+        },
+        "required": [
+          "credential"
+        ],
+        "title": "IssuedCredentialData",
+        "type": "object"
+      },
+      "IssuedCredentialEnvelope": {
+        "description": "Respuesta con la credencial recién emitida.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/IssuedCredentialData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "IssuedCredentialEnvelope",
+        "type": "object"
+      },
+      "IssuedCredentialResponse": {
+        "properties": {
+          "api_key": {
+            "title": "Api Key",
+            "type": "string"
+          },
+          "consumer_id": {
+            "title": "Consumer Id",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "key_prefix": {
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Scopes",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "consumer_id",
+          "name",
+          "key_prefix",
+          "scopes",
+          "status",
+          "created_at",
+          "updated_at",
+          "api_key"
+        ],
+        "title": "IssuedCredentialResponse",
         "type": "object"
       },
       "ItemPayload": {
@@ -2508,6 +4194,414 @@
           "precio_unitario"
         ],
         "title": "ItemPayload",
+        "type": "object"
+      },
+      "JobData": {
+        "description": "Job consultado.",
+        "properties": {
+          "job": {
+            "$ref": "#/components/schemas/JobResponse"
+          }
+        },
+        "required": [
+          "job"
+        ],
+        "title": "JobData",
+        "type": "object"
+      },
+      "JobEnvelope": {
+        "description": "Respuesta con un job.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/JobData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "JobEnvelope",
+        "type": "object"
+      },
+      "JobListData": {
+        "description": "Página de jobs.",
+        "properties": {
+          "jobs": {
+            "items": {
+              "$ref": "#/components/schemas/JobResponse"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "jobs",
+          "pagination"
+        ],
+        "title": "JobListData",
+        "type": "object"
+      },
+      "JobListEnvelope": {
+        "description": "Respuesta con una página de jobs.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/JobListData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "JobListEnvelope",
+        "type": "object"
+      },
+      "JobResponse": {
+        "description": "Job response payload.",
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "emitter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emitter Id"
+          },
+          "error_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Snapshot"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "job_type": {
+            "title": "Job Type",
+            "type": "string"
+          },
+          "related_entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Entity Id"
+          },
+          "related_entity_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Related Entity Type"
+          },
+          "scheduled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scheduled At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "worker_correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worker Correlation Id"
+          }
+        },
+        "required": [
+          "id",
+          "emitter_id",
+          "related_entity_type",
+          "related_entity_id",
+          "job_type",
+          "status",
+          "attempts",
+          "error_snapshot",
+          "scheduled_at",
+          "started_at",
+          "finished_at",
+          "worker_correlation_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "JobResponse",
+        "type": "object"
+      },
+      "KudeContent": {
+        "additionalProperties": true,
+        "description": "Contenido del KuDE con los literales del XML firmado.\n\nMontos, cantidades y fechas son el texto del XML: imprimilos completos,\nsin redondear (MT v150 §13.2).",
+        "properties": {
+          "ambiente": {
+            "enum": [
+              "test",
+              "produccion"
+            ],
+            "title": "Ambiente",
+            "type": "string"
+          },
+          "ambiente_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Leyenda de un DE del ambiente de prueba; `null` en producción.",
+            "title": "Ambiente Warning"
+          },
+          "cdc": {
+            "additionalProperties": true,
+            "description": "`raw` (44 dígitos) y `groups` (de a 4, para imprimir).",
+            "title": "Cdc",
+            "type": "object"
+          },
+          "consulta_publica": {
+            "additionalProperties": true,
+            "description": "`portal_url` de la consulta pública de e-Kuatia.",
+            "title": "Consulta Publica",
+            "type": "object"
+          },
+          "datos_generales": {
+            "additionalProperties": true,
+            "description": "Fecha de emisión, condición de la operación y moneda.",
+            "title": "Datos Generales",
+            "type": "object"
+          },
+          "documento_asociado": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "gCamDEAsoc de una nota de crédito o de débito.",
+            "title": "Documento Asociado"
+          },
+          "emisor": {
+            "additionalProperties": true,
+            "description": "Datos de gEmis.",
+            "title": "Emisor",
+            "type": "object"
+          },
+          "informacion_adicional": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Informacion Adicional"
+          },
+          "items": {
+            "description": "Ítems (gCamItem).",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "nota_credito": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Motivo de emisión (iMotEmi) de una nota de crédito.",
+            "title": "Nota Credito"
+          },
+          "nota_debito": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Motivo de emisión (iMotEmi) de una nota de débito.",
+            "title": "Nota Debito"
+          },
+          "qr": {
+            "additionalProperties": true,
+            "description": "`url` del QR (dCarQR) y `ambiente`.",
+            "title": "Qr",
+            "type": "object"
+          },
+          "receptor": {
+            "additionalProperties": true,
+            "description": "Datos de gDatRec.",
+            "title": "Receptor",
+            "type": "object"
+          },
+          "timbrado": {
+            "additionalProperties": true,
+            "description": "Datos de gTimb.",
+            "title": "Timbrado",
+            "type": "object"
+          },
+          "tipo": {
+            "description": "`factura_electronica`, `nota_credito_electronica` o `nota_debito_electronica`.",
+            "title": "Tipo",
+            "type": "string"
+          },
+          "tipo_label": {
+            "title": "Tipo Label",
+            "type": "string"
+          },
+          "totales": {
+            "additionalProperties": true,
+            "description": "Subtotales y totales (gTotSub).",
+            "title": "Totales",
+            "type": "object"
+          }
+        },
+        "required": [
+          "tipo",
+          "tipo_label",
+          "ambiente",
+          "ambiente_warning",
+          "cdc",
+          "emisor",
+          "timbrado",
+          "datos_generales",
+          "receptor",
+          "documento_asociado",
+          "nota_credito",
+          "nota_debito",
+          "items",
+          "totales",
+          "qr",
+          "consulta_publica",
+          "informacion_adicional"
+        ],
+        "title": "KudeContent",
+        "type": "object"
+      },
+      "KudeData": {
+        "description": "Datos para armar el KuDE propio del integrador.",
+        "properties": {
+          "kude": {
+            "$ref": "#/components/schemas/KudeContent"
+          }
+        },
+        "required": [
+          "kude"
+        ],
+        "title": "KudeData",
+        "type": "object"
+      },
+      "KudeEnvelope": {
+        "description": "Respuesta con los datos del KuDE.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/KudeData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "KudeEnvelope",
         "type": "object"
       },
       "NotaCreditoContractPayload": {
@@ -3241,6 +5335,33 @@
         "title": "OperationConditionPayload",
         "type": "object"
       },
+      "Pagination": {
+        "description": "Página devuelta por un listado.",
+        "properties": {
+          "count": {
+            "description": "Cantidad de elementos de esta página.",
+            "title": "Count",
+            "type": "integer"
+          },
+          "limit": {
+            "description": "Tamaño de página pedido.",
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Cantidad de elementos salteados.",
+            "title": "Offset",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "limit",
+          "offset",
+          "count"
+        ],
+        "title": "Pagination",
+        "type": "object"
+      },
       "PaymentPayload": {
         "additionalProperties": false,
         "description": "gPaConEIni (E606-E611): one payment of a contado operation or of the\ninitial delivery of a credit one.",
@@ -3429,6 +5550,177 @@
         "title": "PublicProcurementPayload",
         "type": "object"
       },
+      "ReadinessData": {
+        "description": "Readiness payload with explicit dependency checks.",
+        "properties": {
+          "checks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/DependencyCheckResponse"
+            },
+            "title": "Checks",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "checks"
+        ],
+        "title": "ReadinessData",
+        "type": "object"
+      },
+      "ReadinessEnvelope": {
+        "description": "Respuesta de readiness.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/ReadinessData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "ReadinessEnvelope",
+        "type": "object"
+      },
+      "RegisteredEventResponse": {
+        "description": "One event SIFEN registered on the CDC (``xContEv``).",
+        "properties": {
+          "cdc": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cdc"
+          },
+          "kind": {
+            "description": "Tipo de evento: cancelacion, inutilizacion, notificacion_recepcion, conformidad, disconformidad, desconocimiento, endoso, transporte o nominacion.",
+            "title": "Kind",
+            "type": "string"
+          },
+          "protocol": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dProtAut del evento registrado.",
+            "title": "Protocol"
+          }
+        },
+        "required": [
+          "kind",
+          "cdc",
+          "protocol"
+        ],
+        "title": "RegisteredEventResponse",
+        "type": "object"
+      },
+      "RucQueryData": {
+        "description": "Resultado de la consulta de RUC en el SIFEN.",
+        "properties": {
+          "ruc_query": {
+            "$ref": "#/components/schemas/RucQueryResponse"
+          }
+        },
+        "required": [
+          "ruc_query"
+        ],
+        "title": "RucQueryData",
+        "type": "object"
+      },
+      "RucQueryEnvelope": {
+        "description": "Respuesta de la consulta de RUC.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/RucQueryData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "RucQueryEnvelope",
+        "type": "object"
+      },
+      "RucQueryResponse": {
+        "description": "Normalized response for a RUC query.",
+        "properties": {
+          "queried_ruc": {
+            "title": "Queried Ruc",
+            "type": "string"
+          },
+          "result_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Code"
+          },
+          "result_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Message"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "taxpayer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaxpayerResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "queried_ruc",
+          "status",
+          "result_code",
+          "result_message",
+          "taxpayer"
+        ],
+        "title": "RucQueryResponse",
+        "type": "object"
+      },
       "SandboxOutcome": {
         "description": "SIFEN outcomes integrations may request in the test runtime.",
         "enum": [
@@ -3475,24 +5767,383 @@
         "title": "StampingCreateRequest",
         "type": "object"
       },
-      "SuccessEnvelope": {
-        "description": "Standard success response envelope.",
+      "StampingData": {
+        "description": "Timbrado del emisor.",
+        "properties": {
+          "stamping": {
+            "$ref": "#/components/schemas/StampingResponse"
+          }
+        },
+        "required": [
+          "stamping"
+        ],
+        "title": "StampingData",
+        "type": "object"
+      },
+      "StampingEnvelope": {
+        "description": "Respuesta con un timbrado.",
         "properties": {
           "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
             "title": "Correlation Id",
             "type": "string"
           },
           "data": {
-            "additionalProperties": true,
-            "title": "Data",
-            "type": "object"
+            "$ref": "#/components/schemas/StampingData"
           }
         },
         "required": [
           "data",
           "correlation_id"
         ],
-        "title": "SuccessEnvelope",
+        "title": "StampingEnvelope",
+        "type": "object"
+      },
+      "StampingListData": {
+        "description": "Timbrados del emisor.",
+        "properties": {
+          "stampings": {
+            "items": {
+              "$ref": "#/components/schemas/StampingResponse"
+            },
+            "title": "Stampings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "stampings"
+        ],
+        "title": "StampingListData",
+        "type": "object"
+      },
+      "StampingListEnvelope": {
+        "description": "Respuesta con los timbrados del emisor.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/StampingListData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "StampingListEnvelope",
+        "type": "object"
+      },
+      "StampingResponse": {
+        "description": "Stamping response payload.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "emitter_id": {
+            "title": "Emitter Id",
+            "type": "string"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "number": {
+            "title": "Number",
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "title": "Start Date",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "emitter_id",
+          "number",
+          "start_date",
+          "end_date",
+          "is_active",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "StampingResponse",
+        "type": "object"
+      },
+      "TaxpayerResponse": {
+        "description": "Normalized taxpayer data returned from SIFEN.",
+        "properties": {
+          "electronic_taxpayer": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Electronic Taxpayer"
+          },
+          "legal_name": {
+            "title": "Legal Name",
+            "type": "string"
+          },
+          "ruc": {
+            "title": "Ruc",
+            "type": "string"
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State"
+          },
+          "state_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "State Code"
+          }
+        },
+        "required": [
+          "ruc",
+          "legal_name",
+          "state_code",
+          "state",
+          "electronic_taxpayer"
+        ],
+        "title": "TaxpayerResponse",
+        "type": "object"
+      },
+      "WebhookDeliveryListData": {
+        "description": "Página de entregas de webhook.",
+        "properties": {
+          "deliveries": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookDeliveryResponse"
+            },
+            "title": "Deliveries",
+            "type": "array"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "deliveries",
+          "pagination"
+        ],
+        "title": "WebhookDeliveryListData",
+        "type": "object"
+      },
+      "WebhookDeliveryListEnvelope": {
+        "description": "Respuesta con una página de entregas.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WebhookDeliveryListData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "WebhookDeliveryListEnvelope",
+        "type": "object"
+      },
+      "WebhookDeliveryResponse": {
+        "description": "Webhook delivery response payload.",
+        "properties": {
+          "attempt_number": {
+            "title": "Attempt Number",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "final_status": {
+            "title": "Final Status",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "payload_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload Snapshot"
+          },
+          "request_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request At"
+          },
+          "request_body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Body"
+          },
+          "response_body_snapshot": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Body Snapshot"
+          },
+          "response_code": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Code"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "webhook_endpoint_id": {
+            "title": "Webhook Endpoint Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "webhook_endpoint_id",
+          "event_type",
+          "payload_snapshot",
+          "request_body",
+          "attempt_number",
+          "request_at",
+          "response_code",
+          "response_body_snapshot",
+          "final_status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WebhookDeliveryResponse",
+        "type": "object"
+      },
+      "WebhookDeliveryWithJobData": {
+        "description": "Entrega y su job, si tiene.",
+        "properties": {
+          "delivery": {
+            "$ref": "#/components/schemas/WebhookDeliveryResponse"
+          },
+          "job": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "delivery",
+          "job"
+        ],
+        "title": "WebhookDeliveryWithJobData",
+        "type": "object"
+      },
+      "WebhookDeliveryWithJobEnvelope": {
+        "description": "Respuesta con una entrega de webhook.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WebhookDeliveryWithJobData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "WebhookDeliveryWithJobEnvelope",
         "type": "object"
       },
       "WebhookEndpointCreateRequest": {
@@ -3541,6 +6192,155 @@
           "secret"
         ],
         "title": "WebhookEndpointCreateRequest",
+        "type": "object"
+      },
+      "WebhookEndpointData": {
+        "description": "Endpoint de webhook.",
+        "properties": {
+          "webhook_endpoint": {
+            "$ref": "#/components/schemas/WebhookEndpointResponse"
+          }
+        },
+        "required": [
+          "webhook_endpoint"
+        ],
+        "title": "WebhookEndpointData",
+        "type": "object"
+      },
+      "WebhookEndpointEnvelope": {
+        "description": "Respuesta con un endpoint de webhook.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WebhookEndpointData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "WebhookEndpointEnvelope",
+        "type": "object"
+      },
+      "WebhookEndpointListData": {
+        "description": "Endpoints de webhook del emisor.",
+        "properties": {
+          "webhook_endpoints": {
+            "items": {
+              "$ref": "#/components/schemas/WebhookEndpointResponse"
+            },
+            "title": "Webhook Endpoints",
+            "type": "array"
+          }
+        },
+        "required": [
+          "webhook_endpoints"
+        ],
+        "title": "WebhookEndpointListData",
+        "type": "object"
+      },
+      "WebhookEndpointListEnvelope": {
+        "description": "Respuesta con los endpoints de webhook.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/WebhookEndpointListData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "WebhookEndpointListEnvelope",
+        "type": "object"
+      },
+      "WebhookEndpointResponse": {
+        "description": "Webhook endpoint response payload.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "emitter_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emitter Id"
+          },
+          "event_subscriptions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Subscriptions"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "retry_policy": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retry Policy"
+          },
+          "secret_configured": {
+            "title": "Secret Configured",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "emitter_id",
+          "url",
+          "event_subscriptions",
+          "is_active",
+          "retry_policy",
+          "secret_configured",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WebhookEndpointResponse",
         "type": "object"
       },
       "WebhookEndpointUpdateRequest": {
@@ -3681,7 +6481,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/ConsumerEnvelope"
                 }
               }
             },
@@ -3816,7 +6616,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/IssuedCredentialEnvelope"
                 }
               }
             },
@@ -3950,7 +6750,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CredentialEnvelope"
                 }
               }
             },
@@ -4064,7 +6864,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/AuthCheckEnvelope"
                 }
               }
             },
@@ -4138,7 +6938,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/EmitterEnvelope"
                 }
               }
             },
@@ -4263,7 +7063,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/EmitterEnvelope"
                 }
               }
             },
@@ -4396,7 +7196,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/EmitterEnvelope"
                 }
               }
             },
@@ -4521,7 +7321,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CertificateListEnvelope"
                 }
               }
             },
@@ -4654,7 +7454,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CertificateEnvelope"
                 }
               }
             },
@@ -4788,7 +7588,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CertificateEnvelope"
                 }
               }
             },
@@ -4913,7 +7713,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/EmitterEnvelope"
                 }
               }
             },
@@ -5125,7 +7925,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/DocumentListEnvelope"
                 }
               }
             },
@@ -5275,13 +8075,20 @@
         },
         "responses": {
           "200": {
-            "description": "Idempotent replay of the existing document and job."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedDocumentEnvelope"
+                }
+              }
+            },
+            "description": "Reintento idempotente: el documento y el job ya existentes con esa `idempotency_key`; no se crea otro documento."
           },
           "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CreatedDocumentEnvelope"
                 }
               }
             },
@@ -5431,13 +8238,20 @@
         },
         "responses": {
           "200": {
-            "description": "Idempotent replay of the existing document and job."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedDocumentEnvelope"
+                }
+              }
+            },
+            "description": "Reintento idempotente: el documento y el job ya existentes con esa `idempotency_key`; no se crea otro documento."
           },
           "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CreatedDocumentEnvelope"
                 }
               }
             },
@@ -5587,13 +8401,20 @@
         },
         "responses": {
           "200": {
-            "description": "Idempotent replay of the existing document and job."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedDocumentEnvelope"
+                }
+              }
+            },
+            "description": "Reintento idempotente: el documento y el job ya existentes con esa `idempotency_key`; no se crea otro documento."
           },
           "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CreatedDocumentEnvelope"
                 }
               }
             },
@@ -5743,13 +8564,20 @@
         },
         "responses": {
           "200": {
-            "description": "Idempotent replay of the existing document and job."
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedDocumentEnvelope"
+                }
+              }
+            },
+            "description": "Reintento idempotente: el documento y el job ya existentes con esa `idempotency_key`; no se crea otro documento."
           },
           "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CreatedDocumentEnvelope"
                 }
               }
             },
@@ -5883,7 +8711,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/DocumentWithJobEnvelope"
                 }
               }
             },
@@ -6027,7 +8855,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CreatedEventEnvelope"
                 }
               }
             },
@@ -6160,11 +8988,14 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "application/pdf": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "PDF del KuDE (`Content-Disposition: inline`)."
           },
           "401": {
             "content": {
@@ -6295,7 +9126,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/KudeEnvelope"
                 }
               }
             },
@@ -6427,11 +9258,13 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "application/xml": {
+                "schema": {
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "XML firmado del DE; antes de firmarlo, el XML generado. Sin ninguno de los dos responde `409 documents.xml_not_available`."
           },
           "401": {
             "content": {
@@ -6563,7 +9396,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CreatedEventEnvelope"
                 }
               }
             },
@@ -6697,7 +9530,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/EventWithJobEnvelope"
                 }
               }
             },
@@ -6822,7 +9655,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/EmitterHealthEnvelope"
                 }
               }
             },
@@ -6958,7 +9791,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CreatedInutilizationEnvelope"
                 }
               }
             },
@@ -7092,7 +9925,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/JobEnvelope"
                 }
               }
             },
@@ -7206,7 +10039,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/DocumentQueryEnvelope"
                 }
               }
             },
@@ -7341,7 +10174,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/DocumentQueryEnvelope"
                 }
               }
             },
@@ -7475,7 +10308,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/RucQueryEnvelope"
                 }
               }
             },
@@ -7600,7 +10433,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/StampingListEnvelope"
                 }
               }
             },
@@ -7733,7 +10566,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/StampingEnvelope"
                 }
               }
             },
@@ -7867,7 +10700,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/StampingEnvelope"
                 }
               }
             },
@@ -8001,7 +10834,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/WebhookDeliveryWithJobEnvelope"
                 }
               }
             },
@@ -8126,7 +10959,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/WebhookEndpointListEnvelope"
                 }
               }
             },
@@ -8259,7 +11092,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/WebhookEndpointEnvelope"
                 }
               }
             },
@@ -8403,7 +11236,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/WebhookEndpointEnvelope"
                 }
               }
             },
@@ -8548,7 +11381,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CreatedWebhookDeliveryEnvelope"
                 }
               }
             },
@@ -8683,7 +11516,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/CreatedWebhookDeliveryEnvelope"
                 }
               }
             },
@@ -8791,14 +11624,14 @@
     },
     "/v1/health": {
       "get": {
-        "description": "Return the liveness status.",
+        "description": "Responde `ok` mientras el proceso de la API atiende pedidos.",
         "operationId": "health_v1_health_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/HealthEnvelope"
                 }
               }
             },
@@ -8908,7 +11741,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/JobListEnvelope"
                 }
               }
             },
@@ -8996,14 +11829,14 @@
     },
     "/v1/ready": {
       "get": {
-        "description": "Report whether mandatory storage, queue, and worker dependencies are usable.",
+        "description": "Indica si la base, Redis y los workers obligatorios están disponibles.",
         "operationId": "ready_v1_ready_get",
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/ReadinessEnvelope"
                 }
               }
             },
@@ -9013,11 +11846,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/ReadinessEnvelope"
                 }
               }
             },
-            "description": "Service Unavailable"
+            "description": "Alguna dependencia obligatoria no está disponible: el detalle va en `data.checks`, no en un `ErrorEnvelope`."
           }
         },
         "summary": "Comprobar readiness",
@@ -9107,7 +11940,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SuccessEnvelope"
+                  "$ref": "#/components/schemas/WebhookDeliveryListEnvelope"
                 }
               }
             },

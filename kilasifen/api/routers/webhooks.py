@@ -8,11 +8,21 @@ from kilasifen.api.deps import (
     require_emitter_read,
     require_emitter_write,
 )
-from kilasifen.api.schemas.common import SuccessEnvelope
+from kilasifen.api.schemas.common import Pagination
 from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.api.schemas.webhooks import (
+    CreatedWebhookDeliveryData,
+    CreatedWebhookDeliveryEnvelope,
+    WebhookDeliveryListData,
+    WebhookDeliveryListEnvelope,
     WebhookDeliveryResponse,
+    WebhookDeliveryWithJobData,
+    WebhookDeliveryWithJobEnvelope,
     WebhookEndpointCreateRequest,
+    WebhookEndpointData,
+    WebhookEndpointEnvelope,
+    WebhookEndpointListData,
+    WebhookEndpointListEnvelope,
     WebhookEndpointResponse,
     WebhookEndpointUpdateRequest,
     WebhookReplayRequest,
@@ -26,7 +36,7 @@ router = APIRouter(tags=["webhooks"])
 
 @router.post(
     "/emitters/{emitter_id}/webhooks",
-    response_model=SuccessEnvelope,
+    response_model=WebhookEndpointEnvelope,
     status_code=status.HTTP_201_CREATED,
 )
 def register_webhook_endpoint(
@@ -35,7 +45,7 @@ def register_webhook_endpoint(
     request: Request,
     _principal=Depends(require_emitter_write),
     service: WebhookService = Depends(get_webhook_service),
-) -> SuccessEnvelope:
+) -> WebhookEndpointEnvelope:
     endpoint = service.register_endpoint(
         emitter_id=emitter_id,
         url=str(payload.url),
@@ -45,40 +55,34 @@ def register_webhook_endpoint(
             payload.retry_policy.model_dump() if payload.retry_policy else None
         ),
     )
-    return SuccessEnvelope(
-        data={
-            "webhook_endpoint": _endpoint_response(
-                endpoint,
-            ).model_dump(mode="json")
-        },
+    return WebhookEndpointEnvelope(
+        data=WebhookEndpointData(webhook_endpoint=_endpoint_response(endpoint)),
         correlation_id=request.state.correlation_id,
     )
 
 
-@router.get("/emitters/{emitter_id}/webhooks", response_model=SuccessEnvelope)
+@router.get(
+    "/emitters/{emitter_id}/webhooks",
+    response_model=WebhookEndpointListEnvelope,
+)
 def list_webhook_endpoints(
     emitter_id: str,
     request: Request,
     _principal=Depends(require_emitter_read),
     service: WebhookService = Depends(get_webhook_service),
-) -> SuccessEnvelope:
+) -> WebhookEndpointListEnvelope:
     endpoints = service.list_endpoints(emitter_id)
-    return SuccessEnvelope(
-        data={
-            "webhook_endpoints": [
-                _endpoint_response(
-                    endpoint,
-                ).model_dump(mode="json")
-                for endpoint in endpoints
-            ]
-        },
+    return WebhookEndpointListEnvelope(
+        data=WebhookEndpointListData(
+            webhook_endpoints=[_endpoint_response(endpoint) for endpoint in endpoints]
+        ),
         correlation_id=request.state.correlation_id,
     )
 
 
 @router.patch(
     "/emitters/{emitter_id}/webhooks/{endpoint_id}",
-    response_model=SuccessEnvelope,
+    response_model=WebhookEndpointEnvelope,
 )
 def update_webhook_endpoint(
     emitter_id: str,
@@ -87,22 +91,22 @@ def update_webhook_endpoint(
     request: Request,
     _principal=Depends(require_emitter_write),
     service: WebhookService = Depends(get_webhook_service),
-) -> SuccessEnvelope:
+) -> WebhookEndpointEnvelope:
     changes = payload.model_dump(exclude_unset=True, mode="json")
     endpoint = service.update_endpoint(
         emitter_id=emitter_id,
         endpoint_id=endpoint_id,
         changes=changes,
     )
-    return SuccessEnvelope(
-        data={"webhook_endpoint": _endpoint_response(endpoint).model_dump(mode="json")},
+    return WebhookEndpointEnvelope(
+        data=WebhookEndpointData(webhook_endpoint=_endpoint_response(endpoint)),
         correlation_id=request.state.correlation_id,
     )
 
 
 @router.post(
     "/emitters/{emitter_id}/webhooks/{endpoint_id}/deliveries/replay",
-    response_model=SuccessEnvelope,
+    response_model=CreatedWebhookDeliveryEnvelope,
     status_code=status.HTTP_201_CREATED,
     description=(
         "Reenvía a este endpoint un evento que KilaSifen ya generó para el "
@@ -118,7 +122,7 @@ def replay_webhook_delivery(
     request: Request,
     _principal=Depends(require_emitter_write),
     service: WebhookService = Depends(get_webhook_service),
-) -> SuccessEnvelope:
+) -> CreatedWebhookDeliveryEnvelope:
     delivery, job = service.replay_delivery_for_emitter(
         emitter_id=emitter_id,
         endpoint_id=endpoint_id,
@@ -129,7 +133,7 @@ def replay_webhook_delivery(
 
 @router.post(
     "/emitters/{emitter_id}/webhooks/{endpoint_id}/test",
-    response_model=SuccessEnvelope,
+    response_model=CreatedWebhookDeliveryEnvelope,
     status_code=status.HTTP_201_CREATED,
     description=(
         "Envía un evento sintético `webhook.test`, firmado como cualquier "
@@ -143,7 +147,7 @@ def send_webhook_test_event(
     request: Request,
     _principal=Depends(require_emitter_write),
     service: WebhookService = Depends(get_webhook_service),
-) -> SuccessEnvelope:
+) -> CreatedWebhookDeliveryEnvelope:
     delivery, job = service.send_test_event_for_emitter(
         emitter_id=emitter_id,
         endpoint_id=endpoint_id,
@@ -153,7 +157,7 @@ def send_webhook_test_event(
 
 @router.get(
     "/emitters/{emitter_id}/webhook-deliveries/{delivery_id}",
-    response_model=SuccessEnvelope,
+    response_model=WebhookDeliveryWithJobEnvelope,
 )
 def get_webhook_delivery(
     emitter_id: str,
@@ -161,25 +165,23 @@ def get_webhook_delivery(
     request: Request,
     _principal=Depends(require_emitter_read),
     service: WebhookService = Depends(get_webhook_service),
-) -> SuccessEnvelope:
+) -> WebhookDeliveryWithJobEnvelope:
     delivery, job = service.get_delivery_for_emitter(
         emitter_id=emitter_id,
         delivery_id=delivery_id,
     )
-    return SuccessEnvelope(
-        data={
-            "delivery": WebhookDeliveryResponse.model_validate(delivery).model_dump(
-                mode="json"
-            ),
-            "job": JobResponse.model_validate(job).model_dump(mode="json")
-            if job
-            else None,
-        },
+    return WebhookDeliveryWithJobEnvelope(
+        data=WebhookDeliveryWithJobData(
+            delivery=WebhookDeliveryResponse.model_validate(delivery),
+            job=JobResponse.model_validate(job) if job else None,
+        ),
         correlation_id=request.state.correlation_id,
     )
 
 
-@router.get("/webhook-deliveries", response_model=SuccessEnvelope)
+@router.get(
+    "/webhook-deliveries", response_model=WebhookDeliveryListEnvelope
+)
 def list_webhook_deliveries(
     request: Request,
     limit: int = Query(default=50, ge=1, le=100),
@@ -189,7 +191,7 @@ def list_webhook_deliveries(
     status: str | None = None,
     _principal=Depends(get_admin_principal),
     service: WebhookService = Depends(get_webhook_service),
-) -> SuccessEnvelope:
+) -> WebhookDeliveryListEnvelope:
     statuses = [status] if status else None
     deliveries = service.list_deliveries(
         limit=limit,
@@ -198,14 +200,14 @@ def list_webhook_deliveries(
         endpoint_id=endpoint_id,
         statuses=statuses,
     )
-    return SuccessEnvelope(
-        data={
-            "deliveries": [
-                WebhookDeliveryResponse.model_validate(delivery).model_dump(mode="json")
+    return WebhookDeliveryListEnvelope(
+        data=WebhookDeliveryListData(
+            deliveries=[
+                WebhookDeliveryResponse.model_validate(delivery)
                 for delivery in deliveries
             ],
-            "pagination": {"limit": limit, "offset": offset, "count": len(deliveries)},
-        },
+            pagination=Pagination(limit=limit, offset=offset, count=len(deliveries)),
+        ),
         correlation_id=request.state.correlation_id,
     )
 
@@ -214,14 +216,12 @@ def _delivery_envelope(
     request: Request,
     delivery: WebhookDelivery,
     job: Job,
-) -> SuccessEnvelope:
-    return SuccessEnvelope(
-        data={
-            "delivery": WebhookDeliveryResponse.model_validate(delivery).model_dump(
-                mode="json"
-            ),
-            "job": JobResponse.model_validate(job).model_dump(mode="json"),
-        },
+) -> CreatedWebhookDeliveryEnvelope:
+    return CreatedWebhookDeliveryEnvelope(
+        data=CreatedWebhookDeliveryData(
+            delivery=WebhookDeliveryResponse.model_validate(delivery),
+            job=JobResponse.model_validate(job),
+        ),
         correlation_id=request.state.correlation_id,
     )
 

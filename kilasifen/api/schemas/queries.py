@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from kilasifen.api.schemas.common import SuccessEnvelope
+
 
 class TaxpayerResponse(BaseModel):
     """Normalized taxpayer data returned from SIFEN."""
@@ -67,3 +69,23 @@ class DocumentQueryResponse(BaseModel):
         default_factory=list,
         description="Eventos registrados del CDC (xContEv).",
     )
+
+
+class RucQueryData(BaseModel):
+    """Resultado de la consulta de RUC en el SIFEN."""
+
+    ruc_query: RucQueryResponse
+
+
+class DocumentQueryData(BaseModel):
+    """Resultado de la consulta del CDC en el SIFEN."""
+
+    document_query: DocumentQueryResponse
+
+
+class RucQueryEnvelope(SuccessEnvelope[RucQueryData]):
+    """Respuesta de la consulta de RUC."""
+
+
+class DocumentQueryEnvelope(SuccessEnvelope[DocumentQueryData]):
+    """Respuesta de la consulta del CDC."""
