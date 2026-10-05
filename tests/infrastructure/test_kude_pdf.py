@@ -250,3 +250,90 @@ def test_single_page_kude_reads_one_of_one():
 
     assert _page_count(pdf) == 1
     assert "Página 1/1" in _texts(pdf)
+
+
+# ---------------------------------------------------------------------------
+# Amounts, total in guaranies and stamping date (MT v150 §13.4; NT 10 §1.11)
+# ---------------------------------------------------------------------------
+
+
+def _drawn_texts(monkeypatch, document: Document) -> list[str]:
+    drawn = _record_drawing(monkeypatch)
+    render_kude_pdf(document=document, emitter=_emitter())
+    return [text for _, text in drawn]
+
+
+def _with_signed_xml(document: Document, signed_xml: str) -> Document:
+    return replace(
+        document, signed_xml=signed_xml, payload_snapshot={"signed_xml": signed_xml}
+    )
+
+
+def test_pyg_kude_prints_whole_guaranies_and_the_total_in_guaranies(monkeypatch):
+    texts = _drawn_texts(
+        monkeypatch, _document_for_scenario("factura_b2b_iva10", "factura")
+    )
+
+    # dIVA10 is 9090.90909091 in the XML (NT 13).
+    assert "9.091" in texts
+    assert "100.000" in texts
+    assert not any("9090.9" in text or "90909.0" in text for text in texts)
+    band = texts.index("TOTAL EN GUARANÍES")
+    assert texts[band + 1] == "100.000"
+    assert not any(text.startswith("TOTAL PYG") for text in texts)
+
+
+def test_foreign_currency_kude_prints_f014_and_f023_as_total_in_guaranies(
+    monkeypatch,
+):
+    texts = _drawn_texts(
+        monkeypatch, _document_for_scenario("factura_moneda_usd", "factura")
+    )
+
+    # F014 = 120.5 USD, F023 dTotalGs = 879650 (NT 08 §1.2), F017 10.95454546.
+    general = texts.index("TOTAL USD")
+    assert texts[general + 1] == "120,50"
+    guaranies = texts.index("TOTAL EN GUARANÍES")
+    assert texts[guaranies + 1] == "879.650"
+    assert "10,95" in texts
+
+
+def test_foreign_currency_xml_without_f023_prints_no_total_in_guaranies(
+    monkeypatch,
+):
+    document = _document_for_scenario("factura_moneda_usd", "factura")
+    signed_xml = re.sub(r"<dTotalGs>[^<]*</dTotalGs>", "", document.signed_xml)
+
+    texts = _drawn_texts(monkeypatch, _with_signed_xml(document, signed_xml))
+
+    assert "TOTAL USD" in texts
+    assert "TOTAL EN GUARANÍES" not in texts
+
+
+def test_kude_prints_the_stamping_start_date_as_dd_mm_aaaa(monkeypatch):
+    texts = _drawn_texts(
+        monkeypatch, _document_for_scenario("factura_b2b_iva10", "factura")
+    )
+
+    # dFeIniT is 2024-03-11 in the XML (NT 10 §1.11).
+    assert texts[texts.index("Inicio vigencia") + 1] == "11-03-2024"
+    assert "2024-03-11" not in texts
+
+
+def test_kude_data_keeps_the_xml_literals_and_separates_f014_from_f023():
+    usd = extract_kude_data(
+        document=_document_for_scenario("factura_moneda_usd", "factura"),
+        emitter=_emitter(),
+    )["kude"]
+    pyg = extract_kude_data(
+        document=_document_for_scenario("factura_b2b_iva10", "factura"),
+        emitter=_emitter(),
+    )["kude"]
+
+    assert usd["totales"]["total_general_operacion"] == "120.5"
+    assert usd["totales"]["total_general_guaranies"] == "879650"
+    assert usd["totales"]["total_iva"] == "10.95454546"
+    assert pyg["totales"]["total_general_operacion"] == "100000"
+    assert pyg["totales"]["total_general_guaranies"] == "100000"
+    assert pyg["totales"]["liquidacion_iva_10"] == "9090.90909091"
+    assert pyg["timbrado"]["fecha_inicio_vigencia"] == "2024-03-11"
