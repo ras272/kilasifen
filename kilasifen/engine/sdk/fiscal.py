@@ -201,10 +201,11 @@ def build_qr_payload(
     - ``d_fe_emi_de``: texto de D002 (``AAAA-MM-DDThh:mm:ss``) o un
       ``datetime``; una fecha sin hora se rechaza.
     - ``d_ruc_rec``: D206 (RUC sin DV) si ``iNatRec`` es 1; ``d_num_id_rec``:
-      D210 si ``iNatRec`` es 2 (``0`` en el innominado, NT 23 §1.1). Sin
-      ninguno de los dos va ``dNumIDRec=0``: D206 es obligatorio con
-      ``iNatRec`` 1 (MT v150 p. 71) y la nota (*) de la tabla de §13.8.2 pide
-      ``0`` para un campo sin valor.
+      D210 si ``iNatRec`` es 2 (``0`` en el innominado, NT 23 §1.1, y ``0``
+      cuando el DE no trae D210, nota (*) de la tabla de §13.8.2). Hay que
+      pasar exactamente uno: sin ninguno se lanza ``ValueError`` en lugar de
+      suponer el receptor, porque un QR que no coincide con el XML lo rechaza
+      la validacion 2500.
     - ``d_tot_gral_ope`` y ``d_tot_iva``: texto de F014 y F017, o ``0`` si el
       DE no los informa (MT v150 §13.8.4.1; NT 10 §4, obs. 1). Un ``float``
       se rechaza porque no conserva el literal del XML.
@@ -420,7 +421,14 @@ def _qr_receptor_from_values(
         raise ValueError("use either d_ruc_rec or d_num_id_rec, not both")
     if ruc is not None:
         return "dRucRec", _qr_ruc_rec(ruc)
-    return "dNumIDRec", _qr_num_id_rec(numero or "0")
+    if numero is None:
+        # El receptor no se supone (validacion 2500): D206 si iNatRec es 1,
+        # D210 (o "0") si es 2.
+        raise ValueError(
+            "pass d_ruc_rec (D206, iNatRec 1) or d_num_id_rec "
+            "(D210, or 0 without D210, iNatRec 2)"
+        )
+    return "dNumIDRec", _qr_num_id_rec(numero)
 
 
 def _qr_receptor_from_xml(de: ET.Element) -> tuple[str, str]:

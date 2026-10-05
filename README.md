@@ -415,7 +415,8 @@ format_cdc_for_kude(cdc)        # "0180 1726 4920 ..." en grupos de cuatro
   literales del XML firmado (MT v150 §13.8): es la misma función que usa la
   plataforma. `generate_dcarqr(...)` hace lo mismo con valores sueltos, que
   tienen que ser el texto de cada campo del XML (`"300000"`, no
-  `300000.0`). Con `xml_escaped=True` devuelven la URL con `&amp;`, sólo
+  `300000.0`), y el receptor explícito: `d_ruc_rec` (D206) o
+  `d_num_id_rec` (D210, o `"0"` si el DE no lo trae). Con `xml_escaped=True` devuelven la URL con `&amp;`, sólo
   para insertarla en texto XML crudo. Ninguna devuelve el CSC.
 - `render_kude_html(rde)` y `save_kude_html(rde, ruta)` generan una
   representación imprimible en HTML. El KuDE en PDF lo produce la plataforma.

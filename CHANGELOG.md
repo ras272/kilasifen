@@ -166,8 +166,10 @@ revisar la guía de migración de esta sección.
     del campo (un `int` o un `Decimal` que se imprima igual) y `0` si falta,
     y reproduce el ejemplo oficial del MT (hash `97ddbb3c…74ed`). Rechaza
     con `ValueError` un `float`, una fecha D002 sin hora, un D206 con DV o
-    fuera del patrón `tRuc` y un D210 fuera de `tdNumDocId`. Sin receptor
-    escribe `dNumIDRec=0` (antes `dRucRec=0`).
+    fuera del patrón `tRuc` y un D210 fuera de `tdNumDocId`. Sin
+    `d_ruc_rec` ni `d_num_id_rec` lanza `ValueError` (antes escribía
+    `dRucRec=0`): el receptor no se supone, porque un QR que no coincide con
+    el XML se rechaza (2500).
   - `build_qr_payload_from_signed_xml` toma `nVersion` de `dVerFor`
     (`qr_version` pasa a ser opcional y, si se envía, tiene que coincidir),
     el `DigestValue` de `rDE/Signature` y escribe `dTotIVA=0` cuando el DE
@@ -230,6 +232,7 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 | `formas_pago[].moneda` omitida en una operación en otra moneda (se asumía PYG) | Omitida vale la moneda de la operación; enviar `moneda` y `tipo_cambio` si el pago es en otra |
 | `formas_pago[].moneda_descripcion` | Sin efecto: se escribe el nombre oficial de la moneda |
 | `build_qr_payload(..., d_tot_gral_ope=300000.0)` o una fecha `AAAA-MM-DD` | Pasar el texto de F014/F017 y de D002 (`AAAA-MM-DDThh:mm:ss`) del XML firmado, o directamente `build_qr_payload_from_signed_xml` |
+| `build_qr_payload(...)` / `generate_dcarqr(...)` sin receptor | `d_ruc_rec=<D206>` si `iNatRec` es 1; `d_num_id_rec=<D210>` si es 2, o `"0"` para el innominado o un DE sin D210 |
 | `payload["hash_input"]` de `build_qr_payload*` | Sin reemplazo: el CSC no se devuelve; usar `step1` y `c_hash_qr` |
 | `qr_generator.build_sifen_qr_url(...)` | `kilasifen.engine.sdk.fiscal.build_qr_payload_from_signed_xml(signed_xml=..., id_csc=..., csc=..., environment=...)["url"]` |
 | `/kude/data` → `totales.total_general_guaranies` como total de la operación | `totales.total_general_operacion` (F014); `total_general_guaranies` es F023 fuera de PYG |

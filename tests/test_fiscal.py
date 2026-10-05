@@ -204,16 +204,39 @@ def test_build_qr_payload_keeps_the_amount_literal():
 def test_build_qr_payload_writes_zero_for_values_the_de_does_not_carry():
     payload = _mt_payload(
         d_ruc_rec=None,
+        d_num_id_rec="0",
         d_tot_gral_ope=None,
         d_tot_iva="",
         c_items=None,
         environment="test",
     )
 
-    # Sin D206 el receptor es no contribuyente (D206 es obligatorio con
-    # iNatRec=1): va dNumIDRec con 0 (nota (*) de la tabla de §13.8.2).
+    # Un no contribuyente sin D210 (B2F tras la NT 23) o innominado va con
+    # dNumIDRec=0, y los montos ausentes con 0 (nota (*) de §13.8.2).
     assert "&dNumIDRec=0&dTotGralOpe=0&dTotIVA=0&cItems=0&" in payload["step1"]
     assert payload["url"].startswith("https://ekuatia.set.gov.py/consultas-test/qr?")
+
+
+@pytest.mark.parametrize("vacio", [None, "", "  "])
+def test_build_qr_payload_requires_the_receptor(vacio):
+    # Suponer el receptor daria un QR distinto del XML (validacion 2500):
+    # quien olvida D206 recibe un error local, no un dNumIDRec=0.
+    with pytest.raises(ValueError, match="d_ruc_rec .* or d_num_id_rec"):
+        _mt_payload(d_ruc_rec=vacio, d_num_id_rec=vacio)
+
+
+def test_generate_dcarqr_requires_the_receptor():
+    with pytest.raises(ValueError, match="d_ruc_rec .* or d_num_id_rec"):
+        generate_dcarqr(
+            cdc=_MT_CDC,
+            d_fe_emi_de=_MT_FECHA,
+            digest_value=_MT_DIGEST,
+            id_csc="0001",
+            csc=_MT_CSC,
+            d_tot_gral_ope="300000",
+            d_tot_iva="27272",
+            c_items=2,
+        )
 
 
 def test_build_qr_payload_names_the_d210_parameter_dnumidrec():
