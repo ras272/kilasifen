@@ -14,6 +14,11 @@ from pydantic import (
 )
 
 from kilasifen.domain.documents.receiver import ReceiverRuleError, resolve_receiver
+from kilasifen.domain.documents.totals import (
+    TotalsRuleError,
+    compute_document_amounts,
+    resolve_payment_plan,
+)
 from kilasifen.engine.sdk.catalogos import (
     descripcion_departamento,
     descripcion_moneda,
@@ -685,6 +690,27 @@ class BaseFiscalDocumentPayload(FiscalContractModel):
             raise ValueError("condicion_tipo_cambio is required for foreign currency")
         if self.condicion_tipo_cambio == 1 and self.tipo_cambio is None:
             raise ValueError("tipo_cambio is required when condicion_tipo_cambio is 1")
+        return self
+
+    @model_validator(mode="after")
+    def validate_amounts(self) -> "BaseFiscalDocumentPayload":
+        """Refuse at creation the amounts the builder would refuse later.
+
+        Same calculator as the XML builder (kilasifen.domain.documents.totals):
+        E733 (1904-1906), EA003/EA004 (1861/1862, NT 01), ``redondeo`` (MT v150
+        §F), ISC (1902) and, in a factura, gPaConEIni (1551/1552), E611 by the
+        currency of the payment (1556/1557) and payments adding up to the
+        total. The rule code travels in the 422 message.
+        """
+
+        payload = self.model_dump(mode="json")
+        try:
+            amounts = compute_document_amounts(payload)
+            if getattr(self, "tipo_documento", 1) == 1:
+                # gCamCond (E600) only goes in a factura (C002 = 1).
+                resolve_payment_plan(payload, amounts)
+        except TotalsRuleError as exc:
+            raise ValueError(exc.code) from exc
         return self
 
 

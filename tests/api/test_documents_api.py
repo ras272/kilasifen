@@ -1095,3 +1095,96 @@ def test_typed_factura_accepts_rounding_and_a_global_discount(
     typed = payload["typed_contract"]["payload"]
     assert typed["redondeo"] == "multiplo_50"
     assert typed["porcentaje_descuento_global"] == "10"
+
+
+@pytest.mark.parametrize(
+    ("changes", "message"),
+    [
+        (
+            {"items": [_gravado(afectacion="gravado_parcial")]},
+            "documents.items.proporcion_gravada_required",
+        ),
+        (
+            {"items": [_gravado(afectacion="exento", tasa=0, proporcion_gravada=100)]},
+            "documents.items.proporcion_gravada_invalid",
+        ),
+        (
+            {"items": [_gravado(descuento_global=100)]},
+            "documents.items.descuento_global_mismatch",
+        ),
+        (
+            {
+                "items": [_gravado(precio_unitario="100.49")],
+                "redondeo": "multiplo_50",
+                **_USD,
+            },
+            "documents.redondeo.only_pyg",
+        ),
+        (
+            {"items": [_gravado(precio_unitario=30)], "redondeo": "multiplo_50"},
+            "documents.redondeo.total_below_50",
+        ),
+        (
+            {
+                "items": [_gravado()],
+                "condicion_operacion": {
+                    "tipo": "contado",
+                    "formas_pago": [{"tipo": "efectivo", "monto": 500}],
+                },
+            },
+            "documents.condicion_operacion.formas_pago.total_mismatch",
+        ),
+        (
+            {
+                "items": [_gravado()],
+                "condicion_operacion": {
+                    "tipo": "contado",
+                    "formas_pago": [
+                        {"tipo": "efectivo", "monto": 1, "moneda": "USD"}
+                    ],
+                },
+            },
+            "documents.condicion_operacion.formas_pago.tipo_cambio_required",
+        ),
+        (
+            {
+                "items": [_gravado()],
+                "condicion_operacion": {
+                    "tipo": "credito",
+                    "credito": {
+                        "tipo": "plazo",
+                        "descripcion": "30 dias",
+                        "monto_entrega_inicial": 100,
+                    },
+                },
+            },
+            "documents.condicion_operacion.credito.formas_pago_required",
+        ),
+        (
+            {"items": [_gravado()], "tipo_impuesto": 2},
+            "documents.tipo_impuesto.isc_not_supported",
+        ),
+    ],
+    ids=[
+        "partial-without-proportion",
+        "exempt-proportion-100",
+        "global-discount-without-percentage",
+        "rounding-foreign-currency",
+        "rounding-under-50",
+        "contado-payments-mismatch",
+        "foreign-payment-without-rate",
+        "initial-delivery-without-payments",
+        "isc",
+    ],
+)
+def test_typed_document_amount_rules_answer_422(
+    client: TestClient, emitter_id: str, changes: dict, message: str
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={"factura": {"cliente": dict(_FICTIONAL_CLIENT), **changes}},
+    )
+
+    assert response.status_code == 422
+    assert message in response.text
