@@ -8,6 +8,10 @@
 - Paises (``paisType``): el binding solo trae los codigos ISO 3166, asi que la
   descripcion se lee de la anotacion de cada enumeracion de
   ``Paises_v100.xsd`` (MT v150 D203/D204 y validacion 1301).
+- Monedas (``cMondT``): codigos ISO 4217 de ``Monedas_v150.xsd``, el que
+  incluye ``DE_v150.xsd``; la descripcion es el ``CodeName`` de la anotacion.
+  D016, E610 y E654 son "Referente al campo" D015, E609 y E653, y las
+  validaciones 1206 y 1555 exigen que la descripcion coincida con el codigo.
 """
 
 from __future__ import annotations
@@ -54,7 +58,30 @@ def descripcion_pais(codigo: str) -> str | None:
     return paises().get(codigo)
 
 
-def _enumeracion_documentada(archivo: str, tipo: str) -> dict[str, str]:
+@lru_cache(maxsize=1)
+def monedas() -> Mapping[str, str]:
+    """Codigo ISO 4217 (D015/E609/E653) -> descripcion oficial (D016/E610/E654)."""
+
+    return MappingProxyType(
+        _enumeracion_documentada("Monedas_v150.xsd", "cMondT", etiqueta="CodeName")
+    )
+
+
+def descripcion_moneda(codigo: str) -> str | None:
+    """Devuelve la descripcion oficial de la moneda, o ``None``."""
+
+    return monedas().get(codigo)
+
+
+def _enumeracion_documentada(
+    archivo: str, tipo: str, *, etiqueta: str | None = None
+) -> dict[str, str]:
+    """Lee la documentacion de cada enumeracion de ``tipo``.
+
+    Con ``etiqueta`` el texto sale de ese elemento hijo de la documentacion
+    (``<CodeName>`` en las monedas); sin ella, del texto de la documentacion.
+    """
+
     raiz = ET.parse(_SCHEMAS_DIR / archivo).getroot()
     for simple in raiz.iter(f"{_XS}simpleType"):
         if simple.get("name") != tipo:
@@ -62,6 +89,16 @@ def _enumeracion_documentada(archivo: str, tipo: str) -> dict[str, str]:
         valores: dict[str, str] = {}
         for enumeracion in simple.iter(f"{_XS}enumeration"):
             documentacion = enumeracion.find(f"{_XS}annotation/{_XS}documentation")
+            if documentacion is not None and etiqueta is not None:
+                # El elemento hereda el namespace por defecto del XSD.
+                documentacion = next(
+                    (
+                        hijo
+                        for hijo in documentacion
+                        if hijo.tag.rsplit("}", 1)[-1] == etiqueta
+                    ),
+                    None,
+                )
             texto = documentacion.text if documentacion is not None else None
             valores[enumeracion.get("value", "")] = (texto or "").strip()
         return valores

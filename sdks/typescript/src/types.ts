@@ -165,6 +165,7 @@ export interface Payment {
   tipo: NumericCode;
   monto: DecimalValue;
   moneda?: string;
+  /** @deprecated Ignored: dDMoneTiPag is the official name of `moneda` (1555). */
   moneda_descripcion?: string;
   tipo_cambio?: DecimalValue;
   numero_cheque?: NumericCode;
@@ -232,6 +233,7 @@ export interface BaseFiscalDocument {
   numero?: NumericCode;
   fecha?: IsoDateTime;
   fecha_emision?: IsoDateTime;
+  /** cMoneOpe: an ISO 4217 code of the XSD (default PYG). */
   moneda?: string;
   tipo_cambio?: DecimalValue;
   condicion_tipo_cambio?: number;

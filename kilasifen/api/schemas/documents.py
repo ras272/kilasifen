@@ -14,7 +14,11 @@ from pydantic import (
 )
 
 from kilasifen.domain.documents.receiver import ReceiverRuleError, resolve_receiver
-from kilasifen.engine.sdk.catalogos import descripcion_departamento, descripcion_pais
+from kilasifen.engine.sdk.catalogos import (
+    descripcion_departamento,
+    descripcion_moneda,
+    descripcion_pais,
+)
 from kilasifen.engine.sdk.fiscal import calculate_mod11_dv
 
 
@@ -78,6 +82,26 @@ class GenerationResponsiblePayload(FiscalContractModel):
                 "with tipo_documento 9"
             )
         return self
+
+
+#: MT v150 D016/E610/E654 (XSD tdDMoneTiPag): the official name of the
+#: currency, 3-20 characters (1206/1555).
+_CURRENCY_DESCRIPTION_MAX = 20
+
+
+def _official_currency(value: str | None) -> str | None:
+    """Normalize an ISO 4217 code the DE can carry with its official name."""
+
+    if value is None:
+        return None
+    code = value.strip().upper()
+    description = descripcion_moneda(code)
+    if description is None or not 3 <= len(description) <= _CURRENCY_DESCRIPTION_MAX:
+        raise ValueError(
+            "moneda must be an ISO 4217 code of the XSD cMondT whose official "
+            "name fits the 20 characters of its description"
+        )
+    return code
 
 
 _IGNORED_EMITTER_FIELD = {
@@ -273,11 +297,24 @@ class PaymentPayload(FiscalContractModel):
     tipo: int | str
     monto: Decimal = Field(gt=0, max_digits=19, decimal_places=4)
     moneda: str = Field(default="PYG", min_length=3, max_length=3)
-    moneda_descripcion: str | None = Field(default=None, max_length=60)
+    moneda_descripcion: str | None = Field(
+        default=None,
+        max_length=60,
+        description=(
+            "Obsoleto y sin efecto: dDMoneTiPag es siempre la descripción "
+            "oficial de `moneda` en el XSD (1555)."
+        ),
+        json_schema_extra={"deprecated": True},
+    )
     tipo_cambio: Decimal | None = Field(default=None, gt=0)
     numero_cheque: str | int | None = None
     banco: str | None = Field(default=None, min_length=4, max_length=20)
     tarjeta: CardPayload | None = None
+
+    @field_validator("moneda")
+    @classmethod
+    def validate_currency(cls, value: str | None) -> str | None:
+        return _official_currency(value)
 
     @model_validator(mode="after")
     def validate_payment_details(self) -> "PaymentPayload":
@@ -296,6 +333,11 @@ class InstallmentPayload(FiscalContractModel):
     monto: Decimal = Field(gt=0, max_digits=19, decimal_places=4)
     fecha_vencimiento: date | str | None = None
     moneda: str = Field(default="PYG", min_length=3, max_length=3)
+
+    @field_validator("moneda")
+    @classmethod
+    def validate_currency(cls, value: str | None) -> str | None:
+        return _official_currency(value)
 
 
 class CreditPayload(FiscalContractModel):
@@ -425,7 +467,12 @@ class BaseFiscalDocumentPayload(FiscalContractModel):
     numero: int | str | None = None
     fecha: date | datetime | str | None = None
     fecha_emision: date | datetime | str | None = None
-    moneda: str = Field(default="PYG", min_length=3, max_length=3)
+    moneda: str = Field(
+        default="PYG",
+        min_length=3,
+        max_length=3,
+        description="cMoneOpe (D015), código ISO 4217 del XSD.",
+    )
     tipo_cambio: Decimal | None = Field(default=None, gt=0)
     condicion_tipo_cambio: int | None = Field(default=None, ge=1, le=2)
     tipo_transaccion: int | str | None = None
@@ -457,6 +504,11 @@ class BaseFiscalDocumentPayload(FiscalContractModel):
         AssociatedDocumentPayload | list[AssociatedDocumentPayload] | None
     ) = None
     metadata: dict[str, Any] | None = None
+
+    @field_validator("moneda")
+    @classmethod
+    def validate_operation_currency(cls, value: str) -> str:
+        return _official_currency(value)
 
     @field_validator("establecimiento", "punto")
     @classmethod

@@ -35,6 +35,7 @@ from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine.sdk.catalogos import (
     descripcion_departamento,
+    descripcion_moneda,
     descripcion_pais,
 )
 from kilasifen.engine.sdk.errors import SifenValidationError
@@ -54,6 +55,8 @@ _ITEM_TOTAL_Q = Decimal("0.00000001")
 MT_TEST_EMITTER_NAME = (
     "DE generado en ambiente de prueba - sin valor comercial ni fiscal"
 )
+#: MT v150 D016/E610/E654 (XSD tdDMoneTiPag for the three): 3-20 characters.
+_CURRENCY_DESCRIPTION_MAX = 20
 #: A qualified ``ds:`` tag (opening or closing) or an ``xmlns:ds`` declaration.
 _DS_PREFIX_PATTERN = re.compile(r"</?ds:|\sxmlns:ds\s*=")
 
@@ -1054,12 +1057,8 @@ def _append_counted_payments(
         payment_currency = (
             _clean_text(_first_non_none(form, "moneda", "cMoneTiPag")) or moneda
         ).upper()
-        payment_currency_desc = _currency_description(
-            _clean_text(_first_non_none(form, "moneda_descripcion", "dDMoneTiPag"))
-            or moneda_descripcion
-            if payment_currency == moneda
-            else _currency_description(payment_currency)
-        )
+        # 1555: always the official name of the code, never a caller text.
+        payment_currency_desc = _currency_description(payment_currency)
 
         pago = _sub(gcond, "gPaConEIni")
         _sub(pago, "iTiPago", str(payment_type))
@@ -1196,11 +1195,7 @@ def _append_credit_payment(
             _clean_text(_first_non_none(cuota, "moneda", "cMoneCuo")) or moneda
         ).upper()
         _sub(gcuota, "cMoneCuo", cuota_moneda)
-        _sub(
-            gcuota,
-            "dDMoneCuo",
-            _currency_description(cuota_moneda or moneda_descripcion),
-        )
+        _sub(gcuota, "dDMoneCuo", _currency_description(cuota_moneda))
         cuota_monto = _coerce_decimal(
             _first_non_none(cuota, "monto", "dMonCuota"),
             field_name="condicion_operacion.credito.cuota.monto",
@@ -2008,15 +2003,16 @@ def _printed_doc_type_description(code: int) -> str:
 
 
 def _currency_description(code: str) -> str:
-    currency = code.upper()
-    known = {
-        "PYG": "Guarani",
-        "USD": "Dólar",
-        "EUR": "Euro",
-        "BRL": "Real",
-        "ARS": "Peso argentino",
-    }
-    return known.get(currency, currency)
+    """D016/E610/E654: the ISO 4217 name of the code in the XSD (1206/1555).
+
+    A code outside ``cMondT``, or whose official name does not fit the 3-20
+    characters of those fields, cannot be described truthfully: refused.
+    """
+
+    description = descripcion_moneda(code.upper())
+    if description is None or not 3 <= len(description) <= _CURRENCY_DESCRIPTION_MAX:
+        raise SifenValidationError("documents.moneda.unsupported")
+    return description
 
 
 def _calculate_rounding(*, total: Decimal, moneda: str) -> Decimal:

@@ -1032,3 +1032,41 @@ def test_generation_responsible_type_9_needs_its_description(
     )
 
     assert response.status_code == 422
+
+
+#: Fictional receiver (DNIT Guia de Mejores Practicas example, DV 5).
+_FICTIONAL_CLIENT = {
+    "ruc": "80025298-5",
+    "razon_social": "CLIENTE FICTICIO SA",
+    "tipo_contribuyente": 2,
+}
+
+
+def _gravado(**changes) -> dict:
+    item = {"descripcion": "Producto", "cantidad": 1, "precio_unitario": 1000}
+    item.update(changes)
+    return item
+
+
+@pytest.mark.parametrize("moneda", ["XYZ", "BMD"])
+def test_typed_document_currency_must_be_an_official_iso_code(
+    client: TestClient, emitter_id: str, moneda: str
+) -> None:
+    # 1206/1555: D016/E610 are the official name of the code (Monedas_v150);
+    # BMD's name does not fit the 20 characters of the description.
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "factura": {
+                "cliente": dict(_FICTIONAL_CLIENT),
+                "items": [_gravado()],
+                "moneda": moneda,
+                "condicion_tipo_cambio": 1,
+                "tipo_cambio": "7300",
+            }
+        },
+    )
+
+    assert response.status_code == 422
+    assert "ISO 4217" in response.text

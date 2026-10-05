@@ -1794,6 +1794,7 @@
           },
           "moneda": {
             "default": "PYG",
+            "description": "cMoneOpe (D015), código ISO 4217 del XSD.",
             "maxLength": 3,
             "minLength": 3,
             "title": "Moneda",
@@ -2599,6 +2600,7 @@
           },
           "moneda": {
             "default": "PYG",
+            "description": "cMoneOpe (D015), código ISO 4217 del XSD.",
             "maxLength": 3,
             "minLength": 3,
             "title": "Moneda",
@@ -2912,6 +2914,7 @@
           },
           "moneda": {
             "default": "PYG",
+            "description": "cMoneOpe (D015), código ISO 4217 del XSD.",
             "maxLength": 3,
             "minLength": 3,
             "title": "Moneda",
@@ -3163,6 +3166,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: dDMoneTiPag es siempre la descripción oficial de `moneda` en el XSD (1555).",
             "title": "Moneda Descripcion"
           },
           "monto": {

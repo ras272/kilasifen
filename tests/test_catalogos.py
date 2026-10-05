@@ -1,4 +1,4 @@
-"""Catalogos oficiales derivados de los XSD (departamentos y paises)."""
+"""Catalogos oficiales derivados de los XSD (departamentos, paises y monedas)."""
 
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -6,7 +6,9 @@ from xml.etree import ElementTree as ET
 from kilasifen.engine.sdk.catalogos import (
     DEPARTAMENTOS,
     descripcion_departamento,
+    descripcion_moneda,
     descripcion_pais,
+    monedas,
     paises,
 )
 
@@ -51,3 +53,19 @@ def test_paises_traen_la_descripcion_oficial_del_xsd() -> None:
     assert descripcion_pais("XXX") is None
     # tDesPais (NT 05): todas las descripciones caben en 4-50 caracteres.
     assert all(4 <= len(descripcion) <= 50 for descripcion in paises().values())
+
+
+def test_monedas_traen_el_codename_oficial_del_xsd() -> None:
+    raiz = ET.parse(_SCHEMAS / "Monedas_v150.xsd").getroot()
+    simple = next(
+        nodo for nodo in raiz.iter(f"{_XS}simpleType") if nodo.get("name") == "cMondT"
+    )
+    codigos = [nodo.get("value") for nodo in simple.iter(f"{_XS}enumeration")]
+
+    assert list(monedas()) == codigos
+    assert all(monedas().values())
+    # D016/E610/E654 son "Referente al campo" D015/E609/E653 (1206, 1555).
+    assert descripcion_moneda("PYG") == "Guarani"
+    assert descripcion_moneda("USD") == "US Dollar"
+    assert descripcion_moneda("BRL") == "Brazilian Real"
+    assert descripcion_moneda("XYZ") is None
