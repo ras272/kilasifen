@@ -13,8 +13,10 @@ from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine.sdk.errors import SifenValidationError
+from kilasifen.engine.sdk.fiscal import build_qr_payload_from_signed_xml
 from kilasifen.infrastructure.sifen import engine as engine_module
 from kilasifen.infrastructure.sifen.engine import KilaSifenEmissionEngine
+from kilasifen.infrastructure.sifen.typed_xml_builder import DCARQR_PENDING_SIGNATURE
 from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile
 from tests._raw_xml import unsigned_rde
 
@@ -41,6 +43,22 @@ def test_dfecfirma_is_the_signing_time_not_the_emission_date(cert_data) -> None:
         "2026-04-25T10:00:00"
     )
     assert prepared.generated_xml.count("<dFecFirma>2026-04-25T15:30:12<") == 1
+
+
+def test_signed_xml_replaces_the_pending_dcarqr_with_the_real_qr(cert_data) -> None:
+    prepared = _prepare(_typed_document(), cert_data, now=_NOW)
+
+    root = ET.fromstring(prepared.signed_xml.encode("utf-8"))
+    dcarqr = root.find("s:gCamFuFD/s:dCarQR", _NS).text
+    assert dcarqr == build_qr_payload_from_signed_xml(
+        signed_xml=prepared.signed_xml,
+        id_csc="0001",
+        csc="ABCD0000000000000000000000000000",
+        environment="test",
+    )["url"]
+    assert DCARQR_PENDING_SIGNATURE in prepared.generated_xml
+    assert DCARQR_PENDING_SIGNATURE not in prepared.signed_xml
+    assert DCARQR_PENDING_SIGNATURE not in prepared.request_xml
 
 
 def test_future_emission_within_120_hours_is_signed_now(cert_data) -> None:

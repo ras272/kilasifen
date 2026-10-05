@@ -65,6 +65,17 @@ _PERCENT_Q = Decimal("0.00000001")
 MT_TEST_EMITTER_NAME = (
     "DE generado en ambiente de prueba - sin valor comercial ni fiscal"
 )
+#: dCarQR before signing. The QR carries the DigestValue of the signature
+#: (MT v150 §13.8.2, XS17), so it only exists after signing:
+#: KilaSifenEmissionEngine always replaces this text with
+#: apply_real_qr_to_signed_xml right after signing and it never travels. It
+#: satisfies the XSD (noEmptyString, 100-600 characters) for the validation
+#: before signing and carries no fiscal data, so a stored unsigned XML can
+#: not be mistaken for a document with a QR.
+DCARQR_PENDING_SIGNATURE = (
+    "PENDIENTE-DE-FIRMA: KilaSifen calcula el dCarQR despues de firmar, con "
+    "los valores del XML firmado (MT v150 13.8)."
+)
 #: MT v150 D016/E610/E654 (XSD tdDMoneTiPag for the three): 3-20 characters.
 _CURRENCY_DESCRIPTION_MAX = 20
 #: A qualified ``ds:`` tag (opening or closing) or an ``xmlns:ds`` declaration.
@@ -436,18 +447,7 @@ def _build_factura_xml(
     _append_items(dtip=dtip, items=items, amounts=amounts.items)
     _append_totals(de, totals)
     _append_associated_documents_if_any(de=de, typed_payload=typed_payload)
-    _append_outside_signature_group(
-        root=root,
-        dcarqr=_resolve_dcarqr_value(
-            typed_payload=typed_payload,
-            doc_id=doc_id,
-            fecha_emision=fecha_emision,
-            receptor=_resolve_qr_receptor(cliente),
-            total_neto=totals.net_total,
-            total_iva=totals.total_tax or _ZERO,
-            items_count=len(items),
-        ),
-    )
+    _append_outside_signature_group(root=root)
 
     generated_xml = _finalize_xml(root)
     return TypedXmlBuildResult(generated_xml=generated_xml, doc_id=doc_id)
@@ -549,18 +549,7 @@ def _build_adjustment_note_xml(
     _append_items(dtip=dtip, items=items, amounts=amounts.items)
     _append_totals(de, totals)
     _append_associated_document(de=de, asociado=asociado, required=True)
-    _append_outside_signature_group(
-        root=root,
-        dcarqr=_resolve_dcarqr_value(
-            typed_payload=typed_payload,
-            doc_id=doc_id,
-            fecha_emision=fecha_emision,
-            receptor=_resolve_qr_receptor(cliente),
-            total_neto=totals.net_total,
-            total_iva=totals.total_tax or _ZERO,
-            items_count=len(items),
-        ),
-    )
+    _append_outside_signature_group(root=root)
 
     generated_xml = _finalize_xml(root)
     return TypedXmlBuildResult(generated_xml=generated_xml, doc_id=doc_id)
@@ -1198,9 +1187,9 @@ def _append_associated_documents_if_any(*, de: ET.Element, typed_payload: dict) 
         _append_associated_document(de=de, asociado=asociado, required=False)
 
 
-def _append_outside_signature_group(*, root: ET.Element, dcarqr: str) -> None:
+def _append_outside_signature_group(*, root: ET.Element) -> None:
     gcam = _sub(root, "gCamFuFD")
-    _sub(gcam, "dCarQR", dcarqr)
+    _sub(gcam, "dCarQR", DCARQR_PENDING_SIGNATURE)
 
 
 def _append_associated_document(
@@ -1283,54 +1272,6 @@ def _append_associated_document(
     )
     _sub(asoc, "dNumCons", numero_constancia)
     _sub(asoc, "dNumControl", numero_control)
-
-
-def _resolve_dcarqr_value(
-    *,
-    typed_payload: dict,
-    doc_id: str,
-    fecha_emision: str,
-    receptor: str,
-    total_neto: Decimal,
-    total_iva: Decimal,
-    items_count: int,
-) -> str:
-    provided = _clean_text(_first_non_none(typed_payload, "dCarQR", "dcarqr", "qr_url"))
-    if provided:
-        if len(provided) < 100 or len(provided) > 600:
-            raise SifenValidationError("documents.qr.length_invalid")
-        return provided
-
-    compact_date = (fecha_emision.replace("-", "").replace(":", "").replace("T", ""))[
-        :14
-    ]
-    payload = (
-        "https://ekuatia.set.gov.py/consultas-test/qr?"
-        f"nVersion=150&Id={doc_id}&dFeEmiDE={compact_date}"
-        f"&dRucRec={receptor}&dTotGralOpe={_as_sifen_amount(total_neto)}"
-        f"&dTotIVA={_as_sifen_amount(total_iva)}&cItems={items_count}"
-        "&DigestValue=0&IdCSC=0001&cHashQR=0"
-    )
-    if len(payload) < 100:
-        payload = f"{payload}&pad={'0' * (100 - len(payload))}"
-    if len(payload) > 600:
-        payload = payload[:600]
-    return payload
-
-
-def _resolve_qr_receptor(cliente: dict) -> str:
-    ruc = _clean_text(cliente.get("ruc"))
-    if ruc:
-        return ruc.replace("-", "")
-    doc = _clean_text(
-        _first_non_none(
-            cliente,
-            "numero_documento_identidad",
-            "numero_documento",
-            "dNumIDRec",
-        )
-    )
-    return doc or "0"
 
 
 def _build_doc_id(

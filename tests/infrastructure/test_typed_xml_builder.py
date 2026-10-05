@@ -1,5 +1,6 @@
 from dataclasses import replace
 from datetime import date, datetime, timezone
+from xml.etree import ElementTree as ET
 
 import pytest
 
@@ -8,7 +9,11 @@ from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.infrastructure.sifen.mapper import KilaSifenPayloadMapper
-from kilasifen.infrastructure.sifen.typed_xml_builder import _has_ds_namespace_prefix
+from kilasifen.infrastructure.sifen.typed_xml_builder import (
+    DCARQR_PENDING_SIGNATURE,
+    SIFEN_NS,
+    _has_ds_namespace_prefix,
+)
 from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile
 
 
@@ -274,6 +279,26 @@ def test_security_code_equal_to_the_document_number_is_refused() -> None:
         mapper.map_document(
             document, emitter=_build_emitter(), stamping=_build_stamping()
         )
+
+
+def test_unsigned_xml_carries_a_neutral_dcarqr_until_signing() -> None:
+    mapper = KilaSifenPayloadMapper()
+    emission_input = mapper.map_document(
+        _build_document(payload_snapshot=_minimal_factura_snapshot()),
+        emitter=_build_emitter(),
+        stamping=_build_stamping(),
+    )
+
+    # The builder validated the XML against the XSD (dCarQR 100-600) before
+    # returning it; the marker holds no URL, CDC, receptor or amount.
+    dcarqr = ET.fromstring(emission_input.generated_xml).findtext(
+        f"{{{SIFEN_NS}}}gCamFuFD/{{{SIFEN_NS}}}dCarQR"
+    )
+    assert dcarqr == DCARQR_PENDING_SIGNATURE
+    assert 100 <= len(dcarqr) <= 600
+    assert "http" not in dcarqr
+    assert emission_input.doc_id not in dcarqr
+    assert "80069563" not in dcarqr
 
 
 def _minimal_factura_snapshot() -> dict:
