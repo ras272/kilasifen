@@ -21,6 +21,11 @@ from kilasifen.infrastructure.kude.xml_qr_injector import (
     apply_real_qr_to_signed_xml,
     compute_qr_url_from_signed_xml,
 )
+from kilasifen.testing.typed_documents import (
+    FICTIONAL_EMITTER_DV,
+    FICTIONAL_EMITTER_NAME,
+    FICTIONAL_EMITTER_RUC,
+)
 
 _GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden"
 _NS = {"s": "http://ekuatia.set.gov.py/sifen/xsd"}
@@ -32,9 +37,9 @@ def _emitter(**overrides) -> Emitter:
     emitter = Emitter(
         id="emitter-1",
         external_id="erp-test",
-        ruc="80024135",
-        dv="5",
-        legal_name="ARES PARAGUAY SRL",
+        ruc=FICTIONAL_EMITTER_RUC,
+        dv=FICTIONAL_EMITTER_DV,
+        legal_name=FICTIONAL_EMITTER_NAME,
         tax_environment="test",
         status="active",
         csc=_CSC,
@@ -62,7 +67,11 @@ def test_injected_qr_is_the_engine_qr_of_the_signed_xml():
         signed_xml=signed_xml, id_csc="0001", csc=_CSC, environment="test"
     )["url"]
     assert _dcarqr(injected) == expected
-    assert "&dRucRec=80069563&" in expected
+    # MT v150 §13.8.2: D206 of the signed XML for a taxpayer receptor.
+    ruc_rec = ET.fromstring(signed_xml).findtext(
+        "s:DE/s:gDatGralOpe/s:gDatRec/s:dRucRec", namespaces=_NS
+    )
+    assert f"&dRucRec={ruc_rec}&" in expected
 
 
 def test_injected_qr_names_the_receptor_of_a_non_taxpayer_dnumidrec():

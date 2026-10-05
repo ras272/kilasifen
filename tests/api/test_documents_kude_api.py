@@ -18,6 +18,11 @@ from kilasifen.infrastructure.db.repositories.documents import (
 )
 from kilasifen.infrastructure.db.session import build_engine, session_scope
 from kilasifen.testing.database import managed_test_database_url
+from kilasifen.testing.typed_documents import (
+    FICTIONAL_EMITTER_DV,
+    FICTIONAL_EMITTER_NAME,
+    FICTIONAL_EMITTER_RUC,
+)
 from tests._raw_xml import golden_signed_xml, raw_document_payload
 
 API_KEY = "secret-key"
@@ -54,6 +59,7 @@ def _create_emitter(
     external_id: str,
     ruc: str,
     dv: str,
+    legal_name: str = "ARES PARAGUAY SRL",
     csc: str | None = _CSC,
     csc_id: str | None = _CSC_ID,
 ) -> dict:
@@ -64,7 +70,7 @@ def _create_emitter(
             "external_id": external_id,
             "ruc": ruc,
             "dv": dv,
-            "legal_name": "ARES PARAGUAY SRL",
+            "legal_name": legal_name,
             "tax_environment": "test",
             "csc": csc,
             "csc_id": csc_id,
@@ -117,13 +123,23 @@ def _set_internal_status(client: TestClient, *, document_id: str, status: str) -
         repository.save(replace(stored, internal_status=status))
 
 
+def _create_fictional_emitter(client: TestClient) -> dict:
+    return _create_emitter(
+        client,
+        external_id="erp-ficticio",
+        ruc=FICTIONAL_EMITTER_RUC,
+        dv=FICTIONAL_EMITTER_DV,
+        legal_name=FICTIONAL_EMITTER_NAME,
+    )
+
+
 @pytest.mark.parametrize("route", ["kude", "kude/data"])
 @pytest.mark.parametrize("status", ["rejected", "failed", "inutilized", "cancelled"])
 def test_kude_is_refused_for_documents_that_are_not_a_valid_dte(
     client: TestClient, route: str, status: str
 ):
     # MT v150 §6.4; Dto 872/2023 Arts. 26, 30 and 31 (DECISIONES F51).
-    emitter = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
+    emitter = _create_fictional_emitter(client)
     document = _create_document_with_signed_xml(
         client,
         emitter_id=emitter["id"],
@@ -149,7 +165,7 @@ def test_kude_is_refused_for_documents_that_are_not_a_valid_dte(
 def test_kude_is_available_for_approved_and_in_flight_documents(
     client: TestClient, status: str
 ):
-    emitter = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
+    emitter = _create_fictional_emitter(client)
     document = _create_document_with_signed_xml(
         client,
         emitter_id=emitter["id"],

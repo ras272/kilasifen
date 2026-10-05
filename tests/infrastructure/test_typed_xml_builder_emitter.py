@@ -87,7 +87,7 @@ def test_establishment_override_replaces_the_default_address() -> None:
 @pytest.mark.parametrize(
     ("payload_changes", "field"),
     [
-        ({"emisor": {"ruc": "80069563"}}, "emisor.ruc"),
+        ({"emisor": {"ruc": "80025298"}}, "emisor.ruc"),
         ({"emisor": {"ruc": "44444401-8"}}, "emisor.ruc"),
         ({"emisor": {"dv": "8"}}, "emisor.dv"),
         ({"emisor": {"razon_social": "OTRA RAZON SOCIAL"}}, "emisor.razon_social"),

@@ -27,10 +27,10 @@ def test_mapper_builds_factura_xml_from_typed_payload() -> None:
                     "numero": 1001,
                     "fecha": "2026-04-25T10:00:00",
                     "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
-                    "tipo_contribuyente": 2,
-                },
+                        "ruc": "80025298-5",
+                        "razonSocial": "CLIENTE FICTICIO SA",
+                        "tipo_contribuyente": 2,
+                    },
                     "items": [
                         {
                             "codigo": "A-001",
@@ -70,10 +70,10 @@ def test_mapper_builds_nota_credito_xml_from_typed_payload() -> None:
                     "numero": 77,
                     "fecha": "2026-04-25T10:00:00",
                     "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
-                    "tipo_contribuyente": 2,
-                },
+                        "ruc": "80025298-5",
+                        "razonSocial": "CLIENTE FICTICIO SA",
+                        "tipo_contribuyente": 2,
+                    },
                     "documento_asociado": {
                         "cdc": "01800123450001001000000012026010112345678901"
                     },
@@ -140,8 +140,8 @@ def test_mapper_rejects_receiver_address_without_house_number() -> None:
                         "naturaleza": 1,
                         "tipo_operacion": 1,
                         "tipo_contribuyente": 2,
-                        "ruc": "80069563-1",
-                        "razon_social": "TIPS S.A",
+                        "ruc": "80025298-5",
+                        "razon_social": "CLIENTE FICTICIO SA",
                         "direccion": "ASUNCION",
                     },
                     "items": [
@@ -179,10 +179,10 @@ def test_mapper_accepts_ds_colon_inside_text_content() -> None:
                     "numero": 1001,
                     "fecha": "2026-04-25T10:00:00",
                     "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
-                    "tipo_contribuyente": 2,
-                },
+                        "ruc": "80025298-5",
+                        "razonSocial": "CLIENTE FICTICIO SA",
+                        "tipo_contribuyente": 2,
+                    },
                     "items": [
                         {
                             "codigo": "A-001",
@@ -298,7 +298,7 @@ def test_unsigned_xml_carries_a_neutral_dcarqr_until_signing() -> None:
     assert 100 <= len(dcarqr) <= 600
     assert "http" not in dcarqr
     assert emission_input.doc_id not in dcarqr
-    assert "80069563" not in dcarqr
+    assert "80025298" not in dcarqr
 
 
 def _minimal_factura_snapshot() -> dict:
@@ -309,8 +309,8 @@ def _minimal_factura_snapshot() -> dict:
                 "numero": 1001,
                 "fecha": "2026-04-25T10:00:00",
                 "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
                 "items": [

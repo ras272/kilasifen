@@ -302,8 +302,8 @@ def test_create_factura_typed_endpoint_returns_document_and_job(
                 "numero": 10,
                 "fecha": "2026-04-25T10:00:00",
                 "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
                 "items": [
@@ -331,8 +331,8 @@ def test_create_nota_credito_typed_endpoint_returns_document_and_job(
             "idempotency_key": "idem-nc-1",
             "nota_credito": {
                 "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
                 "documento_asociado": {
@@ -364,8 +364,8 @@ def test_create_nota_debito_typed_endpoint_returns_document_and_job(
             "nota_debito": {
                 "motivo_emision": "recupero_costo",
                 "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
                 "documento_asociado": {
@@ -418,7 +418,7 @@ def test_create_typed_document_rejects_caller_supplied_xml(
         json={
             "factura": {
                 "generated_xml": "<attacker-controlled/>",
-                "cliente": {"ruc": "80069563-1"},
+                "cliente": {"ruc": "80025298-5"},
                 "items": [
                     {"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1}
                 ],
@@ -443,8 +443,8 @@ def test_create_factura_typed_endpoint_without_xml_is_accepted(
                 "numero": 1003,
                 "fecha": "2026-04-25T10:00:00",
                 "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
                 "items": [
@@ -476,8 +476,8 @@ def test_create_factura_typed_endpoint_without_xml_is_accepted(
         },
         {
             "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
             "items": [
@@ -494,8 +494,8 @@ def test_create_factura_typed_endpoint_without_xml_is_accepted(
             "condicion_tipo_cambio": 1,
             "tipo_cambio": 7300,
             "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
             "items": [
@@ -504,8 +504,8 @@ def test_create_factura_typed_endpoint_without_xml_is_accepted(
         },
         {
             "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
             "condicion_operacion": {
@@ -745,8 +745,8 @@ def test_create_typed_document_ignores_client_number_and_logs_warning(
                 "numero": 999,
                 "fecha": "2026-04-25T10:00:00",
                 "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
                 "items": [
@@ -785,8 +785,8 @@ def test_typed_document_requires_the_emitter_fiscal_profile(
         json={
             "factura": {
                 "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
                 "items": [
@@ -820,8 +820,8 @@ def test_typed_document_cannot_change_the_emitter_identity(
         json={
             "factura": {
                 "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
                 "items": [
@@ -857,8 +857,8 @@ def test_typed_document_outside_the_emission_window_is_rejected(
             "factura": {
                 "fecha_emision": fecha,
                 "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
                 "items": [
@@ -884,8 +884,8 @@ def test_typed_document_far_from_transmission_is_created_with_a_warning(
             "factura": {
                 "fecha_emision": "2026-04-20T02:00:00",
                 "cliente": {
-                    "ruc": "80069563-1",
-                    "razonSocial": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razonSocial": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
                 "items": [
@@ -914,11 +914,15 @@ _ITEMS = [{"descripcion": "Producto", "cantidad": 1, "precioUnitario": 1000}]
     ("cliente", "message"),
     [
         (
-            {"ruc": "80069563-1", "razon_social": "TIPS S.A"},
+            {"ruc": "80025298-5", "razon_social": "CLIENTE FICTICIO SA"},
             "documents.cliente.tipo_contribuyente_required",
         ),
         (
-            {"ruc": "80069563-2", "razon_social": "TIPS S.A", "tipo_contribuyente": 2},
+            {
+                "ruc": "80025298-4",
+                "razon_social": "CLIENTE FICTICIO SA",
+                "tipo_contribuyente": 2,
+            },
             "documents.cliente.dv_mismatch",
         ),
         (
@@ -992,7 +996,7 @@ def test_b2g_invoice_without_public_procurement_data_is_accepted(
         json={
             "factura": {
                 "cliente": {
-                    "ruc": "80069563-1",
+                    "ruc": "80025298-5",
                     "razon_social": "ENTIDAD PUBLICA FICTICIA",
                     "tipo_contribuyente": 2,
                     "tipo_operacion": 3,
@@ -1022,8 +1026,8 @@ def test_generation_responsible_type_9_needs_its_description(
                     }
                 },
                 "cliente": {
-                    "ruc": "80069563-1",
-                    "razon_social": "TIPS S.A",
+                    "ruc": "80025298-5",
+                    "razon_social": "CLIENTE FICTICIO SA",
                     "tipo_contribuyente": 2,
                 },
                 "items": _ITEMS,
