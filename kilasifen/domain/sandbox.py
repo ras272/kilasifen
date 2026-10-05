@@ -4,7 +4,7 @@ from enum import Enum
 
 
 class SandboxOutcome(str, Enum):
-    """SIFEN outcomes integrations may request in the test runtime."""
+    """Resultado del SIFEN que se puede forzar con `KILA_SIFEN_ENVIRONMENT=test`."""
 
     APPROVED = "approved"
     APPROVED_WITH_OBSERVATION = "approved_with_observation"

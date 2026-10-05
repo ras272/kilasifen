@@ -77,7 +77,10 @@ api_key_header = APIKeyHeader(
     name="X-API-Key",
     auto_error=False,
     scheme_name="KilaApiKey",
-    description="Private consumer credential. Never expose it to browser clients.",
+    description=(
+        "Credencial privada del consumidor. Nunca la expongas en un navegador "
+        "ni en una app cliente."
+    ),
 )
 
 

@@ -8,7 +8,7 @@ from kilasifen.api.schemas.common import SuccessEnvelope
 
 
 class CertificateResponse(BaseModel):
-    """Certificate metadata returned by the API."""
+    """Metadatos de un certificado; nunca incluye la clave ni la contraseña."""
 
     model_config = ConfigDict(from_attributes=True)
 

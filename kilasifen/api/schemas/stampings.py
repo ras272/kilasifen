@@ -8,7 +8,7 @@ from kilasifen.api.schemas.common import SuccessEnvelope
 
 
 class StampingCreateRequest(BaseModel):
-    """Stamping creation payload."""
+    """Alta de un timbrado."""
 
     number: str = Field(min_length=1, max_length=32)
     start_date: date
@@ -16,7 +16,7 @@ class StampingCreateRequest(BaseModel):
 
 
 class StampingResponse(BaseModel):
-    """Stamping response payload."""
+    """Timbrado del emisor."""
 
     model_config = ConfigDict(from_attributes=True)
 

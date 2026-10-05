@@ -8,14 +8,14 @@ from kilasifen.api.schemas.common import SuccessEnvelope
 
 
 class DependencyCheckResponse(BaseModel):
-    """Safe dependency state exposed by readiness."""
+    """Estado de una dependencia, sin datos sensibles."""
 
     status: Literal["ok", "down", "not_required"]
     detail: str | None = None
 
 
 class ReadinessData(BaseModel):
-    """Readiness payload with explicit dependency checks."""
+    """Readiness con el estado de cada dependencia obligatoria."""
 
     status: Literal["ready", "not_ready"]
     checks: dict[str, DependencyCheckResponse]

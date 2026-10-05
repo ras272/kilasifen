@@ -8,7 +8,7 @@ from kilasifen.api.schemas.common import SuccessEnvelope
 
 
 class TaxpayerResponse(BaseModel):
-    """Normalized taxpayer data returned from SIFEN."""
+    """Contribuyente según el SIFEN."""
 
     ruc: str
     legal_name: str
@@ -18,7 +18,7 @@ class TaxpayerResponse(BaseModel):
 
 
 class RucQueryResponse(BaseModel):
-    """Normalized response for a RUC query."""
+    """Resultado normalizado de la consulta de RUC."""
 
     queried_ruc: str
     status: str
@@ -28,7 +28,7 @@ class RucQueryResponse(BaseModel):
 
 
 class RegisteredEventResponse(BaseModel):
-    """One event SIFEN registered on the CDC (``xContEv``)."""
+    """Evento que el SIFEN registró sobre el CDC (`xContEv`)."""
 
     kind: str = Field(
         description=(
@@ -42,7 +42,7 @@ class RegisteredEventResponse(BaseModel):
 
 
 class DocumentQueryResponse(BaseModel):
-    """Normalized response for a document query."""
+    """Resultado normalizado de la consulta del CDC."""
 
     document_id: str
     cdc: str

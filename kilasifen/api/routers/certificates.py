@@ -8,7 +8,7 @@ from kilasifen.api.deps import (
     get_certificate_service,
     require_secrets_write,
 )
-from kilasifen.api.errors import ApiError
+from kilasifen.api.errors import ApiError, error_responses
 from kilasifen.api.schemas.certificates import (
     CertificateData,
     CertificateEnvelope,
@@ -27,6 +27,13 @@ router = APIRouter(tags=["certificates"])
     "/emitters/{emitter_id}/certificates",
     response_model=CertificateEnvelope,
     status_code=status.HTTP_201_CREATED,
+    responses=error_responses(415),
+    description=(
+        "Carga un PKCS#12 (`application/x-pkcs12`, `application/pkcs12` u "
+        "`application/octet-stream`). Otro media type responde `415 "
+        "certificates.unsupported_media_type`; un archivo más grande que el "
+        "límite, `413 certificates.upload_too_large` con `details.max_bytes`."
+    ),
 )
 async def upload_certificate(
     emitter_id: str,

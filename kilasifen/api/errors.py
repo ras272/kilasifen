@@ -28,21 +28,28 @@ logger = logging.getLogger(__name__)
 CORRELATION_ID_HEADER = "X-Correlation-ID"
 
 _ERROR_DESCRIPTIONS: dict[int, str] = {
-    401: "Missing or invalid API key.",
-    403: "The credential lacks the required scope.",
-    404: "Resource not found or owned by another tenant.",
-    409: "Resource conflict or state that does not allow the operation.",
-    413: "Request body exceeds the configured size limit; see `details.max_bytes`.",
-    422: "Request validation failed; the request was not processed.",
-    429: "Request limit exceeded; retry after `details.retry_after_seconds`.",
-    503: "A dependency is temporarily unavailable; retry with backoff.",
+    401: "Falta la API key o no es válida.",
+    403: "La credencial no tiene el scope que exige la operación.",
+    404: "El recurso no existe o la credencial no tiene acceso a ese emisor.",
+    409: (
+        "Conflicto de idempotencia o una precondición no cumplida (certificado "
+        "activo, CSC, emisor activo, estado del documento)."
+    ),
+    413: "El body supera el límite configurado; ver `details.max_bytes`.",
+    415: "El media type del archivo no es el esperado.",
+    422: (
+        "El request o la configuración del emisor no permiten procesarlo; "
+        "no se aplicó ningún cambio. Ver `code` y `details`."
+    ),
+    429: "Límite de pedidos superado; reintentar después de `Retry-After`.",
+    503: "Una dependencia no está disponible; reintentar con backoff.",
 }
 
 # Headers that accompany an error status in every response that declares it.
 _ERROR_HEADERS: dict[int, dict[str, dict[str, Any]]] = {
     429: {
         "Retry-After": {
-            "description": "Seconds to wait before retrying the request.",
+            "description": "Segundos a esperar antes de reintentar.",
             "schema": {"type": "integer"},
         }
     },

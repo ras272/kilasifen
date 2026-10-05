@@ -95,12 +95,15 @@ def reconcile_document(
     _principal=Depends(require_fiscal_write),
     service: QueryService = Depends(get_query_service),
 ) -> DocumentQueryEnvelope:
-    """Consulta el CDC y registra la respuesta del SIFEN; no envia nada.
+    """Consulta el CDC y registra la respuesta del SIFEN; no transmite el DE.
 
     Con 0422 un documento pendiente queda aprobado (o cancelado si hay una
-    cancelacion registrada) y uno aprobado con una cancelacion registrada
-    queda cancelado. Con 0420 un documento pendiente que no se esta enviando
-    vuelve a la cola: su proximo intento reenvia el mismo DE firmado.
+    cancelación registrada en `xContEv`) y uno aprobado con una cancelación
+    registrada queda cancelado. Que el SIFEN devuelva 0422 con el evento para
+    un DTE cancelado, y la forma exacta de `xContEv`, no están verificados en
+    el ambiente de test. Con 0420 un documento pendiente que no se está
+    enviando vuelve a la cola: su próximo intento reenvía el mismo DE firmado
+    (mismo CDC).
     """
 
     return _query_document_response(

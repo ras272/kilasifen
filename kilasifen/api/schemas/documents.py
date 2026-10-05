@@ -30,7 +30,7 @@ from kilasifen.engine.sdk.fiscal import calculate_mod11_dv
 
 
 class DocumentCreateRequest(BaseModel):
-    """Document creation payload."""
+    """Documento raw (deprecado, sólo `platform:admin`)."""
 
     external_id: str | None = Field(default=None, max_length=128)
     idempotency_key: str | None = Field(default=None, max_length=128)
@@ -39,7 +39,7 @@ class DocumentCreateRequest(BaseModel):
 
 
 class FiscalContractModel(BaseModel):
-    """Strict base for public fiscal contract components."""
+    """Base estricta de los componentes del contrato fiscal."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -123,11 +123,11 @@ _IGNORED_EMITTER_FIELD = {
 
 
 class EmitterPayload(FiscalContractModel):
-    """Optional echo of the emitter identity; it can never change it.
+    """Eco opcional de la identidad del emisor; nunca la cambia.
 
-    ``ruc``, ``dv`` and ``razon_social`` are accepted only when they match the
-    registered emitter (``422 documents.emisor.identity_mismatch`` otherwise);
-    address, contact and activity fields are ignored.
+    `ruc`, `dv` y `razon_social` se aceptan sólo si coinciden con el emisor
+    registrado (si no, `422 documents.emisor.identity_mismatch`); dirección,
+    contacto y actividad se ignoran: salen del perfil fiscal del emisor.
     """
 
     ruc: str | None = Field(
@@ -183,12 +183,13 @@ class EmitterPayload(FiscalContractModel):
 
 
 class CustomerPayload(FiscalContractModel):
-    """Receptor (gDatRec). The document validates it with the rules in force.
+    """Receptor del DE (gDatRec), validado con las reglas vigentes.
 
-    See ``kilasifen.domain.documents.receiver``: 1300 (NT 10), 1320/1301,
-    D205-D207 mandatory for a taxpayer, D208-D210 always for a non-taxpayer
-    (NT 23, 1335), innominado only in B2C invoices (1333, 1331), and the
-    address rules of 1318/1330/NT 03.
+    1300 (NT 10), 1320/1301, D205-D207 obligatorios para un contribuyente,
+    D208-D210 siempre para un no contribuyente (NT 23, 1335), innominado sólo
+    en facturas B2C (1333, 1331) y la dirección según 1318/1330 y la NT 03.
+    Cada regla incumplida devuelve `422 request.validation_failed` con su
+    código en `details.errors[].code`.
     """
 
     naturaleza: int | None = Field(
@@ -306,8 +307,8 @@ class CardPayload(FiscalContractModel):
 
 
 class PaymentPayload(FiscalContractModel):
-    """gPaConEIni (E606-E611): one payment of a contado operation or of the
-    initial delivery of a credit one."""
+    """gPaConEIni (E606-E611): un pago de una operación de contado o de la
+    entrega inicial de una a crédito."""
 
     tipo: int | str
     monto: Decimal = Field(gt=0, max_digits=19, decimal_places=4)
@@ -770,8 +771,17 @@ class BaseFiscalDocumentPayload(FiscalContractModel):
         return self
 
 
+#: MT v150 E401 iMotEmi: 1-1, eight values and no default.
+_MOTIVE_DESCRIPTION = (
+    "iMotEmi (E401): 1 `devolucion_y_ajuste`, 2 `devolucion`, 3 `descuento`, "
+    "4 `bonificacion`, 5 `credito_incobrable`, 6 `recupero_costo`, "
+    "7 `recupero_gasto` u 8 `ajuste_precio`. Enviá siempre el motivo real: "
+    "si se omite, hoy la plataforma informa 1."
+)
+
+
 class FacturaContractPayload(BaseFiscalDocumentPayload):
-    """Validated business payload for Factura endpoint."""
+    """Datos de la factura electrónica (iTiDE 1)."""
 
     tipo_documento: Literal[1] = 1
     indicador_presencia: int | str | None = None
@@ -779,25 +789,29 @@ class FacturaContractPayload(BaseFiscalDocumentPayload):
 
 
 class NotaCreditoContractPayload(BaseFiscalDocumentPayload):
-    """Validated business payload for Nota de Crédito endpoint."""
+    """Datos de la nota de crédito electrónica (iTiDE 5)."""
 
     tipo_documento: Literal[5] = 5
-    motivo_emision: int | str | None = None
+    motivo_emision: int | str | None = Field(
+        default=None, description=_MOTIVE_DESCRIPTION
+    )
     documento_asociado: AssociatedDocumentPayload
     nota_credito: dict[str, Any] | None = None
 
 
 class NotaDebitoContractPayload(BaseFiscalDocumentPayload):
-    """Validated business payload for Nota de Debito endpoint."""
+    """Datos de la nota de débito electrónica (iTiDE 6)."""
 
     tipo_documento: Literal[6] = 6
-    motivo_emision: int | str | None = None
+    motivo_emision: int | str | None = Field(
+        default=None, description=_MOTIVE_DESCRIPTION
+    )
     documento_asociado: AssociatedDocumentPayload
     nota_debito: dict[str, Any] | None = None
 
 
 class FacturaCreateRequest(BaseModel):
-    """Typed API contract for factura emission."""
+    """Emisión de una factura."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -807,7 +821,7 @@ class FacturaCreateRequest(BaseModel):
 
 
 class NotaCreditoCreateRequest(BaseModel):
-    """Typed API contract for nota de crédito emission."""
+    """Emisión de una nota de crédito."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -817,7 +831,7 @@ class NotaCreditoCreateRequest(BaseModel):
 
 
 class NotaDebitoCreateRequest(BaseModel):
-    """Typed API contract for nota de debito emission."""
+    """Emisión de una nota de débito."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -827,7 +841,7 @@ class NotaDebitoCreateRequest(BaseModel):
 
 
 class DocumentResponse(BaseModel):
-    """Document response payload."""
+    """Documento con su estado interno y la última respuesta del SIFEN."""
 
     model_config = ConfigDict(from_attributes=True)
 

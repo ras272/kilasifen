@@ -10,30 +10,44 @@ from kilasifen.api.schemas.jobs import JobResponse
 
 
 class WebhookRetryPolicy(BaseModel):
-    """Bounded automatic retry policy for one endpoint."""
+    """Reintentos automáticos de un endpoint (de 1 a 8 intentos)."""
 
     model_config = ConfigDict(extra="forbid")
 
     max_attempts: int = Field(default=5, ge=1, le=8)
 
 
+_EVENT_SUBSCRIPTIONS_DESCRIPTION = (
+    "Tipos de evento a recibir; sin valor, todos. Se compara por igualdad o "
+    "por prefijo con `.*`: `*`, `document.*`, `document.<estado>` "
+    "(`approved`, `approved_with_observation`, `rejected`, `failed`, "
+    "`submitted`, `queued`, `retry_pending`, `reconciliation_required`, "
+    "`cancelled`, `inutilized`), `document.updated` y `webhook.test`. Un "
+    "tipo mal escrito no se rechaza: nunca recibe entregas."
+)
+
+
 class WebhookEndpointCreateRequest(BaseModel):
-    """Webhook endpoint creation payload."""
+    """Alta de un endpoint de webhook."""
 
     url: HttpUrl
     secret: str = Field(min_length=32, max_length=255)
-    event_subscriptions: list[str] | None = None
+    event_subscriptions: list[str] | None = Field(
+        default=None, description=_EVENT_SUBSCRIPTIONS_DESCRIPTION
+    )
     retry_policy: WebhookRetryPolicy | None = None
 
 
 class WebhookEndpointUpdateRequest(BaseModel):
-    """Partial, secret-safe update for a webhook endpoint."""
+    """Cambios de un endpoint; los campos omitidos no cambian."""
 
     model_config = ConfigDict(extra="forbid")
 
     url: HttpUrl | None = None
     secret: str | None = Field(default=None, min_length=32, max_length=255)
-    event_subscriptions: list[str] | None = None
+    event_subscriptions: list[str] | None = Field(
+        default=None, description=_EVENT_SUBSCRIPTIONS_DESCRIPTION
+    )
     retry_policy: WebhookRetryPolicy | None = None
     is_active: bool | None = None
 
@@ -49,7 +63,7 @@ class WebhookEndpointUpdateRequest(BaseModel):
 
 
 class WebhookEndpointResponse(BaseModel):
-    """Webhook endpoint response payload."""
+    """Endpoint de webhook; el secreto nunca se devuelve."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -65,7 +79,7 @@ class WebhookEndpointResponse(BaseModel):
 
 
 class WebhookReplayRequest(BaseModel):
-    """Replay of an existing delivery; the event content is never caller-made."""
+    """Reenvío de una entrega existente; el contenido nunca lo arma el caller."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -80,7 +94,7 @@ class WebhookReplayRequest(BaseModel):
 
 
 class WebhookDeliveryResponse(BaseModel):
-    """Webhook delivery response payload."""
+    """Entrega de webhook y su resultado."""
 
     model_config = ConfigDict(from_attributes=True)
 

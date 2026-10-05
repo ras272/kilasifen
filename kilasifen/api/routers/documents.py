@@ -61,7 +61,11 @@ def get_sandbox_outcome(
     value: SandboxOutcome | None = Header(
         default=None,
         alias="X-Kila-Test-Outcome",
-        description="Force a deterministic SIFEN outcome in environment=test only.",
+        description=(
+            "Fuerza un resultado determinístico del SIFEN. Sólo en un "
+            "despliegue con `KILA_SIFEN_ENVIRONMENT=test`; en otro responde "
+            "`422 sandbox.test_runtime_required`."
+        ),
     ),
 ) -> SandboxOutcome | None:
     """Parse the typed sandbox outcome header."""
@@ -214,10 +218,23 @@ def list_documents(
     request: Request,
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    internal_status: str | None = None,
-    document_type: str | None = None,
-    external_id: str | None = None,
-    cdc: str | None = None,
+    internal_status: str | None = Query(
+        default=None,
+        description=(
+            "Estado exacto: `queued`, `processing`, `submitting`, `submitted`, "
+            "`retry_pending`, `reconciliation_required`, `approved`, "
+            "`approved_with_observation`, `rejected`, `failed`, `cancelled` o "
+            "`inutilized`. Un valor desconocido devuelve una página vacía."
+        ),
+    ),
+    document_type: str | None = Query(
+        default=None,
+        description="`factura`, `nota_credito` o `nota_debito`.",
+    ),
+    external_id: str | None = Query(
+        default=None, description="Identificador del documento en el ERP."
+    ),
+    cdc: str | None = Query(default=None, description="CDC de 44 dígitos."),
     _principal=Depends(require_emitter_read),
     service: DocumentService = Depends(get_document_service),
     job_service: JobService = Depends(get_job_service),

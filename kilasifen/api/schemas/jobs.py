@@ -9,7 +9,7 @@ from kilasifen.api.schemas.common import Pagination, SuccessEnvelope
 
 
 class JobResponse(BaseModel):
-    """Job response payload."""
+    """Job asíncrono (emisión, evento o entrega de webhook)."""
 
     model_config = ConfigDict(from_attributes=True)
 

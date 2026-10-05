@@ -90,13 +90,15 @@ def inutilize_numbers(
     _principal=Depends(require_fiscal_write),
     service: EventService = Depends(get_event_service),
 ) -> CreatedInutilizationEnvelope:
-    """Inutiliza un rango de numeros de un timbrado del emisor.
+    """Inutiliza un rango de números de un timbrado del emisor.
 
-    Se pueden inutilizar numeros sin documento, rechazados, fallidos por
-    validacion local o en cola abortados; nunca un DTE aprobado o cancelado ni
-    un documento que pueda estar en el SIFEN. Pasado el dia 15 del mes
-    siguiente al consumo del numero, la respuesta trae el aviso
-    `inutilization.extemporaneous` (el SIFEN no la rechaza por plazo).
+    Se pueden inutilizar números sin documento, rechazados, fallidos por
+    validación local o en cola abortados; nunca un DTE aprobado o cancelado ni
+    un documento que pueda estar en el SIFEN. Pasado el día 15 del mes
+    siguiente al consumo del número (plazo de 360 h, MT v150 §6.2.1), la
+    respuesta trae el aviso `inutilization.extemporaneous` y la inutilización
+    se envía igual: el MT v150 §11.6.2 no prevé un código de rechazo por
+    plazo, pero cómo responde el SIFEN fuera de plazo no está verificado.
     """
 
     event, job, range_item, warnings = service.inutilize_numbers(

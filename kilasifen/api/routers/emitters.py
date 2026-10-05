@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, Request, status
 
 from kilasifen.api.deps import (
     get_admin_principal,
-    get_api_key_principal,
     get_emitter_health_service,
     get_emitter_service,
+    require_emitter_read,
+    require_emitter_write,
 )
 from kilasifen.api.schemas.emitters import (
     EmitterCreateRequest,
@@ -23,12 +24,7 @@ from kilasifen.application.emitters.health import EmitterHealthService
 from kilasifen.application.emitters.service import EmitterService
 from kilasifen.domain.emitters.fiscal_profile import EmitterFiscalProfile
 from kilasifen.domain.emitters.models import Emitter, EmitterSummary
-from kilasifen.security import (
-    SECRETS_WRITE_SCOPE,
-    TENANT_READ_SCOPE,
-    TENANT_WRITE_SCOPE,
-    ApiKeyPrincipal,
-)
+from kilasifen.security import SECRETS_WRITE_SCOPE, ApiKeyPrincipal
 
 router = APIRouter(prefix="/emitters", tags=["emitters"])
 
@@ -59,25 +55,25 @@ def create_emitter(
 def get_emitter(
     emitter_id: str,
     request: Request,
-    principal: ApiKeyPrincipal = Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: EmitterService = Depends(get_emitter_service),
 ) -> EmitterEnvelope:
-    principal.require_scope(TENANT_READ_SCOPE)
-    principal.require_emitter(emitter_id)
     emitter = service.get_emitter(emitter_id)
     return _envelope(request, emitter)
 
 
-@router.patch("/{emitter_id}", response_model=EmitterEnvelope)
+@router.patch(
+    "/{emitter_id}",
+    response_model=EmitterEnvelope,
+    description="Cambiar `csc` o `csc_id` exige además el scope `secrets:write`.",
+)
 def update_emitter(
     emitter_id: str,
     payload: EmitterUpdateRequest,
     request: Request,
-    principal: ApiKeyPrincipal = Depends(get_api_key_principal),
+    principal: ApiKeyPrincipal = Depends(require_emitter_write),
     service: EmitterService = Depends(get_emitter_service),
 ) -> EmitterEnvelope:
-    principal.require_scope(TENANT_WRITE_SCOPE)
-    principal.require_emitter(emitter_id)
     if payload.csc is not None or payload.csc_id is not None:
         principal.require_scope(SECRETS_WRITE_SCOPE)
     emitter = service.update_emitter(
@@ -88,17 +84,13 @@ def update_emitter(
     return _envelope(request, emitter)
 
 
-@router.post(
-    "/{emitter_id}/deactivate", response_model=EmitterEnvelope
-)
+@router.post("/{emitter_id}/deactivate", response_model=EmitterEnvelope)
 def deactivate_emitter(
     emitter_id: str,
     request: Request,
-    principal: ApiKeyPrincipal = Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_write),
     service: EmitterService = Depends(get_emitter_service),
 ) -> EmitterEnvelope:
-    principal.require_scope(TENANT_WRITE_SCOPE)
-    principal.require_emitter(emitter_id)
     emitter = service.deactivate_emitter(emitter_id)
     return _envelope(request, emitter)
 
@@ -110,11 +102,9 @@ def deactivate_emitter(
 def get_emitter_health(
     emitter_id: str,
     request: Request,
-    principal: ApiKeyPrincipal = Depends(get_api_key_principal),
+    _principal=Depends(require_emitter_read),
     service: EmitterHealthService = Depends(get_emitter_health_service),
 ) -> EmitterHealthEnvelope:
-    principal.require_scope(TENANT_READ_SCOPE)
-    principal.require_emitter(emitter_id)
     health = service.get_health(emitter_id=emitter_id)
     return EmitterHealthEnvelope(
         data=EmitterHealthData(health=EmitterHealthResponse.model_validate(health)),

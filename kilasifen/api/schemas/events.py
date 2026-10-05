@@ -10,7 +10,7 @@ from kilasifen.api.schemas.jobs import JobResponse
 
 
 class EventCreateRequest(BaseModel):
-    """Event creation payload."""
+    """Evento raw (deprecado, sólo `platform:admin`)."""
 
     document_id: str
     event_type: str = Field(min_length=1, max_length=64)
@@ -18,13 +18,13 @@ class EventCreateRequest(BaseModel):
 
 
 class CancelDocumentRequest(BaseModel):
-    """Typed request payload for cancelation events."""
+    """Cancelación de un DTE aprobado."""
 
     motivo: str = Field(min_length=5, max_length=500)
 
 
 class InutilizeRequest(BaseModel):
-    """Typed request payload for inutilization events."""
+    """Inutilización de un rango de números de un timbrado."""
 
     timbrado: str = Field(pattern=r"^\d{8}$")
     document_type: Literal[
@@ -36,7 +36,14 @@ class InutilizeRequest(BaseModel):
         "nota_debito",
         "nota_remision",
         "comprobante_retencion",
-    ]
+    ] = Field(
+        description=(
+            "iTiDE del rango. `fe_exportacion`, `fe_importacion` y "
+            "`comprobante_retencion` (2, 3 y 8) no son tipos de DE en v150 "
+            "(`DE_Types_v150.xsd`): no hay números de esos tipos que inutilizar "
+            "y el SIFEN puede responder 4060."
+        )
+    )
     establishment: str
     point: str
     numero_desde: int = Field(ge=1)
@@ -46,8 +53,8 @@ class InutilizeRequest(BaseModel):
         default=None,
         pattern=r"^[A-Z]{2}$",
         description=(
-            "dSerieNum opcional (NT 10 §1.7): serie de la numeracion cuando se "
-            "reinicio despues de 9.999.999."
+            "dSerieNum opcional (NT 10 §1.7): serie de la numeración cuando se "
+            "reinició después de 9.999.999."
         ),
     )
 
@@ -60,7 +67,7 @@ class InutilizeRequest(BaseModel):
         return f"{parsed:03d}"
 
 class EventResponse(BaseModel):
-    """Event response payload."""
+    """Evento fiscal con su estado y la respuesta del SIFEN."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,7 +88,7 @@ class EventResponse(BaseModel):
 
 
 class InutilizedRangeResponse(BaseModel):
-    """API response payload for one inutilized range."""
+    """Rango de números inutilizado."""
 
     model_config = ConfigDict(from_attributes=True)
 

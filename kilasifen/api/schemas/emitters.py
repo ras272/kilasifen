@@ -162,7 +162,7 @@ class EmitterFiscalProfileModel(_ProfileModel):
 
 
 class EmitterCreateRequest(BaseModel):
-    """Emitter creation payload."""
+    """Alta de un emisor."""
 
     owner_consumer_id: str | None = Field(default=None, min_length=1, max_length=36)
     external_id: str | None = Field(default=None, max_length=128)
@@ -196,7 +196,7 @@ class EmitterCreateRequest(BaseModel):
 
 
 class EmitterUpdateRequest(BaseModel):
-    """Emitter update payload."""
+    """Cambios de un emisor; los campos omitidos no cambian."""
 
     legal_name: str | None = Field(
         default=None, min_length=4, max_length=255, description=_LEGAL_NAME_DESCRIPTION
@@ -214,7 +214,7 @@ class EmitterUpdateRequest(BaseModel):
 
 
 class EmitterResponse(BaseModel):
-    """Emitter response payload."""
+    """Emisor; el CSC nunca se devuelve (`csc_configured`)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -236,7 +236,7 @@ class EmitterResponse(BaseModel):
 
 
 class EmitterHealthResponse(BaseModel):
-    """Emitter operational health payload."""
+    """Preparación operativa del emisor para emitir."""
 
     model_config = ConfigDict(from_attributes=True)
 

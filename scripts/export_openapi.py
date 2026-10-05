@@ -22,7 +22,10 @@ TAG_METADATA = {
     "emitters": ("Emisores", "Configuración y preparación de contribuyentes."),
     "certificates": ("Certificados", "Carga y activación segura de PKCS#12."),
     "stampings": ("Timbrados", "Vigencias y numeración fiscal."),
-    "documents": ("Documentos", "Facturas, notas de crédito, XML y KuDE."),
+    "documents": (
+        "Documentos",
+        "Facturas, notas de crédito y de débito, XML y KuDE.",
+    ),
     "events": ("Eventos", "Cancelación e inutilización asíncronas."),
     "queries": ("Consultas", "Consultas de documentos y RUC en SIFEN."),
     "jobs": ("Jobs", "Seguimiento de procesos asíncronos."),
@@ -49,6 +52,7 @@ SUMMARY_TRANSLATIONS = {
     "List Documents": "Listar documentos",
     "Create Factura Document": "Crear factura",
     "Create Nota Credito Document": "Crear nota de crédito",
+    "Create Nota Debito Document": "Crear nota de débito",
     "Get Document": "Obtener documento",
     "Get Document Xml": "Descargar XML",
     "Get Document Kude": "Descargar KuDE",
@@ -57,6 +61,7 @@ SUMMARY_TRANSLATIONS = {
     "List Jobs": "Listar jobs",
     "Query Ruc": "Consultar RUC en SIFEN",
     "Query Document": "Consultar documento en SIFEN",
+    "Reconcile Document": "Reconciliar documento con SIFEN",
     "Create a raw fiscal event (platform administrators only)": (
         "Crear evento raw (sólo plataforma)"
     ),
@@ -65,6 +70,7 @@ SUMMARY_TRANSLATIONS = {
     "Get Event": "Obtener evento",
     "Register Webhook Endpoint": "Registrar webhook",
     "List Webhook Endpoints": "Listar webhooks",
+    "Update Webhook Endpoint": "Actualizar webhook",
     "Replay Webhook Delivery": "Reprocesar entrega de webhook",
     "Send Webhook Test Event": "Enviar evento de prueba al webhook",
     "Get Webhook Delivery": "Obtener entrega de webhook",
