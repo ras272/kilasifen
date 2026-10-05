@@ -411,6 +411,13 @@ Plataforma (hallazgos de auditoría pendientes):
   `ds:` real).
 - El timbrado se elige con la fecha del servidor y no con `dFeEmiDE`
   (1103/1104), y `establecimiento`/`punto` siguen con default `001`.
+- Quedan defaults fiscales anteriores a la regla «ningún dato se inventa»:
+  contado con un pago en efectivo si no viene `condicion_operacion`
+  (`domain/documents/totals.py`), D011/D013/E011 e `iMotEmi` en 1, `dCodInt`
+  `ITEMnnn`, tasa 10 en `api/schemas/documents.py` y `dDesUniMed` `UNI` para
+  cualquier `cUniMed` (`typed_xml_builder.py`); con una unidad distinta de
+  77 sin `descripcion_unidad` el SIFEN rechaza con 1802 (MT v150 §12.4,
+  p. 174).
 - El emisor guarda un solo CSC sin historial. El QR se calcula al firmar y
   un reenvío conserva el XML firmado, pero no hay forma de regenerar el QR
   de un DE ya emitido con el CSC vigente en su `dFeEmiDE` (2501, NT 10 §4).
@@ -440,7 +447,10 @@ Proyecto:
   `docs/examples/send_ares_factura_test.py`, que trae RUC, razón social y
   timbrado con aspecto de datos reales de un contribuyente; el certificado
   efímero de `conftest.py` usa ese mismo RUC. Hay que pasarlos a datos
-  ficticios.
+  ficticios. El mismo emisor (80024135) y el receptor 80069563 siguen en
+  fixtures anteriores (escenarios de `kilasifen/testing/typed_contract_scenarios.py`,
+  goldens y emisores de prueba de `tests/api`); los tests nuevos usan los
+  ficticios de `kilasifen/testing/typed_documents.py`.
 - El workflow `.github/workflows/tests.yml` (push a `main`, PR contra
   cualquier rama y semanal) nunca completó una corrida por fallas de arranque
   a nivel de cuenta. No afirmar que el CI está en verde: validar localmente.

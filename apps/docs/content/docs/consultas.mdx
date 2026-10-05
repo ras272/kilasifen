@@ -45,7 +45,7 @@ depende del estado del documento:
 | --- | --- |
 | `approved`, `approved_with_observation` | Disponible. |
 | `queued`, `processing`, `submitting`, `submitted`, `retry_pending`, `reconciliation_required` | Disponible: con validación posterior el KuDE puede entregarse antes de la aprobación, pero sólo vale si el SIFEN aprueba el DE (MT v150 §6.2 y §6.4). |
-| `rejected`, `failed`, `inutilized`, `cancelled` u otro estado | `409 documents.kude_not_available`, con el estado en `details.internal_status`. Un DE rechazado nunca es un DTE, un DTE cancelado pierde su validez y un número inutilizado no tiene DE (Decreto 872/2023, Arts. 30 y 31). |
+| `rejected`, `failed`, `inutilized`, `cancelled` u otro estado | `409 documents.kude_not_available`, con el estado en `details.internal_status`. Un DE rechazado nunca es un DTE (MT v150 §6.4; Decreto 872/2023, Arts. 4 y 29), un DTE cancelado pierde su validez (Art. 30) y un número inutilizado no tiene DE (Art. 31). |
 
 El PDF imprime el código QR en la primera página, numera las páginas como
 `n/total`, muestra la fecha de inicio del timbrado como `DD-MM-AAAA`

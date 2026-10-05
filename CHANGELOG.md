@@ -236,7 +236,8 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 | `payload["hash_input"]` de `build_qr_payload*` | Sin reemplazo: el CSC no se devuelve; usar `step1` y `c_hash_qr` |
 | `qr_generator.build_sifen_qr_url(...)` | `kilasifen.engine.sdk.fiscal.build_qr_payload_from_signed_xml(signed_xml=..., id_csc=..., csc=..., environment=...)["url"]` |
 | `/kude/data` → `totales.total_general_guaranies` como total de la operación | `totales.total_general_operacion` (F014); `total_general_guaranies` es F023 fuera de PYG |
-| Descargar el KuDE de un documento rechazado, fallido o cancelado | Sin reemplazo: responde `409 documents.kude_not_available`; corregir y reenviar, inutilizar o emitir una nota de crédito |
+| Descargar el KuDE de un documento rechazado, fallido o cancelado | Sin reemplazo: responde `409 documents.kude_not_available`. Un DE rechazado o fallido se corrige y se reenvía, o se inutiliza su número; un DTE cancelado no tiene un KuDE válido que entregar |
+| Documentos firmados por una versión anterior que siguen en `retry_pending` o `reconciliation_required` | Se reenvían tal cual, con el `dCarQR` de esa versión (por ejemplo `dRucRec` con el D210 de un no contribuyente), que el SIFEN puede rechazar con 2500. Dejar que terminen antes de actualizar; si alguno se rechaza, tratarlo como cualquier rechazo (MT v150 §6.5; Decreto 872/2023 Art. 29) |
 | Un KuDE propio armado con `/kude/data` que redondea los montos | Imprimir el literal completo de cada monto (MT v150 §13.2 y §6.6), cambiando sólo los separadores |
 
 ### Added

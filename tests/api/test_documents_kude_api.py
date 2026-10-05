@@ -138,7 +138,7 @@ def _create_fictional_emitter(client: TestClient) -> dict:
 def test_kude_is_refused_for_documents_that_are_not_a_valid_dte(
     client: TestClient, route: str, status: str
 ):
-    # MT v150 §6.4; Dto 872/2023 Arts. 26, 30 and 31 (DECISIONES F51).
+    # MT v150 §6.4; Dto 872/2023 Arts. 4, 29, 30 and 31 (DECISIONES F51).
     emitter = _create_fictional_emitter(client)
     document = _create_document_with_signed_xml(
         client,

@@ -305,7 +305,7 @@ class DocumentService:
             emitter_id=emitter_id, document_id=document_id
         )
         if not is_kude_available(document.internal_status):
-            # MT v150 §6.4; Dto 872/2023 Arts. 26, 30 and 31 (F51).
+            # MT v150 §6.4; Dto 872/2023 Arts. 4, 26, 29, 30 and 31 (F51).
             raise ConflictError(
                 "documents.kude_not_available",
                 details={
