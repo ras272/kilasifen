@@ -911,8 +911,8 @@ class KudeContent(BaseModel):
 
     tipo: str = Field(
         description=(
-            "`factura_electronica`, `nota_credito_electronica` o "
-            "`nota_debito_electronica`."
+            "`factura_electronica`, `nota_credito_electronica`, "
+            "`nota_debito_electronica` o `desconocido` (otro iTiDE)."
         )
     )
     tipo_label: str
