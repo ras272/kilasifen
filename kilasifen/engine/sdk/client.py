@@ -18,9 +18,11 @@ from kilasifen.engine.sdk.kude import (
     save_kude_html as _save_kude_html,
 )
 from kilasifen.engine.sdk.polling import (
+    LoteResult,
     PollingConfig,
     poll_dte_async_status,
     poll_lote_status,
+    require_lote_protocol,
 )
 from kilasifen.engine.transmision import (
     ConsultaSIFEN,
@@ -85,11 +87,14 @@ class SifenClient:
             sign=sign,
         )
 
+    def enviar_lote_xml(self, lista_xml: list, lote_id: int | None = None):
+        return self._de.enviar_lote_xml(lista_xml, lote_id=lote_id)
+
     def consultar_de(self, cdc: str):
         return self._consulta.consultar_de(cdc)
 
-    def consultar_lote(self, prot_lote):
-        return self._consulta.consultar_lote(prot_lote)
+    def consultar_lote(self, prot_lote=None, *, cdc: str | None = None):
+        return self._consulta.consultar_lote(prot_lote, cdc=cdc)
 
     def consultar_ruc(self, ruc: str):
         return self._consulta.consultar_ruc(ruc)
@@ -118,7 +123,11 @@ class SifenClient:
         fetch_status,
         polling_config: PollingConfig = PollingConfig(),
     ):
-        """Dispara consulta async e espera resposta terminal com polling."""
+        """Registra una consulta DTE asincronica y espera su resultado.
+
+        EXPERIMENTAL: la consulta DTE no esta documentada por la SET (ver
+        :func:`~kilasifen.engine.sdk.polling.poll_dte_async_status`).
+        """
         async_response = self.consultar_dte_async(consulta_dte_async)
         protocol_id = str(
             getattr(async_response, "dProtConsDTEAsync", "") or ""
@@ -140,20 +149,34 @@ class SifenClient:
         lote_id: int | None = None,
         sign: bool = True,
         polling_config: PollingConfig = PollingConfig(),
-    ):
-        """Envia lote e bloqueia até estado terminal via polling."""
+    ) -> LoteResult:
+        """Envia un lote y espera su resultado consultandolo; bloquea.
+
+        Solo consulta si la recepcion fue ``0300`` con numero de lote (MT
+        sec. 12.3.2.3; Guia de mejores practicas, oct-2024, p. 9). Con los
+        valores por defecto de :class:`PollingConfig` la primera consulta va
+        a los 600 s y las siguientes cada 600 s; ante ``0364`` o pasadas
+        48 h consulta cada CDC del lote con siConsDE.
+
+        Raises:
+            SifenRejectionError: si la recepcion no fue ``0300`` (por
+                ejemplo, ``0301``); el lote no se consulta.
+            SifenLoteError: si la recepcion ``0300`` no trae
+                ``dProtConsLote`` o la consulta del lote devuelve un error.
+            SifenTimeoutError: si se agota la espera configurada con el lote
+                todavia en procesamiento.
+        """
         envio = self.enviar_lote(
             lista_rde=lista_rde,
             lote_id=lote_id,
             sign=sign,
         )
-        prot_lote = getattr(envio, "dProtConsLote", None)
-        if prot_lote is None:
-            raise ValueError("enviar_lote response must include dProtConsLote")
         return poll_lote_status(
             consultar_lote=self.consultar_lote,
-            prot_lote=prot_lote,
+            prot_lote=require_lote_protocol(envio),
             config=polling_config,
+            cdcs=_cdcs_del_lote(lista_rde),
+            consultar_de=self.consultar_de,
         )
 
     def generar_cdc(self, **kwargs):
@@ -212,3 +235,9 @@ class SifenClient:
     def __exit__(self, exc_type, exc, tb):
         self.close()
         return False
+
+
+def _cdcs_del_lote(lista_rde: list) -> tuple[str, ...]:
+    """CDC (``DE.Id``) de cada binding del lote, en orden."""
+    cdcs = (getattr(getattr(rde, "DE", None), "Id", None) for rde in lista_rde)
+    return tuple(cdc for cdc in cdcs if cdc)

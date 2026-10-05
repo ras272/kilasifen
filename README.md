@@ -316,6 +316,43 @@ En los dos caminos, el `rDE` firmado viaja dentro del `rEnviDe` como texto:
 conserva sus propias declaraciones de namespace y sus prefijos, de modo que
 el `DE` mantiene la forma canónica sobre la que se calculó la firma.
 
+**Enviar un lote.** `enviar_lote_xml(documentos)` (con `rDE` ya firmados) y
+`enviar_lote(bindings)` (los firma) arman el lote asíncrono con el formato
+del Manual Técnico v150 (§7.2 y §9.2) y de la Guía de mejores prácticas de la
+DNIT (octubre de 2024): un ZIP con un solo archivo XML (`lote.xml`), una
+única declaración UTF-8, la raíz `<rLoteDE>` sin namespace y de 1 a 50 `rDE`
+concatenados sin espacios, cada uno con su `xmlns`. El ZIP se codifica en
+base64 una sola vez. Antes de enviar se rechaza con `ValueError` un lote que
+mezcle tipos de DE (`iTiDE`) o RUC emisores, que repita un CDC, que traiga
+blancos entre etiquetas o cuyo mensaje supere 1000 KB, porque el SIFEN lo
+responde con `0301` o bloquea el RUC entre 10 y 60 minutos.
+
+```python
+from kilasifen.engine import TEST
+from kilasifen.engine.sdk import SifenClient
+
+with SifenClient(
+    ambiente=TEST, pkcs12_data=pfx, pkcs12_password="contraseña-del-pfx"
+) as cliente:
+    recepcion = cliente.enviar_lote_xml(firmados)   # dCodRes 0300 o 0301
+
+    # Más tarde (al menos 10 minutos después de la recepción):
+    estado = cliente.consultar_lote(recepcion.dProtConsLote)
+    # Sin número de lote (envío sin respuesta): cliente.consultar_lote(cdc=cdc)
+```
+
+Solo se consulta un lote recibido con `0300` y número de lote. `0361` es el
+único estado pendiente; `0362` trae el resultado de cada DE en
+`gResProcLote`; `0360`, `0363`, `0340` y `0320` son errores, y con `0364` (o
+pasadas 48 h) hay que consultar cada CDC con `consultar_de`.
+`SifenClient.enviar_lote_y_esperar(...)` aplica esas reglas, bloqueando el
+proceso: espera 10 minutos antes de la primera consulta y 10 minutos entre
+consultas (`PollingConfig`), y devuelve un `LoteResult` con un
+`LoteDocumentResult` por CDC. Como el procesamiento puede tardar horas, en un
+servicio conviene programar cada consulta como un job y clasificarla con
+`classify_lote_response` y `lote_document_results`
+(`kilasifen.engine.sdk.polling`).
+
 **Errores y reintentos.** Todas las fallas de transporte heredan de
 `SifenTransportError`. `SifenRequestNotSentError` indica que la solicitud no
 llegó al SIFEN (DNS, conexión rechazada, tiempo agotado al conectar o
@@ -347,8 +384,12 @@ with ConsultaSIFEN(
     print(documento.dCodRes, documento.dMsgRes)
 ```
 
-`ConsultaSIFEN` también ofrece `consultar_lote(protocolo)`,
-`consultar_dte(...)` y `consultar_dte_async(...)`.
+`ConsultaSIFEN` también ofrece `consultar_lote(protocolo)` (o
+`consultar_lote(cdc=...)`), `consultar_dte(...)` y `consultar_dte_async(...)`.
+La consulta DTE es **experimental**: la SET publica sus XSD, pero no su
+dirección, sus códigos ni sus plazos. Cada llamada emite
+`SifenExperimentalWarning` y sus rutas figuran en
+`SERVICIOS_EXPERIMENTALES` (`kilasifen.engine.transmision.config`).
 
 **Eventos.** `TransmisionEvento.enviar_evento(grupo)` recibe un
 `TgGroupGesEve` (de `kilasifen.engine.de.bindings.v150.evento_v150`), lo
@@ -373,7 +414,8 @@ with SifenClient(
 
 Envíos de DE y eventos siempre usan `max_retries=0`; las consultas usan el
 `max_retries` del cliente (2 por defecto). Además expone atajos para CDC, QR,
-KuDE HTML y espera por polling (`PollingConfig`).
+KuDE HTML y la espera de lotes (`enviar_lote_y_esperar`, con
+`PollingConfig`).
 
 ### Utilidades fiscales sin red
 
@@ -499,11 +541,18 @@ Las reglas para contribuir están en [CONTRIBUTING.md](CONTRIBUTING.md).
    plataforma no usa este binding: arma el XML con su propio constructor
    ElementTree (`kilasifen/infrastructure/sifen/typed_xml_builder.py`) y lo
    valida contra `siRecepDE_v150.xsd` antes de firmar.
-2. **`enviar_lote` no respeta el formato del SIFEN.** Codifica el contenido
-   dos veces en base64 y no lo comprime en ZIP. La plataforma no lo usa.
+2. **La consulta DTE (sincrónica y asincrónica) es experimental.** Sus rutas
+   (`cons_dte`, `cons_dte_async`) no figuran en el Manual Técnico, en las
+   notas técnicas ni en la Guía de mejores prácticas, y no hay mensajes de
+   "pendiente" oficiales: `poll_dte_async_status` solo sigue esperando con
+   los textos que le pase quien llama.
 3. **`consultar_dte_async` se reintenta como si fuera una consulta de solo
    lectura** (por ejemplo, con el `max_retries` de `SifenClient`), aunque
    registra una solicitud en el SIFEN.
+4. **El lote fija dos detalles que la norma no determina:** el nombre del
+   archivo dentro del ZIP (`lote.xml`) y el tope de 1000 KB, medido como
+   1.000.000 bytes del sobre SOAP completo (la lectura más restrictiva). La
+   plataforma todavía no envía por lote.
 
 ### Plataforma
 
