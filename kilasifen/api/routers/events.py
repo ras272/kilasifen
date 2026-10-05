@@ -7,23 +7,30 @@ from kilasifen.api.deps import (
     get_event_service,
     require_fiscal_write,
 )
-from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.events import (
     CancelDocumentRequest,
+    CreatedEventData,
+    CreatedEventEnvelope,
+    CreatedInutilizationData,
+    CreatedInutilizationEnvelope,
     EventCreateRequest,
     EventResponse,
+    EventWithJobData,
+    EventWithJobEnvelope,
     InutilizedRangeResponse,
     InutilizeRequest,
 )
 from kilasifen.api.schemas.jobs import JobResponse
 from kilasifen.application.events.service import EventService
+from kilasifen.domain.events.models import Event
+from kilasifen.domain.jobs.models import Job
 
 router = APIRouter(tags=["events"])
 
 
 @router.post(
     "/emitters/{emitter_id}/events",
-    response_model=SuccessEnvelope,
+    response_model=CreatedEventEnvelope,
     status_code=status.HTTP_201_CREATED,
     deprecated=True,
     summary="Create a raw fiscal event (platform administrators only)",
@@ -34,25 +41,22 @@ def create_event(
     request: Request,
     _principal=Depends(get_admin_principal),
     service: EventService = Depends(get_event_service),
-) -> SuccessEnvelope:
+) -> CreatedEventEnvelope:
     event, job = service.create_event(
         emitter_id=emitter_id,
         document_id=payload.document_id,
         event_type=payload.event_type,
         input_payload=payload.payload,
     )
-    return SuccessEnvelope(
-        data={
-            "event": EventResponse.model_validate(event).model_dump(mode="json"),
-            "job": JobResponse.model_validate(job).model_dump(mode="json"),
-        },
+    return CreatedEventEnvelope(
+        data=_created_event(event, job),
         correlation_id=request.state.correlation_id,
     )
 
 
 @router.post(
     "/emitters/{emitter_id}/documents/{document_id}/cancel",
-    response_model=SuccessEnvelope,
+    response_model=CreatedEventEnvelope,
     status_code=status.HTTP_201_CREATED,
 )
 def cancel_document(
@@ -62,24 +66,21 @@ def cancel_document(
     request: Request,
     _principal=Depends(require_fiscal_write),
     service: EventService = Depends(get_event_service),
-) -> SuccessEnvelope:
+) -> CreatedEventEnvelope:
     event, job = service.cancel_document(
         emitter_id=emitter_id,
         document_id=document_id,
         motivo=payload.motivo,
     )
-    return SuccessEnvelope(
-        data={
-            "event": EventResponse.model_validate(event).model_dump(mode="json"),
-            "job": JobResponse.model_validate(job).model_dump(mode="json"),
-        },
+    return CreatedEventEnvelope(
+        data=_created_event(event, job),
         correlation_id=request.state.correlation_id,
     )
 
 
 @router.post(
     "/emitters/{emitter_id}/inutilizations",
-    response_model=SuccessEnvelope,
+    response_model=CreatedInutilizationEnvelope,
     status_code=status.HTTP_201_CREATED,
 )
 def inutilize_numbers(
@@ -88,14 +89,16 @@ def inutilize_numbers(
     request: Request,
     _principal=Depends(require_fiscal_write),
     service: EventService = Depends(get_event_service),
-) -> SuccessEnvelope:
-    """Inutiliza un rango de numeros de un timbrado del emisor.
+) -> CreatedInutilizationEnvelope:
+    """Inutiliza un rango de números de un timbrado del emisor.
 
-    Se pueden inutilizar numeros sin documento, rechazados, fallidos por
-    validacion local o en cola abortados; nunca un DTE aprobado o cancelado ni
-    un documento que pueda estar en el SIFEN. Pasado el dia 15 del mes
-    siguiente al consumo del numero, la respuesta trae el aviso
-    `inutilization.extemporaneous` (el SIFEN no la rechaza por plazo).
+    Se pueden inutilizar números sin documento, rechazados, fallidos por
+    validación local o en cola abortados; nunca un DTE aprobado o cancelado ni
+    un documento que pueda estar en el SIFEN. Pasado el día 15 del mes
+    siguiente al consumo del número (plazo de 360 h, MT v150 §6.2.1), la
+    respuesta trae el aviso `inutilization.extemporaneous` y la inutilización
+    se envía igual: el MT v150 §11.6.2 no prevé un código de rechazo por
+    plazo, pero cómo responde el SIFEN fuera de plazo no está verificado.
     """
 
     event, job, range_item, warnings = service.inutilize_numbers(
@@ -109,34 +112,40 @@ def inutilize_numbers(
         motivo=payload.motivo,
         serie=payload.serie,
     )
-    return SuccessEnvelope(
-        data={
-            "event": EventResponse.model_validate(event).model_dump(mode="json"),
-            "job": JobResponse.model_validate(job).model_dump(mode="json"),
-            "inutilization": InutilizedRangeResponse.model_validate(
-                range_item
-            ).model_dump(mode="json"),
-            "warnings": warnings,
-        },
+    return CreatedInutilizationEnvelope(
+        data=CreatedInutilizationData(
+            event=EventResponse.model_validate(event),
+            job=JobResponse.model_validate(job),
+            inutilization=InutilizedRangeResponse.model_validate(range_item),
+            warnings=list(warnings),
+        ),
         correlation_id=request.state.correlation_id,
     )
 
 
-@router.get("/emitters/{emitter_id}/events/{event_id}", response_model=SuccessEnvelope)
+@router.get(
+    "/emitters/{emitter_id}/events/{event_id}",
+    response_model=EventWithJobEnvelope,
+)
 def get_event(
     emitter_id: str,
     event_id: str,
     request: Request,
     _principal=Depends(require_fiscal_write),
     service: EventService = Depends(get_event_service),
-) -> SuccessEnvelope:
+) -> EventWithJobEnvelope:
     event, job = service.get_event_for_emitter(emitter_id=emitter_id, event_id=event_id)
-    return SuccessEnvelope(
-        data={
-            "event": EventResponse.model_validate(event).model_dump(mode="json"),
-            "job": JobResponse.model_validate(job).model_dump(mode="json")
-            if job
-            else None,
-        },
+    return EventWithJobEnvelope(
+        data=EventWithJobData(
+            event=EventResponse.model_validate(event),
+            job=JobResponse.model_validate(job) if job else None,
+        ),
         correlation_id=request.state.correlation_id,
+    )
+
+
+def _created_event(event: Event, job: Job) -> CreatedEventData:
+    return CreatedEventData(
+        event=EventResponse.model_validate(event),
+        job=JobResponse.model_validate(job),
     )

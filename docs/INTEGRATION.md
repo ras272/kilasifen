@@ -99,7 +99,9 @@ El mismo envelope cubre los errores del framework y el contrato OpenAPI lo
 declara (`ErrorEnvelope`) en cada ruta autenticada:
 
 - `422 request.validation_failed`: body, query o path inválidos. Los campos van
-  en `details.errors` como `{loc, message, type}`; el valor enviado nunca se
+  en `details.errors` como `{loc, message, type}`, más `code` cuando la entrada
+  incumple una regla fiscal con nombre (por ejemplo
+  `documents.cliente.tipo_contribuyente_required`); el valor enviado nunca se
   devuelve.
 - `404 request.route_not_found` y `405 request.method_not_allowed` (con header
   `Allow`): ruta o método inexistente.

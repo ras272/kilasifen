@@ -31,6 +31,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 
+from kilasifen.domain.common.errors import FiscalRuleError
+
 INNOMINADO = 5
 OTHER_ID_TYPE = 9
 INNOMINADO_NUMBER = "0"
@@ -54,12 +56,8 @@ ID_TYPE_DESCRIPTIONS = {
 }
 
 
-class ReceiverRuleError(ValueError):
+class ReceiverRuleError(FiscalRuleError):
     """The receiver breaks a SIFEN rule; ``code`` names it."""
-
-    def __init__(self, code: str) -> None:
-        super().__init__(code)
-        self.code = code
 
 
 @dataclass(frozen=True, slots=True)

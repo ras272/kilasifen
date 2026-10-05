@@ -14,16 +14,14 @@ from __future__ import annotations
 import secrets
 from collections.abc import Callable
 
+from kilasifen.domain.common.errors import FiscalRuleError
+
 SECURITY_CODE_MIN = 1
 SECURITY_CODE_MAX = 999_999_999
 
 
-class InvalidSecurityCodeError(ValueError):
+class InvalidSecurityCodeError(FiscalRuleError):
     """A security code that breaks MT v150 §10.3; ``code`` names the rule."""
-
-    def __init__(self, code: str) -> None:
-        super().__init__(code)
-        self.code = code
 
 
 def generate_security_code(

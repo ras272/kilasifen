@@ -39,3 +39,17 @@ class UnprocessableEntityError(DomainError):
 
 class ServiceUnavailableError(DomainError):
     """Raised when a transient infrastructure dependency is unavailable."""
+
+
+class FiscalRuleError(ValueError):
+    """A fiscal payload breaks a named rule; ``code`` identifies the rule.
+
+    It is a ``ValueError`` so the API request validators can raise it: the
+    ``422 request.validation_failed`` entry of that field then carries
+    ``code`` next to ``loc``, ``message`` and ``type``. ``message`` defaults
+    to the code and never contains submitted values.
+    """
+
+    def __init__(self, code: str, message: str | None = None) -> None:
+        super().__init__(message or code)
+        self.code = code

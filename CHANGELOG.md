@@ -357,6 +357,18 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 - Inutilización: campo `serie` (`dSerieNum`, NT 10 §1.7), `warnings` en la
   respuesta (`inutilization.extemporaneous`) y los `document_ids` del rango en
   el webhook `numbering.inutilized`.
+- API: cada entrada de `details.errors` de un `422 request.validation_failed`
+  que incumple una regla fiscal con nombre trae `code` (por ejemplo
+  `documents.cliente.tipo_contribuyente_required`); `loc`, `message` y `type`
+  no cambian y los errores de formato del contrato no llevan `code`. Las
+  reglas del receptor, los montos y el código de seguridad comparten
+  `kilasifen.domain.common.errors.FiscalRuleError`.
+- Contrato OpenAPI: cada respuesta exitosa declara su `data` con los modelos de
+  respuesta (`CreatedDocumentEnvelope`, `DocumentWithJobEnvelope`, ...) sin
+  cambiar el JSON; el `200` del reintento idempotente declara su body; `/xml`
+  y `/kude` declaran `application/xml` y `application/pdf`; cada operación
+  indica su scope y cada respuesta, el header `X-Correlation-ID`; la carga de
+  certificados declara `415`.
 
 ### Changed
 
@@ -525,6 +537,18 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   suma las propiedades `status` y `correlationId` (`null` cuando no aplican).
   Los envelopes de error de cualquier `4xx`, incluido `422`, siguen llegando
   como `KilaSifenError` con sus `details`.
+- Las rutas de emisores (`GET`, `PATCH`, `deactivate`, `health`) verifican el
+  scope con las mismas dependencias que el resto de la API, así que lo hacen
+  antes de validar el body: un `PATCH` con scope insuficiente y body inválido
+  responde `403 auth.insufficient_scope` (antes `422`). `/v1/auth/check` pasa
+  a su propio router, con la misma ruta y las mismas respuestas.
+- Textos del contrato OpenAPI en español (descripciones de error, esquema de
+  API key, header `X-Kila-Test-Outcome`, health y docstrings de los schemas).
+- SDK TypeScript: `SandboxOutcome` acepta los cinco resultados del contrato
+  (suma `transport_timeout` y `accepted_but_response_lost`); nuevos tipos
+  `ValidationErrorItem`, `ValidationErrorDetails` e `IssueMotive`
+  (`motivo_emision`). `LICENSE` y `package.json` nombran a «The KilaSifen
+  Authors».
 
 ### Fixed
 
@@ -709,6 +733,10 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 - `docs/examples/kila_api_emit_document.py` (ruta raw, sólo admin) lee el
   `rDE` sin firmar de `KILA_RDE_XML_PATH` en lugar de enviar `<rDE/>`, que la
   ruta ahora rechaza, y muestra el código de un `422`.
+- `errores.mdx` reescrita contra la API final (reglas fiscales, avisos,
+  códigos frecuentes, errores del framework y qué declara el contrato) y nueva
+  página `sdk-typescript.mdx`. El README del SDK está en español, con datos
+  ficticios y los requisitos actuales (perfil fiscal, `tipo_contribuyente`).
 
 ## [0.1.1] - 2026-04-22
 

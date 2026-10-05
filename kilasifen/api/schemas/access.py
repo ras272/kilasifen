@@ -1,8 +1,11 @@
 """Strict administrative access-control contracts."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from kilasifen.api.schemas.common import SuccessEnvelope
 
 
 class ConsumerCreateRequest(BaseModel):
@@ -39,3 +42,43 @@ class CredentialResponse(BaseModel):
 
 class IssuedCredentialResponse(CredentialResponse):
     api_key: str = Field(repr=False)
+
+
+class ConsumerData(BaseModel):
+    """Consumidor de la API."""
+
+    consumer: ConsumerResponse
+
+
+class CredentialData(BaseModel):
+    """Credencial, sin la API key."""
+
+    credential: CredentialResponse
+
+
+class IssuedCredentialData(BaseModel):
+    """Credencial recién emitida: `api_key` se muestra sólo esta vez."""
+
+    credential: IssuedCredentialResponse
+
+
+class AuthCheckData(BaseModel):
+    """Resultado de la comprobación de la API key."""
+
+    authenticated: Literal[True]
+
+
+class ConsumerEnvelope(SuccessEnvelope[ConsumerData]):
+    """Respuesta con un consumidor."""
+
+
+class CredentialEnvelope(SuccessEnvelope[CredentialData]):
+    """Respuesta con una credencial."""
+
+
+class IssuedCredentialEnvelope(SuccessEnvelope[IssuedCredentialData]):
+    """Respuesta con la credencial recién emitida."""
+
+
+class AuthCheckEnvelope(SuccessEnvelope[AuthCheckData]):
+    """Respuesta de la comprobación de la API key."""

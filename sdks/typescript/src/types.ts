@@ -19,6 +19,27 @@ export interface ApiErrorPayload {
   details?: Record<string, unknown> | null;
 }
 
+/**
+ * One entry of `details.errors` in a `422 request.validation_failed` error.
+ * The submitted value is never echoed back.
+ */
+export interface ValidationErrorItem {
+  loc: Array<string | number>;
+  message: string;
+  type: string;
+  /**
+   * Stable code of the fiscal rule the payload breaks, such as
+   * `documents.cliente.tipo_contribuyente_required`. Absent for plain
+   * contract errors (a missing field, a pattern).
+   */
+  code?: string;
+}
+
+/** `details` of a `422 request.validation_failed` error. */
+export interface ValidationErrorDetails {
+  errors: ValidationErrorItem[];
+}
+
 export interface ApiErrorEnvelope {
   error: ApiErrorPayload;
 }
@@ -35,20 +56,26 @@ export interface RequestOptions {
   headers?: Record<string, string>;
 }
 
+/** The five deterministic SIFEN outcomes of the API test runtime. */
 export type SandboxOutcome =
   | "approved"
   | "approved_with_observation"
-  | "rejected";
+  | "rejected"
+  | "transport_timeout"
+  | "accepted_but_response_lost";
 
 export interface CreateOptions extends RequestOptions {
   /**
    * Stable identifier for one fiscal intent. Reusing it returns the original
-   * document instead of emitting another one.
+   * document instead of emitting another one. It travels as the body field
+   * `idempotency_key`, the one the API reads; the `Idempotency-Key` header is
+   * sent too but the API ignores it today.
    */
   idempotencyKey?: string;
   /**
-   * Deterministic SIFEN result for automated tests. The API rejects this
-   * header outside its test runtime.
+   * Deterministic SIFEN result for automated tests. The API answers
+   * `422 sandbox.test_runtime_required` outside a deployment with
+   * `KILA_SIFEN_ENVIRONMENT=test`.
    */
   sandboxOutcome?: SandboxOutcome;
 }
@@ -299,16 +326,33 @@ export interface Factura extends BaseFiscalDocument {
   factura?: Record<string, JsonValue>;
 }
 
+/**
+ * iMotEmi (MT v150 E401): 1 `devolucion_y_ajuste`, 2 `devolucion`,
+ * 3 `descuento`, 4 `bonificacion`, 5 `credito_incobrable`,
+ * 6 `recupero_costo`, 7 `recupero_gasto` or 8 `ajuste_precio`. Always send
+ * the real motive: when omitted, the platform currently informs 1.
+ */
+export type IssueMotive =
+  | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+  | "devolucion_y_ajuste"
+  | "devolucion"
+  | "descuento"
+  | "bonificacion"
+  | "credito_incobrable"
+  | "recupero_costo"
+  | "recupero_gasto"
+  | "ajuste_precio";
+
 export interface NotaCredito extends BaseFiscalDocument {
   tipo_documento?: 5;
-  motivo_emision?: NumericCode;
+  motivo_emision?: IssueMotive;
   documento_asociado: AssociatedDocument;
   nota_credito?: Record<string, JsonValue>;
 }
 
 export interface NotaDebito extends BaseFiscalDocument {
   tipo_documento?: 6;
-  motivo_emision?: NumericCode;
+  motivo_emision?: IssueMotive;
   documento_asociado: AssociatedDocument;
   nota_debito?: Record<string, JsonValue>;
 }
@@ -482,6 +526,11 @@ export interface CancelDocumentInput {
   motivo: string;
 }
 
+/**
+ * `fe_exportacion`, `fe_importacion` and `comprobante_retencion` (iTiDE 2, 3
+ * and 8) are not DE types in v150 (DE_Types_v150.xsd): there are no such
+ * numbers to inutilize and SIFEN may answer 4060.
+ */
 export type InutilizationDocumentType =
   | "factura"
   | "fe_exportacion"
@@ -532,6 +581,11 @@ export interface WebhookRetryPolicy {
 export interface WebhookEndpointCreateInput {
   url: string;
   secret: string;
+  /**
+   * Event types to receive; omitted, all of them. Matched exactly or by a
+   * `.*` prefix: `*`, `document.*`, `document.<status>`, `document.updated`
+   * and `webhook.test`. A misspelled type is accepted and never matches.
+   */
   event_subscriptions?: string[] | null;
   retry_policy?: WebhookRetryPolicy | null;
 }

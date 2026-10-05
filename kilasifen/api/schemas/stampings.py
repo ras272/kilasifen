@@ -4,9 +4,11 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from kilasifen.api.schemas.common import SuccessEnvelope
+
 
 class StampingCreateRequest(BaseModel):
-    """Stamping creation payload."""
+    """Alta de un timbrado."""
 
     number: str = Field(min_length=1, max_length=32)
     start_date: date
@@ -14,7 +16,7 @@ class StampingCreateRequest(BaseModel):
 
 
 class StampingResponse(BaseModel):
-    """Stamping response payload."""
+    """Timbrado del emisor."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -27,3 +29,23 @@ class StampingResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+
+
+class StampingData(BaseModel):
+    """Timbrado del emisor."""
+
+    stamping: StampingResponse
+
+
+class StampingListData(BaseModel):
+    """Timbrados del emisor."""
+
+    stampings: list[StampingResponse]
+
+
+class StampingEnvelope(SuccessEnvelope[StampingData]):
+    """Respuesta con un timbrado."""
+
+
+class StampingListEnvelope(SuccessEnvelope[StampingListData]):
+    """Respuesta con los timbrados del emisor."""

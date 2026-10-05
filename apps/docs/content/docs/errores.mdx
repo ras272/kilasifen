@@ -1,15 +1,13 @@
 ---
 title: Errores y diagnóstico
-description: Usá códigos estables y correlation IDs para decidir la recuperación.
+description: Decidí la recuperación por code y details, y guardá el correlation_id.
 icon: CircleAlert
 ---
 
 Toda respuesta de error de la API usa el mismo envelope, incluidos los errores
 de validación del request, las rutas o métodos inexistentes y los fallos
-inesperados del servidor. El contrato OpenAPI lo declara como `ErrorEnvelope`
-en las respuestas `401`, `403`, `404`, `422`, `429` y `503` de cada ruta
-autenticada, y además en `409` y `413` en los grupos de rutas que modifican
-recursos.
+inesperados del servidor. La única excepción es `GET /v1/ready`: su `503`
+trae el detalle de readiness en `data`, con el mismo formato que su `200`.
 
 ```json
 {
@@ -23,38 +21,54 @@ recursos.
 }
 ```
 
+| Campo | Uso |
+| --- | --- |
+| `code` | Código estable. Decidí con este campo y con `details`. |
+| `category` | Grupo del código, para manejar códigos que todavía no conocés. |
+| `message` | Texto en inglés, casi siempre genérico (los `422` de reglas dicen «Request validation failed.» y los `409`, «Resource conflict.»). No es estable: no lo uses para decidir. |
+| `correlation_id` | El mismo valor del header `X-Correlation-ID`, que llega en todas las respuestas, también en las exitosas. |
+| `details` | Datos propios de cada código (por ejemplo `details.errors` o `details.max_bytes`); `null` si no hay. |
+
 | HTTP | Acción del consumidor |
 | --- | --- |
+| `400` | El request no se pudo leer (por ejemplo un multipart sin boundary). Corregilo antes de reintentar. |
 | `401` | Revisar o rotar la credencial. No reintentar en loop. |
-| `403` | Solicitar el scope requerido. |
-| `404` | Revisar el ID y el ownership del emisor. |
-| `409` | Resolver la colisión o reutilizar la intención original. |
-| `422` | Corregir el payload; no ingresó a la cola. |
+| `403` | Pedir el scope que exige la operación (figura en cada operación de la [referencia](/docs/api-reference)). |
+| `404` | Revisar el ID y que la credencial tenga acceso a ese emisor. |
+| `409` | Colisión de idempotencia (`documents.idempotency_key_conflict`, `documents.external_id_conflict`) o precondición no cumplida (certificado activo, CSC, emisor activo, estado del documento, XML todavía no generado). No reintentes sin resolverla. |
+| `413` | Achicar el body o el archivo; el límite va en `details.max_bytes`. |
+| `415` | Enviar el archivo con el media type esperado. |
+| `422` | El request o la configuración del emisor no permiten procesarlo y no se aplicó ningún cambio. Corregí según `code` y `details`. |
 | `429` | Esperar los segundos del header `Retry-After` (también en `details.retry_after_seconds`) y aplicar backoff. |
 | `500` | Reintentar con backoff y reportar el `correlation_id` si persiste. |
 | `503` | Reintentar con backoff porque una dependencia no está disponible. |
 
-`emitters.lock_timeout` y `numbering.lock_timeout` (ambos `503`) indican que
-otra operación del mismo emisor retuvo el bloqueo más de 5 segundos. La
-operación no se aplicó: reintentala con backoff y, si crea un documento, con la
-misma `idempotency_key`.
+`category` toma estos valores: `authentication`, `authorization`, `validation`,
+`invalid_request`, `not_found`, `conflict`, `rate_limit`,
+`service_unavailable` e `internal`. `invalid_request` cubre los errores del
+framework que no son de validación (`400`, `405`, `406`, `415`) y los
+parámetros de consulta inválidos (`422 queries.invalid_ruc` y
+`queries.invalid_cdc`). Un JSON mal formado o un body con otro media type
+responde `422 request.validation_failed`, categoría `validation`. La lista de
+categorías puede crecer.
 
-`category` agrupa los códigos para decidir la recuperación sin conocerlos
-todos: `authentication`, `authorization`, `validation`, `invalid_request`
-(método, media type o request mal formado), `not_found`, `conflict`,
-`rate_limit`, `service_unavailable` e `internal`. Los códigos (`code`) son
-la referencia estable; la lista de categorías puede crecer.
-
-## Errores de validación y de ruta
+## Validación del request
 
 Cuando el body, la query o los parámetros de ruta no cumplen el contrato, la
-API responde `422` con `code: "request.validation_failed"` y la lista de campos
-en `details.errors`. Cada entrada trae `loc` (ubicación del campo), `message` y
-`type`. En `request.validation_failed` la API nunca devuelve el valor enviado,
-para no reflejar secretos en logs del ERP. La excepción es la ruta raw
-deprecada (sólo `platform:admin`): los `details.errors` de
-`documents.raw.generated_xml_invalid_schema` son mensajes del validador XSD y
-pueden citar valores del XML que envió el mismo caller.
+API responde `422` con `code: "request.validation_failed"` y un problema por
+entrada en `details.errors`:
+
+- `loc`: dónde está el problema (`["body", "factura", "items"]`).
+- `message`: texto en inglés del validador.
+- `type`: tipo de error del validador (`missing`, `string_pattern_mismatch`,
+  `json_invalid`, `value_error`...).
+- `code`: sólo cuando la entrada incumple una regla fiscal con nombre (ver la
+  sección siguiente).
+
+La API nunca devuelve el valor enviado, para no reflejar secretos en los logs
+del ERP. La excepción es la ruta raw deprecada (sólo `platform:admin`): los
+`details.errors` de `documents.raw.generated_xml_invalid_schema` son mensajes
+del validador XSD y pueden citar valores del XML que envió el mismo caller.
 
 ```json
 {
@@ -65,26 +79,139 @@ pueden citar valores del XML que envió el mismo caller.
     "correlation_id": "7d33c16a-4ec1-4327-90f2-bc5517c120f2",
     "details": {
       "errors": [
-        {"loc": ["body", "factura", "items"], "message": "Field required", "type": "missing"}
+        {
+          "loc": ["body", "factura"],
+          "message": "Value error, documents.cliente.tipo_contribuyente_required",
+          "type": "value_error",
+          "code": "documents.cliente.tipo_contribuyente_required"
+        }
       ]
     }
   }
 }
 ```
 
+## Reglas fiscales
+
+Una regla fiscal incumplida responde `422` y no crea el documento. Llega de
+una de estas dos formas:
+
+1. **Regla sobre el contenido del payload**: dentro de
+   `request.validation_failed`, con el código de la regla en
+   `details.errors[].code` y `type: "value_error"`. `message` es el texto del
+   validador; en las reglas del receptor y de los montos termina con el mismo
+   código, como antes de que existiera `code`. Las reglas que miran el
+   documento completo (receptor, montos, pagos) se informan en el objeto del
+   documento (`loc: ["body", "factura"]`), no en el campo: usá `code` para
+   ubicar el problema. Los códigos se agrupan por prefijo:
+
+   | Prefijo | Qué valida |
+   | --- | --- |
+   | `documents.cliente.*` | Receptor: naturaleza, tipo de operación, `tipo_contribuyente`, RUC y DV, documento de identidad, innominado, dirección y país. |
+   | `documents.items.*` | Ítems: tasa y afectación del IVA, `proporcion_gravada`, descuentos y anticipos. |
+   | `documents.redondeo.*`, `documents.porcentaje_descuento_global_invalid` | Redondeo a 50 Gs y descuento global. |
+   | `documents.condicion_operacion.*` | Contado o crédito, formas de pago, cuotas y entrega inicial. |
+   | `documents.currency.*` | Moneda de la operación y tipo de cambio. |
+   | `documents.documento_asociado.*` | Documento asociado de una nota de crédito o de débito. |
+   | `documents.codigo_seguridad.*` | `codigo_seguridad` enviado: hasta nueve dígitos y distinto de cero. |
+   | `documents.tipo_impuesto.*`, `documents.responsable_generacion.*` | Tipo de impuesto y responsable de la generación. |
+
+   Los errores de formato del contrato que no son una regla fiscal (un campo
+   faltante, un patrón, el formato de `establecimiento`, `punto` o `numero`)
+   no traen `code`: identificalos por `loc` y `type`.
+
+2. **Regla que depende del emisor o del momento del pedido**: con un `code`
+   propio en el nivel superior del error.
+
+   | Código | Cuándo | `details` |
+   | --- | --- | --- |
+   | `emitters.fiscal_profile_required` | El emisor no tiene perfil fiscal: cargalo con `PATCH /v1/emitters/{emitter_id}` (ver [Emisores](/docs/emisores)). | `emitter_id` |
+   | `documents.emisor.identity_mismatch` | `emisor` o `tipo_contribuyente` del payload no coinciden con el emisor registrado. | `field` |
+   | `documents.fecha_emision.too_old` | `fecha_emision` es anterior a 720 h antes del pedido (el SIFEN rechazaría con 1150). | `fecha_emision` |
+   | `documents.fecha_emision.too_far_ahead` | `fecha_emision` es posterior a 120 h después del pedido (1151). | `fecha_emision` |
+   | `documents.fecha_emision.before_sifen_launch` | `fecha_emision` es anterior al 2018-11-22 (1156). | `fecha_emision` |
+   | `documents.fecha_emision.invalid` | `fecha_emision` no se puede leer como fecha y hora. | — |
+   | `documents.codigo_seguridad.equals_numero` | El `codigo_seguridad` enviado coincide con el número que la plataforma asignó. | — |
+
+Los **avisos** no son errores: el recurso se crea igual (`201`). Un documento
+puede traer `fiscal_warnings` (por ejemplo
+`documents.transmission.emission_far_from_now`, ver [Facturas](/docs/facturas))
+y una inutilización trae `warnings` (por ejemplo
+`inutilization.extemporaneous`, ver [Eventos](/docs/eventos)). Registralos en el
+ERP para revisarlos.
+
+## Códigos frecuentes
+
+| Código | HTTP | Qué hacer |
+| --- | --- | --- |
+| `auth.missing_api_key` | `401` | Enviar el header `X-API-Key`. |
+| `auth.invalid_api_key` | `401` | La key no existe o fue revocada: rotarla. |
+| `auth.insufficient_scope` | `403` | Pedir el scope de la operación; `details` no lo nombra, lo indica la [referencia](/docs/api-reference). |
+| `emitters.not_found` | `404` | El emisor no existe o la credencial no tiene acceso a él. |
+| `documents.not_found` | `404` | Revisar el `document_id` y el emisor de la ruta. |
+| `documents.idempotency_key_conflict` | `409` | La misma `idempotency_key` llegó con otro contenido: `details.existing_document_id` y `details.mismatched_parameters` dicen cuál y qué cambió. Usá una clave nueva sólo si es otra intención. |
+| `documents.external_id_conflict` | `409` | Ya existe un documento del emisor con ese `external_id`, creado con otra `idempotency_key` o sin ella. |
+| `emitters.inactive` | `409` | El emisor está desactivado: no acepta operaciones nuevas. |
+| `certificates.active_required` | `409` | Activar un certificado del emisor antes de consultar el SIFEN o emitir eventos. |
+| `emitters.csc_required` | `409` | Cargar `csc` y `csc_id` del emisor antes de pedir el KuDE. |
+| `documents.kude_not_available` | `409` | El estado del documento no admite KuDE; el estado va en `details.internal_status`. |
+| `documents.xml_not_available` | `409` | Todavía no hay XML generado: esperar a que el job avance. |
+| `documents.cdc_required_for_query` | `409` | El documento todavía no tiene CDC para consultarlo o reconciliarlo. |
+| `request.body_too_large` | `413` | El body supera el límite; `details.max_bytes`. |
+| `certificates.upload_too_large` | `413` | El PKCS#12 supera su límite propio; `details.max_bytes`. |
+| `certificates.unsupported_media_type` | `415` | Enviar el archivo como `application/x-pkcs12`, `application/pkcs12` u `application/octet-stream`. |
+| `queries.invalid_ruc`, `queries.invalid_cdc` | `422` | Corregir el RUC o el CDC de la consulta. |
+| `sandbox.test_runtime_required` | `422` | `X-Kila-Test-Outcome` sólo funciona en un despliegue con `KILA_SIFEN_ENVIRONMENT=test` (`details.required_environment`). Ver [Sandbox](/docs/sandbox). |
+| `limits.rate_exceeded`, `limits.concurrency_exceeded` | `429` | Límite de la credencial: esperar `Retry-After`. |
+| `limits.pre_auth_rate_exceeded`, `limits.pre_auth_concurrency_exceeded` | `429` | Límite por origen, antes de autenticar: esperar `Retry-After`. |
+| `limits.backend_unavailable` | `503` | El limitador no está disponible: reintentar con backoff. |
+| `emitters.lock_timeout`, `numbering.lock_timeout` | `503` | Otra operación del mismo emisor retuvo el bloqueo más de 5 segundos y la operación no se aplicó: reintentala con backoff y, si crea un documento, con la misma `idempotency_key`. |
+
+Los límites de pedidos (`limits.*`) sólo se aplican en `staging` y
+`production`. Los códigos propios de cancelación, inutilización y webhooks
+(`events.*`, `webhooks.*`) se explican en [Eventos](/docs/eventos) y
+[Webhooks](/docs/webhooks).
+
+## Errores de ruta y del framework
+
 | Código | HTTP | Significado |
 | --- | --- | --- |
-| `request.validation_failed` | `422` | El request no cumple el contrato; ver `details.errors`. |
+| `request.bad_request` | `400` | El request no se pudo leer, por ejemplo un multipart sin boundary. |
 | `request.route_not_found` | `404` | La ruta no existe. Revisar la URL y el prefijo `/v1`. |
 | `request.method_not_allowed` | `405` | El método no aplica a la ruta; el header `Allow` lista los válidos. |
+| `request.not_acceptable` | `406` | El media type pedido en `Accept` no está disponible. |
 | `request.body_too_large` | `413` | El body supera el límite configurado. |
+| `request.unsupported_media_type` | `415` | El media type del body no está soportado. |
+| `request.validation_failed` | `422` | El request no cumple el contrato; ver `details.errors`. |
 | `server.internal_error` | `500` | Fallo inesperado. El detalle interno nunca se expone. |
 
-Las respuestas `500` también traen `correlation_id` y el header
-`X-Correlation-ID`. Un proxy intermedio puede devolver `502` o `504` sin JSON:
-tratalos como un `5xx` reintentable. El SDK TypeScript los informa como
-`KilaSifenConnectionError` con `code: "sdk.http_error"`, el `status` original y
-`retryable: true`.
+Otro status del framework llega como `http.<status>`. Un proxy intermedio
+puede devolver `502` o `504` sin JSON: tratalos como un `5xx` reintentable.
 
-Conservá `correlation_id` en logs del ERP y tickets de soporte. Nunca agregues la
-API key, contraseña del PFX, CSC, XML firmado completo ni datos de tarjeta.
+## Qué declara el contrato
+
+Cada operación de la [referencia](/docs/api-reference) indica el scope que
+exige y declara el `ErrorEnvelope` en sus errores: las rutas autenticadas
+declaran `401`, `403`, `404`, `422`, `429` y `503`, y las de los grupos que
+modifican recursos, además `409` y `413` (también sus lecturas, que pueden
+responder `409` si el recurso no está listo). `GET /v1/auth/check` declara
+`401`, `429` y `503`, y la carga de certificados, `415`. Los `400`, `405` y
+`500` del framework no se declaran por operación: pueden llegar en cualquier
+ruta.
+
+## SDK TypeScript
+
+El [SDK TypeScript](/docs/sdk-typescript) convierte un envelope de error en
+`KilaSifenError`, con `status`, `code`, `category`, `correlationId`, `details`
+y `retryable`. Un timeout (`sdk.timeout`), un error de red
+(`sdk.connection_error`), un body exitoso ilegible (`sdk.invalid_response`) o
+un error HTTP sin envelope (`sdk.http_error`, por ejemplo el `502` HTML de un
+proxy, con su `status`) llega como `KilaSifenConnectionError`. Las dos clases
+exponen `retryable`: es `true` para `408`, `425`, `429` y `5xx`, y para los
+timeouts y errores de red.
+
+## Diagnóstico
+
+Conservá `correlation_id` en los logs del ERP y en los tickets de soporte.
+Nunca agregues la API key, la contraseña del PFX, el CSC, el XML firmado
+completo ni datos de tarjeta.

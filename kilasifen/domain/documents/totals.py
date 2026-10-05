@@ -70,6 +70,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, ROUND_HALF_UP, Context, Decimal, localcontext
 
+from kilasifen.domain.common.errors import FiscalRuleError
+
 ZERO = Decimal("0")
 HUNDRED = Decimal("100")
 
@@ -111,12 +113,8 @@ _AMOUNT4_Q = Decimal("0.0001")
 _CONTEXT = Context(prec=60, rounding=ROUND_HALF_UP)
 
 
-class TotalsRuleError(ValueError):
+class TotalsRuleError(FiscalRuleError):
     """The amounts of a DE break a SIFEN rule; ``code`` names it."""
-
-    def __init__(self, code: str) -> None:
-        super().__init__(code)
-        self.code = code
 
 
 @dataclass(frozen=True, slots=True)

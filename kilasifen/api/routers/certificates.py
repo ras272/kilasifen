@@ -8,9 +8,14 @@ from kilasifen.api.deps import (
     get_certificate_service,
     require_secrets_write,
 )
-from kilasifen.api.errors import ApiError
-from kilasifen.api.schemas.certificates import CertificateResponse
-from kilasifen.api.schemas.common import SuccessEnvelope
+from kilasifen.api.errors import ApiError, error_responses
+from kilasifen.api.schemas.certificates import (
+    CertificateData,
+    CertificateEnvelope,
+    CertificateListData,
+    CertificateListEnvelope,
+    CertificateResponse,
+)
 from kilasifen.application.certificates.service import CertificateService
 from kilasifen.config import get_settings
 from kilasifen.domain.certificates.models import Certificate
@@ -20,8 +25,15 @@ router = APIRouter(tags=["certificates"])
 
 @router.post(
     "/emitters/{emitter_id}/certificates",
-    response_model=SuccessEnvelope,
+    response_model=CertificateEnvelope,
     status_code=status.HTTP_201_CREATED,
+    responses=error_responses(415),
+    description=(
+        "Carga un PKCS#12 (`application/x-pkcs12`, `application/pkcs12` u "
+        "`application/octet-stream`). Otro media type responde `415 "
+        "certificates.unsupported_media_type`; un archivo más grande que el "
+        "límite, `413 certificates.upload_too_large` con `details.max_bytes`."
+    ),
 )
 async def upload_certificate(
     emitter_id: str,
@@ -31,7 +43,7 @@ async def upload_certificate(
     file: UploadFile = File(...),
     _principal=Depends(require_secrets_write),
     service: CertificateService = Depends(get_certificate_service),
-) -> SuccessEnvelope:
+) -> CertificateEnvelope:
     if file.content_type not in {
         "application/octet-stream",
         "application/pkcs12",
@@ -56,29 +68,29 @@ async def upload_certificate(
 
 @router.get(
     "/emitters/{emitter_id}/certificates",
-    response_model=SuccessEnvelope,
+    response_model=CertificateListEnvelope,
 )
 def list_certificates(
     emitter_id: str,
     request: Request,
     _principal=Depends(require_secrets_write),
     service: CertificateService = Depends(get_certificate_service),
-) -> SuccessEnvelope:
+) -> CertificateListEnvelope:
     certificates = service.list_certificates(emitter_id)
-    return SuccessEnvelope(
-        data={
-            "certificates": [
-                CertificateResponse.model_validate(certificate).model_dump(mode="json")
+    return CertificateListEnvelope(
+        data=CertificateListData(
+            certificates=[
+                CertificateResponse.model_validate(certificate)
                 for certificate in certificates
             ]
-        },
+        ),
         correlation_id=request.state.correlation_id,
     )
 
 
 @router.post(
     "/emitters/{emitter_id}/certificates/{certificate_id}/activate",
-    response_model=SuccessEnvelope,
+    response_model=CertificateEnvelope,
 )
 def activate_certificate(
     emitter_id: str,
@@ -86,7 +98,7 @@ def activate_certificate(
     request: Request,
     _principal=Depends(require_secrets_write),
     service: CertificateService = Depends(get_certificate_service),
-) -> SuccessEnvelope:
+) -> CertificateEnvelope:
     certificate = service.activate_certificate_for_emitter(
         emitter_id=emitter_id,
         certificate_id=certificate_id,
@@ -112,12 +124,8 @@ async def _read_bounded_upload(file: UploadFile, limit: int) -> bytes:
 def _certificate_envelope(
     request: Request,
     certificate: Certificate,
-) -> SuccessEnvelope:
-    return SuccessEnvelope(
-        data={
-            "certificate": CertificateResponse.model_validate(certificate).model_dump(
-                mode="json"
-            )
-        },
+) -> CertificateEnvelope:
+    return CertificateEnvelope(
+        data=CertificateData(certificate=CertificateResponse.model_validate(certificate)),
         correlation_id=request.state.correlation_id,
     )

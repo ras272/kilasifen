@@ -18,6 +18,7 @@ import type {
   ReconciledDocument,
   RequestOptions,
   RucQuery,
+  SandboxOutcome,
   WebhookDelivery,
   WebhookEndpoint,
   WebhookEndpointCreateInput,
@@ -139,7 +140,9 @@ export class DocumentsResource {
 
   /**
    * Resolve an uncertain document by querying SIFEN with its existing CDC.
-   * This operation never resubmits the fiscal document.
+   * The call itself never transmits the DE; when SIFEN answers 0420 a pending
+   * document goes back to the queue and the worker resends the same signed
+   * DE (same CDC).
    */
   reconcile(
     emitterId: string,
@@ -317,7 +320,7 @@ function createRequestFields(options: CreateOptions): RequestOptions {
   if (options.sandboxOutcome !== undefined) {
     if (!isSandboxOutcome(options.sandboxOutcome)) {
       throw new TypeError(
-        "sandboxOutcome must be approved, approved_with_observation, or rejected",
+        `sandboxOutcome must be one of: ${SANDBOX_OUTCOMES.join(", ")}`,
       );
     }
     headers["X-Kila-Test-Outcome"] = options.sandboxOutcome;
@@ -329,10 +332,16 @@ function createRequestFields(options: CreateOptions): RequestOptions {
   };
 }
 
-function isSandboxOutcome(value: string): boolean {
-  return value === "approved" ||
-    value === "approved_with_observation" ||
-    value === "rejected";
+const SANDBOX_OUTCOMES: readonly SandboxOutcome[] = [
+  "approved",
+  "approved_with_observation",
+  "rejected",
+  "transport_timeout",
+  "accepted_but_response_lost",
+];
+
+function isSandboxOutcome(value: string): value is SandboxOutcome {
+  return (SANDBOX_OUTCOMES as readonly string[]).includes(value);
 }
 
 function segment(value: string, name: string): string {
