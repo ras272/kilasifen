@@ -2,15 +2,21 @@
 
 from dataclasses import replace
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import pytest
+from PIL import Image, ImageOps
 
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.engine.sdk.fiscal import build_qr_payload_from_signed_xml
-from kilasifen.infrastructure.kude.qr_generator import render_qr_image
+from kilasifen.infrastructure.kude.qr_generator import (
+    MIN_QUIET_ZONE_MODULES,
+    quiet_zone_modules,
+    render_qr_image,
+)
 from kilasifen.infrastructure.kude.xml_qr_injector import (
     apply_real_qr_to_signed_xml,
     compute_qr_url_from_signed_xml,
@@ -133,3 +139,30 @@ def test_render_qr_image_returns_png_bytes():
     png = render_qr_image("https://ekuatia.set.gov.py/consultas-test/qr?x=1")
     assert png[:4] == b"\x89PNG"
     assert len(png) > 100
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://ekuatia.set.gov.py/consultas-test/qr?x=1",
+        # A real dCarQR: QR version 14 or more.
+        _dcarqr(_golden("factura_b2c_iva_mixto")),
+    ],
+)
+def test_render_qr_image_leaves_a_quiet_zone_of_at_least_four_modules(url):
+    box_size = 4
+    image = Image.open(BytesIO(render_qr_image(url, box_size=box_size))).convert("L")
+
+    left, top, right, bottom = ImageOps.invert(image).getbbox()
+    margins = (left, top, image.width - right, image.height - bottom)
+    # ISO/IEC 18004: four modules; MT v150 §13.8.1: 10% of the width in all.
+    assert min(margins) >= MIN_QUIET_ZONE_MODULES * box_size
+    assert (margins[0] + margins[2]) / image.width >= 0.10
+
+
+@pytest.mark.parametrize(
+    ("modules", "quiet_zone"), [(21, 4), (72, 4), (73, 5), (177, 10)]
+)
+def test_quiet_zone_grows_to_ten_percent_of_the_width(modules, quiet_zone):
+    assert quiet_zone_modules(modules) == quiet_zone
+    assert 2 * quiet_zone / (modules + 2 * quiet_zone) >= 0.10

@@ -3,6 +3,10 @@
 Layout follows Manual Tecnico v150 section 13.4. Spanish only, no
 per-tenant branding. The PDF is built from extract_kude_data so the same
 structured snapshot powers both the PDF and the JSON endpoint.
+
+MT v150 §13.3 (p. 194) for KuDE of several pages: every page shows its
+number over the total ("2/5"), the totals go on the last page and the QR
+is printed, at least, on the first page.
 """
 
 from __future__ import annotations
@@ -42,7 +46,10 @@ T_FOOTER = 7
 PAGE_W = 210
 MARGIN_X = 10
 MARGIN_TOP = 10
+MARGIN_BOTTOM = 14  # keeps the footer band free of content
+FOOTER_Y = -10  # footer band, measured from the bottom edge
 CONTENT_W = PAGE_W - 2 * MARGIN_X  # 190
+QR_SIZE = 32  # MT v150 §13.8.1: at least 25 mm
 
 # Spacing scale
 GAP_XS = 1.2
@@ -56,15 +63,36 @@ LH_BODY = 4.4
 LH_ROOMY = 5
 
 
+class _KudePdf(FPDF):
+    """A4 KuDE page whose footer numbers it over the total pages."""
+
+    #: Printed in the footer of the page being closed when it is set; the
+    #: renderer sets it right before output, so only the last page shows it.
+    closing_notice: str | None = None
+
+    def footer(self) -> None:
+        self.set_y(FOOTER_Y)
+        self.set_font("Helvetica", "I", T_FOOTER)
+        self.set_text_color(*MUTED)
+        if self.closing_notice:
+            self.set_x(MARGIN_X)
+            self.cell(CONTENT_W, 4, _safe(self.closing_notice), align="C")
+        self.set_x(MARGIN_X)
+        # MT v150 §13.3: page number over the total, e.g. "2/5".
+        self.cell(CONTENT_W, 4, f"Página {self.page_no()}/{{nb}}", align="R")
+        self.set_text_color(*INK)
+
+
 def render_kude_pdf(*, document: Document, emitter: Emitter) -> bytes:
     """Build the KuDE PDF for one signed document."""
 
     data = extract_kude_data(document=document, emitter=emitter)["kude"]
 
-    pdf = FPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=12)
-    pdf.add_page()
+    pdf = _KudePdf(orientation="P", unit="mm", format="A4")
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=MARGIN_BOTTOM)
     pdf.set_margins(left=MARGIN_X, top=MARGIN_TOP, right=MARGIN_X)
+    pdf.add_page()
     pdf.set_text_color(*INK)
 
     _draw_title_bar(pdf, data)
@@ -81,11 +109,13 @@ def render_kude_pdf(*, document: Document, emitter: Emitter) -> bytes:
         _section_divider(pdf)
         _draw_associated_section(pdf, data)
     _section_divider(pdf)
+    # MT v150 §13.3: the QR goes, at least, on the first page, so it is
+    # drawn before the items, which may take several pages.
+    _draw_consulta_qr(pdf, data)
+    _section_divider(pdf)
     _draw_items_table(pdf, data)
     _draw_totals_block(pdf, data)
-    _section_divider(pdf)
-    _draw_consulta_qr(pdf, data)
-    _draw_footer_notice(pdf)
+    pdf.closing_notice = _CLOSING_NOTICE
 
     raw = pdf.output()
     if isinstance(raw, (bytes, bytearray)):
@@ -359,28 +389,21 @@ _ITEM_WIDTHS = [16, 50, 12, 14, 22, 16, 18, 18, 24]
 _ITEM_ALIGNS = ["L", "L", "C", "R", "R", "R", "R", "R", "R"]
 
 
+_ITEM_HEADER_H = 5.5
+_ITEM_ROW_H = 4.8
+
+
 def _draw_items_table(pdf: FPDF, data: dict) -> None:
     items = data["items"]
     _draw_section_label(pdf, "Detalle", x=MARGIN_X, w=CONTENT_W, y=pdf.get_y())
     pdf.set_y(pdf.get_y() + 0.5)
-
-    # Header row
-    pdf.set_fill_color(*ACCENT)
-    pdf.set_text_color(*ACCENT_TEXT)
-    pdf.set_font("Helvetica", "B", T_LABEL + 0.5)
-    pdf.set_x(MARGIN_X)
-    for header, width, align in zip(
-        _ITEM_HEADERS, _ITEM_WIDTHS, _ITEM_ALIGNS, strict=True
-    ):
-        pdf.cell(width, 5.5, header, fill=True, align=align if align != "L" else "C")
-    pdf.ln(5.5)
-
-    pdf.set_text_color(*INK)
-    pdf.set_font("Helvetica", "", T_BODY_SMALL)
-    pdf.set_draw_color(*BORDER)
-    pdf.set_line_width(0.15)
+    _draw_items_header(pdf)
 
     for index, item in enumerate(items):
+        if not _fits(pdf, _ITEM_ROW_H):
+            # Break between rows, never inside one, and repeat the header.
+            pdf.add_page()
+            _draw_items_header(pdf)
         zebra = index % 2 == 1
         if zebra:
             pdf.set_fill_color(*ZEBRA)
@@ -403,15 +426,38 @@ def _draw_items_table(pdf: FPDF, data: dict) -> None:
         for value, width, align in zip(cells, _ITEM_WIDTHS, _ITEM_ALIGNS, strict=True):
             pdf.cell(
                 width,
-                4.8,
+                _ITEM_ROW_H,
                 _truncate(_safe(value), width),
                 border="B",
                 align=align,
                 fill=True,
             )
-        pdf.ln(4.8)
+        pdf.ln(_ITEM_ROW_H)
 
     pdf.ln(GAP_S)
+
+
+def _draw_items_header(pdf: FPDF) -> None:
+    pdf.set_fill_color(*ACCENT)
+    pdf.set_text_color(*ACCENT_TEXT)
+    pdf.set_font("Helvetica", "B", T_LABEL + 0.5)
+    pdf.set_x(MARGIN_X)
+    for header, width, align in zip(
+        _ITEM_HEADERS, _ITEM_WIDTHS, _ITEM_ALIGNS, strict=True
+    ):
+        pdf.cell(
+            width,
+            _ITEM_HEADER_H,
+            header,
+            fill=True,
+            align=align if align != "L" else "C",
+        )
+    pdf.ln(_ITEM_HEADER_H)
+
+    pdf.set_text_color(*INK)
+    pdf.set_font("Helvetica", "", T_BODY_SMALL)
+    pdf.set_draw_color(*BORDER)
+    pdf.set_line_width(0.15)
 
 
 # ---------- Totals block --------------------------------------------------
@@ -434,6 +480,11 @@ def _draw_totals_block(pdf: FPDF, data: dict) -> None:
         ("Liquidación IVA 10%", t["liquidacion_iva_10"]),
         ("Total IVA", t["total_iva"]),
     ]
+    total_h = 8.5
+    # MT v150 §13.3: the totals go on the last page, so the block is never
+    # split; nothing is drawn after it.
+    if not _fits(pdf, len(rows) * LH_BODY + 1 + total_h):
+        pdf.add_page()
     pdf.set_font("Helvetica", "", T_BODY_SMALL)
     pdf.set_text_color(*INK)
     for label, value in rows:
@@ -446,7 +497,6 @@ def _draw_totals_block(pdf: FPDF, data: dict) -> None:
         )
 
     # Total general highlight
-    total_h = 8.5
     y = pdf.get_y() + 1
     pdf.set_fill_color(*ACCENT)
     pdf.rect(block_x, y, block_w, total_h, style="F")
@@ -470,7 +520,7 @@ def _draw_consulta_qr(pdf: FPDF, data: dict) -> None:
     cdc_groups = " ".join(data["cdc"]["groups"])
 
     top = pdf.get_y()
-    qr_size = 32
+    qr_size = QR_SIZE
     qr_x = MARGIN_X
     info_x = MARGIN_X + qr_size + 5
     info_w = CONTENT_W - qr_size - 5
@@ -500,15 +550,7 @@ def _draw_consulta_qr(pdf: FPDF, data: dict) -> None:
     pdf.set_y(bottom + GAP_S)
 
 
-# ---------- Footer notice -------------------------------------------------
-
-
-def _draw_footer_notice(pdf: FPDF) -> None:
-    pdf.set_y(280)
-    pdf.set_font("Helvetica", "I", T_FOOTER)
-    pdf.set_text_color(*MUTED)
-    pdf.cell(0, 4, "Información Fiscal Auxiliar - SIFEN PARAGUAY", align="C")
-    pdf.set_text_color(*INK)
+_CLOSING_NOTICE = "Información Fiscal Auxiliar - SIFEN PARAGUAY"
 
 
 # ---------- Helpers -------------------------------------------------------
@@ -555,6 +597,10 @@ def _label_caps(pdf: FPDF, label: str) -> None:
     pdf.set_text_color(*MUTED)
     pdf.cell(0, 3.2, _safe(label).upper(), new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(*INK)
+
+
+def _fits(pdf: FPDF, height: float) -> bool:
+    return pdf.get_y() + height <= pdf.page_break_trigger
 
 
 def _section_divider(pdf: FPDF) -> None:
