@@ -1461,7 +1461,7 @@
         "properties": {
           "cancelled": {
             "default": false,
-            "description": "True si xContEv tiene una cancelacion registrada del CDC.",
+            "description": "`true` si xContEv tiene una cancelación registrada del CDC.",
             "title": "Cancelled",
             "type": "boolean"
           },
@@ -1478,7 +1478,7 @@
                 "type": "null"
               }
             ],
-            "description": "xContenDE tal como lo envio el SIFEN (contenedor rContDe).",
+            "description": "xContenDE tal como lo envió el SIFEN (contenedor rContDe).",
             "title": "Content Xml"
           },
           "document_id": {
@@ -1536,11 +1536,11 @@
                 "type": "null"
               }
             ],
-            "description": "dProtAut del DTE leido del contenedor.",
+            "description": "dProtAut del DTE leído del contenedor.",
             "title": "Sifen Protocol"
           },
           "status": {
-            "description": "found (0422: el CDC es un DTE aprobado), not_found_or_not_approved (0420: no existe o no esta aprobado) o error (cualquier otro codigo).",
+            "description": "`found` (0422: el CDC es un DTE aprobado), `not_found_or_not_approved` (0420: no existe o no está aprobado) o `error` (cualquier otro código).",
             "title": "Status",
             "type": "string"
           }
@@ -5613,7 +5613,7 @@
             "title": "Cdc"
           },
           "kind": {
-            "description": "Tipo de evento: cancelacion, inutilizacion, notificacion_recepcion, conformidad, disconformidad, desconocimiento, endoso, transporte o nominacion.",
+            "description": "Tipo de evento: `cancelacion`, `inutilizacion`, `notificacion_recepcion`, `conformidad`, `disconformidad`, `desconocimiento`, `endoso`, `transporte` o `nominacion`.",
             "title": "Kind",
             "type": "string"
           },

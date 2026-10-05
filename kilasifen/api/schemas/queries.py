@@ -32,9 +32,9 @@ class RegisteredEventResponse(BaseModel):
 
     kind: str = Field(
         description=(
-            "Tipo de evento: cancelacion, inutilizacion, notificacion_recepcion, "
-            "conformidad, disconformidad, desconocimiento, endoso, transporte o "
-            "nominacion."
+            "Tipo de evento: `cancelacion`, `inutilizacion`, "
+            "`notificacion_recepcion`, `conformidad`, `disconformidad`, "
+            "`desconocimiento`, `endoso`, `transporte` o `nominacion`."
         )
     )
     cdc: str | None
@@ -48,22 +48,23 @@ class DocumentQueryResponse(BaseModel):
     cdc: str
     status: str = Field(
         description=(
-            "found (0422: el CDC es un DTE aprobado), not_found_or_not_approved "
-            "(0420: no existe o no esta aprobado) o error (cualquier otro codigo)."
+            "`found` (0422: el CDC es un DTE aprobado), "
+            "`not_found_or_not_approved` (0420: no existe o no está aprobado) o "
+            "`error` (cualquier otro código)."
         )
     )
     result_code: str | None
     result_message: str | None
     content_xml: str | None = Field(
-        description="xContenDE tal como lo envio el SIFEN (contenedor rContDe)."
+        description="xContenDE tal como lo envió el SIFEN (contenedor rContDe)."
     )
     processed_at: datetime | None
     sifen_protocol: str | None = Field(
-        default=None, description="dProtAut del DTE leido del contenedor."
+        default=None, description="dProtAut del DTE leído del contenedor."
     )
     cancelled: bool = Field(
         default=False,
-        description="True si xContEv tiene una cancelacion registrada del CDC.",
+        description="`true` si xContEv tiene una cancelación registrada del CDC.",
     )
     events: list[RegisteredEventResponse] = Field(
         default_factory=list,
