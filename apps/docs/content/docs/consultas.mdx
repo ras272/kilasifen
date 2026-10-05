@@ -49,13 +49,17 @@ depende del estado del documento:
 
 El PDF imprime el código QR en la primera página, numera las páginas como
 `n/total`, muestra la fecha de inicio del timbrado como `DD-MM-AAAA`
-(NT 10) y, si la moneda no es PYG, el total en guaraníes (`dTotalGs`). Los
-montos se imprimen redondeados para leerlos: los guaraníes sin decimales y
-las otras monedas con dos (el XML conserva hasta ocho decimales).
+(NT 10) y, si la moneda no es PYG, el total en guaraníes (`dTotalGs`).
+Cantidades y montos se imprimen con todos los dígitos del XML firmado, sin
+redondear: el KuDE no puede mostrar información que no esté en el XML y
+tiene que coincidir con el DTE (MT v150 §13.2 y §6.6). Sólo cambian los
+separadores: un IVA de `952.38095238` se imprime `952,38095238`. Los totales
+muestran también el subtotal exonerado y, cuando no son cero, el redondeo y
+la comisión, así los subtotales impresos suman como en el XML.
 
 `/kude/data` devuelve los mismos datos con el texto literal del XML firmado
 (montos con todos sus decimales, fechas `AAAA-MM-DD`): si armás tu propio
-KuDE con ellos, aplicá esas mismas reglas de impresión.
+KuDE con ellos, imprimí cada monto completo, sin redondearlo.
 `totales.total_general_operacion` es `dTotGralOpe`, en la moneda de la
 operación, y `totales.total_general_guaranies` es `dTotalGs` cuando la
 moneda no es PYG (o `dTotGralOpe` en PYG). `qr.url` es el `dCarQR` del XML.

@@ -7,10 +7,16 @@ structured snapshot powers both the PDF and the JSON endpoint.
 MT v150 §13.3 (p. 194) for KuDE of several pages: every page shows its
 number over the total ("2/5"), the totals go on the last page and the QR
 is printed, at least, on the first page.
+
+MT v150 §13.2 (p. 193) and §6.6 (p. 27): the KuDE carries nothing that is
+not in the signed XML and matches the DTE, so numbers print every digit of
+their XML literal (``formatting.format_decimal``); they shrink or continue
+on the next line inside their cell, but are never rounded or cut.
 """
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from typing import Iterable
 
@@ -21,7 +27,7 @@ from kilasifen.domain.emitters.models import Emitter
 from kilasifen.infrastructure.kude.data_extractor import extract_kude_data
 from kilasifen.infrastructure.kude.formatting import (
     GUARANI,
-    format_amount,
+    format_decimal,
     format_kude_date,
 )
 from kilasifen.infrastructure.kude.qr_generator import render_qr_image
@@ -46,6 +52,8 @@ T_BODY_SMALL = 7.5
 T_LABEL = 6.8
 T_TOTAL_BIG = 13
 T_FOOTER = 7
+#: Smallest size a number shrinks to before it continues on the next line.
+T_MIN_NUMBER = 5
 
 # Page geometry (mm)
 PAGE_W = 210
@@ -55,6 +63,8 @@ MARGIN_BOTTOM = 14  # keeps the footer band free of content
 FOOTER_Y = -10  # footer band, measured from the bottom edge
 CONTENT_W = PAGE_W - 2 * MARGIN_X  # 190
 QR_SIZE = 32  # MT v150 §13.8.1: at least 25 mm
+
+_MM_PER_POINT = 25.4 / 72
 
 # Spacing scale
 GAP_XS = 1.2
@@ -256,14 +266,11 @@ def _draw_emisor_block(pdf: FPDF, data: dict) -> None:
         right_w,
     )
     if timbrado.get("fecha_fin_vigencia"):
-        # C009 only exists in pre-v150 XML (DE_v150.xsd comments it out).
+        # C009 only exists in pre-v150 XML (DE_v150.xsd comments it out). NT
+        # 10 §1.11 changes the KuDE format of C008 only, so C009 keeps its
+        # XML text (AAAA-MM-DD, MT v150 C009 p. 64).
         pdf.set_x(right_x)
-        _draw_kv_row(
-            pdf,
-            "Fin vigencia",
-            format_kude_date(timbrado["fecha_fin_vigencia"]),
-            right_w,
-        )
+        _draw_kv_row(pdf, "Fin vigencia", timbrado["fecha_fin_vigencia"], right_w)
     pdf.set_x(right_x)
     _draw_kv_row(pdf, "Tipo", timbrado["tipo_documento_label"], right_w)
 
@@ -295,7 +302,7 @@ def _draw_general_and_receptor(pdf: FPDF, data: dict) -> None:
     _draw_kv_row(pdf, "Moneda", moneda_text, half)
     pdf.set_x(MARGIN_X)
     if g.get("tipo_cambio"):
-        _draw_kv_row(pdf, "T. cambio", g["tipo_cambio"], half)
+        _draw_kv_row(pdf, "T. cambio", format_decimal(g["tipo_cambio"]), half)
         pdf.set_x(MARGIN_X)
     if g.get("tipo_transaccion_label"):
         _draw_kv_row(pdf, "Operación", g["tipo_transaccion_label"], half)
@@ -404,54 +411,69 @@ _ITEM_ALIGNS = ["L", "L", "C", "R", "R", "R", "R", "R", "R"]
 
 _ITEM_HEADER_H = 5.5
 _ITEM_ROW_H = 4.8
-#: P. Unit., Desc., Exentas, 5% and 10%.
-_ITEM_AMOUNT_COLUMNS = frozenset({4, 5, 6, 7, 8})
+#: Cant., P. Unit., Desc., Exentas, 5% and 10%: XML decimal literals.
+_ITEM_NUMBER_COLUMNS = frozenset({3, 4, 5, 6, 7, 8})
 
 
 def _draw_items_table(pdf: FPDF, data: dict) -> None:
     items = data["items"]
-    # Item amounts are in the currency of the operation (D015).
-    moneda = data["datos_generales"]["moneda"]
     _draw_section_label(pdf, "Detalle", x=MARGIN_X, w=CONTENT_W, y=pdf.get_y())
     pdf.set_y(pdf.get_y() + 0.5)
     _draw_items_header(pdf)
 
     for index, item in enumerate(items):
-        if not _fits(pdf, _ITEM_ROW_H):
-            # Break between rows, never inside one, and repeat the header.
-            pdf.add_page()
-            _draw_items_header(pdf)
-        zebra = index % 2 == 1
-        if zebra:
-            pdf.set_fill_color(*ZEBRA)
-        else:
-            pdf.set_fill_color(255, 255, 255)
-        pdf.set_x(MARGIN_X)
         cells = [
             item.get("codigo") or "",
             item.get("descripcion") or "",
             item.get("unidad_medida", {}).get("label")
             or item.get("unidad_medida", {}).get("codigo")
             or "",
-            item.get("cantidad") or "",
-            format_amount(item.get("precio_unitario"), moneda),
-            format_amount(item.get("descuento"), moneda),
-            format_amount(item.get("valor_exento"), moneda),
-            format_amount(item.get("valor_5"), moneda),
-            format_amount(item.get("valor_10"), moneda),
+            # Quantity and amounts in the currency of the operation (D015),
+            # digit for digit (MT v150 §13.2).
+            format_decimal(item.get("cantidad")),
+            format_decimal(item.get("precio_unitario")),
+            format_decimal(item.get("descuento")),
+            format_decimal(item.get("valor_exento")),
+            format_decimal(item.get("valor_5")),
+            format_decimal(item.get("valor_10")),
         ]
-        for column, (value, width, align) in enumerate(
-            zip(cells, _ITEM_WIDTHS, _ITEM_ALIGNS, strict=True)
-        ):
+        layout = []
+        for column, (value, width) in enumerate(zip(cells, _ITEM_WIDTHS, strict=True)):
             text = _safe(value)
-            if column in _ITEM_AMOUNT_COLUMNS:
-                # Amounts are never cut: a long one prints smaller instead.
-                _set_font_to_fit(pdf, text, width, size=T_BODY_SMALL)
+            if column in _ITEM_NUMBER_COLUMNS:
+                layout.append(_fit_number(pdf, text, width, size=T_BODY_SMALL))
             else:
-                text = _truncate(text, width)
-            pdf.cell(width, _ITEM_ROW_H, text, border="B", align=align, fill=True)
-            pdf.set_font("Helvetica", "", T_BODY_SMALL)
-        pdf.ln(_ITEM_ROW_H)
+                layout.append((T_BODY_SMALL, [_truncate(text, width)]))
+        row_h = max(
+            _ITEM_ROW_H,
+            max(len(lines) * _line_height(size) for size, lines in layout),
+        )
+        if not _fits(pdf, row_h):
+            # Break between rows, never inside one, and repeat the header.
+            pdf.add_page()
+            _draw_items_header(pdf)
+        if index % 2 == 1:
+            pdf.set_fill_color(*ZEBRA)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+        top = pdf.get_y()
+        x = MARGIN_X
+        for (size, lines), width, align in zip(
+            layout, _ITEM_WIDTHS, _ITEM_ALIGNS, strict=True
+        ):
+            pdf.set_xy(x, top)
+            _draw_box_lines(
+                pdf,
+                width=width,
+                height=row_h,
+                lines=lines,
+                size=size,
+                align=align,
+                border="B",
+                fill=True,
+            )
+            x += width
+        pdf.set_xy(MARGIN_X, top + row_h)
 
     pdf.ln(GAP_S)
 
@@ -492,42 +514,78 @@ def _draw_totals_block(pdf: FPDF, data: dict) -> None:
     # F002-F017 and F014 are in the currency of the operation (D015).
     moneda = data["datos_generales"]["moneda"]
 
+    value_w = _TOTALS_BLOCK_W - _TOTALS_LABEL_W
     rows = [
-        ("Subtotal exentas", t["subtotal_exentas"]),
-        ("Subtotal 5%", t["subtotal_5"]),
-        ("Subtotal 10%", t["subtotal_10"]),
-        ("Total operación", t["total_operacion"]),
-        ("Liquidación IVA 5%", t["liquidacion_iva_5"]),
-        ("Liquidación IVA 10%", t["liquidacion_iva_10"]),
-        ("Total IVA", t["total_iva"]),
+        (
+            label,
+            _fit_number(pdf, _safe(format_decimal(value)), value_w, size=T_BODY_SMALL),
+        )
+        for label, value in _total_rows(t)
+    ]
+    heights = [
+        max(LH_BODY, len(lines) * _line_height(size)) for _, (size, lines) in rows
     ]
     bands = _total_bands(t, moneda)
     # MT v150 §13.3: the totals go on the last page, so the block is never
     # split; nothing is drawn after it.
-    if not _fits(pdf, len(rows) * LH_BODY + len(bands) * (_TOTAL_BAND_H + 1)):
+    if not _fits(pdf, sum(heights) + len(bands) * (_TOTAL_BAND_H + 1)):
         pdf.add_page()
 
     block_x = MARGIN_X + CONTENT_W - _TOTALS_BLOCK_W
-    value_w = _TOTALS_BLOCK_W - _TOTALS_LABEL_W
-    pdf.set_font("Helvetica", "", T_BODY_SMALL)
-    pdf.set_text_color(*INK)
-    for label, value in rows:
-        pdf.set_x(block_x)
+    for (label, (size, lines)), height in zip(rows, heights, strict=True):
+        top = pdf.get_y()
+        pdf.set_xy(block_x, top)
+        pdf.set_font("Helvetica", "", T_BODY_SMALL)
         pdf.set_text_color(*MUTED)
-        pdf.cell(_TOTALS_LABEL_W, LH_BODY, _safe(label), align="L")
+        pdf.cell(_TOTALS_LABEL_W, height, _safe(label), align="L")
         pdf.set_text_color(*INK)
-        pdf.cell(
-            value_w,
-            LH_BODY,
-            _safe(format_amount(value, moneda)),
-            align="R",
-            new_x="LMARGIN",
-            new_y="NEXT",
+        _draw_box_lines(
+            pdf, width=value_w, height=height, lines=lines, size=size, align="R"
         )
+        pdf.set_xy(MARGIN_X, top + height)
 
     for label, value in bands:
         _draw_total_band(pdf, label=label, value=value, x=block_x)
     pdf.set_y(pdf.get_y() + GAP_S)
+
+
+def _total_rows(totales: dict) -> list[tuple[str, str]]:
+    """Subtotals and totals of MT v150 §13.4.3 (p. 196) that the XML carries.
+
+    F003 dSubExo is printed when the XML has it, and F013 dRedon and F025
+    dComi when they are not zero, so the printed figures add up as the XML
+    does: F008 = F002 + F003 + F004 + F005 and F014 = F008 - F013 + F025
+    (MT v150 pp. 102-104). MT v150 §13.5 lets the KuDE show other fields of
+    the XML.
+    """
+
+    rows = [("Subtotal exentas", totales["subtotal_exentas"])]
+    if totales.get("subtotal_exonerado") is not None:
+        rows.append(("Subtotal exonerado", totales["subtotal_exonerado"]))
+    rows += [
+        ("Subtotal 5%", totales["subtotal_5"]),
+        ("Subtotal 10%", totales["subtotal_10"]),
+        ("Total operación", totales["total_operacion"]),
+    ]
+    if _is_not_zero(totales.get("redondeo")):
+        rows.append(("Redondeo", totales["redondeo"]))
+    if _is_not_zero(totales.get("comision")):
+        rows.append(("Comisión", totales["comision"]))
+    rows += [
+        ("Liquidación IVA 5%", totales["liquidacion_iva_5"]),
+        ("Liquidación IVA 10%", totales["liquidacion_iva_10"]),
+        ("Total IVA", totales["total_iva"]),
+    ]
+    return rows
+
+
+def _is_not_zero(literal: str | None) -> bool:
+    if literal is None:
+        return False
+    try:
+        return Decimal(literal) != 0
+    except InvalidOperation:
+        return True
 
 
 def _total_bands(totales: dict, moneda: str) -> list[tuple[str, str]]:
@@ -540,14 +598,11 @@ def _total_bands(totales: dict, moneda: str) -> list[tuple[str, str]]:
 
     general = totales["total_general_operacion"]
     if moneda.strip().upper() == GUARANI:
-        return [("TOTAL EN GUARANÍES", format_amount(general, GUARANI))]
-    bands = [(f"TOTAL {moneda}", format_amount(general, moneda))]
+        return [("TOTAL EN GUARANÍES", format_decimal(general))]
+    bands = [(f"TOTAL {moneda}", format_decimal(general))]
     if totales.get("total_general_guaranies"):
         bands.append(
-            (
-                "TOTAL EN GUARANÍES",
-                format_amount(totales["total_general_guaranies"], GUARANI),
-            )
+            ("TOTAL EN GUARANÍES", format_decimal(totales["total_general_guaranies"]))
         )
     return bands
 
@@ -561,9 +616,19 @@ def _draw_total_band(pdf: FPDF, *, label: str, value: str, x: float) -> None:
     pdf.set_font("Helvetica", "B", 9.5)
     pdf.set_xy(x + 2, y + 1.7)
     pdf.cell(_TOTALS_LABEL_W - 2, _TOTAL_BAND_H - 3, _safe(label), align="L")
-    pdf.set_xy(x + _TOTALS_LABEL_W, y + 1.2)
-    _set_font_to_fit(pdf, _safe(value), value_w - 2, style="B", size=T_TOTAL_BIG)
-    pdf.cell(value_w - 2, _TOTAL_BAND_H - 2, _safe(value), align="R")
+    size, lines = _fit_number(
+        pdf, _safe(value), value_w - 2, style="B", size=T_TOTAL_BIG
+    )
+    pdf.set_xy(x + _TOTALS_LABEL_W, y)
+    _draw_box_lines(
+        pdf,
+        width=value_w - 2,
+        height=_TOTAL_BAND_H,
+        lines=lines,
+        size=size,
+        style="B",
+        align="R",
+    )
     pdf.set_text_color(*INK)
     pdf.set_y(y + _TOTAL_BAND_H)
 
@@ -659,13 +724,78 @@ def _label_caps(pdf: FPDF, label: str) -> None:
 def _set_font_to_fit(
     pdf: FPDF, text: str, width: float, *, style: str = "", size: float
 ) -> None:
-    """Use Helvetica at ``size``, or smaller (down to 5 pt) until ``text`` fits."""
+    """Use Helvetica at ``size``, or smaller (down to T_MIN_NUMBER) until it fits."""
 
     pdf.set_font("Helvetica", style, size)
     padding = 2 * pdf.c_margin
-    while size > 5 and pdf.get_string_width(text) + padding > width:
+    while size > T_MIN_NUMBER and pdf.get_string_width(text) + padding > width:
         size -= 0.5
         pdf.set_font("Helvetica", style, size)
+
+
+def _fit_number(
+    pdf: FPDF, text: str, width: float, *, style: str = "", size: float
+) -> tuple[float, list[str]]:
+    """Font size and lines that print the number ``text`` whole in ``width``.
+
+    MT v150 §13.2: a printed number keeps every digit of the XML. It shrinks
+    down to T_MIN_NUMBER and, if it still does not fit, its decimals continue
+    on the next line (and a part wider than the cell on the following ones);
+    it is never cut or rounded.
+    """
+
+    _set_font_to_fit(pdf, text, width, style=style, size=size)
+    fitted = pdf.font_size_pt
+    available = width - 2 * pdf.c_margin
+    if pdf.get_string_width(text) <= available:
+        return fitted, [text]
+    integer, comma, fraction = text.partition(",")
+    lines: list[str] = []
+    for part in (integer, comma + fraction):
+        line = ""
+        for char in part:
+            if line and pdf.get_string_width(line + char) > available:
+                lines.append(line)
+                line = char
+            else:
+                line += char
+        if line:
+            lines.append(line)
+    return fitted, lines
+
+
+def _line_height(size: float) -> float:
+    """Height in mm of one line of text at ``size`` points."""
+
+    return size * _MM_PER_POINT * 1.2
+
+
+def _draw_box_lines(
+    pdf: FPDF,
+    *,
+    width: float,
+    height: float,
+    lines: list[str],
+    size: float,
+    align: str,
+    style: str = "",
+    border: str | int = 0,
+    fill: bool = False,
+) -> None:
+    """Draw ``lines`` centred in a box at the current position, then move right."""
+
+    x, y = pdf.get_x(), pdf.get_y()
+    pdf.set_font("Helvetica", style, size)
+    if len(lines) == 1:
+        pdf.cell(width, height, lines[0], border=border, align=align, fill=fill)
+    else:
+        pdf.cell(width, height, "", border=border, fill=fill)
+        line_h = _line_height(size)
+        first = y + (height - line_h * len(lines)) / 2
+        for number, line in enumerate(lines):
+            pdf.set_xy(x, first + number * line_h)
+            pdf.cell(width, line_h, line, align=align)
+    pdf.set_xy(x + width, y)
 
 
 def _fits(pdf: FPDF, height: float) -> bool:

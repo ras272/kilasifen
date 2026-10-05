@@ -234,6 +234,7 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 | `qr_generator.build_sifen_qr_url(...)` | `kilasifen.engine.sdk.fiscal.build_qr_payload_from_signed_xml(signed_xml=..., id_csc=..., csc=..., environment=...)["url"]` |
 | `/kude/data` → `totales.total_general_guaranies` como total de la operación | `totales.total_general_operacion` (F014); `total_general_guaranies` es F023 fuera de PYG |
 | Descargar el KuDE de un documento rechazado, fallido o cancelado | Sin reemplazo: responde `409 documents.kude_not_available`; corregir y reenviar, inutilizar o emitir una nota de crédito |
+| Un KuDE propio armado con `/kude/data` que redondea los montos | Imprimir el literal completo de cada monto (MT v150 §13.2 y §6.6), cambiando sólo los separadores |
 
 ### Added
 
@@ -440,7 +441,13 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   *quiet zone* de al menos 4 módulos y del 10% del ancho (MT v150 §13.3 y
   §13.8.1), «Total en Guaraníes» = F023 fuera de PYG (MT v150 §13.4.3,
   NT 08), fecha de inicio del timbrado como DD-MM-AAAA (NT 10 §1.11) y
-  montos impresos sin decimales en guaraníes y con dos en otras monedas.
+  cantidades y montos impresos con todos los dígitos del XML firmado, sin
+  redondear (MT v150 §13.2 y §6.6): sólo cambian los separadores (`.` de
+  miles, `,` decimal) y un número largo sigue en la línea siguiente en lugar
+  de cortarse. Los totales muestran también F003 (`dSubExo`) y, cuando no
+  son cero, F013 (`dRedon`) y F025 (`dComi`), para que los subtotales
+  impresos sumen como en el XML; `/kude/data` suma
+  `totales.subtotal_exonerado`, `totales.redondeo` y `totales.comision`.
 - El constructor de XML tipado ya no rechaza textos que contienen «ds:»
   (por ejemplo «Brands: X»): sólo una etiqueta o declaración `ds:` real.
 - Docker Compose: `worker`, `outbox` y `migrate` deshabilitan el

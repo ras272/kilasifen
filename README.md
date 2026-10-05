@@ -533,9 +533,9 @@ Hallazgos de una auditoría reciente, que se corregirán a continuación:
   no se validan localmente.
 - Varios detalles del QR y del KuDE no están determinados por la SET (si la
   validación 2500 compara los montos como texto, el parámetro del receptor
-  B2F sin documento, cómo se mide la *quiet zone*, cómo se redondean los
-  montos impresos): la plataforma aplica las opciones documentadas en las
-  notas 12-14 de `docs/normativa/matriz.md`.
+  B2F sin documento, cómo se mide la *quiet zone*, qué separadores usan los
+  montos impresos, que no se redondean): la plataforma aplica las opciones
+  documentadas en las notas 12-14 de `docs/normativa/matriz.md`.
 - `TransmisionDE.enviar_de(rde, sign=True)` firma sin recalcular `dCarQR`;
   el QR tiene que calcularse sobre el XML firmado con
   `generate_dcarqr_from_signed_xml`.

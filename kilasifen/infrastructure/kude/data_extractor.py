@@ -326,11 +326,15 @@ def _build_totales(g_tot: ET.Element, *, moneda: str) -> dict:
         total_guaranies = _text(g_tot, "dTotalGs")
     return {
         "subtotal_exentas": _text(g_tot, "dSubExe") or "0",
+        # F003 and F025 are 0-1 (MT v150 pp. 102-104): None when absent.
+        "subtotal_exonerado": _text(g_tot, "dSubExo"),
         "subtotal_5": _text(g_tot, "dSub5") or "0",
         "subtotal_10": _text(g_tot, "dSub10") or "0",
         "total_operacion": _text(g_tot, "dTotOpe") or "0",
         "total_descuentos": _text(g_tot, "dTotDesc") or "0",
         "total_anticipos": _text(g_tot, "dTotAnt") or "0",
+        "redondeo": _text(g_tot, "dRedon") or "0",
+        "comision": _text(g_tot, "dComi"),
         "total_general_operacion": total_general,
         "total_general_guaranies": total_guaranies,
         "liquidacion_iva_5": _text(g_tot, "dIVA5") or "0",

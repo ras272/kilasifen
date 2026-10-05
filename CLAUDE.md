@@ -415,9 +415,11 @@ Plataforma (hallazgos de auditoría pendientes):
   un reenvío conserva el XML firmado, pero no hay forma de regenerar el QR
   de un DE ya emitido con el CSC vigente en su `dFeEmiDE` (2501, NT 10 §4).
 - Las opciones de QR y KuDE que la SET no determina (forma de los montos
-  en el QR, receptor B2F sin documento, *quiet zone*, redondeo de los montos
-  impresos, KuDE de un DTE cancelado) están en las notas 12-14 de
-  `docs/normativa/matriz.md`.
+  en el QR, receptor B2F sin documento, *quiet zone*, separadores de los
+  montos impresos, ítem gravado parcial en las columnas del KuDE, KuDE de un
+  DTE cancelado) están en las notas 12-14 de `docs/normativa/matriz.md`. El
+  KuDE imprime cada número con todos los dígitos del XML (MT v150 §13.2):
+  nunca redondearlo.
 - Qué deben sumar los pagos y el alcance del redondeo a 50 Gs siguen NO
   DETERMINADOS por la SET (notas 9 y 10 de `docs/normativa/matriz.md`); la
   plataforma aplica la opción documentada allí.

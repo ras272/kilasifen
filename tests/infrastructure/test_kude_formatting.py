@@ -1,40 +1,49 @@
-"""Human formatting of KuDE amounts and dates (DECISIONES F51)."""
+"""How the KuDE prints XML values (MT v150 §13.2, §6.6 and §13.4; NT 10)."""
 
 import pytest
 
-from kilasifen.infrastructure.kude.formatting import format_amount, format_kude_date
+from kilasifen.infrastructure.kude.formatting import format_decimal, format_kude_date
 
 
 @pytest.mark.parametrize(
-    ("literal", "currency", "printed"),
+    ("literal", "printed"),
     [
-        # IVA with 8 decimals (NT 13) prints as whole guaranies.
-        ("9090.90909091", "PYG", "9.091"),
-        ("90909.09090909", "PYG", "90.909"),
-        ("100000", "PYG", "100.000"),
-        ("1234567.5", "PYG", "1.234.568"),
-        ("0.4", "PYG", "0"),
-        ("0", "PYG", "0"),
-        # Other currencies print with two decimals, rounded half up.
-        ("120.5", "USD", "120,50"),
-        ("10.95454546", "USD", "10,95"),
-        ("1234.565", "USD", "1.234,57"),
-        ("0", "EUR", "0,00"),
-        # Without a currency the amount is treated as guaranies.
-        ("2500.5", None, "2.501"),
+        # MT v150 §13.4 examples: "." groups thousands ("110.000").
+        ("110000", "110.000"),
+        ("100", "100"),
+        ("1234567", "1.234.567"),
+        ("0", "0"),
+        # IVA with 8 decimals (NT 13) keeps every decimal: nc_parcial golden.
+        ("952.38095238", "952,38095238"),
+        ("2727.27272727", "2.727,27272727"),
+        ("3679.65367965", "3.679,65367965"),
+        # Trailing zeros are digits of the literal too.
+        ("120.50", "120,50"),
+        ("120.5", "120,5"),
+        ("0.4", "0,4"),
+        # Longest tMontoBase literal (15 integer digits, 8 decimals).
+        ("999999999999999.99999999", "999.999.999.999.999,99999999"),
     ],
 )
-def test_amounts_print_rounded_from_the_exact_xml_value(literal, currency, printed):
-    assert format_amount(literal, currency) == printed
+def test_numbers_print_every_digit_of_the_xml_literal(literal, printed):
+    assert format_decimal(literal) == printed
+
+
+@pytest.mark.parametrize("literal", ["952.38095238", "2727.27272727", "120.50"])
+def test_only_the_separators_change(literal):
+    printed = format_decimal(literal)
+
+    assert printed.replace(".", "").replace(",", ".") == literal
 
 
 @pytest.mark.parametrize("literal", ["", None, "  "])
-def test_missing_amounts_print_nothing(literal):
-    assert format_amount(literal, "PYG") == ""
+def test_missing_numbers_print_nothing(literal):
+    assert format_decimal(literal) == ""
 
 
-def test_a_text_that_is_not_a_number_is_printed_unchanged():
-    assert format_amount("N/A", "PYG") == "N/A"
+@pytest.mark.parametrize("literal", ["N/A", "1e5", "1.2.3", "-"])
+def test_a_text_that_is_not_a_decimal_literal_is_printed_unchanged(literal):
+    assert format_decimal(literal) == literal
 
 
 def test_stamping_start_date_prints_as_dd_mm_aaaa():
