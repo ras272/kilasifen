@@ -9,7 +9,7 @@
     "typescript"
   ],
   "license": "MIT",
-  "author": "KilaSifen",
+  "author": "The KilaSifen Authors",
   "type": "module",
   "sideEffects": false,
   "files": [

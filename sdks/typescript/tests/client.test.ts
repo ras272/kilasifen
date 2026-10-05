@@ -71,7 +71,7 @@ describe("KilaSifen client", () => {
       {
         external_id: "sale-123",
         factura: {
-          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
           items: [{ descripcion: "Producto", cantidad: 1, precio_unitario: 1000 }],
         },
       },
@@ -98,6 +98,37 @@ describe("KilaSifen client", () => {
     });
   });
 
+  it.each([
+    "approved",
+    "approved_with_observation",
+    "rejected",
+    "transport_timeout",
+    "accepted_but_response_lost",
+  ] as const)("accepts the %s sandbox outcome of the API contract", async (outcome) => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      success({ document: DOCUMENT, job: JOB }, 201),
+    );
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+    });
+
+    await client.facturas.create(
+      "emitter_1",
+      {
+        factura: {
+          cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
+          items: [{ descripcion: "Sandbox", cantidad: 1, precio_unitario: 1000 }],
+        },
+      },
+      { sandboxOutcome: outcome },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(new Headers(init?.headers).get("X-Kila-Test-Outcome")).toBe(outcome);
+  });
+
   it("sends a closed sandbox outcome only when explicitly requested", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       success({ document: DOCUMENT, job: JOB }, 201),
@@ -112,7 +143,7 @@ describe("KilaSifen client", () => {
       "emitter_1",
       {
         factura: {
-          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
           items: [{ descripcion: "Sandbox", cantidad: 1, precio_unitario: 1000 }],
         },
       },
@@ -136,7 +167,7 @@ describe("KilaSifen client", () => {
       "emitter_1",
       {
         factura: {
-          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
           items: [{ descripcion: "Sandbox", cantidad: 1, precio_unitario: 1000 }],
         },
       },
@@ -155,7 +186,7 @@ describe("KilaSifen client", () => {
       "emitter_1",
       {
         factura: {
-          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
           items: [{ descripcion: "Sandbox", cantidad: 1, precio_unitario: 1000 }],
         },
       },
@@ -175,7 +206,7 @@ describe("KilaSifen client", () => {
 
     await client.notasCredito.create("emitter_1", {
       nota_credito: {
-        cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+        cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
         documento_asociado: { cdc: "01800123450001001000000012026010112345678901" },
         items: [{ descripcion: "Descuento", cantidad: 1, precio_unitario: 500 }],
       },
@@ -202,7 +233,7 @@ describe("KilaSifen client", () => {
         external_id: "recupero-77",
         nota_debito: {
           motivo_emision: "recupero_costo",
-          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
           documento_asociado: {
             cdc: "01800123450001001000000012026010112345678901",
           },
@@ -287,7 +318,7 @@ describe("KilaSifen client", () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(success({ documents: [], pagination: { limit: 25, offset: 0, count: 0 } }))
       .mockResolvedValueOnce(success({ document_query: { document_id: "doc_1", cdc: "1", status: "found" } }))
-      .mockResolvedValueOnce(success({ ruc_query: { queried_ruc: "80069563", status: "found", taxpayer: null } }));
+      .mockResolvedValueOnce(success({ ruc_query: { queried_ruc: "80025298", status: "found", taxpayer: null } }));
     const client = new KilaSifen({
       apiKey: "sk_test_123",
       baseUrl: "https://api.example.test",
@@ -296,13 +327,13 @@ describe("KilaSifen client", () => {
 
     await client.documents.list("emitter_1", { limit: 25, externalId: "sale/1" });
     await client.documents.query("emitter_1", "doc_1");
-    await client.queries.ruc("emitter_1", "80069563-1");
+    await client.queries.ruc("emitter_1", "80025298-5");
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://api.example.test/v1/emitters/emitter_1/documents?limit=25&external_id=sale%2F1",
     );
     expect(fetchMock.mock.calls[1]?.[0]).toContain("/queries/documents/doc_1");
-    expect(fetchMock.mock.calls[2]?.[0]).toContain("/queries/ruc/80069563-1");
+    expect(fetchMock.mock.calls[2]?.[0]).toContain("/queries/ruc/80025298-5");
   });
 
   it("creates typed cancellation and inutilization events", async () => {
@@ -424,6 +455,12 @@ describe("KilaSifen client", () => {
               details: {
                 errors: [
                   { loc: ["body", "factura", "items"], message: "Field required", type: "missing" },
+                  {
+                    loc: ["body", "factura"],
+                    message: "Value error, documents.cliente.tipo_contribuyente_required",
+                    type: "value_error",
+                    code: "documents.cliente.tipo_contribuyente_required",
+                  },
                 ],
               },
             },
@@ -445,7 +482,14 @@ describe("KilaSifen client", () => {
       correlationId: "corr_422",
       retryable: false,
       details: {
-        errors: [{ loc: ["body", "factura", "items"], message: "Field required", type: "missing" }],
+        errors: [
+          { loc: ["body", "factura", "items"], message: "Field required", type: "missing" },
+          {
+            loc: ["body", "factura"],
+            type: "value_error",
+            code: "documents.cliente.tipo_contribuyente_required",
+          },
+        ],
       },
     });
   });
