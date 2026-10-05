@@ -254,7 +254,24 @@ def get_document_xml(
     return Response(content=xml_content, media_type="application/xml")
 
 
-@router.get("/emitters/{emitter_id}/documents/{document_id}/kude")
+_KUDE_AVAILABILITY = (
+    "Disponible para documentos aprobados y para los que siguen en camino "
+    "al SIFEN (`queued`, `processing`, `submitting`, `submitted`, "
+    "`retry_pending`, `reconciliation_required`): con validación posterior el "
+    "KuDE puede entregarse antes de la aprobación, pero sólo vale si el SIFEN "
+    "aprueba el DE (MT v150 §6.2 y §6.4). Un documento `rejected`, `failed`, "
+    "`inutilized` o `cancelled`, o en cualquier otro estado, responde `409 "
+    "documents.kude_not_available` con el estado en `details.internal_status`."
+)
+
+
+@router.get(
+    "/emitters/{emitter_id}/documents/{document_id}/kude",
+    description=(
+        "KuDE en PDF del XML firmado, con el código QR en la primera página. "
+        + _KUDE_AVAILABILITY
+    ),
+)
 def get_document_kude(
     emitter_id: str,
     document_id: str,
@@ -277,6 +294,10 @@ def get_document_kude(
 @router.get(
     "/emitters/{emitter_id}/documents/{document_id}/kude/data",
     response_model=SuccessEnvelope,
+    description=(
+        "Datos del KuDE leídos del XML firmado; montos y fechas van con el "
+        "texto literal del XML. " + _KUDE_AVAILABILITY
+    ),
 )
 def get_document_kude_data(
     emitter_id: str,

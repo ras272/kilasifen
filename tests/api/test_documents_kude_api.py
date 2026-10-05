@@ -109,6 +109,64 @@ def _store_platform_signed_xml(
         repository.save(replace(stored, signed_xml=signed_xml))
 
 
+def _set_internal_status(client: TestClient, *, document_id: str, status: str) -> None:
+    with session_scope(client.app.state.session_factory) as session:
+        repository = SqlAlchemyDocumentRepository(session)
+        stored = repository.get(document_id)
+        assert stored is not None
+        repository.save(replace(stored, internal_status=status))
+
+
+@pytest.mark.parametrize("route", ["kude", "kude/data"])
+@pytest.mark.parametrize("status", ["rejected", "failed", "inutilized", "cancelled"])
+def test_kude_is_refused_for_documents_that_are_not_a_valid_dte(
+    client: TestClient, route: str, status: str
+):
+    # MT v150 §6.4; Dto 872/2023 Arts. 26, 30 and 31 (DECISIONES F51).
+    emitter = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
+    document = _create_document_with_signed_xml(
+        client,
+        emitter_id=emitter["id"],
+        scenario_name="factura_b2b_iva10",
+        document_type="factura",
+    )
+    _set_internal_status(client, document_id=document["id"], status=status)
+
+    response = client.get(
+        f"/v1/emitters/{emitter['id']}/documents/{document['id']}/{route}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 409, response.text
+    error = response.json()["error"]
+    assert error["code"] == "documents.kude_not_available"
+    assert error["details"] == {"internal_status": status}
+
+
+@pytest.mark.parametrize(
+    "status", ["approved", "approved_with_observation", "submitted", "retry_pending"]
+)
+def test_kude_is_available_for_approved_and_in_flight_documents(
+    client: TestClient, status: str
+):
+    emitter = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
+    document = _create_document_with_signed_xml(
+        client,
+        emitter_id=emitter["id"],
+        scenario_name="factura_b2b_iva10",
+        document_type="factura",
+    )
+    _set_internal_status(client, document_id=document["id"], status=status)
+
+    response = client.get(
+        f"/v1/emitters/{emitter['id']}/documents/{document['id']}/kude",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.content[:5] == b"%PDF-"
+
+
 def test_get_kude_returns_pdf(client: TestClient):
     emitter = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
     document = _create_document_with_signed_xml(

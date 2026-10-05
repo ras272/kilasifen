@@ -21,6 +21,10 @@ from kilasifen.application.jobs.service import JobService
 from kilasifen.application.sandbox.service import SandboxOutcomePolicy
 from kilasifen.domain.common.errors import ConflictError, NotFoundError
 from kilasifen.domain.common.paraguay_time import paraguay_now
+from kilasifen.domain.documents.kude_availability import (
+    is_kude_available,
+    normalize_kude_status,
+)
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.sandbox import SandboxOutcome
@@ -300,6 +304,16 @@ class DocumentService:
         document = self.get_document_for_emitter(
             emitter_id=emitter_id, document_id=document_id
         )
+        if not is_kude_available(document.internal_status):
+            # MT v150 §6.4; Dto 872/2023 Arts. 26, 30 and 31 (F51).
+            raise ConflictError(
+                "documents.kude_not_available",
+                details={
+                    "internal_status": normalize_kude_status(
+                        document.internal_status
+                    )
+                },
+            )
         emitter = self.emitter_repository.get(emitter_id)
         if emitter is None:
             raise NotFoundError("emitters.not_found")
