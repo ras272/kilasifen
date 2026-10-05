@@ -87,7 +87,7 @@ def extract_kude_data(*, document: Document, emitter: Emitter) -> dict:
     documento_asociado = _build_documento_asociado(de)
     adjustment_note = _build_adjustment_note(g_dtip) if i_tide in {"5", "6"} else None
     items = _build_items(g_dtip)
-    totales = _build_totales(g_tot)
+    totales = _build_totales(g_tot, moneda=datos_generales["moneda"])
     qr_url = _text(g_fuera, "dCarQR") if g_fuera is not None else None
 
     return {
@@ -315,15 +315,28 @@ def _build_items(g_dtip: ET.Element) -> list[dict]:
     return out
 
 
-def _build_totales(g_tot: ET.Element) -> dict:
+def _build_totales(g_tot: ET.Element, *, moneda: str) -> dict:
+    total_general = _text(g_tot, "dTotGralOpe") or "0"
+    # MT v150 §13.4.3 "Total en Guaraníes": F014 when the operation is in
+    # PYG; otherwise F023 dTotalGs (NT 08 §1.2), never recomputed here, so a
+    # foreign-currency XML without F023 has none (None).
+    if moneda.strip().upper() == "PYG":
+        total_guaranies = total_general
+    else:
+        total_guaranies = _text(g_tot, "dTotalGs")
     return {
         "subtotal_exentas": _text(g_tot, "dSubExe") or "0",
+        # F003 and F025 are 0-1 (MT v150 pp. 102-104): None when absent.
+        "subtotal_exonerado": _text(g_tot, "dSubExo"),
         "subtotal_5": _text(g_tot, "dSub5") or "0",
         "subtotal_10": _text(g_tot, "dSub10") or "0",
         "total_operacion": _text(g_tot, "dTotOpe") or "0",
         "total_descuentos": _text(g_tot, "dTotDesc") or "0",
         "total_anticipos": _text(g_tot, "dTotAnt") or "0",
-        "total_general_guaranies": _text(g_tot, "dTotGralOpe") or "0",
+        "redondeo": _text(g_tot, "dRedon") or "0",
+        "comision": _text(g_tot, "dComi"),
+        "total_general_operacion": total_general,
+        "total_general_guaranies": total_guaranies,
         "liquidacion_iva_5": _text(g_tot, "dIVA5") or "0",
         "liquidacion_iva_10": _text(g_tot, "dIVA10") or "0",
         "total_iva": _text(g_tot, "dTotIVA") or "0",

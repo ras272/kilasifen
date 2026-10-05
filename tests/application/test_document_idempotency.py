@@ -5,7 +5,7 @@ import pytest
 
 from kilasifen.application.documents.service import DocumentService
 from kilasifen.application.jobs.service import JobService
-from kilasifen.domain.common.errors import ConflictError
+from kilasifen.domain.common.errors import ConflictError, UnprocessableEntityError
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.repositories.documents import (
@@ -21,6 +21,7 @@ from kilasifen.infrastructure.db.session import (
     session_scope,
 )
 from kilasifen.testing.database import managed_test_database_url
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile
 
 
 def test_create_document_is_idempotent_per_emitter_and_key(tmp_path) -> None:
@@ -44,6 +45,7 @@ def test_create_document_is_idempotent_per_emitter_and_key(tmp_path) -> None:
             csc_id=None,
             created_at=_now(),
             updated_at=_now(),
+            fiscal_profile=fictional_fiscal_profile(),
         )
 
         with session_scope(session_factory) as session:
@@ -185,6 +187,52 @@ def test_numbered_typed_document_replay_ignores_server_assigned_number(
             "existing_document_id": first.id,
             "mismatched_parameters": ["payload"],
         }
+        # dCodSeg is drawn once at creation (MT v150 §10.3) and the replay
+        # returns the same document, so the CDC can never change.
+        assert first.security_code is not None
+        assert len(first.security_code) == 9 and first.security_code.isdigit()
+        assert int(first.security_code) != 42
+        assert replay.security_code == first.security_code
+        assert "codigo_seguridad" not in first.payload_snapshot["typed_contract"][
+            "payload"
+        ]
+
+
+def test_caller_security_code_equal_to_the_assigned_number_is_rejected(
+    tmp_path,
+) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="document_security_code_equals_number",
+    ) as database_url:
+        engine = build_engine(database_url)
+        Base.metadata.create_all(engine)
+        session_factory = build_session_factory(engine)
+
+        with session_scope(session_factory) as session:
+            emitter_repository = SqlAlchemyEmitterRepository(session)
+            emitter_repository.save(_emitter())
+            service = DocumentService(
+                document_repository=SqlAlchemyDocumentRepository(session),
+                emitter_repository=emitter_repository,
+                job_service=JobService(SqlAlchemyJobRepository(session)),
+                numbering_service=_FixedNumberingService(),
+            )
+            with pytest.raises(UnprocessableEntityError) as raised:
+                service.create_document(
+                    emitter_id="emitter-1",
+                    external_id=None,
+                    idempotency_key=None,
+                    document_type="factura",
+                    payload_snapshot={
+                        "typed_contract": {
+                            "contract": "factura_v1",
+                            "payload": {"codigo_seguridad": "000000042"},
+                        }
+                    },
+                )
+
+        assert raised.value.code == "documents.codigo_seguridad.equals_numero"
 
 
 def test_create_document_enqueues_job_when_queue_is_configured(tmp_path) -> None:
@@ -209,6 +257,7 @@ def test_create_document_enqueues_job_when_queue_is_configured(tmp_path) -> None
             csc_id=None,
             created_at=_now(),
             updated_at=_now(),
+            fiscal_profile=fictional_fiscal_profile(),
         )
 
         with session_scope(session_factory) as session:
@@ -270,6 +319,7 @@ def _emitter() -> Emitter:
         csc_id=None,
         created_at=_now(),
         updated_at=_now(),
+        fiscal_profile=fictional_fiscal_profile(),
     )
 
 

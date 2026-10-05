@@ -77,7 +77,11 @@ def test_document_creation_maps_emitter_lock_timeout_to_503(
         json={
             "idempotency_key": "lock-timeout-document",
             "factura": {
-                "cliente": {"ruc": "80000001-1", "razon_social": "CLIENTE"},
+                "cliente": {
+                    "ruc": "80025298-5",
+                    "razon_social": "CLIENTE FICTICIO",
+                    "tipo_contribuyente": 2,
+                },
                 "items": [
                     {"descripcion": "Servicio", "cantidad": 1, "precioUnitario": 1}
                 ],

@@ -146,6 +146,119 @@ revisar la guía de migración de esta sección.
   `document.inutilized`, y ya no como `document.updated`. Un endpoint
   suscrito solo a `document.updated` deja de recibirlas: hay que sumar esos
   tipos a `event_subscriptions` (o dejarlo suscrito a todos).
+- Correcciones fiscales del emisor, el receptor y las fechas (cambios de
+  semántica dentro de `/v1` justificados por la normativa vigente; fuentes en
+  `docs/normativa/matriz.md`):
+  - Un emisor necesita un **perfil fiscal** (`fiscal_profile`: tipo de
+    contribuyente, 1 a 9 actividades económicas, domicilio con departamento,
+    ciudad, teléfono y email, overrides por establecimiento) para crear
+    documentos tipados: sin él la creación responde
+    `422 emitters.fiscal_profile_required`. Los emisores existentes migran
+    con el perfil vacío. `gEmis` y el CDC salen sólo del emisor y su perfil.
+  - `POST/PATCH /v1/emitters` validan la identidad: RUC de 3-8 caracteres con
+    el patrón `tRuc`, `dv` igual al módulo 11, `legal_name` de 4-255, CSC de
+    32 alfanuméricos e IdCSC de 1-9999 (se guarda con 4 dígitos).
+  - En los documentos, `emisor.ruc`, `emisor.dv`, `emisor.razon_social` y
+    `tipo_contribuyente` sólo se aceptan si coinciden con el emisor
+    (`422 documents.emisor.identity_mismatch`); los campos de dirección,
+    contacto y actividad de `emisor` quedan obsoletos y se ignoran.
+  - `cliente`: con RUC son obligatorios `tipo_contribuyente` y un DV válido
+    (como `RUC-DV` o `dv`); un no contribuyente sólo puede ser B2C o B2F y
+    siempre informa su documento (también en B2F); el innominado sólo vale
+    en facturas B2C, se escribe con `0` y `Sin Nombre` y se rechaza desde
+    7.000.000 Gs; la dirección es obligatoria en B2F y opcional en B2C, y con
+    dirección fuera de B2F se exigen `departamento`, `ciudad` y
+    `descripcion_ciudad`; `pais_descripcion` se toma del XSD;
+    `compras_publicas` pasa a ser opcional en B2G.
+  - `responsable_generacion.tipo_documento` es obligatorio y admite 1-4 o 9
+    (este último con `descripcion_tipo_documento`); `cargo` de 4-100.
+  - `codigo_seguridad` ya no toma la constante `123456789`: si se omite se
+    genera uno aleatorio al crear el documento; `0` o un valor igual al
+    número asignado responden `422`.
+  - `fecha_emision` fuera de la ventana del SIFEN (más de 720 h atrás, más de
+    120 h adelante o antes del 2018-11-22) responde `422`; una fecha a más de
+    120 h de la transmisión crea el documento con un aviso en el nuevo campo
+    `fiscal_warnings`.
+  - `dFecFirma` pasa a ser la hora real de la firma y no la fecha de emisión.
+- Correcciones fiscales de montos, IVA, redondeo, pagos y monedas (MT v150
+  con las NT 01, 08, 10 y 13; detalle y fuentes en
+  `docs/normativa/matriz.md`). Un único calculador
+  (`kilasifen.domain.documents.totals`) sirve a la API y al XML:
+  - **El redondeo deja de aplicarse por defecto.** El nuevo campo
+    `redondeo` vale `ninguno` (dRedon 0) o `multiplo_50`, que lleva
+    `dTotOpe` hacia abajo a un múltiplo de 50 Gs y sólo se admite en PYG
+    (`422 documents.redondeo.only_pyg`; con un total menor a 50 Gs,
+    `documents.redondeo.total_below_50`). Antes se redondeaba siempre, y las
+    monedas extranjeras a 0,50.
+  - **Descuento global por porcentaje.** El nuevo campo
+    `porcentaje_descuento_global` es `dPorcDescTotal` y se aplica a cada
+    ítem como `dDescGloItem = porcentaje * precio_unitario / 100` (NT 01).
+    `items[].descuento_global` pasa a ser opcional y, si se envía, tiene que
+    coincidir con ese cálculo con una variación de 0,8
+    (`422 documents.items.descuento_global_mismatch`). Antes `dPorcDescTotal`
+    mezclaba los descuentos particulares.
+  - `proporcion_gravada` es obligatoria y está entre 0 y 100 (sin
+    incluirlos) en `gravado_parcial`; ya no tiene default 100. Un ítem
+    exento o exonerado se escribe con `dPropIVA` 0 y `dBasExe` 0, y el
+    gravado parcial con las fórmulas de la NT 13.
+  - El IVA por ítem (`dBasGravIVA`, `dLiqIVAItem`, `dBasExe`) y sus totales
+    llevan hasta 8 decimales también en PYG, en lugar de redondearse a
+    guaraníes enteros campo por campo; los subtotales se informan con 0 cuando
+    algún ítem los necesita.
+  - Pagos: `formas_pago[].moneda` y `cuotas[].moneda` toman por defecto la
+    moneda de la operación (antes PYG); `dTiCamTiPag` se informa si y sólo si
+    el pago no es en PYG (con el `tipo_cambio` de la operación como default
+    si el pago va en esa moneda); un pago en PYG con `tipo_cambio` responde
+    `422`. En contado los pagos tienen que sumar `dTotGralOpe` (tolerancia
+    0,50). Un crédito con `monto_entrega_inicial` exige `formas_pago` con los
+    pagos de esa entrega, que tienen que sumarla; sin entrega inicial no se
+    admiten `formas_pago`.
+  - Las descripciones de moneda (`dDesMoneOpe`, `dDMoneTiPag`, `dDMoneCuo`)
+    son el nombre ISO oficial del XSD (`Guarani`, `US Dollar`); `moneda`
+    tiene que ser un código de `Monedas_v150.xsd` cuyo nombre quepa en 20
+    caracteres, y `formas_pago[].moneda_descripcion` queda obsoleto y se
+    ignora.
+  - `tipo_impuesto` 2 (ISC) se rechaza: el contrato tipado no lo puede
+    expresar (1902).
+  - Montos con más decimales que el XSD (8; 4 en pagos y tipos de cambio)
+    responden `422`.
+- Código QR y KuDE (MT v150 §13.3, §13.4 y §13.8; NT 08, 10 y 23; Decreto
+  872/2023; detalle y fuentes en `docs/normativa/matriz.md`):
+  - **Una sola implementación del QR**, con los valores literales del XML
+    firmado: `kilasifen.engine.sdk.fiscal`. `build_qr_payload` deja de
+    formatear los montos con 8 decimales (`300000.00000000`): usa el texto
+    del campo (un `int` o un `Decimal` que se imprima igual) y `0` si falta,
+    y reproduce el ejemplo oficial del MT (hash `97ddbb3c…74ed`). Rechaza
+    con `ValueError` un `float`, una fecha D002 sin hora, un D206 con DV o
+    fuera del patrón `tRuc` y un D210 fuera de `tdNumDocId`. Sin
+    `d_ruc_rec` ni `d_num_id_rec` lanza `ValueError` (antes escribía
+    `dRucRec=0`): el receptor no se supone, porque un QR que no coincide con
+    el XML se rechaza (2500).
+  - `build_qr_payload_from_signed_xml` toma `nVersion` de `dVerFor`
+    (`qr_version` pasa a ser opcional y, si se envía, tiene que coincidir),
+    el `DigestValue` de `rDE/Signature` y escribe `dTotIVA=0` cuando el DE
+    no trae F017 (antes la autofactura lanzaba `ValueError`).
+  - Ninguna de las dos devuelve más `hash_input`, que contenía el CSC.
+  - Se elimina `kilasifen.infrastructure.kude.qr_generator.build_sifen_qr_url`:
+    la plataforma calcula el `dCarQR` con el engine. Con un receptor no
+    contribuyente el QR pasa a llevar `dNumIDRec` (antes `dRucRec`), un
+    `IdCSC` guardado como `1` se escribe `0001` y un CSC que no tenga 32
+    alfanuméricos deja el documento `failed` por validación local
+    (`documents.qr.invalid`).
+  - `GET .../kude` y `.../kude/data` responden
+    `409 documents.kude_not_available` (con `details.internal_status`) para
+    documentos `rejected`, `failed`, `inutilized`, `cancelled` o en un estado
+    desconocido; siguen disponibles para `approved*` y para los que van en
+    camino al SIFEN.
+  - En `/kude/data`, `totales.total_general_guaranies` pasa a ser
+    `dTotalGs` (F023) cuando la moneda no es PYG (antes era `dTotGralOpe`);
+    el nuevo `totales.total_general_operacion` es `dTotGralOpe`.
+- Plataforma: `KilaSifenPayloadMapper.map_document` y
+  `build_typed_document_xml` aceptan `signed_at` (y el builder
+  `test_emitter_name_literal`); `KilaSifenEmissionEngine` acepta `clock`.
+  `Emitter`, `EmitterSummary` y `Document` suman campos con valor por
+  defecto (`fiscal_profile`, `security_code`, `fiscal_warnings`) y
+  `EmitterRepository` suma `get_summary`.
 
 ### Guía de migración
 
@@ -175,6 +288,25 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 | `poll_lote_status(..., pending_codes=(...))` | Sin reemplazo: el único código pendiente es `0361` |
 | `PollingConfig()` con 2 s, 120 s y 60 intentos | `PollingConfig()` con 600 s, 48 h y sin tope; en pruebas, `PollingConfig(initial_delay_seconds=0, interval_seconds=0)` o `clock`/`sleep` simulados |
 | `poll_dte_async_status(...)` con `PENDIENTE`, `EN PROCESO` y `PROCESANDO` por defecto | Pasar `pending_tokens=(...)` explícitos; el servicio es experimental |
+| Emisor sin datos fiscales; dirección, teléfono, email y actividad enviados en `factura.emisor` | Cargar una vez `fiscal_profile` con `PATCH /v1/emitters/{emitter_id}` con los datos del RUC (Marangatu); dejar de enviarlos en cada documento |
+| `cliente` con RUC sin `tipo_contribuyente` (se asumía 2) ni DV | Enviar `tipo_contribuyente` y el RUC como `RUC-DV` (o `dv`) |
+| Consumidor innominado con `nombre` y dirección inventados | `{"naturaleza": 2, "tipo_operacion": 2, "tipo_documento_identidad": 5}`; nombre y número los pone la plataforma |
+| `codigo_seguridad` fijo en cada documento | Omitirlo (la plataforma genera uno aleatorio) o enviar un valor aleatorio distinto por documento |
+| `responsable_generacion` sin `tipo_documento` (se asumía 1) | Enviar `tipo_documento` (1-4 o 9 con `descripcion_tipo_documento`) |
+| Total redondeado automáticamente a múltiplos de 50 Gs | Enviar `"redondeo": "multiplo_50"` cuando corresponda (sólo PYG); por defecto ya no se redondea |
+| `items[].descuento_global` como monto libre por ítem | Enviar `porcentaje_descuento_global` en el documento; la plataforma calcula `dDescGloItem` |
+| `gravado_parcial` sin `proporcion_gravada` (se asumía 100) | Enviar `proporcion_gravada` entre 0 y 100 (sin incluirlos) |
+| Crédito con `monto_entrega_inicial` sin pagos | Enviar `formas_pago` en `condicion_operacion` con los pagos de esa entrega |
+| `formas_pago[].moneda` omitida en una operación en otra moneda (se asumía PYG) | Omitida vale la moneda de la operación; enviar `moneda` y `tipo_cambio` si el pago es en otra |
+| `formas_pago[].moneda_descripcion` | Sin efecto: se escribe el nombre oficial de la moneda |
+| `build_qr_payload(..., d_tot_gral_ope=300000.0)` o una fecha `AAAA-MM-DD` | Pasar el texto de F014/F017 y de D002 (`AAAA-MM-DDThh:mm:ss`) del XML firmado, o directamente `build_qr_payload_from_signed_xml` |
+| `build_qr_payload(...)` / `generate_dcarqr(...)` sin receptor | `d_ruc_rec=<D206>` si `iNatRec` es 1; `d_num_id_rec=<D210>` si es 2, o `"0"` para el innominado o un DE sin D210 |
+| `payload["hash_input"]` de `build_qr_payload*` | Sin reemplazo: el CSC no se devuelve; usar `step1` y `c_hash_qr` |
+| `qr_generator.build_sifen_qr_url(...)` | `kilasifen.engine.sdk.fiscal.build_qr_payload_from_signed_xml(signed_xml=..., id_csc=..., csc=..., environment=...)["url"]` |
+| `/kude/data` → `totales.total_general_guaranies` como total de la operación | `totales.total_general_operacion` (F014); `total_general_guaranies` es F023 fuera de PYG |
+| Descargar el KuDE de un documento rechazado, fallido o cancelado | Sin reemplazo: responde `409 documents.kude_not_available`. Un DE rechazado o fallido se corrige y se reenvía, o se inutiliza su número; un DTE cancelado no tiene un KuDE válido que entregar |
+| Documentos firmados por una versión anterior que siguen en `retry_pending` o `reconciliation_required` | Se reenvían tal cual, con el `dCarQR` de esa versión (por ejemplo `dRucRec` con el D210 de un no contribuyente), que el SIFEN puede rechazar con 2500. Dejar que terminen antes de actualizar; si alguno se rechaza, tratarlo como cualquier rechazo (MT v150 §6.5; Decreto 872/2023 Art. 29) |
+| Un KuDE propio armado con `/kude/data` que redondea los montos | Imprimir el literal completo de cada monto (MT v150 §13.2 y §6.6), cambiando sólo los separadores |
 
 ### Added
 
@@ -185,6 +317,8 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   de administración.
 - `SifenClient`, fachada de alto nivel del SDK para envío, consultas y
   eventos.
+- `kilasifen.engine.sdk.catalogos.monedas()` y `descripcion_moneda()`: los
+  códigos ISO 4217 de `Monedas_v150.xsd` con su nombre oficial.
 - Registro de esquemas determinista para validar contra los XSD.
 - Utilidades de *polling* para lotes y para la consulta asíncrona de DTE.
 - Engine, lotes: `TransmisionDE.enviar_lote_xml` (y `SifenClient.enviar_lote_xml`)
@@ -433,6 +567,33 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   (1109 es por timbrado, MT v150 §12.4 C007).
 - Los códigos `1001`/`1002` y `0161`/`0162` se buscan en todos los
   `gResProc` de un rechazo, no solo en el primero.
+- Fiscal (DECISIONES F10-F14, F20-F22, F24, F30-F34): `dCodSeg` aleatorio con
+  CSPRNG y persistido por documento (MT v150 §10.3), `dFecFirma` con la hora
+  real de la firma y chequeos previos de 1004/2450 (RG 23/2019 Art. 13), ventana
+  de `dFeEmiDE` (1150/1151/1156), `gEmis` sin valores inventados y con la
+  misma fuente que el CDC (1000/0142/1101), receptor según las NT 03, 10, 23,
+  24 y 26, `gRespDE` según el XSD, RUC del certificado leído también del
+  SubjectAlternativeName con DV verificado (MT v150 §7.5) y hora oficial con
+  offset fijo UTC−03:00 (Ley 7354/2024). Migraciones `20261001_09`,
+  `20261001_10` y `20261001_11`.
+- Fiscal (DECISIONES F50-F51): QR con los literales del XML firmado y el
+  parámetro `dNumIDRec` para receptores no contribuyentes (MT v150 §13.8.2;
+  NT 23 §1.1); `dCarQR` de las cinco muestras del engine y del golden
+  `factura_b2c_iva_mixto` regenerados; el XML sin firmar lleva un marcador
+  neutro en `dCarQR` en lugar de un QR falso. KuDE con el QR en la primera
+  página, páginas `n/total`, filas y totales sin cortar entre páginas,
+  *quiet zone* de al menos 4 módulos y del 10% del ancho (MT v150 §13.3 y
+  §13.8.1), «Total en Guaraníes» = F023 fuera de PYG (MT v150 §13.4.3,
+  NT 08), fecha de inicio del timbrado como DD-MM-AAAA (NT 10 §1.11) y
+  cantidades y montos impresos con todos los dígitos del XML firmado, sin
+  redondear (MT v150 §13.2 y §6.6): sólo cambian los separadores (`.` de
+  miles, `,` decimal) y un número largo sigue en la línea siguiente en lugar
+  de cortarse. Los totales muestran también F003 (`dSubExo`) y, cuando no
+  son cero, F013 (`dRedon`) y F025 (`dComi`), para que los subtotales
+  impresos sumen como en el XML; `/kude/data` suma
+  `totales.subtotal_exonerado`, `totales.redondeo` y `totales.comision`.
+- El constructor de XML tipado ya no rechaza textos que contienen «ds:»
+  (por ejemplo «Brands: X»): sólo una etiqueta o declaración `ds:` real.
 - Docker Compose: `worker`, `outbox` y `migrate` deshabilitan el
   `HEALTHCHECK` HTTP (`/v1/health`) que heredaban de la imagen. Ninguno sirve
   HTTP, así que Docker los marcaba `unhealthy` aunque funcionaran. La API lo

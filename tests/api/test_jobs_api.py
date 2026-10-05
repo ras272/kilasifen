@@ -65,7 +65,7 @@ def second_emitter_id(client: TestClient) -> str:
         json={
             "external_id": "erp-otro",
             "ruc": "80111111",
-            "dv": "9",
+            "dv": "0",
             "legal_name": "OTRO EMISOR SA",
             "tax_environment": "test",
             "csc": None,
@@ -181,7 +181,7 @@ def test_list_jobs_can_filter_by_emitter(client: TestClient) -> None:
         json={
             "external_id": "erp-b",
             "ruc": "80111111",
-            "dv": "9",
+            "dv": "0",
             "legal_name": "OTRO EMISOR SA",
             "tax_environment": "test",
             "csc": None,
@@ -243,7 +243,7 @@ def test_list_jobs_without_emitter_filter_returns_system_wide_jobs(
         json={
             "external_id": "erp-b-global",
             "ruc": "80111111",
-            "dv": "9",
+            "dv": "0",
             "legal_name": "OTRO EMISOR SA",
             "tax_environment": "test",
             "csc": None,

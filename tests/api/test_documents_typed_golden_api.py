@@ -9,8 +9,11 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from kilasifen.api.app import create_app
+from kilasifen.api.deps import get_fiscal_clock
 from kilasifen.config import get_settings
+from kilasifen.domain.common.paraguay_time import PARAGUAY_TZ
 from kilasifen.domain.documents.models import Document
+from kilasifen.domain.emitters.fiscal_profile import fiscal_profile_from_dict
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine.firma import sign_xml
@@ -19,7 +22,9 @@ from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
 from kilasifen.infrastructure.sifen.mapper import KilaSifenPayloadMapper
 from kilasifen.testing.database import managed_test_database_url
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile_payload
 from kilasifen.testing.typed_contract_scenarios import (
+    GOLDEN_SIGNED_AT,
     TypedContractScenario,
     get_typed_contract_scenarios,
 )
@@ -58,7 +63,13 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[TestClie
         engine = build_engine(database_url)
         Base.metadata.create_all(engine)
 
-        with TestClient(create_app()) as test_client:
+        app = create_app()
+        # The scenarios are issued on 2026-04-25T10:00:00 and signed at
+        # GOLDEN_SIGNED_AT; creation happens at that same moment.
+        app.dependency_overrides[get_fiscal_clock] = lambda: lambda: (
+            GOLDEN_SIGNED_AT.replace(tzinfo=PARAGUAY_TZ)
+        )
+        with TestClient(app) as test_client:
             yield test_client
 
 
@@ -76,7 +87,7 @@ def test_typed_documents_api_scenarios_match_golden_and_isolation(
         client, external_id=f"erp-{scenario.name}-a", ruc="80024135", dv="5"
     )
     emitter_b = _create_emitter(
-        client, external_id=f"erp-{scenario.name}-b", ruc="80111111", dv="9"
+        client, external_id=f"erp-{scenario.name}-b", ruc="80111111", dv="0"
     )
 
     first = _create_typed_document(
@@ -173,6 +184,7 @@ def _create_emitter(client: TestClient, *, external_id: str, ruc: str, dv: str) 
             "tax_environment": "test",
             "csc": _TEST_CSC,
             "csc_id": _TEST_CSC_ID,
+            "fiscal_profile": fictional_fiscal_profile_payload(),
         },
     )
     assert response.status_code == 201
@@ -220,12 +232,14 @@ def _build_signed_xml_from_api_document(
         csc_id=_TEST_CSC_ID,
         created_at=_parse_datetime(emitter["created_at"]),
         updated_at=_parse_datetime(emitter["updated_at"]),
+        fiscal_profile=fiscal_profile_from_dict(emitter["fiscal_profile"]),
     )
     mapper = KilaSifenPayloadMapper()
     emission_input = mapper.map_document(
         document,
         emitter=emitter_obj,
         stamping=_build_stamping(emitter["id"]),
+        signed_at=GOLDEN_SIGNED_AT,
     )
     assert emission_input.generated_xml is not None
     assert emission_input.doc_id is not None

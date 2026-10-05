@@ -19,11 +19,16 @@ in a new ``rEnviDe`` with a fresh ``dId``.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from kilasifen.config import get_settings
+from kilasifen.domain.common.paraguay_time import paraguay_now, to_paraguay_wall_time
 from kilasifen.domain.common.sifen_results import classify_reception
+from kilasifen.domain.documents.fiscal_dates import transmission_warnings
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
@@ -37,6 +42,9 @@ from kilasifen.infrastructure.sifen.responses import (
     SifenMessage,
     read_reception_answer,
 )
+from kilasifen.infrastructure.sifen.signing_checks import assert_ready_to_sign
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -155,8 +163,14 @@ class KilaSifenEmissionEngine:
         mapper: KilaSifenPayloadMapper | None = None,
         deployment_environment: str = "test",
         transport: DocumentSubmissionTransport | None = None,
+        clock: Callable[[], datetime] = paraguay_now,
     ):
-        self.mapper = mapper or KilaSifenPayloadMapper()
+        # Without an explicit mapper the dNomEmi literal of the test
+        # environment comes from KILA_SIFEN_TEST_EMITTER_NAME_LITERAL (F13).
+        self.mapper = mapper or KilaSifenPayloadMapper(
+            test_emitter_name_literal=get_settings().test_emitter_name_literal
+        )
+        self.clock = clock
         self.deployment_environment = deployment_environment
         self.transport = transport or KilaSifenDocumentTransport()
 
@@ -170,12 +184,18 @@ class KilaSifenEmissionEngine:
         stamping: Stamping,
     ) -> PreparedSubmission:
         _require_deployment_environment(emitter, self.deployment_environment)
+        now = self.clock()
+        # dFecFirma is the real signing time (MT v150 A004; RG 23/2019 Art. 13):
+        # the typed builder writes it right before the signature below.
         emission_input = self.mapper.map_document(
             document,
             emitter=emitter,
             stamping=stamping,
+            signed_at=to_paraguay_wall_time(now),
         )
         if emission_input.signed_xml:
+            # XML the platform signed in an earlier attempt travels unchanged
+            # and keeps its dFecFirma: it is never signed again.
             signed_xml = emission_input.signed_xml
             generated_xml = emission_input.generated_xml or emission_input.signed_xml
         else:
@@ -184,6 +204,15 @@ class KilaSifenEmissionEngine:
                     "document payload must include generated_xml and doc_id"
                 )
             generated_xml = emission_input.generated_xml
+            dates = assert_ready_to_sign(
+                generated_xml,
+                now=now,
+                certificate_bytes=certificate_bytes,
+                certificate_password=certificate_password,
+            )
+            _log_extemporaneous_transmission(
+                document, emission=dates.emission, signed_at=dates.signature, now=now
+            )
             signed_xml = sign_xml(
                 generated_xml,
                 certificate_bytes,
@@ -250,6 +279,19 @@ def outcome_from_reception_body(body: bytes | str) -> SubmissionOutcome:
         processed_at=answer.processed_at,
         messages=answer.messages,
     )
+
+
+def _log_extemporaneous_transmission(
+    document: Document, *, emission: datetime, signed_at: datetime, now: datetime
+) -> None:
+    """Warn when SIFEN will approve with observation 1005 (MT v150 §6.2.1)."""
+
+    warnings = transmission_warnings(emission=emission, signed_at=signed_at, now=now)
+    if warnings:
+        logger.warning(
+            "documents.transmission.extemporaneous",
+            extra={"document_id": document.id, "fiscal_warnings": warnings},
+        )
 
 
 def _require_deployment_environment(emitter: Emitter, expected: str) -> None:

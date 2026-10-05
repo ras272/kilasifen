@@ -23,7 +23,7 @@ The revision id was 20261001_09 while the track was developed; it was
 renumbered so that it does not collide with another 20261001_09.
 
 Revision ID: 20261001_15
-Revises: 20260822_08
+Revises: 20261001_11
 Create Date: 2026-10-01 12:00:00
 """
 
@@ -34,7 +34,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision = "20261001_15"
-down_revision = "20260822_08"
+down_revision = "20261001_11"
 branch_labels = None
 depends_on = None
 

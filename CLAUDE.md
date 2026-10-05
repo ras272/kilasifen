@@ -278,7 +278,20 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   (`engine.sdk.validation`) antes de firmar; la validación descarta dos
   errores esperables (la `Signature` todavía ausente y un defecto conocido del
   XSD en `dEntCont`). No se emite a través del binding `RDe`, que tiene el
-  layout v141 (ver «Esquemas XSD»). El `generated_xml` del endpoint raw
+  layout v141 (ver «Esquemas XSD»). `gEmis` sale sólo del emisor y de su
+  perfil fiscal persistido (`domain/emitters/fiscal_profile.py`); `gDatRec`,
+  de `domain/documents/receiver.py`, que también usa la API; los montos de
+  `gCamItem`, `gTotSub` y `gCamCond` (IVA por ítem con las fórmulas de la
+  NT 13 y 8 decimales, subtotales, descuento global, redondeo opcional y
+  pagos), de `domain/documents/totals.py`, el mismo calculador que valida la
+  API; `dCodSeg` se
+  elige al crear el documento (`documents.security_code`) y `dFecFirma` es
+  la hora de la firma. Antes de firmar `dCarQR` lleva un marcador sin datos
+  fiscales (`DCARQR_PENDING_SIGNATURE`); después de firmar
+  `infrastructure/kude/xml_qr_injector.py` lo reemplaza con
+  `engine.sdk.fiscal.build_qr_payload_from_signed_xml`, la única
+  implementación del QR (literales del XML firmado). Las reglas y sus
+  fuentes están en `docs/normativa/matriz.md`. El `generated_xml` del endpoint raw
   deprecado pasa por `infrastructure/sifen/raw_xml_policy.py` al crearse
   (`DocumentService.create_raw_document`, con la política inyectada desde
   `api/deps.py` y aplicada después de la búsqueda idempotente)
@@ -404,13 +417,11 @@ mantener el mismo comportamiento; se corrigen en commits posteriores):
   de 1000 KB son decisiones NO DETERMINADO registradas en
   `docs/normativa/matriz.md`.
 - El único binding `RDe` tiene el layout v141 (sin `dSisFact`).
+- `TransmisionDE.enviar_de(rde, sign=True)` firma sin recalcular `dCarQR`,
+  que depende del `DigestValue` de la firma; la plataforma no lo usa.
 
 Plataforma (hallazgos de auditoría pendientes):
 
-- `codigo_seguridad` toma por defecto la constante `123456789`.
-- Dirección, teléfono, email y actividad del emisor reciben valores ficticios
-  si faltan en el payload.
-- El QR de producción usa siempre el parámetro `dRucRec`.
 - Una inutilización con resultado incierto se reenvía sin verificación
   previa, porque ningún servicio oficial permite consultarla; un `4066`
   posterior queda `reconciliation_required` para un operador. Lo mismo
@@ -433,6 +444,34 @@ Plataforma (hallazgos de auditoría pendientes):
   de un DTE cancelado, hora de aprobación por consulta, entre otros) siguen la
   opción documentada en `docs/normativa/matriz.md`; conviene confirmarlos en
   el ambiente de test de la SET.
+- `KilaSifenEmissionEngine` sin `mapper` lee
+  `KILA_SIFEN_TEST_EMITTER_NAME_LITERAL` con `get_settings()`; los workers
+  deberían pasar el literal explícito. El literal correcto del ambiente de
+  pruebas (MT 1263 frente a la Guía de Pruebas 2026) sigue NO DETERMINADO.
+- `infrastructure/sifen/typed_event_builder.py` todavía rechaza cualquier
+  texto que contenga «ds:» (el builder de documentos ya sólo rechaza markup
+  `ds:` real).
+- `establecimiento`/`punto` siguen con default `001` cuando el payload no los
+  trae.
+- Quedan defaults fiscales anteriores a la regla «ningún dato se inventa»:
+  contado con un pago en efectivo si no viene `condicion_operacion`
+  (`domain/documents/totals.py`), D011/D013/E011 e `iMotEmi` en 1, `dCodInt`
+  `ITEMnnn`, tasa 10 en `api/schemas/documents.py` y `dDesUniMed` `UNI` para
+  cualquier `cUniMed` (`typed_xml_builder.py`); con una unidad distinta de
+  77 sin `descripcion_unidad` el SIFEN rechaza con 1802 (MT v150 §12.4,
+  p. 174).
+- El emisor guarda un solo CSC sin historial. El QR se calcula al firmar y
+  un reenvío conserva el XML firmado, pero no hay forma de regenerar el QR
+  de un DE ya emitido con el CSC vigente en su `dFeEmiDE` (2501, NT 10 §4).
+- Las opciones de QR y KuDE que la SET no determina (forma de los montos
+  en el QR, receptor B2F sin documento, *quiet zone*, separadores de los
+  montos impresos, ítem gravado parcial en las columnas del KuDE, KuDE de un
+  DTE cancelado) están en las notas 12-14 de `docs/normativa/matriz.md`. El
+  KuDE imprime cada número con todos los dígitos del XML (MT v150 §13.2):
+  nunca redondearlo.
+- Qué deben sumar los pagos y el alcance del redondeo a 50 Gs siguen NO
+  DETERMINADOS por la SET (notas 9 y 10 de `docs/normativa/matriz.md`); la
+  plataforma aplica la opción documentada allí.
 - Un job cuyo worker muere durante la llamada al SIFEN queda `processing`
   (documento `submitting`) hasta que un operador lo reencola; no hay reaper
   que lo detecte solo. El reintento consulta el CDC antes de decidir.
@@ -443,7 +482,10 @@ Proyecto:
   `docs/examples/send_ares_factura_test.py`, que trae RUC, razón social y
   timbrado con aspecto de datos reales de un contribuyente; el certificado
   efímero de `conftest.py` usa ese mismo RUC. Hay que pasarlos a datos
-  ficticios.
+  ficticios. El mismo emisor (80024135) y el receptor 80069563 siguen en
+  fixtures anteriores (escenarios de `kilasifen/testing/typed_contract_scenarios.py`,
+  goldens y emisores de prueba de `tests/api`); los tests nuevos usan los
+  ficticios de `kilasifen/testing/typed_documents.py`.
 - El workflow `.github/workflows/tests.yml` (push a `main`, PR contra
   cualquier rama y semanal) nunca completó una corrida por fallas de arranque
   a nivel de cuenta. No afirmar que el CI está en verde: validar localmente.

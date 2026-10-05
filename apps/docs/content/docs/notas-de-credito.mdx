@@ -9,7 +9,10 @@ POST /v1/emitters/{emitter_id}/documents/notas-credito
 ```
 
 La estructura comparte cliente, ítems, moneda e idempotencia con la factura,
-pero requiere `documento_asociado`.
+pero requiere `documento_asociado`. Los montos siguen las mismas reglas (IVA
+por ítem, `porcentaje_descuento_global`, `redondeo`; ver
+[Facturas](/docs/facturas#montos-iva-y-pagos)); una nota de crédito no lleva
+condición de pago.
 
 ```json
 {
@@ -25,7 +28,8 @@ pero requiere `documento_asociado`.
       "cdc": "CDC_DE_44_DIGITOS"
     },
     "cliente": {
-      "ruc": "80000000-0",
+      "ruc": "80025298-5",
+      "tipo_contribuyente": 2,
       "razon_social": "Cliente de prueba"
     },
     "items": [
@@ -41,3 +45,4 @@ pero requiere `documento_asociado`.
 ```
 
 Para un DTE electrónico, el CDC asociado debe contener exactamente 44 dígitos.
+Una nota de crédito no admite un receptor innominado.

@@ -24,12 +24,41 @@ El RUC es una identidad global de plataforma. Por eso sólo una credencial con
 POST /v1/emitters
 {
   "owner_consumer_id": "consumer_uuid",
-  "ruc": "80024135",
-  "dv": "5",
+  "ruc": "44444401",
+  "dv": "7",
   "legal_name": "Empresa SA",
-  "tax_environment": "test"
+  "tax_environment": "test",
+  "fiscal_profile": {
+    "tipo_contribuyente": 2,
+    "actividades_economicas": [
+      {"codigo": "62010", "descripcion": "ACTIVIDADES DE PROGRAMACION INFORMATICA"}
+    ],
+    "domicilio": {
+      "direccion": "CALLE EJEMPLO",
+      "numero_casa": "123",
+      "departamento": 1,
+      "ciudad": 1,
+      "descripcion_ciudad": "ASUNCION (DISTRITO)",
+      "telefono": "021123456",
+      "email": "facturacion@example.com"
+    },
+    "establecimientos": []
+  }
 }
 ```
+
+El RUC tiene 3-8 caracteres (`tRuc`), `dv` es el módulo 11 del RUC,
+`legal_name` tiene 4-255, el CSC 32 caracteres alfanuméricos y `csc_id` 1-9999
+(se guarda con cuatro dígitos). Un dato inválido responde `422`.
+
+`fiscal_profile` es la única fuente de `gEmis`: tipo de contribuyente, régimen
+y nombre de fantasía opcionales, de 1 a 9 actividades económicas y el domicilio
+del RUC (`numero_casa` `0` si no tiene numeración; el departamento se valida
+contra el XSD de departamentos y su descripción se completa sola). Cada
+establecimiento con otra dirección se agrega en `establecimientos` con su
+código `dEst`. Puede cargarse después con `PATCH /v1/emitters/{id}`, que lo
+reemplaza completo; mientras falte, `fiscal_profile_complete` es `false` y
+crear un documento tipado responde `422 emitters.fiscal_profile_required`.
 
 Compatibilidad: la ruta y el resto del payload no cambian; si
 `owner_consumer_id` se omite, el emisor queda asignado al consumidor de la clave
@@ -96,9 +125,13 @@ X-API-Key: ...
   "factura": {
     "establecimiento": "001",
     "punto": "001",
-    "fecha_emision": "2026-08-16T15:30:00-03:00",
+    "fecha_emision": "2026-10-01T15:30:00-03:00",
     "moneda": "PYG",
-    "cliente": {"ruc": "80000000-0", "razon_social": "Cliente prueba"},
+    "cliente": {
+      "ruc": "80025298-5",
+      "tipo_contribuyente": 2,
+      "razon_social": "Cliente prueba"
+    },
     "items": [{"descripcion": "Servicio", "cantidad": 1, "precio_unitario": 1000}]
   }
 }
@@ -127,6 +160,56 @@ pago se validan de forma anidada antes de reservar el job. Un `422` significa qu
 la intención no ingresó a la cola. Los aliases históricos `razonSocial`,
 `precioUnitario` e `iva` se normalizan a `snake_case` para compatibilidad.
 
+Reglas fiscales que se validan al crear (fuentes en `docs/normativa/matriz.md`):
+
+- `emisor` es opcional y sólo puede repetir la identidad del emisor
+  (`ruc`, `dv`, `razon_social`, y `tipo_contribuyente` en la raíz); si no
+  coincide responde `422 documents.emisor.identity_mismatch`. Sus campos de
+  dirección, contacto y actividad están obsoletos y se ignoran.
+- `cliente` con RUC exige `tipo_contribuyente` y un DV correcto (`RUC-DV` o
+  `dv`). Un no contribuyente sólo puede ser B2C o B2F, y siempre envía
+  `tipo_documento_identidad` y `numero_documento_identidad` (con 9, además
+  `descripcion_tipo_documento`). B2F exige `pais_codigo` distinto de `PRY` y
+  `direccion` con `numero_casa`; fuera de B2F, una dirección exige
+  `departamento`, `ciudad` y `descripcion_ciudad`. `compras_publicas` es
+  opcional en B2G.
+- Innominado (`tipo_documento_identidad` 5): sólo en facturas B2C; se escribe
+  con número `0` y nombre `Sin Nombre`, y el worker lo rechaza desde 7.000.000
+  Gs (salvo muestras médicas).
+- `codigo_seguridad` es opcional: si se omite, KilaSifen genera uno aleatorio y
+  lo conserva en todos los reintentos. No puede ser `0` ni igual al número.
+- `fecha_emision` tiene que estar entre 720 h antes y 120 h después de ahora
+  (hora oficial de Paraguay, UTC−3). Si queda a más de 120 h, el documento se
+  crea igual pero `fiscal_warnings` avisa que el SIFEN lo aprobará con la
+  observación 1005 (transmisión extemporánea).
+- `moneda` (y la de cada pago o cuota) es un código ISO 4217 de
+  `Monedas_v150.xsd`; las descripciones del XML son su nombre oficial
+  (`Guarani`, `US Dollar`). `formas_pago[].moneda_descripcion` se ignora.
+- IVA por ítem: `afectacion` `gravado` (proporción 100), `exento` o
+  `exonerado` (proporción 0, `tasa` 0) y `gravado_parcial`, que exige
+  `proporcion_gravada` entre 0 y 100 sin incluirlos. Base gravada, IVA y base
+  exenta salen de las fórmulas de la NT 13 con hasta 8 decimales, también en
+  PYG; los totales son la suma exacta de los ítems.
+- Descuento global: `porcentaje_descuento_global` (0 por defecto) se aplica a
+  cada ítem como `porcentaje * precio_unitario / 100`. `items[].descuento_global`
+  es opcional y, si se envía, tiene que coincidir con ese cálculo (±0,8).
+- Redondeo: `redondeo` es `ninguno` (por defecto, `dRedon` 0) o `multiplo_50`
+  (sólo PYG): baja `dTotOpe` al múltiplo de 50 Gs anterior. Nunca se redondea
+  una moneda extranjera.
+- Pagos (sólo facturas): en contado, `formas_pago` tiene que sumar el total
+  neto (tolerancia 0,50) y sin `formas_pago` se informa un pago en efectivo
+  por el total. A crédito, `formas_pago` sólo va con
+  `credito.monto_entrega_inicial` y tiene que sumarlo. Un pago sin `moneda` es
+  en la moneda de la operación; `tipo_cambio` es obligatorio si el pago no es
+  en PYG (si va en la moneda de la operación se usa el `tipo_cambio` del
+  documento) y no se admite si es en PYG.
+- `tipo_impuesto` 2 (ISC) no se admite.
+
+Los incumplimientos responden `422` con el código de la regla en el mensaje,
+por ejemplo `documents.items.proporcion_gravada_required`,
+`documents.redondeo.only_pyg` o
+`documents.condicion_operacion.formas_pago.total_mismatch`.
+
 ## Nota de crédito
 
 `POST /v1/emitters/{emitter_id}/documents/notas-credito` usa wrapper
@@ -153,6 +236,25 @@ POST /v1/emitters/{emitter_id}/documents/{document_id}/cancel
 POST /v1/emitters/{emitter_id}/inutilizations
 GET  /v1/emitters/{emitter_id}/events/{event_id}
 ```
+
+El KuDE (`/kude` en PDF y `/kude/data` en JSON) sale del XML firmado y se
+entrega para documentos `approved*` y para los que siguen en camino al SIFEN
+(`queued`, `processing`, `submitting`, `submitted`, `retry_pending`,
+`reconciliation_required`): con validación posterior puede entregarse antes
+de la aprobación, pero sólo vale si el SIFEN aprueba el DE (MT v150 §6.2 y
+§6.4). Para `rejected`, `failed`, `inutilized`, `cancelled` o cualquier otro
+estado responde `409 documents.kude_not_available` con
+`details.internal_status`. El PDF lleva el QR en la primera página, páginas
+`n/total`, la fecha de inicio del timbrado como `DD-MM-AAAA` (NT 10), el
+«Total en Guaraníes» (`dTotalGs` si la moneda no es PYG) y las cantidades
+y los montos con todos los dígitos del XML, sin redondear (MT v150 §13.2 y
+§6.6): sólo cambian los separadores (`952.38095238` se imprime
+`952,38095238`).
+`/kude/data` devuelve los literales del XML: `totales.total_general_operacion`
+es `dTotGralOpe` y `totales.total_general_guaranies` es `dTotalGs` fuera de
+PYG. El `qr.url` es el `dCarQR` del XML, calculado con los valores literales
+del XML firmado (MT v150 §13.8; con un receptor no contribuyente el
+parámetro es `dNumIDRec`).
 
 Cancelación usa `{"motivo": "..."}`; inutilización usa timbrado (del emisor),
 tipo, establecimiento, punto, rango, motivo y `serie` opcional (`dSerieNum`).
@@ -239,5 +341,7 @@ El ERP actualiza por webhook y usa polling de documento/job como recuperación.
 ## Compatibilidad
 
 Dentro de `/v1`, cambios son aditivos. Remover/renombrar o cambiar semántica exige
-`/v2` y guía de migración. Clientes ignoran campos desconocidos; requests tipados
+`/v2` y guía de migración. La excepción son las correcciones exigidas por la
+normativa fiscal (por ejemplo el perfil fiscal del emisor o las reglas del
+receptor de 0.2.0): se documentan en el CHANGELOG con su guía de migración. Clientes ignoran campos desconocidos; requests tipados
 se validan estrictamente. No existe integración con FacturaSend.

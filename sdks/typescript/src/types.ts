@@ -67,45 +67,75 @@ export interface EconomicActivity {
 }
 
 export interface GenerationResponsible {
-  tipo_documento?: number;
+  /** iTipIDRespDE: 1-4, or 9 together with `descripcion_tipo_documento`. */
+  tipo_documento: 1 | 2 | 3 | 4 | 9;
+  /** Real document type (9-41 characters); only with `tipo_documento` 9. */
+  descripcion_tipo_documento?: string;
   numero_documento: string;
   nombre: string;
+  /** dCarRespDE: 4-100 characters. */
   cargo: string;
 }
 
+/**
+ * Optional echo of the emitter identity. `ruc`, `dv` and `razon_social` must
+ * match the registered emitter (422 otherwise); gEmis comes from the emitter
+ * fiscal profile.
+ */
 export interface EmitterData {
   ruc?: string;
   dv?: string;
   razon_social?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   direccion?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   numero?: NumericCode;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   complemento_1?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   complemento_2?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   departamento?: NumericCode;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   descripcion_departamento?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   distrito?: NumericCode;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   descripcion_distrito?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   ciudad?: NumericCode;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   descripcion_ciudad?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   telefono?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   email?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   actividad_economica?: EconomicActivity;
   responsable_generacion?: GenerationResponsible;
 }
 
 export interface Customer {
   naturaleza?: number;
+  /** iTiOpe: a non-taxpayer only allows 2 (B2C) or 4 (B2F). */
   tipo_operacion?: number;
+  /** iTiContRec: mandatory with `ruc`; there is no default. */
   tipo_contribuyente?: number;
+  /** dRucRec, optionally as `RUC-DV`; the DV is mandatory and checked. */
   ruc?: string;
   dv?: string;
+  /** iTipIDRec: 1-6 or 9; 5 (innominado) only in B2C invoices. */
   tipo_documento_identidad?: number;
+  /** Real document type (9-41 characters) when `tipo_documento_identidad` is 9. */
+  descripcion_tipo_documento?: string;
   numero_documento_identidad?: string;
   razon_social?: string;
   nombre?: string;
   direccion?: string;
   numero_casa?: NumericCode;
+  /** cPaisRec: other than PRY only for B2F. */
   pais_codigo?: string;
+  /** Taken from the official country catalog; must match when sent. */
   pais_descripcion?: string;
   departamento?: NumericCode;
   descripcion_departamento?: string;
@@ -134,8 +164,15 @@ export interface CardPayment {
 export interface Payment {
   tipo: NumericCode;
   monto: DecimalValue;
+  /** cMoneTiPag, an ISO 4217 code; omitted, the currency of the operation. */
   moneda?: string;
+  /** @deprecated Ignored: dDMoneTiPag is the official name of `moneda` (1555). */
   moneda_descripcion?: string;
+  /**
+   * dTiCamTiPag (up to 4 decimals): mandatory when `moneda` is not PYG (1556)
+   * and refused when it is PYG (1557). Omitted for a payment in the currency
+   * of the operation, the operation `tipo_cambio` is used.
+   */
   tipo_cambio?: DecimalValue;
   numero_cheque?: NumericCode;
   banco?: string;
@@ -145,6 +182,7 @@ export interface Payment {
 export interface Installment {
   monto: DecimalValue;
   fecha_vencimiento?: IsoDate;
+  /** cMoneCuo, an ISO 4217 code; omitted, the currency of the operation. */
   moneda?: string;
 }
 
@@ -152,12 +190,21 @@ export interface CreditCondition {
   tipo: NumericCode;
   descripcion?: string;
   plazo_descripcion?: string;
+  /**
+   * dMonEnt. Requires `formas_pago` in the operation condition with the
+   * payments of that initial delivery, which must add up to it (1551).
+   */
   monto_entrega_inicial?: DecimalValue;
   cuotas?: Installment[];
 }
 
 export interface OperationCondition {
   tipo?: NumericCode;
+  /**
+   * gPaConEIni. Contado: they add up to dTotGralOpe (0.50 tolerance); without
+   * them one cash payment of the total is written. Credito: only with
+   * `monto_entrega_inicial`, adding up to it (1551/1552).
+   */
   formas_pago?: Payment[];
   credito?: CreditCondition;
 }
@@ -172,11 +219,20 @@ export interface DocumentItem {
   cantidad: DecimalValue;
   precio_unitario: DecimalValue;
   descuento_particular?: DecimalValue;
+  /**
+   * dDescGloItem. Derived as `porcentaje_descuento_global * precio_unitario /
+   * 100` (NT 01); if sent it must match that within 0.8 (1862).
+   */
   descuento_global?: DecimalValue;
   anticipo_particular?: DecimalValue;
   anticipo_global?: DecimalValue;
   cdc_anticipo?: string;
   afectacion?: TaxAffectation;
+  /**
+   * dPropIVA: mandatory and strictly between 0 and 100 with `gravado_parcial`
+   * (1906); if sent, 100 with `gravado` (1904) and 0 with `exento` or
+   * `exonerado` (1905).
+   */
   proporcion_gravada?: DecimalValue;
   tasa?: 0 | 5 | 10;
   tipo_cambio_item?: DecimalValue;
@@ -202,12 +258,30 @@ export interface BaseFiscalDocument {
   numero?: NumericCode;
   fecha?: IsoDateTime;
   fecha_emision?: IsoDateTime;
+  /** cMoneOpe: an ISO 4217 code of the XSD (default PYG). */
   moneda?: string;
+  /** dTiCam: up to 4 decimals. */
   tipo_cambio?: DecimalValue;
   condicion_tipo_cambio?: number;
+  /**
+   * dPorcDescTotal: global discount percentage (default 0), applied to every
+   * item as dDescGloItem (NT 01, 1860/1862).
+   */
+  porcentaje_descuento_global?: DecimalValue;
+  /**
+   * dRedon. `ninguno` (default) writes 0; `multiplo_50` rounds dTotOpe down
+   * to a multiple of 50 Gs, only in PYG. Foreign currencies are never rounded.
+   */
+  redondeo?: "ninguno" | "multiplo_50";
   tipo_transaccion?: NumericCode;
+  /** iTImp. 2 (ISC) is refused: the typed contracts cannot express it. */
   tipo_impuesto?: NumericCode;
+  /** Optional; must match the emitter fiscal profile (iTipCont). */
   tipo_contribuyente?: number;
+  /**
+   * dCodSeg. Omit it and the platform draws a random one; if sent it must be
+   * random, from 1 to 999999999 and different from the document number.
+   */
   codigo_seguridad?: NumericCode;
   emisor?: EmitterData;
   cliente: Customer;
@@ -276,6 +350,8 @@ export interface Document {
   establishment: string | null;
   point: string | null;
   document_number: number | null;
+  /** Fiscal warnings found at creation, such as an extemporaneous emission date. */
+  fiscal_warnings: string[];
   created_at: IsoDateTime;
   updated_at: IsoDateTime;
 }

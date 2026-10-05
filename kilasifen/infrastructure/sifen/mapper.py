@@ -1,7 +1,7 @@
 """Payload mappers for the kilasifen.engine emission bridge."""
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from xml.etree import ElementTree as ET
 
 from kilasifen.domain.documents.models import Document
@@ -30,7 +30,15 @@ class KilaSifenEmissionInput:
 
 
 class KilaSifenPayloadMapper:
-    """Map persisted document payloads into kilasifen.engine-compatible inputs."""
+    """Map persisted document payloads into kilasifen.engine-compatible inputs.
+
+    ``test_emitter_name_literal`` is the ``dNomEmi`` written for emitters of
+    the SIFEN test environment (``KILA_SIFEN_TEST_EMITTER_NAME_LITERAL``);
+    ``None`` keeps the legal name.
+    """
+
+    def __init__(self, test_emitter_name_literal: str | None = None) -> None:
+        self.test_emitter_name_literal = test_emitter_name_literal
 
     def map_document(
         self,
@@ -38,7 +46,10 @@ class KilaSifenPayloadMapper:
         *,
         emitter: Emitter | None = None,
         stamping: Stamping | None = None,
+        signed_at: datetime | None = None,
     ) -> KilaSifenEmissionInput:
+        """Return the XML to sign; ``signed_at`` becomes ``dFecFirma``."""
+
         payload = document.payload_snapshot or {}
         signed_xml = document.signed_xml
         raw_generated_xml = payload.get("generated_xml")
@@ -60,6 +71,8 @@ class KilaSifenPayloadMapper:
                 document=document,
                 emitter=emitter,
                 stamping=stamping,
+                test_emitter_name_literal=self.test_emitter_name_literal,
+                signed_at=signed_at,
             )
             if typed_xml is not None:
                 generated_xml = typed_xml.generated_xml

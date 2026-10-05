@@ -65,10 +65,22 @@ desde tu propio código.
   recibe por webhook o consultando el documento o el job.
 - Idempotencia con `idempotency_key`: repetir la misma intención devuelve el
   mismo documento.
+- Perfil fiscal por emisor (`fiscal_profile`): tipo de contribuyente,
+  actividades económicas, domicilio y contacto declarados en el RUC, con
+  dirección propia por establecimiento. Es la única fuente de `gEmis`; sin
+  él no se crean documentos.
+- Reglas fiscales locales antes de emitir: `dCodSeg` aleatorio y persistido,
+  `dFecFirma` con la hora real de la firma, ventana de `dFeEmiDE`, receptor
+  según las notas técnicas vigentes (innominado, B2F, dirección) y RUC del
+  certificado leído también del SubjectAlternativeName. Detalle y fuentes en
+  `docs/normativa/matriz.md`.
 - Eventos de **cancelación** e **inutilización**.
 - Consulta de RUC, consulta del estado de un documento y reconciliación
   explícita sin volver a transmitir un DE cuyo resultado quedó incierto.
-- Descarga del XML firmado, KuDE en PDF y datos del KuDE en JSON.
+- Descarga del XML firmado, KuDE en PDF y datos del KuDE en JSON. El KuDE
+  lleva el QR en la primera página y páginas `n/total`, y no se entrega
+  para documentos rechazados, fallidos, inutilizados o cancelados
+  (`409 documents.kude_not_available`).
 - Webhooks firmados con HMAC, con reintentos y defensa contra SSRF.
 - Varios consumidores aislados: cada API key ve solo los emisores de su
   consumidor, y los certificados, contraseñas y CSC se guardan cifrados.
@@ -440,10 +452,14 @@ calculate_mod11_dv("80172649")  # 2: dígito verificador por módulo 11
 format_cdc_for_kude(cdc)        # "0180 1726 4920 ..." en grupos de cuatro
 ```
 
-- `generate_dcarqr(...)` arma la URL del QR (`dCarQR`) a partir de valores
-  sueltos; `generate_dcarqr_from_signed_xml(signed_xml=..., id_csc=..., csc=...,
-  environment="test")` los toma del propio XML firmado. Con
-  `xml_escaped=True` devuelven la URL lista para insertar en el XML.
+- `generate_dcarqr_from_signed_xml(signed_xml=..., id_csc=..., csc=...,
+  environment="test")` arma la URL del QR (`dCarQR`) con los valores
+  literales del XML firmado (MT v150 §13.8): es la misma función que usa la
+  plataforma. `generate_dcarqr(...)` hace lo mismo con valores sueltos, que
+  tienen que ser el texto de cada campo del XML (`"300000"`, no
+  `300000.0`), y el receptor explícito: `d_ruc_rec` (D206) o
+  `d_num_id_rec` (D210, o `"0"` si el DE no lo trae). Con `xml_escaped=True` devuelven la URL con `&amp;`, sólo
+  para insertarla en texto XML crudo. Ninguna devuelve el CSC.
 - `render_kude_html(rde)` y `save_kude_html(rde, ruta)` generan una
   representación imprimible en HTML. El KuDE en PDF lo produce la plataforma.
 
@@ -558,11 +574,30 @@ Las reglas para contribuir están en [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Hallazgos de una auditoría reciente, que se corregirán a continuación:
 
-- Si el payload no trae `codigo_seguridad`, se usa la constante `123456789`.
-- La dirección, el teléfono, el correo y la actividad económica del emisor
-  reciben valores ficticios por defecto cuando faltan.
-- El QR de producción siempre usa el parámetro `dRucRec`, incluso cuando el
-  receptor se identifica con `dNumIDRec`.
+- El literal de `dNomEmi` que acepta el ambiente de pruebas no está
+  determinado (el Manual Técnico y la Guía de Pruebas 2026 piden textos
+  distintos): `KILA_SIFEN_TEST_EMITTER_NAME_LITERAL` lo configura y por
+  defecto se usa la razón social.
+- Distrito y ciudad del emisor y del receptor llegan con código y
+  descripción del caller: las tablas oficiales 2.1/2.2 no están en los XSD y
+  no se validan localmente.
+- Varios detalles del QR y del KuDE no están determinados por la SET (si la
+  validación 2500 compara los montos como texto, el parámetro del receptor
+  B2F sin documento, cómo se mide la *quiet zone*, qué separadores usan los
+  montos impresos, que no se redondean): la plataforma aplica las opciones
+  documentadas en las notas 12-14 de `docs/normativa/matriz.md`.
+- `TransmisionDE.enviar_de(rde, sign=True)` firma sin recalcular `dCarQR`;
+  el QR tiene que calcularse sobre el XML firmado con
+  `generate_dcarqr_from_signed_xml`.
+- Una cancelación con resultado incierto se verifica por CDC (`xContEv`)
+  antes de reenviarla, pero una inutilización incierta se reenvía sin
+  verificación previa: ningún servicio oficial permite consultarla.
+- Qué deben sumar los pagos (`dMonTiPag`) y si el redondeo a 50 Gs se limita
+  al efectivo o a B2C no está determinado por la SET: la plataforma exige que
+  los pagos de contado sumen el total (y los de la entrega inicial, su monto)
+  con tolerancia 0,50, y sólo redondea cuando el documento pide
+  `"redondeo": "multiplo_50"`. El impuesto ISC (`tipo_impuesto` 2) no se
+  admite.
 - Si el worker muere mientras espera al SIFEN, el job queda `processing` (el
   documento, `submitting`) hasta que un operador lo reencola desde la consola;
   ese reintento consulta el CDC antes de decidir. No hay un proceso que

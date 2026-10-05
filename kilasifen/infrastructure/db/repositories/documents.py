@@ -45,6 +45,8 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
                 sifen_messages=document.sifen_messages,
                 retryable_server_error=document.retryable_server_error,
                 timbrado=document.timbrado,
+                security_code=document.security_code,
+                fiscal_warnings=list(document.fiscal_warnings) or None,
                 created_at=document.created_at,
                 updated_at=document.updated_at,
             )
@@ -242,4 +244,6 @@ def _to_domain(model: DocumentModel) -> Document:
         sifen_messages=model.sifen_messages,
         retryable_server_error=bool(model.retryable_server_error),
         timbrado=model.timbrado,
+        security_code=model.security_code,
+        fiscal_warnings=tuple(model.fiscal_warnings or ()),
     )

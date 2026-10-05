@@ -1,10 +1,17 @@
 """Document application service layer."""
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Protocol
 from uuid import uuid4
 
+from kilasifen.application.documents.fiscal_preflight import (
+    check_emission_date,
+    require_emitter_fiscal_identity,
+    resolve_security_code,
+    typed_fiscal_payload,
+)
 from kilasifen.application.documents.idempotency import (
     require_matching_idempotent_intent,
 )
@@ -13,6 +20,11 @@ from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.jobs.service import JobService
 from kilasifen.application.sandbox.service import SandboxOutcomePolicy
 from kilasifen.domain.common.errors import ConflictError, NotFoundError
+from kilasifen.domain.common.paraguay_time import paraguay_now
+from kilasifen.domain.documents.kude_availability import (
+    is_kude_available,
+    normalize_kude_status,
+)
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.sandbox import SandboxOutcome
@@ -60,6 +72,7 @@ class DocumentService:
         encryption_key: str | None = None,
         sandbox_policy: SandboxOutcomePolicy | None = None,
         raw_payload_policy: RawDocumentPayloadPolicy | None = None,
+        clock: Callable[[], datetime] = paraguay_now,
     ):
         self.document_repository = document_repository
         self.emitter_repository = emitter_repository
@@ -70,6 +83,7 @@ class DocumentService:
         self.encryption_key = encryption_key
         self.sandbox_policy = sandbox_policy or SandboxOutcomePolicy("development")
         self.raw_payload_policy = raw_payload_policy
+        self.clock = clock
 
     def create_document(
         self,
@@ -171,6 +185,12 @@ class DocumentService:
         if new_payload_policy is not None:
             new_payload_policy(payload_snapshot)
 
+        fiscal_warnings: tuple[str, ...] = ()
+        typed_payload = typed_fiscal_payload(payload_snapshot)
+        if typed_payload is not None:
+            self._require_fiscal_identity(emitter_id, typed_payload)
+            fiscal_warnings = check_emission_date(typed_payload, now=self.clock())
+
         (
             normalized_payload_snapshot,
             establishment,
@@ -180,6 +200,12 @@ class DocumentService:
             emitter_id=emitter_id,
             document_type=document_type,
             payload_snapshot=payload_snapshot,
+        )
+        numbered_typed_payload = typed_fiscal_payload(normalized_payload_snapshot)
+        security_code = (
+            resolve_security_code(numbered_typed_payload)
+            if numbered_typed_payload is not None
+            else None
         )
 
         timestamp = _now()
@@ -207,8 +233,19 @@ class DocumentService:
             establishment=establishment,
             point=point,
             document_number=document_number,
+            security_code=security_code,
+            fiscal_warnings=fiscal_warnings,
         )
         saved_document = self.document_repository.save(document)
+        if fiscal_warnings:
+            logger.warning(
+                "documents.fiscal_warnings",
+                extra={
+                    "emitter_id": emitter_id,
+                    "document_id": saved_document.id,
+                    "fiscal_warnings": list(fiscal_warnings),
+                },
+            )
         job = self.job_service.create_job(
             emitter_id=emitter_id,
             related_entity_type="document",
@@ -267,6 +304,16 @@ class DocumentService:
         document = self.get_document_for_emitter(
             emitter_id=emitter_id, document_id=document_id
         )
+        if not is_kude_available(document.internal_status):
+            # MT v150 §6.4; Dto 872/2023 Arts. 4, 26, 29, 30 and 31 (F51).
+            raise ConflictError(
+                "documents.kude_not_available",
+                details={
+                    "internal_status": normalize_kude_status(
+                        document.internal_status
+                    )
+                },
+            )
         emitter = self.emitter_repository.get(emitter_id)
         if emitter is None:
             raise NotFoundError("emitters.not_found")
@@ -305,6 +352,12 @@ class DocumentService:
             external_id=external_id,
             cdc=cdc,
         )
+
+    def _require_fiscal_identity(self, emitter_id: str, typed_payload: dict) -> None:
+        emitter = self.emitter_repository.get_summary(emitter_id)
+        if emitter is None:
+            raise NotFoundError("emitters.not_found")
+        require_emitter_fiscal_identity(emitter, typed_payload)
 
     def _enqueue_if_configured(self, job: Job) -> None:
         if self.queue is None:

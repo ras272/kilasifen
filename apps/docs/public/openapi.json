@@ -388,17 +388,18 @@
           "monto_entrega_inicial": {
             "anyOf": [
               {
-                "minimum": 0.0,
+                "exclusiveMinimum": 0.0,
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,20}0*$)\\d{0,15}\\.\\d{0,4}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dMonEnt (E645), con plazo o cuotas. Exige `formas_pago` en `condicion_operacion` con los pagos de esa entrega (1551), que tienen que sumarla.",
             "title": "Monto Entrega Inicial"
           },
           "plazo_descripcion": {
@@ -438,11 +439,13 @@
       },
       "CustomerPayload": {
         "additionalProperties": false,
+        "description": "Receptor (gDatRec). The document validates it with the rules in force.\n\nSee ``kilasifen.domain.documents.receiver``: 1300 (NT 10), 1320/1301,\nD205-D207 mandatory for a taxpayer, D208-D210 always for a non-taxpayer\n(NT 23, 1335), innominado only in B2C invoices (1333, 1331), and the\naddress rules of 1318/1330/NT 03.",
         "properties": {
           "celular": {
             "anyOf": [
               {
                 "maxLength": 20,
+                "minLength": 10,
                 "type": "string"
               },
               {
@@ -486,7 +489,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "gCompPub (E020): opcional en B2G desde la NT 26."
           },
           "departamento": {
             "anyOf": [
@@ -538,6 +542,20 @@
             ],
             "title": "Descripcion Distrito"
           },
+          "descripcion_tipo_documento": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "minLength": 9,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDTipIDRec del tipo 9: el tipo real de documento (9-41).",
+            "title": "Descripcion Tipo Documento"
+          },
           "direccion": {
             "anyOf": [
               {
@@ -549,6 +567,7 @@
                 "type": "null"
               }
             ],
+            "description": "dDirRec: obligatoria en B2F (1318); con dirección y D202≠4 son obligatorios `departamento` y `ciudad` (NT 03).",
             "title": "Direccion"
           },
           "distrito": {
@@ -575,6 +594,7 @@
                 "type": "null"
               }
             ],
+            "description": "dDVRec: obligatorio con `ruc` (o como `RUC-DV`); módulo 11.",
             "title": "Dv"
           },
           "email": {
@@ -600,13 +620,14 @@
                 "type": "null"
               }
             ],
+            "description": "iNatRec: 1 contribuyente, 2 no contribuyente. Por defecto, 1 si hay `ruc`.",
             "title": "Naturaleza"
           },
           "nombre": {
             "anyOf": [
               {
                 "maxLength": 255,
-                "minLength": 1,
+                "minLength": 4,
                 "type": "string"
               },
               {
@@ -632,58 +653,70 @@
           "numero_documento_identidad": {
             "anyOf": [
               {
-                "maxLength": 20,
+                "pattern": "^[0-9A-Za-z-]{1,20}$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dNumIDRec. En innominado se envía siempre `0`.",
             "title": "Numero Documento Identidad"
           },
           "pais_codigo": {
             "default": "PRY",
-            "maxLength": 3,
-            "minLength": 3,
+            "description": "cPaisRec: distinto de PRY solo en B2F (1320).",
+            "pattern": "^[A-Z]{3}$",
             "title": "Pais Codigo",
             "type": "string"
           },
           "pais_descripcion": {
-            "default": "Paraguay",
-            "maxLength": 100,
-            "minLength": 3,
-            "title": "Pais Descripcion",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 4,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDesPaisRe: se toma del XSD de países; si se envía tiene que coincidir (1301).",
+            "title": "Pais Descripcion"
           },
           "razon_social": {
             "anyOf": [
               {
                 "maxLength": 255,
-                "minLength": 1,
+                "minLength": 4,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dNomRec. En innominado se envía siempre `Sin Nombre`.",
             "title": "Razon Social"
           },
           "ruc": {
             "anyOf": [
               {
-                "pattern": "^\\d{5,8}(?:-\\d)?$",
+                "maxLength": 10,
+                "pattern": "^[1-9][0-9]*[0-9A-D]?(?:-[0-9])?$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dRucRec (3-8, XSD `tRuc`), opcionalmente con `-DV`.",
             "title": "Ruc"
           },
           "telefono": {
             "anyOf": [
               {
                 "maxLength": 15,
+                "minLength": 6,
                 "type": "string"
               },
               {
@@ -703,6 +736,7 @@
                 "type": "null"
               }
             ],
+            "description": "iTiContRec: obligatorio para un contribuyente, sin valor por defecto.",
             "title": "Tipo Contribuyente"
           },
           "tipo_documento_identidad": {
@@ -716,6 +750,7 @@
                 "type": "null"
               }
             ],
+            "description": "iTipIDRec: 1-6 o 9; 5 = innominado (solo B2C en facturas).",
             "title": "Tipo Documento Identidad"
           },
           "tipo_operacion": {
@@ -729,6 +764,7 @@
                 "type": "null"
               }
             ],
+            "description": "iTiOpe: 1 B2B, 2 B2C, 3 B2G, 4 B2F. Un no contribuyente solo admite 2 o 4 (1300).",
             "title": "Tipo Operacion"
           }
         },
@@ -810,36 +846,63 @@
         "title": "EconomicActivityPayload",
         "type": "object"
       },
+      "EconomicActivityProfile": {
+        "additionalProperties": false,
+        "description": "Actividad económica declarada en el RUC (gActEco, D130-D132).",
+        "properties": {
+          "codigo": {
+            "description": "cActEco (Tabla 3, XSD `tcActEco`).",
+            "pattern": "^[0-9A-Z]{1,8}$",
+            "title": "Codigo",
+            "type": "string"
+          },
+          "descripcion": {
+            "description": "dDesActEco.",
+            "maxLength": 300,
+            "minLength": 1,
+            "title": "Descripcion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "codigo",
+          "descripcion"
+        ],
+        "title": "EconomicActivityProfile",
+        "type": "object"
+      },
       "EmitterCreateRequest": {
         "description": "Emitter creation payload.",
         "properties": {
           "csc": {
             "anyOf": [
               {
-                "maxLength": 255,
+                "pattern": "^[0-9A-Za-z]{32}$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Código de seguridad del contribuyente: 32 caracteres alfanuméricos. Nunca se devuelve.",
             "title": "Csc"
           },
           "csc_id": {
             "anyOf": [
               {
-                "maxLength": 16,
+                "pattern": "^[0-9]{1,4}$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "IdCSC: de 1 a 4 dígitos entre 1 y 9999; se guarda con cuatro dígitos (`1` → `0001`).",
             "title": "Csc Id"
           },
           "dv": {
-            "maxLength": 4,
-            "minLength": 1,
+            "description": "Dígito verificador del RUC por módulo 11 (D102, 1253).",
+            "pattern": "^[0-9]$",
             "title": "Dv",
             "type": "string"
           },
@@ -855,9 +918,21 @@
             ],
             "title": "External Id"
           },
+          "fiscal_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmitterFiscalProfileModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Perfil fiscal del RUC. Puede cargarse después, pero sin él no se pueden crear documentos."
+          },
           "legal_name": {
+            "description": "Razón social (D105, XSD `tdNombre`, 4-255).",
             "maxLength": 255,
-            "minLength": 1,
+            "minLength": 4,
             "title": "Legal Name",
             "type": "string"
           },
@@ -875,8 +950,10 @@
             "title": "Owner Consumer Id"
           },
           "ruc": {
-            "maxLength": 16,
-            "minLength": 8,
+            "description": "RUC sin DV (D101, XSD `tRuc`).",
+            "maxLength": 8,
+            "minLength": 3,
+            "pattern": "^[1-9][0-9]*[0-9A-D]?$",
             "title": "Ruc",
             "type": "string"
           },
@@ -898,8 +975,82 @@
         "title": "EmitterCreateRequest",
         "type": "object"
       },
+      "EmitterFiscalProfileModel": {
+        "additionalProperties": false,
+        "description": "Datos fiscales del emisor tal como figuran en su RUC (gEmis).\n\nEs la única fuente de `gEmis`: sin este perfil no se puede crear un\ndocumento. Se reemplaza completo en cada actualización.",
+        "properties": {
+          "actividades_economicas": {
+            "description": "gActEco (D130), de 1 a 9.",
+            "items": {
+              "$ref": "#/components/schemas/EconomicActivityProfile"
+            },
+            "maxItems": 9,
+            "minItems": 1,
+            "title": "Actividades Economicas",
+            "type": "array"
+          },
+          "domicilio": {
+            "$ref": "#/components/schemas/FiscalAddressProfile",
+            "description": "Dirección por defecto de los documentos del emisor."
+          },
+          "establecimientos": {
+            "description": "Dirección propia de cada establecimiento que la tenga.",
+            "items": {
+              "$ref": "#/components/schemas/EstablishmentAddressProfile"
+            },
+            "maxItems": 999,
+            "title": "Establecimientos",
+            "type": "array"
+          },
+          "nombre_fantasia": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 4,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dNomFanEmi (D106).",
+            "title": "Nombre Fantasia"
+          },
+          "tipo_contribuyente": {
+            "description": "iTipCont (D103): 1 persona física, 2 persona jurídica.",
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Tipo Contribuyente",
+            "type": "integer"
+          },
+          "tipo_regimen": {
+            "anyOf": [
+              {
+                "maximum": 8.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cTipReg (D104, Tabla 1).",
+            "title": "Tipo Regimen"
+          }
+        },
+        "required": [
+          "tipo_contribuyente",
+          "actividades_economicas",
+          "domicilio"
+        ],
+        "title": "EmitterFiscalProfileModel",
+        "type": "object"
+      },
       "EmitterPayload": {
         "additionalProperties": false,
+        "description": "Optional echo of the emitter identity; it can never change it.\n\n``ruc``, ``dv`` and ``razon_social`` are accepted only when they match the\nregistered emitter (``422 documents.emisor.identity_mismatch`` otherwise);\naddress, contact and activity fields are ignored.",
         "properties": {
           "actividad_economica": {
             "anyOf": [
@@ -909,7 +1060,9 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`)."
           },
           "ciudad": {
             "anyOf": [
@@ -923,6 +1076,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Ciudad"
           },
           "complemento_1": {
@@ -935,6 +1090,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Complemento 1"
           },
           "complemento_2": {
@@ -947,6 +1104,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Complemento 2"
           },
           "departamento": {
@@ -961,6 +1120,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Departamento"
           },
           "descripcion_ciudad": {
@@ -973,6 +1134,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Descripcion Ciudad"
           },
           "descripcion_departamento": {
@@ -985,6 +1148,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Descripcion Departamento"
           },
           "descripcion_distrito": {
@@ -997,6 +1162,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Descripcion Distrito"
           },
           "direccion": {
@@ -1010,6 +1177,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Direccion"
           },
           "distrito": {
@@ -1024,6 +1193,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Distrito"
           },
           "dv": {
@@ -1036,6 +1207,7 @@
                 "type": "null"
               }
             ],
+            "description": "Tiene que coincidir con el DV del emisor registrado.",
             "title": "Dv"
           },
           "email": {
@@ -1049,6 +1221,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Email"
           },
           "numero": {
@@ -1063,6 +1237,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Numero"
           },
           "razon_social": {
@@ -1076,6 +1252,7 @@
                 "type": "null"
               }
             ],
+            "description": "Tiene que coincidir con la razón social del emisor.",
             "title": "Razon Social"
           },
           "responsable_generacion": {
@@ -1091,13 +1268,15 @@
           "ruc": {
             "anyOf": [
               {
-                "pattern": "^\\d{5,8}(?:-\\d)?$",
+                "maxLength": 10,
+                "pattern": "^[1-9][0-9]*[0-9A-D]?(?:-[0-9])?$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Tiene que coincidir con el RUC del emisor registrado.",
             "title": "Ruc"
           },
           "telefono": {
@@ -1111,6 +1290,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: los datos de gEmis salen del perfil fiscal del emisor (`PATCH /v1/emitters/{emitter_id}`).",
             "title": "Telefono"
           }
         },
@@ -1123,38 +1304,52 @@
           "csc": {
             "anyOf": [
               {
-                "maxLength": 255,
+                "pattern": "^[0-9A-Za-z]{32}$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Código de seguridad del contribuyente: 32 caracteres alfanuméricos. Nunca se devuelve.",
             "title": "Csc"
           },
           "csc_id": {
             "anyOf": [
               {
-                "maxLength": 16,
+                "pattern": "^[0-9]{1,4}$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "IdCSC: de 1 a 4 dígitos entre 1 y 9999; se guarda con cuatro dígitos (`1` → `0001`).",
             "title": "Csc Id"
+          },
+          "fiscal_profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmitterFiscalProfileModel"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Reemplaza el perfil fiscal completo."
           },
           "legal_name": {
             "anyOf": [
               {
                 "maxLength": 255,
-                "minLength": 1,
+                "minLength": 4,
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "Razón social (D105, XSD `tdNombre`, 4-255).",
             "title": "Legal Name"
           },
           "tax_environment": {
@@ -1230,6 +1425,160 @@
         "title": "ErrorPayload",
         "type": "object"
       },
+      "EstablishmentAddressProfile": {
+        "additionalProperties": false,
+        "description": "Dirección propia de un establecimiento (`dEst`).",
+        "properties": {
+          "ciudad": {
+            "description": "cCiuEmi (D115).",
+            "maximum": 99999.0,
+            "minimum": 1.0,
+            "title": "Ciudad",
+            "type": "integer"
+          },
+          "complemento_1": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complemento 1"
+          },
+          "complemento_2": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complemento 2"
+          },
+          "denominacion_sucursal": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDenSuc (D119).",
+            "title": "Denominacion Sucursal"
+          },
+          "departamento": {
+            "description": "cDepEmi (D111), según `Departamentos_v141.xsd`.",
+            "minimum": 1.0,
+            "title": "Departamento",
+            "type": "integer"
+          },
+          "descripcion_ciudad": {
+            "description": "dDesCiuEmi (D116).",
+            "maxLength": 30,
+            "minLength": 1,
+            "title": "Descripcion Ciudad",
+            "type": "string"
+          },
+          "descripcion_departamento": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 6,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDesDepEmi (D112). Opcional: si se envía tiene que coincidir con el código; se guarda siempre la descripción oficial.",
+            "title": "Descripcion Departamento"
+          },
+          "descripcion_distrito": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDesDisEmi; obligatoria si hay `distrito`.",
+            "title": "Descripcion Distrito"
+          },
+          "direccion": {
+            "description": "dDirEmi (D107).",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Direccion",
+            "type": "string"
+          },
+          "distrito": {
+            "anyOf": [
+              {
+                "maximum": 9999.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cDisEmi.",
+            "title": "Distrito"
+          },
+          "email": {
+            "description": "dEmailE.",
+            "maxLength": 80,
+            "minLength": 3,
+            "pattern": "^[0-9a-zA-Z][0-9a-zA-Z.\\-_]*@([0-9a-zA-Z][0-9a-zA-Z\\-_]*\\.)+[a-zA-Z]{2,9}$",
+            "title": "Email",
+            "type": "string"
+          },
+          "establecimiento": {
+            "description": "Código del establecimiento (C005).",
+            "pattern": "^[0-9]{3}$",
+            "title": "Establecimiento",
+            "type": "string"
+          },
+          "numero_casa": {
+            "description": "dNumCas (D108). `0` solo si la dirección no tiene numeración.",
+            "pattern": "^[0-9]{1,6}$",
+            "title": "Numero Casa",
+            "type": "string"
+          },
+          "telefono": {
+            "description": "dTelEmi (D117), con prefijo.",
+            "maxLength": 15,
+            "minLength": 6,
+            "title": "Telefono",
+            "type": "string"
+          }
+        },
+        "required": [
+          "direccion",
+          "numero_casa",
+          "departamento",
+          "ciudad",
+          "descripcion_ciudad",
+          "telefono",
+          "email",
+          "establecimiento"
+        ],
+        "title": "EstablishmentAddressProfile",
+        "type": "object"
+      },
       "EventCreateRequest": {
         "description": "Event creation payload.",
         "properties": {
@@ -1282,6 +1631,7 @@
                 "type": "null"
               }
             ],
+            "description": "dCodSeg (B004): opcional. Si se omite, la plataforma genera uno aleatorio con un CSPRNG y lo conserva para todos los reintentos. Si se envía tiene que ser aleatorio, de 1 a 999999999, sin relación con los datos del DE y distinto del número del documento.",
             "title": "Codigo Seguridad"
           },
           "condicion": {
@@ -1445,6 +1795,7 @@
           },
           "moneda": {
             "default": "PYG",
+            "description": "cMoneOpe (D015), código ISO 4217 del XSD.",
             "maxLength": 3,
             "minLength": 3,
             "title": "Moneda",
@@ -1464,6 +1815,22 @@
             ],
             "title": "Numero"
           },
+          "porcentaje_descuento_global": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,12}0*$)\\d{0,3}\\.\\d{0,8}0*$)",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "description": "dPorcDescTotal (F010): porcentaje de descuento global del documento, 0 si no hay. Se aplica a cada ítem sin prorratear: dDescGloItem = porcentaje * precio_unitario / 100 (NT 01, 1860/1862).",
+            "title": "Porcentaje Descuento Global"
+          },
           "punto": {
             "anyOf": [
               {
@@ -1478,6 +1845,16 @@
             ],
             "title": "Punto"
           },
+          "redondeo": {
+            "default": "ninguno",
+            "description": "dRedon (F013). `ninguno` (por defecto) informa 0. `multiplo_50` lleva dTotOpe hacia abajo a un múltiplo de 50 Gs (MT v150 §F); solo en PYG. Nunca se redondea una moneda extranjera.",
+            "enum": [
+              "ninguno",
+              "multiplo_50"
+            ],
+            "title": "Redondeo",
+            "type": "string"
+          },
           "tipo_cambio": {
             "anyOf": [
               {
@@ -1485,13 +1862,14 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,5}|(?=[\\d.]{1,10}0*$)\\d{0,5}\\.\\d{0,4}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dTiCam (D018): hasta 4 decimales (XSD tTipoCambioBase).",
             "title": "Tipo Cambio"
           },
           "tipo_contribuyente": {
@@ -1505,6 +1883,7 @@
                 "type": "null"
               }
             ],
+            "description": "Opcional. iTipCont sale del perfil fiscal del emisor; si se envía tiene que coincidir.",
             "title": "Tipo Contribuyente"
           },
           "tipo_documento": {
@@ -1587,14 +1966,177 @@
         "title": "FacturaCreateRequest",
         "type": "object"
       },
+      "FiscalAddressProfile": {
+        "additionalProperties": false,
+        "description": "Dirección y contacto del local que emite el DE (D107-D119).",
+        "properties": {
+          "ciudad": {
+            "description": "cCiuEmi (D115).",
+            "maximum": 99999.0,
+            "minimum": 1.0,
+            "title": "Ciudad",
+            "type": "integer"
+          },
+          "complemento_1": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complemento 1"
+          },
+          "complemento_2": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Complemento 2"
+          },
+          "denominacion_sucursal": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDenSuc (D119).",
+            "title": "Denominacion Sucursal"
+          },
+          "departamento": {
+            "description": "cDepEmi (D111), según `Departamentos_v141.xsd`.",
+            "minimum": 1.0,
+            "title": "Departamento",
+            "type": "integer"
+          },
+          "descripcion_ciudad": {
+            "description": "dDesCiuEmi (D116).",
+            "maxLength": 30,
+            "minLength": 1,
+            "title": "Descripcion Ciudad",
+            "type": "string"
+          },
+          "descripcion_departamento": {
+            "anyOf": [
+              {
+                "maxLength": 16,
+                "minLength": 6,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDesDepEmi (D112). Opcional: si se envía tiene que coincidir con el código; se guarda siempre la descripción oficial.",
+            "title": "Descripcion Departamento"
+          },
+          "descripcion_distrito": {
+            "anyOf": [
+              {
+                "maxLength": 30,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDesDisEmi; obligatoria si hay `distrito`.",
+            "title": "Descripcion Distrito"
+          },
+          "direccion": {
+            "description": "dDirEmi (D107).",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Direccion",
+            "type": "string"
+          },
+          "distrito": {
+            "anyOf": [
+              {
+                "maximum": 9999.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cDisEmi.",
+            "title": "Distrito"
+          },
+          "email": {
+            "description": "dEmailE.",
+            "maxLength": 80,
+            "minLength": 3,
+            "pattern": "^[0-9a-zA-Z][0-9a-zA-Z.\\-_]*@([0-9a-zA-Z][0-9a-zA-Z\\-_]*\\.)+[a-zA-Z]{2,9}$",
+            "title": "Email",
+            "type": "string"
+          },
+          "numero_casa": {
+            "description": "dNumCas (D108). `0` solo si la dirección no tiene numeración.",
+            "pattern": "^[0-9]{1,6}$",
+            "title": "Numero Casa",
+            "type": "string"
+          },
+          "telefono": {
+            "description": "dTelEmi (D117), con prefijo.",
+            "maxLength": 15,
+            "minLength": 6,
+            "title": "Telefono",
+            "type": "string"
+          }
+        },
+        "required": [
+          "direccion",
+          "numero_casa",
+          "departamento",
+          "ciudad",
+          "descripcion_ciudad",
+          "telefono",
+          "email"
+        ],
+        "title": "FiscalAddressProfile",
+        "type": "object"
+      },
       "GenerationResponsiblePayload": {
         "additionalProperties": false,
+        "description": "gRespDE (D140-D145): who generated the DE on behalf of the emitter.",
         "properties": {
           "cargo": {
+            "description": "dCarRespDE (4-100).",
             "maxLength": 100,
-            "minLength": 2,
+            "minLength": 4,
             "title": "Cargo",
             "type": "string"
+          },
+          "descripcion_tipo_documento": {
+            "anyOf": [
+              {
+                "maxLength": 41,
+                "minLength": 9,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dDTipIDRespDE: obligatoria solo con `tipo_documento` 9.",
+            "title": "Descripcion Tipo Documento"
           },
           "nombre": {
             "maxLength": 255,
@@ -1603,20 +2145,25 @@
             "type": "string"
           },
           "numero_documento": {
-            "maxLength": 20,
-            "minLength": 1,
+            "pattern": "^[0-9A-Za-z-]{1,20}$",
             "title": "Numero Documento",
             "type": "string"
           },
           "tipo_documento": {
-            "default": 1,
-            "maximum": 9.0,
-            "minimum": 1.0,
+            "description": "iTipIDRespDE (D141): 1 cédula paraguaya, 2 pasaporte, 3 cédula extranjera, 4 carnet de residencia, 9 otro.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              9
+            ],
             "title": "Tipo Documento",
             "type": "integer"
           }
         },
         "required": [
+          "tipo_documento",
           "numero_documento",
           "nombre",
           "cargo"
@@ -1643,11 +2190,18 @@
             "title": "Fecha Vencimiento"
           },
           "moneda": {
-            "default": "PYG",
-            "maxLength": 3,
-            "minLength": 3,
-            "title": "Moneda",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cMoneCuo (E653), código ISO 4217. Si se omite, la moneda de la operación.",
+            "title": "Moneda"
           },
           "monto": {
             "anyOf": [
@@ -1769,7 +2323,7 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,24}0*$)\\d{0,15}\\.\\d{0,8}0*$)",
                 "type": "string"
               }
             ],
@@ -1783,7 +2337,7 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,24}0*$)\\d{0,15}\\.\\d{0,8}0*$)",
                 "type": "string"
               }
             ],
@@ -1853,11 +2407,14 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,24}0*$)\\d{0,15}\\.\\d{0,8}0*$)",
                 "type": "string"
+              },
+              {
+                "type": "null"
               }
             ],
-            "default": "0",
+            "description": "dDescGloItem (EA004). Se calcula como porcentaje_descuento_global * precio_unitario / 100 (NT 01); si se envía tiene que coincidir con ese cálculo con una variación de hasta 0,8 (1862).",
             "title": "Descuento Global"
           },
           "descuento_particular": {
@@ -1867,7 +2424,7 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,24}0*$)\\d{0,15}\\.\\d{0,8}0*$)",
                 "type": "string"
               }
             ],
@@ -1890,18 +2447,19 @@
           "proporcion_gravada": {
             "anyOf": [
               {
-                "exclusiveMinimum": 0.0,
                 "maximum": 100.0,
+                "minimum": 0.0,
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,12}0*$)\\d{0,3}\\.\\d{0,8}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dPropIVA (E733): obligatoria y entre 0 y 100 (sin incluirlos) con `gravado_parcial` (1906); si se envía vale 100 con `gravado` (1904) y 0 con `exento` o `exonerado` (1905).",
             "title": "Proporcion Gravada"
           },
           "tasa": {
@@ -1921,13 +2479,14 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,5}|(?=[\\d.]{1,10}0*$)\\d{0,5}\\.\\d{0,4}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dTiCamIt (E725): obligatorio en cada ítem con condicion_tipo_cambio 2.",
             "title": "Tipo Cambio Item"
           },
           "unidad_medida": {
@@ -1970,6 +2529,7 @@
                 "type": "null"
               }
             ],
+            "description": "dCodSeg (B004): opcional. Si se omite, la plataforma genera uno aleatorio con un CSPRNG y lo conserva para todos los reintentos. Si se envía tiene que ser aleatorio, de 1 a 999999999, sin relación con los datos del DE y distinto del número del documento.",
             "title": "Codigo Seguridad"
           },
           "condicion": {
@@ -2093,6 +2653,7 @@
           },
           "moneda": {
             "default": "PYG",
+            "description": "cMoneOpe (D015), código ISO 4217 del XSD.",
             "maxLength": 3,
             "minLength": 3,
             "title": "Moneda",
@@ -2138,6 +2699,22 @@
             ],
             "title": "Numero"
           },
+          "porcentaje_descuento_global": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,12}0*$)\\d{0,3}\\.\\d{0,8}0*$)",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "description": "dPorcDescTotal (F010): porcentaje de descuento global del documento, 0 si no hay. Se aplica a cada ítem sin prorratear: dDescGloItem = porcentaje * precio_unitario / 100 (NT 01, 1860/1862).",
+            "title": "Porcentaje Descuento Global"
+          },
           "punto": {
             "anyOf": [
               {
@@ -2152,6 +2729,16 @@
             ],
             "title": "Punto"
           },
+          "redondeo": {
+            "default": "ninguno",
+            "description": "dRedon (F013). `ninguno` (por defecto) informa 0. `multiplo_50` lleva dTotOpe hacia abajo a un múltiplo de 50 Gs (MT v150 §F); solo en PYG. Nunca se redondea una moneda extranjera.",
+            "enum": [
+              "ninguno",
+              "multiplo_50"
+            ],
+            "title": "Redondeo",
+            "type": "string"
+          },
           "tipo_cambio": {
             "anyOf": [
               {
@@ -2159,13 +2746,14 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,5}|(?=[\\d.]{1,10}0*$)\\d{0,5}\\.\\d{0,4}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dTiCam (D018): hasta 4 decimales (XSD tTipoCambioBase).",
             "title": "Tipo Cambio"
           },
           "tipo_contribuyente": {
@@ -2179,6 +2767,7 @@
                 "type": "null"
               }
             ],
+            "description": "Opcional. iTipCont sale del perfil fiscal del emisor; si se envía tiene que coincidir.",
             "title": "Tipo Contribuyente"
           },
           "tipo_documento": {
@@ -2281,6 +2870,7 @@
                 "type": "null"
               }
             ],
+            "description": "dCodSeg (B004): opcional. Si se omite, la plataforma genera uno aleatorio con un CSPRNG y lo conserva para todos los reintentos. Si se envía tiene que ser aleatorio, de 1 a 999999999, sin relación con los datos del DE y distinto del número del documento.",
             "title": "Codigo Seguridad"
           },
           "condicion": {
@@ -2404,6 +2994,7 @@
           },
           "moneda": {
             "default": "PYG",
+            "description": "cMoneOpe (D015), código ISO 4217 del XSD.",
             "maxLength": 3,
             "minLength": 3,
             "title": "Moneda",
@@ -2449,6 +3040,22 @@
             ],
             "title": "Numero"
           },
+          "porcentaje_descuento_global": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,12}0*$)\\d{0,3}\\.\\d{0,8}0*$)",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "description": "dPorcDescTotal (F010): porcentaje de descuento global del documento, 0 si no hay. Se aplica a cada ítem sin prorratear: dDescGloItem = porcentaje * precio_unitario / 100 (NT 01, 1860/1862).",
+            "title": "Porcentaje Descuento Global"
+          },
           "punto": {
             "anyOf": [
               {
@@ -2463,6 +3070,16 @@
             ],
             "title": "Punto"
           },
+          "redondeo": {
+            "default": "ninguno",
+            "description": "dRedon (F013). `ninguno` (por defecto) informa 0. `multiplo_50` lleva dTotOpe hacia abajo a un múltiplo de 50 Gs (MT v150 §F); solo en PYG. Nunca se redondea una moneda extranjera.",
+            "enum": [
+              "ninguno",
+              "multiplo_50"
+            ],
+            "title": "Redondeo",
+            "type": "string"
+          },
           "tipo_cambio": {
             "anyOf": [
               {
@@ -2470,13 +3087,14 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,5}|(?=[\\d.]{1,10}0*$)\\d{0,5}\\.\\d{0,4}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dTiCam (D018): hasta 4 decimales (XSD tTipoCambioBase).",
             "title": "Tipo Cambio"
           },
           "tipo_contribuyente": {
@@ -2490,6 +3108,7 @@
                 "type": "null"
               }
             ],
+            "description": "Opcional. iTipCont sale del perfil fiscal del emisor; si se envía tiene que coincidir.",
             "title": "Tipo Contribuyente"
           },
           "tipo_documento": {
@@ -2599,6 +3218,7 @@
                 "type": "null"
               }
             ],
+            "description": "gPaConEIni. Contado: suman `dTotGralOpe` (tolerancia 0,50); sin formas se informa un pago en efectivo por el total. Crédito: solo con `monto_entrega_inicial`, y suman esa entrega (1551/1552).",
             "title": "Formas Pago"
           },
           "tipo": {
@@ -2623,6 +3243,7 @@
       },
       "PaymentPayload": {
         "additionalProperties": false,
+        "description": "gPaConEIni (E606-E611): one payment of a contado operation or of the\ninitial delivery of a credit one.",
         "properties": {
           "banco": {
             "anyOf": [
@@ -2638,11 +3259,18 @@
             "title": "Banco"
           },
           "moneda": {
-            "default": "PYG",
-            "maxLength": 3,
-            "minLength": 3,
-            "title": "Moneda",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cMoneTiPag (E609), código ISO 4217. Si se omite, el pago es en la moneda de la operación.",
+            "title": "Moneda"
           },
           "moneda_descripcion": {
             "anyOf": [
@@ -2654,6 +3282,8 @@
                 "type": "null"
               }
             ],
+            "deprecated": true,
+            "description": "Obsoleto y sin efecto: dDMoneTiPag es siempre la descripción oficial de `moneda` en el XSD (1555).",
             "title": "Moneda Descripcion"
           },
           "monto": {
@@ -2711,13 +3341,14 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,5}|(?=[\\d.]{1,10}0*$)\\d{0,5}\\.\\d{0,4}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dTiCamTiPag (E611): obligatorio si `moneda` no es PYG (1556) y prohibido si es PYG (1557). Si se omite y el pago va en la moneda de la operación se usa su `tipo_cambio`.",
             "title": "Tipo Cambio"
           }
         },
@@ -5504,6 +6135,7 @@
     },
     "/v1/emitters/{emitter_id}/documents/{document_id}/kude": {
       "get": {
+        "description": "KuDE en PDF del XML firmado, con el código QR en la primera página. Disponible para documentos aprobados y para los que siguen en camino al SIFEN (`queued`, `processing`, `submitting`, `submitted`, `retry_pending`, `reconciliation_required`): con validación posterior el KuDE puede entregarse antes de la aprobación, pero sólo vale si el SIFEN aprueba el DE (MT v150 §6.2 y §6.4). Un documento `rejected`, `failed`, `inutilized` o `cancelled`, o en cualquier otro estado, responde `409 documents.kude_not_available` con el estado en `details.internal_status`.",
         "operationId": "get_document_kude_v1_emitters__emitter_id__documents__document_id__kude_get",
         "parameters": [
           {
@@ -5636,6 +6268,7 @@
     },
     "/v1/emitters/{emitter_id}/documents/{document_id}/kude/data": {
       "get": {
+        "description": "Datos del KuDE leídos del XML firmado; montos y fechas van con el texto literal del XML. Disponible para documentos aprobados y para los que siguen en camino al SIFEN (`queued`, `processing`, `submitting`, `submitted`, `retry_pending`, `reconciliation_required`): con validación posterior el KuDE puede entregarse antes de la aprobación, pero sólo vale si el SIFEN aprueba el DE (MT v150 §6.2 y §6.4). Un documento `rejected`, `failed`, `inutilized` o `cancelled`, o en cualquier otro estado, responde `409 documents.kude_not_available` con el estado en `details.internal_status`.",
         "operationId": "get_document_kude_data_v1_emitters__emitter_id__documents__document_id__kude_data_get",
         "parameters": [
           {

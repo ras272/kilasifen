@@ -60,5 +60,29 @@ GET /v1/emitters/{emitter_id}/documents/{document_id}/kude
 GET /v1/emitters/{emitter_id}/documents/{document_id}/kude/data
 ```
 
-El KuDE sólo está disponible cuando existe información suficiente para
-representar el documento.
+El KuDE sale del XML firmado, así que sólo existe cuando KilaSifen ya firmó
+el documento (si no, `409 documents.signed_xml_not_available`). Además
+depende del estado del documento:
+
+| Estado | KuDE |
+| --- | --- |
+| `approved`, `approved_with_observation` | Disponible. |
+| `queued`, `processing`, `submitting`, `submitted`, `retry_pending`, `reconciliation_required` | Disponible: con validación posterior el KuDE puede entregarse antes de la aprobación, pero sólo vale si el SIFEN aprueba el DE (MT v150 §6.2 y §6.4). |
+| `rejected`, `failed`, `inutilized`, `cancelled` u otro estado | `409 documents.kude_not_available`, con el estado en `details.internal_status`. Un DE rechazado nunca es un DTE (MT v150 §6.4; Decreto 872/2023, Arts. 4 y 29), un DTE cancelado pierde su validez (Art. 30) y un número inutilizado no tiene DE (Art. 31). |
+
+El PDF imprime el código QR en la primera página, numera las páginas como
+`n/total`, muestra la fecha de inicio del timbrado como `DD-MM-AAAA`
+(NT 10) y, si la moneda no es PYG, el total en guaraníes (`dTotalGs`).
+Cantidades y montos se imprimen con todos los dígitos del XML firmado, sin
+redondear: el KuDE no puede mostrar información que no esté en el XML y
+tiene que coincidir con el DTE (MT v150 §13.2 y §6.6). Sólo cambian los
+separadores: un IVA de `952.38095238` se imprime `952,38095238`. Los totales
+muestran también el subtotal exonerado y, cuando no son cero, el redondeo y
+la comisión, así los subtotales impresos suman como en el XML.
+
+`/kude/data` devuelve los mismos datos con el texto literal del XML firmado
+(montos con todos sus decimales, fechas `AAAA-MM-DD`): si armás tu propio
+KuDE con ellos, imprimí cada monto completo, sin redondearlo.
+`totales.total_general_operacion` es `dTotGralOpe`, en la moneda de la
+operación, y `totales.total_general_guaranies` es `dTotalGs` cuando la
+moneda no es PYG (o `dTotGralOpe` en PYG). `qr.url` es el `dCarQR` del XML.

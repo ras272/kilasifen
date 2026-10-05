@@ -18,7 +18,8 @@ Datos ficticios:
 - la ``Signature`` es de relleno: ``DigestValue`` y ``SignatureValue`` son
   base64 canonico de bytes derivados con SHA-256 de un texto fijo, no una
   firma real (el firmador los reemplaza);
-- ``dCarQR`` se genero con ``generate_dcarqr`` (base de produccion) usando el
+- ``dCarQR`` se genero con ``generate_dcarqr_from_signed_xml`` (base de
+  produccion) sobre la propia muestra: los literales del XML, el
   ``DigestValue`` de relleno, ``ID_CSC`` y el CSC ficticio ``CSC``.
 
 Cobertura de tipos: solo los tipos ACTIVOS en ``DE_Types_v150.xsd`` (patron

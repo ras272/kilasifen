@@ -3,6 +3,7 @@
 import hmac
 import logging
 from collections.abc import AsyncGenerator, Callable, Generator
+from datetime import datetime
 
 from fastapi import Depends, Request, Security
 from fastapi.security import APIKeyHeader
@@ -24,6 +25,7 @@ from kilasifen.application.sandbox.service import SandboxOutcomePolicy
 from kilasifen.application.stampings.service import StampingService
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
+from kilasifen.domain.common.paraguay_time import paraguay_now
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.repositories.access import SqlAlchemyAccessRepository
 from kilasifen.infrastructure.db.repositories.api_keys import SqlAlchemyApiKeyRepository
@@ -326,8 +328,15 @@ def get_job_service(session: Session = Depends(get_db_session)) -> JobService:
     return JobService(repository)
 
 
+def get_fiscal_clock() -> Callable[[], datetime]:
+    """Clock the fiscal date rules use (official Paraguayan time, UTC-3)."""
+
+    return paraguay_now
+
+
 def get_document_service(
     session: Session = Depends(get_db_session),
+    clock: Callable[[], datetime] = Depends(get_fiscal_clock),
 ) -> DocumentService:
     """Build the document application service for one request."""
 
@@ -349,6 +358,7 @@ def get_document_service(
         encryption_key=settings.encryption_key,
         sandbox_policy=SandboxOutcomePolicy(settings.environment),
         raw_payload_policy=require_signable_raw_payload,
+        clock=clock,
     )
 
 

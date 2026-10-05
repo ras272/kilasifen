@@ -11,12 +11,14 @@ from kilasifen.api.deps import (
 from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.api.schemas.emitters import (
     EmitterCreateRequest,
+    EmitterFiscalProfileModel,
     EmitterHealthResponse,
     EmitterResponse,
     EmitterUpdateRequest,
 )
 from kilasifen.application.emitters.health import EmitterHealthService
 from kilasifen.application.emitters.service import EmitterService
+from kilasifen.domain.emitters.fiscal_profile import EmitterFiscalProfile
 from kilasifen.domain.emitters.models import Emitter, EmitterSummary
 from kilasifen.security import (
     SECRETS_WRITE_SCOPE,
@@ -35,10 +37,13 @@ def create_emitter(
     principal: ApiKeyPrincipal = Depends(get_admin_principal),
     service: EmitterService = Depends(get_emitter_service),
 ) -> SuccessEnvelope:
-    create_payload = payload.model_dump(exclude={"owner_consumer_id"})
+    create_payload = payload.model_dump(
+        exclude={"owner_consumer_id", "fiscal_profile"}
+    )
     emitter = service.create_emitter(
         **create_payload,
         owner_consumer_id=payload.owner_consumer_id or principal.consumer_id,
+        fiscal_profile=_profile_to_domain(payload.fiscal_profile),
     )
     return _envelope(request, emitter)
 
@@ -68,7 +73,11 @@ def update_emitter(
     principal.require_emitter(emitter_id)
     if payload.csc is not None or payload.csc_id is not None:
         principal.require_scope(SECRETS_WRITE_SCOPE)
-    emitter = service.update_emitter(emitter_id, **payload.model_dump())
+    emitter = service.update_emitter(
+        emitter_id,
+        **payload.model_dump(exclude={"fiscal_profile"}),
+        fiscal_profile=_profile_to_domain(payload.fiscal_profile),
+    )
     return _envelope(request, emitter)
 
 
@@ -105,6 +114,12 @@ def get_emitter_health(
     )
 
 
+def _profile_to_domain(
+    profile: EmitterFiscalProfileModel | None,
+) -> EmitterFiscalProfile | None:
+    return profile.to_domain() if profile is not None else None
+
+
 def _envelope(
     request: Request,
     emitter: Emitter | EmitterSummary,
@@ -124,6 +139,12 @@ def _envelope(
         status=emitter.status,
         csc_configured=csc_configured,
         csc_id=emitter.csc_id,
+        fiscal_profile=(
+            EmitterFiscalProfileModel.from_domain(emitter.fiscal_profile)
+            if emitter.fiscal_profile is not None
+            else None
+        ),
+        fiscal_profile_complete=emitter.fiscal_profile is not None,
         created_at=emitter.created_at,
         updated_at=emitter.updated_at,
     )

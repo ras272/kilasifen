@@ -100,7 +100,7 @@ def test_request_validation_returns_field_details_without_echoing_input(
     fields = {tuple(item["loc"]): item for item in error["details"]["errors"]}
     assert fields[("body", "legal_name")]["type"] == "missing"
     assert fields[("body", "tax_environment")]["type"] == "literal_error"
-    assert fields[("body", "csc")]["type"] == "string_too_long"
+    assert fields[("body", "csc")]["type"] == "string_pattern_mismatch"
     assert all(set(item) == {"loc", "message", "type"} for item in fields.values())
     assert "S3CR3T" not in response.text
 

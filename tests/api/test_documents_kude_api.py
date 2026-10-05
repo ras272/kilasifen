@@ -11,17 +11,21 @@ from fastapi.testclient import TestClient
 
 from kilasifen.api.app import create_app
 from kilasifen.config import get_settings
+from kilasifen.engine.sdk.fiscal import build_qr_payload_from_signed_xml
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.repositories.documents import (
     SqlAlchemyDocumentRepository,
 )
 from kilasifen.infrastructure.db.session import build_engine, session_scope
-from kilasifen.infrastructure.kude.qr_generator import build_sifen_qr_url
 from kilasifen.testing.database import managed_test_database_url
+from kilasifen.testing.typed_documents import (
+    FICTIONAL_EMITTER_DV,
+    FICTIONAL_EMITTER_NAME,
+    FICTIONAL_EMITTER_RUC,
+)
 from tests._raw_xml import golden_signed_xml, raw_document_payload
 
 API_KEY = "secret-key"
-_GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden"
 _CSC = "ABCD0000000000000000000000000000"
 _CSC_ID = "0001"
 
@@ -55,6 +59,7 @@ def _create_emitter(
     external_id: str,
     ruc: str,
     dv: str,
+    legal_name: str = "ARES PARAGUAY SRL",
     csc: str | None = _CSC,
     csc_id: str | None = _CSC_ID,
 ) -> dict:
@@ -65,7 +70,7 @@ def _create_emitter(
             "external_id": external_id,
             "ruc": ruc,
             "dv": dv,
-            "legal_name": "ARES PARAGUAY SRL",
+            "legal_name": legal_name,
             "tax_environment": "test",
             "csc": csc,
             "csc_id": csc_id,
@@ -110,6 +115,74 @@ def _store_platform_signed_xml(
         repository.save(replace(stored, signed_xml=signed_xml))
 
 
+def _set_internal_status(client: TestClient, *, document_id: str, status: str) -> None:
+    with session_scope(client.app.state.session_factory) as session:
+        repository = SqlAlchemyDocumentRepository(session)
+        stored = repository.get(document_id)
+        assert stored is not None
+        repository.save(replace(stored, internal_status=status))
+
+
+def _create_fictional_emitter(client: TestClient) -> dict:
+    return _create_emitter(
+        client,
+        external_id="erp-ficticio",
+        ruc=FICTIONAL_EMITTER_RUC,
+        dv=FICTIONAL_EMITTER_DV,
+        legal_name=FICTIONAL_EMITTER_NAME,
+    )
+
+
+@pytest.mark.parametrize("route", ["kude", "kude/data"])
+@pytest.mark.parametrize("status", ["rejected", "failed", "inutilized", "cancelled"])
+def test_kude_is_refused_for_documents_that_are_not_a_valid_dte(
+    client: TestClient, route: str, status: str
+):
+    # MT v150 §6.4; Dto 872/2023 Arts. 4, 29, 30 and 31 (DECISIONES F51).
+    emitter = _create_fictional_emitter(client)
+    document = _create_document_with_signed_xml(
+        client,
+        emitter_id=emitter["id"],
+        scenario_name="factura_b2b_iva10",
+        document_type="factura",
+    )
+    _set_internal_status(client, document_id=document["id"], status=status)
+
+    response = client.get(
+        f"/v1/emitters/{emitter['id']}/documents/{document['id']}/{route}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 409, response.text
+    error = response.json()["error"]
+    assert error["code"] == "documents.kude_not_available"
+    assert error["details"] == {"internal_status": status}
+
+
+@pytest.mark.parametrize(
+    "status", ["approved", "approved_with_observation", "submitted", "retry_pending"]
+)
+def test_kude_is_available_for_approved_and_in_flight_documents(
+    client: TestClient, status: str
+):
+    emitter = _create_fictional_emitter(client)
+    document = _create_document_with_signed_xml(
+        client,
+        emitter_id=emitter["id"],
+        scenario_name="factura_b2b_iva10",
+        document_type="factura",
+    )
+    _set_internal_status(client, document_id=document["id"], status=status)
+
+    response = client.get(
+        f"/v1/emitters/{emitter['id']}/documents/{document['id']}/kude",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.content[:5] == b"%PDF-"
+
+
 def test_get_kude_returns_pdf(client: TestClient):
     emitter = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
     document = _create_document_with_signed_xml(
@@ -129,7 +202,7 @@ def test_get_kude_returns_pdf(client: TestClient):
 
 def test_get_kude_isolates_documents_across_emitters(client: TestClient):
     emitter_a = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
-    emitter_b = _create_emitter(client, external_id="erp-b", ruc="80111111", dv="9")
+    emitter_b = _create_emitter(client, external_id="erp-b", ruc="80111111", dv="0")
     document = _create_document_with_signed_xml(
         client,
         emitter_id=emitter_a["id"],
@@ -266,7 +339,7 @@ def test_get_kude_data_returns_normalized_nota_debito(client: TestClient):
 
 def test_get_kude_data_isolates_documents_across_emitters(client: TestClient):
     emitter_a = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
-    emitter_b = _create_emitter(client, external_id="erp-b", ruc="80111111", dv="9")
+    emitter_b = _create_emitter(client, external_id="erp-b", ruc="80111111", dv="0")
     document = _create_document_with_signed_xml(
         client,
         emitter_id=emitter_a["id"],
@@ -322,11 +395,7 @@ def test_get_kude_data_does_not_expose_csc(client: TestClient):
     assert _CSC not in json.dumps(response.json())
 
 
-def test_get_kude_data_qr_matches_qr_generator_byte_exact(client: TestClient):
-    from datetime import datetime
-    from decimal import Decimal
-    from xml.etree import ElementTree as ET
-
+def test_get_kude_data_qr_is_the_dcarqr_of_the_signed_xml(client: TestClient):
     emitter = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
     document = _create_document_with_signed_xml(
         client,
@@ -341,34 +410,10 @@ def test_get_kude_data_qr_matches_qr_generator_byte_exact(client: TestClient):
     assert response.status_code == 200
     body = response.json()["data"]["kude"]
 
-    signed_xml = (_GOLDEN_DIR / "factura_b2b_iva10.xml").read_text(encoding="utf-8")
-    ns = "http://ekuatia.set.gov.py/sifen/xsd"
-    dsig = "http://www.w3.org/2000/09/xmldsig#"
-    root = ET.fromstring(signed_xml.encode("utf-8"))
-    de = root.find(f"{{{ns}}}DE")
-    cdc = de.attrib["Id"]
-    fecha_emi = datetime.fromisoformat(
-        de.find(f"{{{ns}}}gDatGralOpe/{{{ns}}}dFeEmiDE").text
-    )
-    rec_ruc = de.find(f"{{{ns}}}gDatGralOpe/{{{ns}}}gDatRec/{{{ns}}}dRucRec").text
-    g_tot = de.find(f"{{{ns}}}gTotSub")
-    total_general = Decimal(g_tot.find(f"{{{ns}}}dTotGralOpe").text)
-    total_iva = Decimal(g_tot.find(f"{{{ns}}}dTotIVA").text)
-    items_count = len(de.find(f"{{{ns}}}gDtipDE").findall(f"{{{ns}}}gCamItem"))
-    digest = root.find(
-        f"{{{dsig}}}Signature/{{{dsig}}}SignedInfo/{{{dsig}}}Reference/{{{dsig}}}DigestValue"
-    ).text.strip()
-
-    expected = build_sifen_qr_url(
-        cdc=cdc,
-        fecha_emision=fecha_emi,
-        rec_identifier=rec_ruc,
-        total_general=total_general,
-        total_iva=total_iva,
-        cantidad_items=items_count,
-        digest_value=digest,
-        csc=_CSC,
+    expected = build_qr_payload_from_signed_xml(
+        signed_xml=golden_signed_xml("factura_b2b_iva10"),
         id_csc=_CSC_ID,
-        ambiente="test",
-    )
+        csc=_CSC,
+        environment="test",
+    )["url"]
     assert body["qr"]["url"] == expected
