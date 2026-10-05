@@ -35,6 +35,7 @@ from kilasifen.engine.sdk.fiscal import (
     calculate_mod11_dv,
     generate_cdc,
     generate_dcarqr,
+    generate_dcarqr_from_signed_xml,
 )
 from kilasifen.engine.sdk.validation import validate_xml
 from tests._muestras import (
@@ -697,6 +698,20 @@ class TestCoherenciaMuestras:
         )
         assert esperado.startswith(PREFIJO_QR_PRODUCCION)
         assert rde.gCamFuFD.dCarQR == esperado
+
+    @por_muestra
+    def test_qr_coincide_con_los_literales_del_xml(self, muestra: Muestra) -> None:
+        # MT v150 §13.8.2: el QR lleva el texto de los campos del XML; la
+        # autofactura no informa F017 y la remision no informa gTotSub, asi
+        # que ambas llevan 0 (MT v150 p. 102; NT 10 §4, obs. 1).
+        datos = (SAMPLES_DIR / muestra.archivo).read_bytes()
+        esperado = generate_dcarqr_from_signed_xml(
+            signed_xml=datos,
+            id_csc=muestra.id_csc,
+            csc=muestra.csc,
+        )
+        assert cargar(muestra).gCamFuFD.dCarQR == esperado
+        assert ".00000000" not in esperado
 
     @por_muestra
     def test_lectura_sin_warnings_inesperados(self, muestra: Muestra) -> None:

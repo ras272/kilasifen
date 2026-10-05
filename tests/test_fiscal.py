@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 
 import pytest
 
@@ -126,167 +127,290 @@ def test_format_cdc_for_kude_groups_by_four():
     )
 
 
+
+
+# ---------------------------------------------------------------------------
+# Codigo QR (MT v150 §13.8; NT 10 §3 y §4; NT 23 §1.1)
+# ---------------------------------------------------------------------------
+
+# Ejemplo oficial de MT v150 §13.8.4 (pags. 207-208). El "nVersion=142" de la
+# pag. 208 es una errata: el hash oficial solo se reproduce con 150.
+_MT_CDC = "01444444017001001001452822017012515873260988"
+_MT_FECHA = "2017-01-25T09:35:17"
+_MT_DIGEST = "yzGYhUx1/XYYzksWB+fPR3Qc50c="
+_MT_CSC = "ABCD0000000000000000000000000000"
+_MT_HASH = "97ddbb3c1e7d65af03a70ffe21f2b34846ab1c89e0566c35222086766b7374ed"
+_MT_STEP1 = (
+    "nVersion=150"
+    "&Id=01444444017001001001452822017012515873260988"
+    "&dFeEmiDE=323031372d30312d32355430393a33353a3137"
+    "&dRucRec=88899990"
+    "&dTotGralOpe=300000"
+    "&dTotIVA=27272"
+    "&cItems=2"
+    "&DigestValue=797a4759685578312f5859597a6b7357422b6650523351633530633d"
+    "&IdCSC=0001"
+)
+_MT_URL = f"https://ekuatia.set.gov.py/consultas/qr?{_MT_STEP1}&cHashQR={_MT_HASH}"
+
+
+def _mt_payload(**overrides):
+    kwargs = {
+        "cdc": _MT_CDC,
+        "d_fe_emi_de": _MT_FECHA,
+        "digest_value": _MT_DIGEST,
+        "id_csc": "0001",
+        "csc": _MT_CSC,
+        "d_ruc_rec": "88899990",
+        "d_tot_gral_ope": "300000",
+        "d_tot_iva": "27272",
+        "c_items": 2,
+        "environment": "production",
+    }
+    kwargs.update(overrides)
+    return build_qr_payload(**kwargs)
+
+
 def test_build_qr_payload_matches_manual_v150_example():
-    payload = build_qr_payload(
-        cdc="01444444017001001001452822017012515873260988",
-        d_fe_emi_de="2017-01-25T09:35:17",
-        digest_value="yzGYhUx1/XYYzksWB+fPR3Qc50c=",
-        id_csc="0001",
-        csc="ABCD0000000000000000000000000000",
-        d_ruc_rec="88899990",
-        d_tot_gral_ope="300000",
-        d_tot_iva="27272",
-        c_items=2,
-        environment="production",
+    payload = _mt_payload()
+
+    assert payload["step1"] == _MT_STEP1
+    assert payload["c_hash_qr"] == _MT_HASH
+    assert payload["url"] == _MT_URL
+
+
+def test_build_qr_payload_accepts_int_and_decimal_literals():
+    payload = _mt_payload(d_tot_gral_ope=Decimal("300000"), d_tot_iva=27272)
+
+    assert payload["c_hash_qr"] == _MT_HASH
+
+
+def test_build_qr_payload_pads_id_csc_to_four_digits():
+    assert _mt_payload(id_csc=1)["url"] == _MT_URL
+
+
+def test_build_qr_payload_accepts_a_datetime_for_d002():
+    payload = _mt_payload(d_fe_emi_de=datetime(2017, 1, 25, 9, 35, 17))
+
+    assert payload["c_hash_qr"] == _MT_HASH
+
+
+def test_build_qr_payload_keeps_the_amount_literal():
+    payload = _mt_payload(d_tot_gral_ope="110000.00", d_tot_iva="10000.5")
+
+    assert "&dTotGralOpe=110000.00&dTotIVA=10000.5&" in payload["step1"]
+
+
+def test_build_qr_payload_writes_zero_for_values_the_de_does_not_carry():
+    payload = _mt_payload(
+        d_ruc_rec=None,
+        d_tot_gral_ope=None,
+        d_tot_iva="",
+        c_items=None,
+        environment="test",
     )
 
-    assert payload["c_hash_qr"] == (
-        "40589613f88eb38dc7ee5e89b1e79ff0"
-        "0cc3107e432cca0c759d1a6062e4a72c"
-    )
-    assert payload["url"] == (
-        "https://ekuatia.set.gov.py/consultas/qr?"
-        "nVersion=150"
-        "&Id=01444444017001001001452822017012515873260988"
-        "&dFeEmiDE=323031372d30312d32355430393a33353a3137"
-        "&dRucRec=88899990"
-        "&dTotGralOpe=300000.00000000"
-        "&dTotIVA=27272.00000000"
-        "&cItems=2"
-        "&DigestValue=797a4759685578312f5859597a6b7357422b6650523351633530633d"
-        "&IdCSC=0001"
-        "&cHashQR="
-        "40589613f88eb38dc7ee5e89b1e79ff0"
-        "0cc3107e432cca0c759d1a6062e4a72c"
-    )
+    # Sin D206 el receptor es no contribuyente (D206 es obligatorio con
+    # iNatRec=1): va dNumIDRec con 0 (nota (*) de la tabla de §13.8.2).
+    assert "&dNumIDRec=0&dTotGralOpe=0&dTotIVA=0&cItems=0&" in payload["step1"]
+    assert payload["url"].startswith("https://ekuatia.set.gov.py/consultas-test/qr?")
+
+
+def test_build_qr_payload_names_the_d210_parameter_dnumidrec():
+    payload = _mt_payload(d_ruc_rec=None, d_num_id_rec="4512369")
+
+    assert "&dNumIDRec=4512369&" in payload["step1"]
+    assert "dRucRec" not in payload["url"]
+
+
+def test_build_qr_payload_rejects_both_receptor_identifiers():
+    with pytest.raises(ValueError, match="either d_ruc_rec or d_num_id_rec"):
+        _mt_payload(d_num_id_rec="1234567")
+
+
+@pytest.mark.parametrize("ruc", ["80069563-1", "01234567", "12", "123456789"])
+def test_build_qr_payload_rejects_a_d206_outside_truc(ruc):
+    with pytest.raises(ValueError, match="D206"):
+        _mt_payload(d_ruc_rec=ruc)
+
+
+@pytest.mark.parametrize("fecha", ["2017-01-25", date(2017, 1, 25), "20170125"])
+def test_build_qr_payload_rejects_d002_without_time(fecha):
+    with pytest.raises(ValueError, match="D002"):
+        _mt_payload(d_fe_emi_de=fecha)
+
+
+@pytest.mark.parametrize("monto", [300000.0, "-1", "1e5", "300.000,00", True])
+def test_build_qr_payload_rejects_amounts_that_are_not_xml_literals(monto):
+    with pytest.raises(ValueError, match="d_tot_gral_ope"):
+        _mt_payload(d_tot_gral_ope=monto)
+
+
+@pytest.mark.parametrize(
+    "csc", ["ABCD000000000000000000000000000", "ABCD00000000000000000000000000-0"]
+)
+def test_build_qr_payload_rejects_a_csc_that_is_not_32_alphanumerics(csc):
+    with pytest.raises(ValueError, match="32 alphanumeric"):
+        _mt_payload(csc=csc)
+
+
+@pytest.mark.parametrize("id_csc", ["0", "10000", "A1"])
+def test_build_qr_payload_rejects_an_id_csc_outside_1_9999(id_csc):
+    with pytest.raises(ValueError, match="id_csc"):
+        _mt_payload(id_csc=id_csc)
+
+
+def test_build_qr_payload_never_returns_the_csc():
+    payload = _mt_payload()
+
+    assert set(payload) == {"step1", "c_hash_qr", "url", "dcarqr_xml"}
+    assert all(_MT_CSC not in value for value in payload.values())
+
+
+def test_build_qr_payload_checks_the_dcarqr_length():
+    with pytest.raises(ValueError, match="between 100 and 600"):
+        _mt_payload(digest_value="A" * 300)
 
 
 def test_generate_dcarqr_xml_escaped():
     dcarqr = generate_dcarqr(
-        cdc="01444444017001001001452822017012515873260988",
-        d_fe_emi_de="2017-01-25T09:35:17",
-        digest_value="yzGYhUx1/XYYzksWB+fPR3Qc50c=",
+        cdc=_MT_CDC,
+        d_fe_emi_de=_MT_FECHA,
+        digest_value=_MT_DIGEST,
         id_csc="0001",
-        csc="ABCD0000000000000000000000000000",
+        csc=_MT_CSC,
         d_ruc_rec="88899990",
         d_tot_gral_ope="300000",
         d_tot_iva="27272",
         c_items=2,
         xml_escaped=True,
     )
-    assert "&amp;" in dcarqr
-    assert "&cHashQR=" not in dcarqr
+    assert dcarqr == _MT_URL.replace("&", "&amp;")
 
 
-def test_build_qr_payload_uses_default_zero_values():
-    payload = build_qr_payload(
-        cdc="01444444017001001001452822017012515873260988",
-        d_fe_emi_de="2017-01-25",
-        digest_value="abc123=",
-        id_csc=1,
-        csc="ABCD0000000000000000000000000000",
-        d_num_id_rec=None,
-        d_tot_gral_ope=None,
-        d_tot_iva=None,
-        c_items=None,
-        environment="test",
+def _signed_rde(
+    *,
+    receptor: str = "<iNatRec>1</iNatRec><dRucRec>88899990</dRucRec>",
+    totales: str | None = (
+        "<dTotGralOpe>300000</dTotGralOpe><dTotIVA>27272</dTotIVA>"
+    ),
+    items: int = 2,
+    digest: str | None = _MT_DIGEST,
+) -> str:
+    """rDE firmado minimo con los valores que lee el QR."""
+
+    gtotsub = f"<gTotSub>{totales}</gTotSub>" if totales is not None else ""
+    signed_info = (
+        f'<SignedInfo><Reference URI="#{_MT_CDC}">'
+        f"<DigestValue>{digest}</DigestValue></Reference></SignedInfo>"
+        if digest is not None
+        else "<SignedInfo/>"
+    )
+    return (
+        '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
+        "<dVerFor>150</dVerFor>"
+        f'<DE Id="{_MT_CDC}">'
+        "<gTimb><iTiDE>1</iTiDE></gTimb>"
+        f"<gDatGralOpe><dFeEmiDE>{_MT_FECHA}</dFeEmiDE>"
+        "<gOpeCom><iTImp>1</iTImp></gOpeCom>"
+        f"<gDatRec>{receptor}</gDatRec></gDatGralOpe>"
+        f"<gDtipDE>{'<gCamItem/>' * items}</gDtipDE>"
+        f"{gtotsub}"
+        "</DE>"
+        '<Signature xmlns="http://www.w3.org/2000/09/xmldsig#">'
+        f"{signed_info}</Signature>"
+        "</rDE>"
     )
 
-    assert "&dRucRec=0" in payload["step1"]
-    assert "&dTotGralOpe=0.00000000" in payload["step1"]
-    assert "&dTotIVA=0.00000000" in payload["step1"]
-    assert "&cItems=0" in payload["step1"]
-    assert payload["url"].startswith(
-        "https://ekuatia.set.gov.py/consultas-test/qr?"
+
+def _qr_from_xml(signed_xml: str, **kwargs):
+    return build_qr_payload_from_signed_xml(
+        signed_xml=signed_xml, id_csc="0001", csc=_MT_CSC, **kwargs
     )
 
 
-def test_build_qr_payload_rejects_both_receptor_identifiers():
-    with pytest.raises(ValueError, match="either d_ruc_rec or d_num_id_rec"):
-        build_qr_payload(
-            cdc="01444444017001001001452822017012515873260988",
-            d_fe_emi_de="2017-01-25T09:35:17",
-            digest_value="yzGYhUx1/XYYzksWB+fPR3Qc50c=",
-            id_csc="0001",
-            csc="ABCD0000000000000000000000000000",
-            d_ruc_rec="88899990",
-            d_num_id_rec="1234567",
-        )
+def test_build_qr_payload_from_signed_xml_matches_manual_v150_example():
+    payload = _qr_from_xml(_signed_rde())
+
+    assert payload["url"] == _MT_URL
 
 
 def test_build_qr_payload_from_signed_xml_uses_literal_totals():
-    signed_xml = """
-<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">
-  <dVerFor>150</dVerFor>
-  <DE Id="01800241355001001000075122026042411234567890">
-    <gTimb><iTiDE>1</iTiDE></gTimb>
-    <gDatGralOpe>
-      <dFeEmiDE>2026-04-24T09:55:00</dFeEmiDE>
-      <gOpeCom><iTImp>1</iTImp></gOpeCom>
-      <gDatRec><iNatRec>1</iNatRec><dRucRec>80069563</dRucRec></gDatRec>
-    </gDatGralOpe>
-    <gDtipDE><gCamItem/><gCamItem/></gDtipDE>
-    <gTotSub>
-      <dTotGralOpe>110000.00</dTotGralOpe>
-      <dTotIVA>10000.00</dTotIVA>
-    </gTotSub>
-  </DE>
-  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
-    <SignedInfo>
-      <Reference URI="#01800241355001001000075122026042411234567890">
-        <DigestValue>B7+e93lmdfIpt96amatjsp7YyStylWGyREb4GtutGAE=</DigestValue>
-      </Reference>
-    </SignedInfo>
-  </Signature>
-</rDE>
-"""
-    payload = build_qr_payload_from_signed_xml(
-        signed_xml=signed_xml,
-        id_csc="0001",
-        csc="ABCD0000000000000000000000000000",
+    payload = _qr_from_xml(
+        _signed_rde(
+            totales="<dTotGralOpe>110000.00</dTotGralOpe><dTotIVA>10000.00</dTotIVA>"
+        ),
         environment="test",
     )
-    assert "&dRucRec=80069563" in payload["step1"]
-    assert "&dTotGralOpe=110000.00" in payload["step1"]
-    assert "&dTotIVA=10000.00" in payload["step1"]
-    assert "&cItems=2" in payload["step1"]
-    assert payload["url"].startswith(
-        "https://ekuatia.set.gov.py/consultas-test/qr?"
-    )
+
+    assert "&dTotGralOpe=110000.00&dTotIVA=10000.00&cItems=2&" in payload["step1"]
+    assert payload["url"].startswith("https://ekuatia.set.gov.py/consultas-test/qr?")
 
 
-def test_generate_dcarqr_from_signed_xml_uses_remision_zero_totals():
-    signed_xml = """
-<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">
-  <dVerFor>150</dVerFor>
-  <DE Id="01800241355001001000075222026042411234567898">
-    <gTimb><iTiDE>7</iTiDE></gTimb>
-    <gDatGralOpe>
-      <dFeEmiDE>2026-04-24T09:56:00</dFeEmiDE>
-      <gOpeCom><iTImp>1</iTImp></gOpeCom>
-      <gDatRec><iNatRec>2</iNatRec></gDatRec>
-    </gDatGralOpe>
-    <gDtipDE><gCamItem/></gDtipDE>
-    <gTotSub>
-      <dTotGralOpe>999999.99</dTotGralOpe>
-      <dTotIVA>777.77</dTotIVA>
-    </gTotSub>
-  </DE>
-  <Signature xmlns="http://www.w3.org/2000/09/xmldsig#">
-    <SignedInfo>
-      <Reference URI="#01800241355001001000075222026042411234567898">
-        <DigestValue>B7+e93lmdfIpt96amatjsp7YyStylWGyREb4GtutGAE=</DigestValue>
-      </Reference>
-    </SignedInfo>
-  </Signature>
-</rDE>
-"""
+@pytest.mark.parametrize(
+    ("receptor", "parametro"),
+    [
+        (
+            "<iNatRec>2</iNatRec><iTipIDRec>1</iTipIDRec>"
+            "<dNumIDRec>4512369</dNumIDRec>",
+            "&dNumIDRec=4512369&",
+        ),
+        # Innominado (NT 23 §1.1: D210 = 0).
+        (
+            "<iNatRec>2</iNatRec><iTipIDRec>5</iTipIDRec><dNumIDRec>0</dNumIDRec>",
+            "&dNumIDRec=0&",
+        ),
+        # B2F sin D210 (opcional desde la NT 23): nota (*) de §13.8.2.
+        ("<iNatRec>2</iNatRec>", "&dNumIDRec=0&"),
+    ],
+)
+def test_build_qr_payload_from_signed_xml_uses_d210_for_non_taxpayers(
+    receptor, parametro
+):
+    payload = _qr_from_xml(_signed_rde(receptor=receptor))
+
+    assert parametro in payload["step1"]
+    assert "dRucRec" not in payload["url"]
+
+
+def test_build_qr_payload_from_signed_xml_writes_zero_without_gtotsub():
+    # Nota de remision: F001 no se informa si C002=7 (MT v150 p. 102).
+    payload = _qr_from_xml(_signed_rde(totales=None, items=1))
+
+    assert "&dTotGralOpe=0&dTotIVA=0&cItems=1&" in payload["step1"]
+
+
+def test_build_qr_payload_from_signed_xml_writes_zero_without_f017():
+    # Autofactura o DE sin IVA con iTImp 1: F017 es 0-1 (MT v150 pp. 102 y
+    # 105, validacion 2370) y el QR lleva 0 (NT 10 §4, obs. 1).
+    payload = _qr_from_xml(_signed_rde(totales="<dTotGralOpe>573000</dTotGralOpe>"))
+
+    assert "&dTotGralOpe=573000&dTotIVA=0&" in payload["step1"]
+
+
+def test_build_qr_payload_from_signed_xml_takes_nversion_from_dverfor():
+    with pytest.raises(ValueError, match="dVerFor"):
+        _qr_from_xml(_signed_rde(), qr_version=142)
+    assert _qr_from_xml(_signed_rde(), qr_version="150")["url"] == _MT_URL
+
+
+def test_build_qr_payload_from_signed_xml_requires_the_signature_digest():
+    with pytest.raises(ValueError, match="DigestValue"):
+        _qr_from_xml(_signed_rde(digest=None))
+
+
+def test_build_qr_payload_from_signed_xml_rejects_a_taxpayer_without_d206():
+    with pytest.raises(ValueError, match="dRucRec"):
+        _qr_from_xml(_signed_rde(receptor="<iNatRec>1</iNatRec>"))
+
+
+def test_generate_dcarqr_from_signed_xml_never_returns_the_csc():
     url = generate_dcarqr_from_signed_xml(
-        signed_xml=signed_xml,
-        id_csc="0001",
-        csc="ABCD0000000000000000000000000000",
-        environment="test",
+        signed_xml=_signed_rde().encode("utf-8"),
+        id_csc=1,
+        csc=_MT_CSC,
+        xml_escaped=True,
     )
-    assert "&dNumIDRec=0" in url
-    assert "&dTotGralOpe=0" in url
-    assert "&dTotIVA=0" in url
+
+    assert url == _MT_URL.replace("&", "&amp;")
+    assert _MT_CSC not in url
