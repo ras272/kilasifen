@@ -1,14 +1,19 @@
 """Payload mappers for the kilasifen.engine emission bridge."""
 
 from dataclasses import dataclass
+from datetime import date
 from xml.etree import ElementTree as ET
 
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine.sdk.errors import SifenValidationError
+from kilasifen.infrastructure.sifen.de_facts import read_de_facts
 from kilasifen.infrastructure.sifen.raw_xml_policy import signable_doc_id
-from kilasifen.infrastructure.sifen.typed_xml_builder import build_typed_document_xml
+from kilasifen.infrastructure.sifen.typed_xml_builder import (
+    _resolve_emission_datetime,
+    build_typed_document_xml,
+)
 
 
 @dataclass(slots=True)
@@ -75,6 +80,38 @@ class KilaSifenPayloadMapper:
             signed_xml=signed_xml,
             doc_id=doc_id,
         )
+
+
+def resolve_emission_date(document: Document) -> date | None:
+    """Date of ``dFeEmiDE`` (D002) the document carries or will carry.
+
+    The timbrado is chosen with this date, not the server date: it must be
+    active on D002 and D002 cannot precede its start (1103 as amended by NT
+    01, 1104; MT v150 §12.4 p. 160; DECISIONES F23). An XML already built
+    (stored, or supplied by the caller) decides; otherwise the typed payload,
+    read exactly as the builder reads it. ``None`` when neither says.
+
+    Raises:
+        SifenValidationError: if the typed payload carries an invalid date.
+    """
+
+    payload = document.payload_snapshot or {}
+    for xml_text in (
+        document.signed_xml,
+        document.generated_xml,
+        payload.get("generated_xml"),
+    ):
+        issued_at = read_de_facts(xml_text).issued_at
+        if issued_at is not None:
+            return issued_at.date()
+
+    typed_contract = payload.get("typed_contract")
+    if not isinstance(typed_contract, dict):
+        return None
+    typed_payload = typed_contract.get("payload")
+    if not isinstance(typed_payload, dict):
+        return None
+    return date.fromisoformat(_resolve_emission_datetime(typed_payload)[:10])
 
 
 def _extract_doc_id(xml_text: str) -> str | None:

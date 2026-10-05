@@ -117,6 +117,8 @@ def test_query_document_returns_normalized_payload_and_persists_trace(
     assert payload["result_code"] == "0300"
     assert payload["result_message"] == "Consulta DE exitosa"
     assert payload["content_xml"] == "<rDE version='150'/>"
+    assert payload["cancelled"] is False
+    assert payload["events"] == []
 
     engine = build_engine(get_settings().database_url)
     session_factory = build_session_factory(engine)
@@ -168,7 +170,9 @@ def test_query_document_reconciles_transport_uncertainty_without_resubmission(
     assert reconciled.internal_status == "approved"
     assert reconciled.sifen_status == "approved"
     assert reconciled.sifen_result_code == "0300"
-    assert reconciled.signed_xml == "<rDE version='150'/>"
+    # DECISIONES F62: the copy in xContenDE never replaces the signed XML.
+    assert reconciled.signed_xml == "<rDE><Signature/></rDE>"
+    assert reconciled.sifen_approved_at is not None
     assert reconciled.sifen_request_xml == "<emit-request/>"
     assert reconciled.sifen_response_raw == "<emit-response/>"
     assert reconciled.last_query_request_xml == "<query-document-request/>"

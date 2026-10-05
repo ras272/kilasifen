@@ -4,21 +4,25 @@ from __future__ import annotations
 
 import logging
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Protocol
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.events.attempts import (
+    CANCEL_EVENT_TYPE,
+    EVENT_RECONCILIATION_REQUIRED_STATUS,
     EVENT_SUBMITTING_STATUS,
+    EVENT_UNCERTAIN_STATUSES,
+    INUTILIZATION_EVENT_TYPE,
     DeferredEventJob,
     EventAttempt,
     EventAttemptResult,
     EventPreparationRefused,
     FinishedEventJob,
     in_flight_until,
-    send_event_attempt,
+    run_event_attempt,
 )
 from kilasifen.application.jobs.service import JobService
 from kilasifen.domain.common.errors import (
@@ -26,21 +30,38 @@ from kilasifen.domain.common.errors import (
     NotFoundError,
     UnprocessableEntityError,
 )
+from kilasifen.domain.common.fiscal_states import (
+    DOCUMENT_APPROVED_STATUSES,
+    DOCUMENT_INUTILIZED_STATUS,
+    DOCUMENT_POSSIBLY_RECEIVED_STATUSES,
+)
 from kilasifen.domain.documents.models import Document
+from kilasifen.domain.events.inutilization import (
+    ACTIVE_JOB_STATUSES,
+    inutilization_deadline,
+    is_inutilizable,
+)
 from kilasifen.domain.events.inutilized_ranges import InutilizedNumberRange
 from kilasifen.domain.events.models import Event
 from kilasifen.domain.jobs.models import Job
 from kilasifen.engine.sdk.errors import SifenValidationError
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
+from kilasifen.infrastructure.sifen.de_facts import (
+    PARAGUAY_TZ,
+    approval_lower_bound,
+    paraguay_today,
+    read_de_facts,
+)
 from kilasifen.infrastructure.sifen.event import EventSubmissionGateway
+from kilasifen.infrastructure.sifen.query import (
+    DocumentQueryOutcome,
+    SifenQueryGateway,
+)
 from kilasifen.infrastructure.sifen.typed_event_builder import (
     build_signed_cancel_event_group_xml,
     build_signed_inutilization_event_group_xml,
 )
 from kilasifen.repositories.certificates import CertificateRepository
-from kilasifen.repositories.document_numbering_sequences import (
-    DocumentNumberingSequenceRepository,
-)
 from kilasifen.repositories.documents import DocumentRepository
 from kilasifen.repositories.emitters import EmitterRepository
 from kilasifen.repositories.events import EventRepository
@@ -48,11 +69,12 @@ from kilasifen.repositories.inutilized_number_ranges import (
     InutilizedNumberRangeRepository,
 )
 from kilasifen.repositories.jobs import JobRepository
+from kilasifen.repositories.stampings import StampingRepository
 
 logger = logging.getLogger(__name__)
 
-_CANCEL_EVENT_TYPE = "cancel_document"
-_INUTILIZATION_EVENT_TYPE = "inutilize_numbers"
+_CANCEL_EVENT_TYPE = CANCEL_EVENT_TYPE
+_INUTILIZATION_EVENT_TYPE = INUTILIZATION_EVENT_TYPE
 
 _DOC_TYPE_TO_ITIDE = {
     "factura": 1,
@@ -65,6 +87,9 @@ _DOC_TYPE_TO_ITIDE = {
     "comprobante_retencion": 8,
 }
 
+#: Cancellation deadline counted from the approval in SIFEN: 48 h for a FE,
+#: 168 h for the other DTE (MT v150 §6.2.1 p. 25; §11.6.1 4009/4010 p. 134;
+#: RG 23/2019 Art. 22).
 _CANCEL_DEADLINE_HOURS = {
     "factura": 48,
     "nota_credito": 168,
@@ -73,7 +98,15 @@ _CANCEL_DEADLINE_HOURS = {
     "autofactura": 168,
 }
 
-_APPROVED_DOCUMENT_STATUSES = {"approved", "approved_with_observation"}
+_APPROVED_DOCUMENT_STATUSES = DOCUMENT_APPROVED_STATUSES
+#: Cancellation events that may still be registered: a second one would be
+#: rejected as a duplicate (4003, MT v150 §11.6.1 p. 134).
+_PENDING_EVENT_STATUSES = frozenset({"queued", *EVENT_UNCERTAIN_STATUSES})
+#: Associated documents that are, or may become, DTE before the parent is
+#: cancelled (MT v150 Tabla J p. 117; Dto 872/2023 Arts. 30 and 40).
+_IN_FLIGHT_DOCUMENT_STATUSES = frozenset(
+    {"processing", *DOCUMENT_POSSIBLY_RECEIVED_STATUSES}
+)
 #: Event states that carry SIFEN's final word; a late attempt never moves them.
 _SIFEN_FINAL_EVENT_STATUSES = frozenset({"approved", "rejected"})
 _MAX_EVENT_ATTEMPTS = 5
@@ -119,12 +152,13 @@ class EventService:
         job_repository: JobRepository,
         certificate_store: EncryptedCertificateStore,
         submission_gateway: EventSubmissionGateway,
-        numbering_repository: DocumentNumberingSequenceRepository | None = None,
         inutilized_range_repository: InutilizedNumberRangeRepository | None = None,
+        stamping_repository: StampingRepository | None = None,
         webhook_publisher: WebhookPublisher | None = None,
         queue: EventJobQueue | None = None,
         database_url: str | None = None,
         encryption_key: str | None = None,
+        query_gateway: SifenQueryGateway | None = None,
     ):
         self.event_repository = event_repository
         self.emitter_repository = emitter_repository
@@ -134,12 +168,13 @@ class EventService:
         self.job_service = JobService(job_repository)
         self.certificate_store = certificate_store
         self.submission_gateway = submission_gateway
-        self.numbering_repository = numbering_repository
         self.inutilized_range_repository = inutilized_range_repository
+        self.stamping_repository = stamping_repository
         self.webhook_publisher = webhook_publisher
         self.queue = queue
         self.database_url = database_url
         self.encryption_key = encryption_key
+        self.query_gateway = query_gateway
 
     def create_event(
         self,
@@ -224,12 +259,23 @@ class EventService:
         numero_desde: int,
         numero_hasta: int,
         motivo: str,
-    ) -> tuple[Event, Job, InutilizedNumberRange]:
+        serie: str | None = None,
+    ) -> tuple[Event, Job, InutilizedNumberRange, list[str]]:
+        """Inutilize a range of numbers of one timbrado (DECISIONES F72).
+
+        Returns the event, its job, the range and the warnings (today only
+        ``inutilization.extemporaneous``: past day 15 of the month after
+        the earliest number in the range was consumed; SIFEN has no
+        rejection for it, so it is never refused).
+        """
+
         emitter, _certificate, certificate_bytes, certificate_password = (
             self._resolve_emitter_and_active_certificate(emitter_id)
         )
         if self.inutilized_range_repository is None:
             raise RuntimeError("inutilized_range_repository is required")
+        normalized_timbrado = str(timbrado).strip()
+        self._require_emitter_timbrado(emitter_id, normalized_timbrado)
 
         normalized_document_type = str(document_type).strip().lower()
         i_tide = _DOC_TYPE_TO_ITIDE.get(normalized_document_type)
@@ -245,26 +291,36 @@ class EventService:
         if size > 1000:
             raise UnprocessableEntityError("events.inutilize.range_too_large")
 
-        self._validate_inutilization_deadline(
-            emitter_id=emitter_id,
-            document_type=normalized_document_type,
-            establishment=normalized_est,
-            point=normalized_point,
-            numero_hasta=numero_hasta,
-        )
-
-        used_numbers = self.document_repository.list_numbers_in_range(
-            emitter_id=emitter_id,
-            document_type=normalized_document_type,
-            establishment=normalized_est,
-            point=normalized_point,
-            number_from=numero_desde,
-            number_to=numero_hasta,
-        )
-        if used_numbers:
+        numbered = [
+            document
+            for document in self.document_repository.list_in_number_range(
+                emitter_id=emitter_id,
+                document_type=normalized_document_type,
+                establishment=normalized_est,
+                point=normalized_point,
+                number_from=numero_desde,
+                number_to=numero_hasta,
+                timbrado=normalized_timbrado,
+            )
+            if _numbered_under(document, normalized_timbrado)
+        ]
+        blocking = [
+            document for document in numbered if not self._is_inutilizable(document)
+        ]
+        if blocking:
             raise ConflictError(
                 "events.inutilize.range_already_used",
-                details={"collisions": used_numbers},
+                details={
+                    "collisions": [document.document_number for document in blocking],
+                    "documents": [
+                        {
+                            "document_id": document.id,
+                            "numero": document.document_number,
+                            "status": document.internal_status,
+                        }
+                        for document in blocking
+                    ],
+                },
             )
 
         overlapping_ranges = self.inutilized_range_repository.list_overlapping(
@@ -275,6 +331,7 @@ class EventService:
             number_from=numero_desde,
             number_to=numero_hasta,
             approved_only=True,
+            timbrado=normalized_timbrado,
         )
         if overlapping_ranges:
             raise ConflictError(
@@ -287,8 +344,10 @@ class EventService:
                 },
             )
 
+        deadline = _range_deadline(numbered)
+        extemporaneous = deadline is not None and paraguay_today() > deadline
         event_xml = build_signed_inutilization_event_group_xml(
-            timbrado=timbrado,
+            timbrado=normalized_timbrado,
             i_tide=i_tide,
             establishment=normalized_est,
             point=normalized_point,
@@ -299,13 +358,14 @@ class EventService:
             event_id=_generate_short_numeric_event_id(),
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
+            serie=serie,
         )
         payload = {
             "event_xml": event_xml,
             "typed_contract": {
                 "contract": "inutilize_numbers_v1",
                 "payload": {
-                    "timbrado": timbrado,
+                    "timbrado": normalized_timbrado,
                     "document_type": normalized_document_type,
                     "establishment": normalized_est,
                     "point": normalized_point,
@@ -313,6 +373,10 @@ class EventService:
                     "numero_hasta": numero_hasta,
                     "motivo": motivo,
                     "i_tide": i_tide,
+                    "serie": serie,
+                    "document_ids": [document.id for document in numbered],
+                    "deadline": deadline.isoformat() if deadline else None,
+                    "extemporaneous": extemporaneous,
                 },
             },
         }
@@ -335,7 +399,7 @@ class EventService:
             point=normalized_point,
             numero_desde=numero_desde,
             numero_hasta=numero_hasta,
-            timbrado=str(timbrado).strip(),
+            timbrado=normalized_timbrado,
             event_id=event.id,
             sifen_protocol=protocol if event.status == "approved" else None,
             created_at=timestamp,
@@ -345,7 +409,18 @@ class EventService:
 
         if event.status == "approved":
             self._apply_approved_event(event=event, protocol=protocol)
-        return event, job, saved_range
+        warnings = []
+        if extemporaneous:
+            warnings.append("inutilization.extemporaneous")
+            logger.warning(
+                "events.inutilize.extemporaneous",
+                extra={
+                    "event_id": event.id,
+                    "emitter_id": emitter_id,
+                    "deadline": deadline.isoformat() if deadline else None,
+                },
+            )
+        return event, job, saved_range, warnings
 
     def get_event(self, event_id: str) -> tuple[Event, Job | None]:
         event = self.event_repository.get(event_id)
@@ -404,6 +479,9 @@ class EventService:
             return self._defer_attempt(
                 event=event, job=job, until=previous_attempt_until
             )
+        # An earlier attempt may have reached SIFEN without a recorded answer:
+        # a cancellation is then reconciled by CDC before it is sent again.
+        after_uncertain_attempt = event.status in EVENT_UNCERTAIN_STATUSES
 
         attempt_number = job.attempts + 1
         job = self.job_repository.save(
@@ -444,6 +522,9 @@ class EventService:
             emitter=emitter,
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
+            event_type=event.event_type,
+            document_cdc=self._event_document_cdc(event),
+            after_uncertain_attempt=after_uncertain_attempt,
         )
 
     def record_event_attempt(
@@ -483,11 +564,43 @@ class EventService:
                 },
             )
             return _event_job_payload(event=event, job=job, retryable=False)
+        query = getattr(result, "query", None)
+        if query is not None:
+            self._trace_document_query(event=updated_event, query=query)
         return self._save_attempt(
             event=updated_event,
             job=updated_job,
             attempt_number=attempt.attempt_number,
             protocol=protocol,
+        )
+
+    def _event_document_cdc(self, event: Event) -> str | None:
+        if not event.document_id:
+            return None
+        document = self.document_repository.get(event.document_id)
+        return document.cdc if document is not None else None
+
+    def _trace_document_query(
+        self,
+        *,
+        event: Event,
+        query: DocumentQueryOutcome,
+    ) -> None:
+        """Keep the siConsDE that reconciled ``event`` on its document."""
+
+        if not event.document_id:
+            return
+        document = self.document_repository.get(event.document_id)
+        if document is None:
+            return
+        self.document_repository.save(
+            replace(
+                document,
+                last_query_request_xml=query.request_xml,
+                last_query_response_raw=query.response_raw,
+                last_query_at=_now(),
+                updated_at=_now(),
+            )
         )
 
     def _defer_attempt(
@@ -541,9 +654,13 @@ class EventService:
         retryable = job.status == "retry_scheduled"
         if retryable and attempt_number >= _MAX_EVENT_ATTEMPTS:
             retryable = False
+            # An event whose last attempt may have reached SIFEN is left for
+            # an operator, who retries it after a reconciliation; one that
+            # never left fails.
+            uncertain = event.status in EVENT_UNCERTAIN_STATUSES
             event = replace(
                 event,
-                status="failed",
+                status=EVENT_RECONCILIATION_REQUIRED_STATUS if uncertain else "failed",
                 sifen_result_message="event retry attempts exhausted",
                 updated_at=_now(),
             )
@@ -551,7 +668,9 @@ class EventService:
                 job,
                 status="failed",
                 error_snapshot={
-                    "category": "retry_exhausted",
+                    "category": (
+                        "reconciliation_required" if uncertain else "retry_exhausted"
+                    ),
                     "message": "event retry attempts exhausted",
                 },
                 finished_at=_now(),
@@ -684,8 +803,12 @@ class EventService:
             emitter=emitter,
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
+            event_type=event.event_type,
+            document_cdc=self._event_document_cdc(event),
         )
-        return send_event_attempt(self.submission_gateway, attempt).apply(event, job)
+        return run_event_attempt(
+            self.submission_gateway, self.query_gateway, attempt
+        ).apply(event, job)
 
     def _apply_approved_event(self, *, event: Event, protocol: str | None) -> None:
         if event.event_type == _CANCEL_EVENT_TYPE and event.document_id:
@@ -723,6 +846,7 @@ class EventService:
         range_item = self.inutilized_range_repository.save(
             replace(range_item, sifen_protocol=protocol, updated_at=_now())
         )
+        inutilized = self._mark_documents_inutilized(range_item)
         self._publish_webhook_event(
             emitter_id=event.emitter_id,
             event_type="numbering.inutilized",
@@ -735,8 +859,97 @@ class EventService:
                 "numero_hasta": range_item.numero_hasta,
                 "timbrado": range_item.timbrado,
                 "sifen_protocol": protocol,
+                "document_ids": [document.id for document in inutilized],
             },
         )
+
+    def _mark_documents_inutilized(
+        self, range_item: InutilizedNumberRange
+    ) -> list[Document]:
+        """Move the documents of an inutilized range to ``inutilized``.
+
+        Only those still inutilizable: one sent again meanwhile is left to
+        its job and logged, since SIFEN will reject it with 1109 (MT v150
+        §12.4 C007 p. 161). 1109 applies per timbrado, so a document signed
+        under another timbrado is never marked (:func:`_numbered_under`).
+        """
+
+        marked: list[Document] = []
+        for document in self.document_repository.list_in_number_range(
+            emitter_id=range_item.emitter_id,
+            document_type=range_item.document_type,
+            establishment=range_item.establishment,
+            point=range_item.point,
+            number_from=range_item.numero_desde,
+            number_to=range_item.numero_hasta,
+            timbrado=range_item.timbrado,
+        ):
+            if not _numbered_under(document, range_item.timbrado):
+                continue
+            if not self._is_inutilizable(document):
+                logger.warning(
+                    "events.inutilize.document_changed",
+                    extra={
+                        "document_id": document.id,
+                        "document_status": document.internal_status,
+                        "event_id": range_item.event_id,
+                    },
+                )
+                continue
+            marked.append(
+                self.document_repository.save(
+                    replace(
+                        document,
+                        internal_status=DOCUMENT_INUTILIZED_STATUS,
+                        sifen_status=DOCUMENT_INUTILIZED_STATUS,
+                        updated_at=_now(),
+                    )
+                )
+            )
+        return marked
+
+    def _is_inutilizable(self, document: Document) -> bool:
+        return is_inutilizable(document.internal_status, self._job_status(document))
+
+    def _blocks_parent_cancellation(self, child: Document) -> bool:
+        """A child DTE, one that may be at SIFEN, or one about to travel.
+
+        A child that already holds its signed DE and CDC while its job can
+        still send it (the same DE after a 0420, a request that never left,
+        a rejection 0161/0162 sent again) may become a DTE before the
+        parent is cancelled: Tabla J asks to cancel the associated DTE first
+        and SIFEN rejects a DE whose associated DTE is cancelled (2404, MT
+        v150 H004b). Rejected, locally failed, cancelled, inutilized and
+        queued children that will not travel, or were never built, do not
+        block (MT v150 Tabla J p. 117; Dto 872/2023 Arts. 30 and 40;
+        DECISIONES F71).
+        """
+
+        status = _normalize_status(child.internal_status)
+        if (
+            status in _APPROVED_DOCUMENT_STATUSES
+            or status in _IN_FLIGHT_DOCUMENT_STATUSES
+        ):
+            return True
+        if not (child.signed_xml and child.cdc):
+            return False
+        return self._job_status(child) in ACTIVE_JOB_STATUSES
+
+    def _job_status(self, document: Document) -> str | None:
+        job = self.job_repository.get_for_entity("document", document.id)
+        return job.status if job is not None else None
+
+    def _require_emitter_timbrado(self, emitter_id: str, timbrado: str) -> None:
+        """The timbrado must belong to the emitter (4052, MT v150 §11.6.2)."""
+
+        if self.stamping_repository is None:
+            raise RuntimeError("stamping_repository is required")
+        numbers = {
+            stamping.number
+            for stamping in self.stamping_repository.list_for_emitter(emitter_id)
+        }
+        if timbrado not in numbers:
+            raise UnprocessableEntityError("events.inutilize.unknown_timbrado")
 
     def _resolve_emitter_and_active_certificate(self, emitter_id: str):
         require_active_emitter(self.emitter_repository, emitter_id)
@@ -777,70 +990,64 @@ class EventService:
         if document_status not in _APPROVED_DOCUMENT_STATUSES:
             raise ConflictError("events.cancel.document_not_approved")
 
-        approved_cancel_events = self.event_repository.list_for_document(
+        cancel_events = self.event_repository.list_for_document(
             document_id=document.id,
             event_type=_CANCEL_EVENT_TYPE,
-            status="approved",
         )
-        if approved_cancel_events:
+        if any(event.status == "approved" for event in cancel_events):
             raise ConflictError("events.cancel.already_cancelled")
-
-        deadline_hours = _cancel_deadline_hours(document.document_type)
-        approved_at = _ensure_utc_datetime(document.updated_at)
-        deadline = approved_at + timedelta(hours=deadline_hours)
-        now = _now()
-        if now > deadline:
+        pending = [
+            event.id for event in cancel_events if _cancellation_may_register(event)
+        ]
+        if pending:
+            # DECISIONES F70: a second request would be a duplicate (4003).
             raise ConflictError(
-                "events.cancel.deadline_exceeded",
-                details={
-                    "deadline_hours": deadline_hours,
-                    "approved_at": approved_at.isoformat(),
-                },
+                "events.cancel.already_pending",
+                details={"event_ids": pending},
             )
+
+        self._validate_cancellation_deadline(document)
 
         children = self.document_repository.list_by_associated_cdc(
             emitter_id=document.emitter_id,
             associated_cdc=document.cdc,
         )
-        pending_children = [
+        blocking_children = [
             child.cdc or child.id
             for child in children
-            if child.id != document.id and not _is_cancelled_document(child)
+            if child.id != document.id and self._blocks_parent_cancellation(child)
         ]
-        if pending_children:
+        if blocking_children:
             raise ConflictError(
                 "events.cancel.child_dte_not_cancelled",
-                details={"child_cdcs": pending_children},
+                details={"child_cdcs": blocking_children},
             )
 
-    def _validate_inutilization_deadline(
-        self,
-        *,
-        emitter_id: str,
-        document_type: str,
-        establishment: str,
-        point: str,
-        numero_hasta: int,
-    ) -> None:
-        if self.numbering_repository is None:
-            return
-        current = self.numbering_repository.get_current(
-            emitter_id=emitter_id,
-            document_type=document_type,
-            establishment=establishment,
-            point=point,
-        )
-        if current is None:
-            return
-        if numero_hasta > current.last_number:
-            return
-        sequence_updated_at = _ensure_utc_datetime(current.updated_at)
-        if _now() - sequence_updated_at > timedelta(days=45):
+    def _validate_cancellation_deadline(self, document: Document) -> None:
+        """48 h (FE) or 168 h (other DTE) from the approval in SIFEN.
+
+        DECISIONES F71: anchored on ``sifen_approved_at`` (``dFecProc``), or
+        on a lower bound of the approval when SIFEN's time is unknown, so the
+        local window never outlives SIFEN's (4009/4010, MT v150 §11.6.1
+        p. 134). Once it passes, the DTE is annulled with a credit note (RG
+        23/2019 Art. 22).
+        """
+
+        deadline_hours = _cancel_deadline_hours(document.document_type)
+        if document.sifen_approved_at is not None:
+            approved_at = _ensure_utc_datetime(document.sifen_approved_at)
+            source = "sifen"
+        else:
+            approved_at = approval_lower_bound(document)
+            source = "lower_bound"
+        if _now() > approved_at + timedelta(hours=deadline_hours):
             raise ConflictError(
-                "events.inutilize.deadline_exceeded",
+                "events.cancel.deadline_exceeded",
                 details={
-                    "sequence_last_number": current.last_number,
-                    "sequence_updated_at": sequence_updated_at.isoformat(),
+                    "deadline_hours": deadline_hours,
+                    "approved_at": approved_at.isoformat(),
+                    "approved_at_source": source,
+                    "remedy": "nota_credito",
                 },
             )
 
@@ -876,7 +1083,10 @@ def _now() -> datetime:
 def _event_job_is_finished(event: Event, job: Job) -> bool:
     if event.status in _SIFEN_FINAL_EVENT_STATUSES:
         return True
-    return event.status == "failed" and job.status != "queued"
+    if event.status in {"failed", EVENT_RECONCILIATION_REQUIRED_STATUS}:
+        # Only an operator retry (a queued job) runs it again.
+        return job.status != "queued"
+    return False
 
 
 def _require_row(row):
@@ -921,6 +1131,22 @@ def _normalize_three_digits(value: str) -> str:
     return f"{parsed:03d}"
 
 
+def _range_deadline(documents: list[Document]) -> date | None:
+    """Deadline of the earliest number of the range that has a document.
+
+    A number without document carries no consumption date: no deadline is
+    computed for it (the platform reserves numbers with their document).
+    """
+
+    if not documents:
+        return None
+    consumed_on = min(
+        _ensure_utc_datetime(document.created_at).astimezone(PARAGUAY_TZ).date()
+        for document in documents
+    )
+    return inutilization_deadline(consumed_on)
+
+
 def _cancel_deadline_hours(document_type: str) -> int:
     return _CANCEL_DEADLINE_HOURS.get(str(document_type).strip().lower(), 168)
 
@@ -934,6 +1160,29 @@ def _is_cancelled_document(document: Document) -> bool:
         document.sifen_status or document.internal_status
     )
     return document_status in _CANCELLED_DOCUMENT_STATUSES
+
+
+def _cancellation_may_register(event: Event) -> bool:
+    """A cancellation not final yet, or failed after its request was stored."""
+
+    if event.status in _PENDING_EVENT_STATUSES:
+        return True
+    return event.status == "failed" and bool(event.sifen_request_xml)
+
+
+def _numbered_under(document: Document, timbrado: str) -> bool:
+    """Whether the number of ``document`` belongs to ``timbrado``.
+
+    A number is inutilized per timbrado, establishment and point (1109, MT
+    v150 §12.4 C007 p. 161). Without a recorded timbrado the ``dNumTim``
+    (C004) of its XML decides; a document never built carries none and
+    counts for the range the operator inutilized.
+    """
+
+    if document.timbrado is not None:
+        return document.timbrado == timbrado
+    found = read_de_facts(document.signed_xml or document.generated_xml).timbrado
+    return found is None or found == timbrado
 
 
 def _generate_short_numeric_event_id() -> str:

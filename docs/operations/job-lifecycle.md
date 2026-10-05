@@ -31,7 +31,9 @@ retries never fire.
 3. Worker hydrates context:
    - emitter
    - active certificate
-   - active stamping
+   - the stamping active on the emission date (`dFeEmiDE` in Paraguay time,
+     not the server date); without one the document fails local validation,
+     since SIFEN rejects it with 1103/1104
 4. Each attempt uses two short transactions and holds no transaction or
    row lock while SIFEN answers:
    - transaction 1 locks emitter, document and job (emitter wait bounded to
@@ -54,21 +56,37 @@ retries never fire.
    reports `emitters.lock_timeout`. Keeping `queued` matters for an operator
    retry of a `failed` document or event, which only a `queued` job reopens.
    Event jobs behave the same.
-5. Outcomes:
-   - approved/accepted => `job.succeeded`
+5. Outcomes. The answer is classified by normalized `dEstRes` (read from
+   `rProtDe` or, as the MT shows it, from `gResProc`); without `dEstRes`
+   only `0260` is an approval. An approval stores `dProtAut`, every
+   `gResProc` and `sifen_approved_at` (`dFecProc`).
+   - approved / approved with observation => `job.succeeded`
+   - answer without a recognizable `dEstRes` => document `retry_pending`,
+     `job.retry_scheduled` (`sifen_unclassified`); the next attempt queries
+     the CDC
+   - rejected with `1001`/`1002` in any `gResProc` (their order is NO
+     DETERMINADO) => document `retry_pending`
+     (`duplicate_reconciliation`); the CDC is queried before the rejection is
+     believed (`0422` approves it, `0420` makes the rejection final)
+   - rejected with `0161`/`0162` in any `gResProc` (SIFEN server
+     failures) => document
+     `rejected` with `retryable_server_error`, `job.retry_scheduled`
+     (`retryable_server_error`); the next attempt resends the same signed DE
+   - any other rejection, or a fiscal validation failure => `job.failed`
    - request provably not sent (`SifenRequestNotSentError`) => document back
      to `queued`, `job.retry_scheduled` (`transport_not_sent`, the next
-     attempt is staged in the outbox for its `scheduled_at`); the next
-     attempt resends the stored request unchanged, signed with the
-     certificate that was active when it was prepared. If the emitter
-     certificate was rotated in between, the request travels over mTLS with
-     the new certificate; should SIFEN reject that, the rejection is terminal
-     like any other
+     attempt is staged in the outbox for its `scheduled_at`)
    - timeout, dropped connection, SOAP Fault, unreadable answer or any other
      error after sending => document `retry_pending`, `job.retry_scheduled`
-     (`transport`, staged in the outbox for its `scheduled_at`); later
-     attempts only query the CDC
-   - fiscal validation/rejection => `job.failed`
+     (`transport`, staged in the outbox for its `scheduled_at`); the next
+     attempt queries the CDC
+   Every resend (after `transport_not_sent`, after a `0420`, after
+   `0161`/`0162`) carries the same signed DE (same CDC, signature and
+   `dFecFirma`) in a new `rEnviDe` with a fresh `dId`, stored by the first
+   transaction before it travels. It is signed with the certificate that was
+   active when it was prepared; if the emitter certificate was rotated in
+   between, the request travels over mTLS with the new certificate, and
+   should SIFEN reject that, the rejection is terminal like any other.
 6. Optional webhook fanout:
    - if `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS=true` (read by the worker;
      `false` by default in code), document transitions publish
@@ -80,11 +98,26 @@ SIFEN answers leaves the document in `submitting` and the job in `processing`.
 Nothing re-dispatches that job automatically yet: an operator retry (admin
 console) queues it again and the next attempt queries the CDC before deciding
 anything. A document that may have reached SIFEN (`submitting`, `submitted`,
-`retry_pending`, `reconciliation_required`) is only ever queried by CDC: an
-existing DTE converges to approved, a not-found answer (`0420`) keeps it
-pending and is never resent. Automatic attempts are bounded to five; then it
-becomes `reconciliation_required`, or, when SIFEN was never reached, the job
-fails while the document stays `queued` for a manual retry.
+`retry_pending`, `reconciliation_required`) is first queried by CDC
+(siConsDE): `0422` converges it to approved (or cancelled when `xContEv` holds
+a registered cancellation) and it is never sent again; `0420` ("no existe o no
+está aprobado") puts it back to `queued` (`resubmission`) and the next attempt
+resends the same signed DE (Dto 872/2023 Art. 29; MT v150 §6.5; Guía de
+Mejores Prácticas DNIT oct-2024 p. 12). The platform never sends lots, so no
+pending lot can hold the CDC. Any other query code keeps querying. The copy of
+the DTE in `xContenDE` never replaces `signed_xml`. Automatic attempts are
+bounded to five; then a document whose CDC SIFEN never answered becomes
+`reconciliation_required`, and one that is not at SIFEN (never reached, or
+`0420`) stays `queued` (or `rejected` with `retryable_server_error`) while the
+job fails (`retry_exhausted`) for a manual retry.
+
+While SIFEN has not approved a document, every recorded attempt adds
+`deadline_alerts` to the job `error_snapshot` and logs
+`worker.document_job.transmission_deadline`: `late_transmission_soon` /
+`late_transmission` around 72 h after `dFecFirma` (an approval then carries
+observation 1005; Dto 872/2023 Art. 27) and `emission_rejection_soon` /
+`emission_rejection` around 720 h after `dFeEmiDE` (rejection 1150). The 24 h
+lead time is a platform choice.
 
 ## Fiscal event flow
 
@@ -92,8 +125,10 @@ fails while the document stays `queued` for a manual retry.
    `event.submit` job.
 2. The `events` worker loads emitter/certificate secrets from the database; no
    secret is stored in the Redis job payload.
-3. Approved cancelation moves the document to `cancelled`; approved
-   inutilization stores its SIFEN protocol and publishes the terminal webhook.
+3. Only `dCodRes` `0600` registers an event. Approved cancelation moves the
+   document to `cancelled`; approved inutilization stores its SIFEN protocol,
+   moves the documents of the range to `inutilized` and publishes the
+   terminal webhook.
 4. Each attempt mirrors the document flow: transaction 1 locks emitter, event
    and job, counts the attempt and stores the signed event group and the exact
    `rEnviEventoDe` (real `dId`) with the event in `submitting`; the request is
@@ -104,9 +139,25 @@ fails while the document stays `queued` for a manual retry.
 5. A request that provably never left puts the event back to `queued`
    (`transport_not_sent`); any other transport failure, SOAP Fault or
    unreadable answer leaves it `retry_pending` (`transport`). Both use a
-   bounded five-attempt schedule, and today both resend the stored signed
-   event on the next attempt: whether an uncertain event should be queried
-   first is a fiscal decision still pending. Validation/rejection is
+   bounded five-attempt schedule. There is no service to query events: the
+   events of a CDC come back from siConsDE in `xContEv`. So the attempt that
+   follows an uncertain one queries the CDC of a cancellation first: a
+   registered cancellation approves the event without sending anything; a DTE
+   without cancellation lets the stored signed event travel again; `0420`
+   leaves the event `reconciliation_required` (whether a cancelled DTE answers
+   0420 is NO DETERMINADO); a failed query sends nothing and is tried again
+   (`reconciliation_unavailable`). A `4002`/`4003`/`4009`/`4010` answer to a
+   cancellation is believed only after the same query shows the DTE
+   without a cancellation. `4003` (GEC002b, "ya se encuentra con un
+   evento que se esta requiriendo nuevamente") is never believed: when
+   `xContEv` does not show the cancellation, or any of those answers meets
+   an unreadable `xContenDE`, the event becomes `reconciliation_required`.
+   Before a resend an unreadable container does not stop the stored
+   event: its own answer decides. An inutilization that
+   gets `4066` after an uncertain attempt is left `reconciliation_required`.
+   An uncertain event that exhausts its attempts becomes
+   `reconciliation_required` (one that never left becomes `failed`); an
+   operator retry runs the reconciliation again. Other rejections are
    terminal.
 6. An event still `submitting` means an attempt stored its request and has
    recorded no outcome yet: its worker may still be waiting on SIFEN. For
@@ -155,7 +206,10 @@ comes from `KILA_SIFEN_LOG_LEVEL`. RQ's own lifecycle lines keep RQ's text
 format. Useful events: `worker.document_job.request_not_sent`,
 `worker.document_job.outcome_unknown`, `worker.document_job.outcome_superseded`,
 `events.outcome_unknown`, `events.attempt_in_flight`, `worker.job.emitter_busy`,
-`jobs.outbox.publish_deferred` and `jobs.outbox.publish_failed`.
+`jobs.outbox.publish_deferred` and `jobs.outbox.publish_failed`; fiscal
+deadlines and reconciliations: `worker.document_job.transmission_deadline`,
+`events.reconciliation_unavailable`, `events.inutilize.extemporaneous` and
+`events.inutilize.document_changed`.
 
 - ratio of `failed` + `retry_scheduled` by job type
 - aging of jobs in `queued`

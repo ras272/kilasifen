@@ -115,7 +115,10 @@ mapea el objeto ERP. Reutilizar `idempotency_key` al reintentar la misma intenci
 La respuesta trae documento `queued` y job; no implica aprobación. Estados de
 documento: `queued`, `submitting`, `submitted`, `retry_pending`,
 `reconciliation_required`, `approved`, `approved_with_observation`, `rejected`,
-`failed`, `cancelled`.
+`failed`, `cancelled`, `inutilized`. La respuesta de SIFEN se lee por `dEstRes`
+(sin tildes ni mayúsculas): «Aprobado con observación» es un DTE válido
+(`approved_with_observation`), y sin `dEstRes` solo `0260` prueba una
+aprobación.
 Jobs: `queued`, `processing` (un worker está en medio de un intento),
 `retry_scheduled`, `succeeded`, `failed`.
 
@@ -151,10 +154,22 @@ POST /v1/emitters/{emitter_id}/inutilizations
 GET  /v1/emitters/{emitter_id}/events/{event_id}
 ```
 
-Cancelación usa `{"motivo": "..."}`; inutilización usa timbrado, tipo,
-establecimiento, punto, rango y motivo. Ambas crean un event/job `queued` con
-`201`; el worker `events` transmite a SIFEN y el ERP consulta el evento/job o
-recibe el webhook terminal. Los endpoints raw `/documents` y `/events` están
+Cancelación usa `{"motivo": "..."}`; inutilización usa timbrado (del emisor),
+tipo, establecimiento, punto, rango, motivo y `serie` opcional (`dSerieNum`).
+Ambas crean un event/job `queued` con `201`; el worker `events` transmite a
+SIFEN y el ERP consulta el evento/job o recibe el webhook terminal. Un evento
+queda registrado solo con `0600`. La cancelación vence 48 h (factura) o 168 h
+(otros DTE) después de la aprobación en SIFEN, no admite una segunda solicitud
+mientras otra pueda registrarse (`409 events.cancel.already_pending`) y, ante
+una respuesta perdida o un rechazo `4002`/`4003`/`4009`/`4010`, consulta el CDC
+(`xContEv`) antes de reenviar o de creer el rechazo; un `4003` sin la
+cancelación visible, o cualquiera de esos códigos con un contenedor
+ilegible, deja el evento `reconciliation_required` y no `rejected`. La inutilización acepta
+números sin documento, rechazados, fallidos o en cola abortados, nunca un DTE
+ni un documento que pueda estar en SIFEN, y solo del timbrado pedido (un
+documento firmado con otro timbrado no cuenta); no tiene tope de días (pasado el día
+15 del mes siguiente responde `warnings: ["inutilization.extemporaneous"]`) y,
+al aprobarse, deja esos documentos en `inutilized`. Los endpoints raw `/documents` y `/events` están
 deprecados y son sólo admin. En el raw `/documents`, `payload.generated_xml`
 tiene que ser un `rDE` sin firmar que valide contra el XSD oficial (sin
 `DOCTYPE`), con `dVerFor`, un solo `DE`, una `Signature` opcional y
@@ -168,14 +183,23 @@ pueden citar valores del XML enviado.
 
 Kila confirma en la base el CDC, el XML firmado y el request exacto (con su
 `dId` real) antes de transmitir, con el documento en `submitting`. Ante
-timeout, respuesta ambigua o caída del worker durante el envío, consulta SIFEN
-por CDC sin volver a transmitir el DE. Después de agotar la reconciliación
-automática queda `reconciliation_required`; el ERP usa el endpoint `reconcile`
-con la misma intención original. Ni el worker ni una recola manual pueden
-reenviar ese CDC. Sólo cuando la falla prueba que el request no salió
-(`transport_not_sent` en el job) el documento vuelve a `queued` y se reenvía el
-mismo request; si se agotan los intentos, el job queda `failed` y el documento
-`queued`, listo para un reintento manual.
+timeout, respuesta ambigua o caída del worker durante el envío, el intento
+siguiente consulta SIFEN por CDC: con `0422` el documento queda aprobado y no se
+reenvía; con `0420` («no existe o no está aprobado») vuelve a `queued` y el
+intento siguiente reenvía el mismo DE firmado (mismo CDC y firma) en un
+`rEnviDe` con `dId` nuevo (Decreto 872/2023 Art. 29). Un rechazo que trae
+`1001`/`1002` en cualquiera de sus mensajes solo queda firme después de esa
+consulta, y uno con `0161`/`0162` (falla del servidor) se reenvía. Si al agotar los intentos SIFEN no dio una respuesta
+sobre el CDC, el documento queda `reconciliation_required`; el ERP usa el
+endpoint `reconcile` con la misma intención original. Cuando la falla prueba
+que el request no salió (`transport_not_sent` en el job) el documento vuelve a
+`queued` y se reenvía el mismo DE firmado; si se agotan los intentos, el job
+queda `failed` y el documento `queued`, listo para un reintento manual.
+Mientras SIFEN no aprueba un documento, el job avisa en
+`error_snapshot.deadline_alerts` cuando se acercan o pasan las 72 h desde la
+firma (observación `1005`) o las 720 h desde la emisión (rechazo `1150`). El
+timbrado se elige con la fecha de emisión (`dFeEmiDE`), no con la del
+servidor.
 
 ## Sandbox determinístico
 

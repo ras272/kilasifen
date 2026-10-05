@@ -258,6 +258,9 @@ describe("KilaSifen client", () => {
       result_message: "Aprobado",
       content_xml: "<rDE version='150'/>",
       processed_at: "2026-08-22T12:00:00Z",
+      sifen_protocol: "1234567890",
+      cancelled: false,
+      events: [],
     };
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       success({ document_query: documentQuery }),

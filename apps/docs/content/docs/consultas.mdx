@@ -20,11 +20,34 @@ POST /v1/emitters/{emitter_id}/queries/documents/{document_id}/reconcile
 GET /v1/emitters/{emitter_id}/queries/ruc/{ruc}
 ```
 
-El `GET` consulta y registra la respuesta sin forzar una transición. Usá el
-`POST .../reconcile` cuando el documento esté `submitting`, `submitted`,
-`retry_pending` o `reconciliation_required`: si SIFEN reconoce el CDC,
-documento y job convergen atómicamente al estado aprobado. La operación nunca
-reenvía el DE y no bloquea al emisor mientras espera la respuesta de SIFEN.
+La consulta por CDC responde con `status`:
+
+| `status` | Código SIFEN | Significado |
+| --- | --- | --- |
+| `found` | `0422` | El CDC es un DTE aprobado. |
+| `not_found_or_not_approved` | `0420` | No existe o no está aprobado (nunca llegó, o fue rechazado). |
+| `error` | cualquier otro (por ejemplo `0421`) | La consulta falló; no dice nada del CDC. |
+
+Con `found`, `content_xml` trae el contenedor que devuelve SIFEN
+(`xContenDE`), `sifen_protocol` su número de transacción, `events` los eventos
+registrados del CDC (`kind`, `cdc`, `protocol`) y `cancelled` indica si hay una
+cancelación registrada.
+
+El `GET` consulta y registra la respuesta sin forzar una transición. El
+`POST .../reconcile` además registra lo que SIFEN dice del CDC, sin enviar nada:
+
+- con `0422`, un documento `submitting`, `submitted`, `retry_pending` o
+  `reconciliation_required` queda aprobado (o `cancelled` si hay una
+  cancelación registrada) y su job `succeeded`; un documento aprobado con una
+  cancelación registrada queda `cancelled`;
+- con `0420`, un documento pendiente que no se está enviando vuelve a `queued`
+  para que se reenvíe el mismo DE firmado; si esperaba confirmar un rechazo
+  `1001`/`1002`, el rechazo queda definitivo.
+
+El XML firmado que emitió KilaSifen nunca se reemplaza por la copia de SIFEN.
+La operación no bloquea al emisor mientras espera la respuesta de SIFEN, y la
+solicitud que se guarda para auditoría es exactamente la que viajó, con su
+`dId`.
 
 La consulta RUC permite comprobar información tributaria expuesta por SIFEN; no
 es una central de riesgo crediticio.

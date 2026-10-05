@@ -14,7 +14,7 @@ from kilasifen.application.emitters.guards import require_active_emitter
 from kilasifen.application.events.attempts import (
     DeferredEventJob,
     FinishedEventJob,
-    send_event_attempt,
+    run_event_attempt,
 )
 from kilasifen.application.events.service import EventService
 from kilasifen.application.jobs.service import JobService
@@ -29,6 +29,7 @@ from kilasifen.domain.common.errors import NotFoundError, ServiceUnavailableErro
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.jobs.models import Job
+from kilasifen.domain.stampings.models import Stamping
 from kilasifen.engine.sdk.errors import (
     SifenError,
     SifenRejectionError,
@@ -86,6 +87,7 @@ from kilasifen.infrastructure.jobs.document_attempts import (
 from kilasifen.infrastructure.jobs.outbox import SqlAlchemyJobOutboxQueue
 from kilasifen.infrastructure.sandbox.query import DeterministicSandboxQueryGateway
 from kilasifen.infrastructure.sandbox.transport import DeterministicSandboxTransport
+from kilasifen.infrastructure.sifen.de_facts import paraguay_today, read_de_facts
 from kilasifen.infrastructure.sifen.engine import (
     DocumentEmissionEngine,
     KilaSifenEmissionEngine,
@@ -94,6 +96,7 @@ from kilasifen.infrastructure.sifen.event import (
     EventSubmissionGateway,
     KilaSifenEventGateway,
 )
+from kilasifen.infrastructure.sifen.mapper import resolve_emission_date
 from kilasifen.infrastructure.sifen.query import (
     KilaSifenQueryGateway,
     SifenQueryGateway,
@@ -168,7 +171,7 @@ def process_document_job(
                     certificate_store=certificate_store,
                     emission_engine=emission_engine,
                     query_gateway=query_gateway,
-                    current_date=current_date or date.today(),
+                    current_date=current_date or paraguay_today(),
                     worker_correlation_id=worker_correlation_id,
                 ),
                 publish_status=publish_status,
@@ -198,7 +201,11 @@ _StatusPublisher = Callable[[Document, Session], None]
 
 @dataclass(frozen=True, slots=True)
 class _DocumentRuntime:
-    """Collaborators and settings shared by the steps of one document attempt."""
+    """Collaborators and settings shared by the steps of one document attempt.
+
+    ``current_date`` (Paraguay) picks the timbrado only when the document
+    does not say its emission date yet.
+    """
 
     settings: Settings
     certificate_store: EncryptedCertificateStore
@@ -287,13 +294,8 @@ def _claim_document_attempt(
 
     action = select_action(document)
     if action is AttemptAction.PREPARE:
-        stamping = SqlAlchemyStampingRepository(session).get_active_for_emitter(
-            document.emitter_id,
-            on_date=runtime.current_date,
-        )
-        if stamping is None:
-            raise RuntimeError("Active stamping not configured")
         try:
+            stamping = _stamping_for_emission(session, document, runtime)
             prepared = emission_engine.prepare_document(
                 document=document,
                 emitter=emitter,
@@ -311,9 +313,19 @@ def _claim_document_attempt(
             return _DocumentJobFinished(
                 _persist_document_attempt(session, recorded, publish_status)
             )
-        document = document_repository.save(mark_submitting(document, prepared))
+        timbrado = read_de_facts(prepared.signed_xml).timbrado or stamping.number
+        document = document_repository.save(
+            mark_submitting(document, prepared, timbrado=timbrado)
+        )
     elif action is AttemptAction.RESEND:
-        document = document_repository.save(mark_submitting(document))
+        # Same signed DE (same CDC, signature and dFecFirma) in a new rEnviDe
+        # with a fresh dId, stored before it travels (DECISIONES F63, F64).
+        request_xml = emission_engine.wrap_signed_document(
+            signed_xml=_require_signed_xml(document)
+        )
+        document = document_repository.save(
+            mark_submitting(document, request_xml=request_xml)
+        )
 
     return _ClaimedDocumentAttempt(
         job_id=job.id,
@@ -328,6 +340,41 @@ def _claim_document_attempt(
         emission_engine=emission_engine,
         query_gateway=query_gateway,
     )
+
+
+def _stamping_for_emission(
+    session: Session,
+    document: Document,
+    runtime: _DocumentRuntime,
+) -> Stamping:
+    """The timbrado active on the emission date (D002) of ``document``.
+
+    DECISIONES F23: chosen with dFeEmiDE in Paraguay time, not the server
+    date; D002 before the timbrado start is rejected by SIFEN (1103 as
+    amended by NT 01) and a timbrado not active on D002 too (1104, MT v150
+    §12.4 p. 160), so both are refused locally.
+
+    Raises:
+        SifenValidationError: if no active timbrado covers that date.
+    """
+
+    emission_date = resolve_emission_date(document) or runtime.current_date
+    stamping = SqlAlchemyStampingRepository(session).get_active_for_emitter(
+        document.emitter_id,
+        on_date=emission_date,
+    )
+    if stamping is None:
+        raise SifenValidationError(
+            "no active timbrado is valid on the emission date (dFeEmiDE) "
+            f"{emission_date.isoformat()}; SIFEN rejects it with 1103/1104"
+        )
+    return stamping
+
+
+def _require_signed_xml(document: Document) -> str:
+    if not document.signed_xml:
+        raise RuntimeError("A resend must carry the signed document")
+    return document.signed_xml
 
 
 def _run_document_sifen_step(claim: _ClaimedDocumentAttempt) -> AttemptResult:
@@ -428,6 +475,14 @@ def _persist_document_attempt(
         _stage_retry_outbox(session, recorded.job)
     if recorded.document_changed:
         publish_status(recorded.document, session)
+    if recorded.deadline_alerts:
+        logger.warning(
+            "worker.document_job.transmission_deadline",
+            extra={
+                **_document_log_fields(recorded.job, recorded.document),
+                "deadline_alerts": [alert.value for alert in recorded.deadline_alerts],
+            },
+        )
     logger.info(
         "worker.document_job.finished",
         extra={
@@ -594,12 +649,14 @@ def process_event_job(
     encryption_key: str | None = None,
     submission_gateway: EventSubmissionGateway | None = None,
     webhook_queue=None,
+    query_gateway: SifenQueryGateway | None = None,
 ) -> dict[str, str | bool | None]:
     """Run one attempt of a fiscal event job outside the HTTP request.
 
     Like documents, the exact request is committed before SIFEN is called and
     the outcome is recorded in a second transaction; nothing is held while
-    SIFEN answers.
+    SIFEN answers. A cancellation that may already be registered is
+    reconciled through its CDC (siConsDE) with ``query_gateway``.
     """
 
     settings = get_settings()
@@ -613,6 +670,9 @@ def process_event_job(
     certificate_store = EncryptedCertificateStore(encryption_key)
     submission_gateway = submission_gateway or KilaSifenEventGateway(
         settings.sifen_environment
+    )
+    query_gateway = query_gateway or KilaSifenQueryGateway(
+        deployment_environment=settings.sifen_environment
     )
 
     def event_service(session: Session) -> EventService:
@@ -641,7 +701,7 @@ def process_event_job(
             payload = claim.payload
         else:
             # The request is committed: nothing is held while SIFEN answers.
-            result = send_event_attempt(submission_gateway, claim)
+            result = run_event_attempt(submission_gateway, query_gateway, claim)
             with session_scope(session_factory) as session:
                 payload = event_service(session).record_event_attempt(
                     attempt=claim,

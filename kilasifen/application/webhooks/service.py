@@ -504,12 +504,15 @@ def _document_event_type(internal_status: str | None) -> str:
     normalized = (internal_status or "").strip().lower()
     if normalized in {
         "approved",
+        "approved_with_observation",
         "submitted",
         "rejected",
         "failed",
         "retry_pending",
         "reconciliation_required",
         "queued",
+        "cancelled",
+        "inutilized",
     }:
         return f"document.{normalized}"
     return "document.updated"

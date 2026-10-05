@@ -40,7 +40,7 @@ def test_transport_timeout_remains_ambiguous_during_cdc_reconciliation() -> None
         cdc="0180012345",
     )
 
-    assert result.status == "not_found"
+    assert result.status == "not_found_or_not_approved"
     assert result.result_code == "0420"
     assert result.content_xml is None
 

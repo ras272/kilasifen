@@ -1,8 +1,9 @@
 """An event attempt commits its exact request before SIFEN and records after.
 
-What to do after an uncertain event (resend or query first) is a pending
-fiscal decision: these tests pin the current behaviour (the next attempt sends
-the stored signed event again) and the engineering guarantees around it.
+After an uncertain attempt, a cancellation is reconciled through its CDC
+(siConsDE, rContDe/xContEv) before it is sent again, and a suspicious
+rejection (4002/4003/4009/4010) is only believed once the CDC shows no
+registered cancellation (DECISIONES F70; MT v150 §9.4.3, §11.6.1).
 """
 
 import os
@@ -64,6 +65,16 @@ from kilasifen.infrastructure.sifen.event import (
     EventSubmissionOutcome,
     PreparedEventSubmission,
 )
+from kilasifen.infrastructure.sifen.query import (
+    QUERY_ERROR,
+    QUERY_FOUND,
+    QUERY_NOT_FOUND_OR_NOT_APPROVED,
+    DocumentQueryOutcome,
+)
+from kilasifen.infrastructure.sifen.responses import (
+    DocumentContainer,
+    RegisteredEvent,
+)
 from kilasifen.testing.database import managed_test_database_url
 from tests.api.test_events_api import RecordingEventQueue, _seed_event_context
 
@@ -112,6 +123,66 @@ class _Gateway:
         if self.submit_error is not None:
             raise self.submit_error
         return self.outcome
+
+
+@dataclass
+class _Query:
+    """siConsDE double for the cancelled document.
+
+    ``readable=False`` stands for an ``xContenDE`` the platform could not
+    parse (its form is NO DETERMINADO): 0422 without a container.
+    """
+
+    status: str = QUERY_FOUND
+    cancellation_registered: bool = False
+    readable: bool = True
+    error: Exception | None = None
+    calls: int = 0
+
+    def query_document(self, *, cdc: str, **kwargs) -> DocumentQueryOutcome:
+        del kwargs
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        codes = {QUERY_FOUND: "0422", QUERY_NOT_FOUND_OR_NOT_APPROVED: "0420"}
+        events = (
+            (
+                RegisteredEvent(
+                    kind="cancelacion",
+                    cdc=cdc,
+                    protocol="7700112233",
+                    state_text="Aprobado",
+                ),
+            )
+            if self.cancellation_registered
+            else ()
+        )
+        found = self.status == QUERY_FOUND
+        return DocumentQueryOutcome(
+            cdc=cdc,
+            request_xml="<rEnviConsDeRequest/>",
+            response_raw="<rEnviConsDeResponse/>",
+            result_code=codes.get(self.status, "0421"),
+            result_message="consulta",
+            status=self.status,
+            content_xml="<rContDe/>" if found else None,
+            processed_at=None,
+            container=DocumentContainer(
+                document_xml="<rDE/>", protocol="1", events=events
+            )
+            if found and self.readable
+            else None,
+        )
+
+
+def _rejection(code: str) -> EventSubmissionOutcome:
+    return EventSubmissionOutcome(
+        response_raw=f"<rRetEnviEventoDe>{code}</rRetEnviEventoDe>",
+        status="rejected",
+        result_code=code,
+        result_message=f"rechazo {code}",
+        protocol=None,
+    )
 
 
 @dataclass
@@ -259,7 +330,7 @@ def test_a_request_that_never_left_is_recorded_and_sent_again(
         ValueError("<rEve>dato del contribuyente</rEve>"),
     ],
 )
-def test_an_uncertain_event_is_recorded_and_the_retry_resends_it(
+def test_an_uncertain_cancellation_is_queried_before_it_is_sent_again(
     context: _Context,
     failure: Exception,
 ) -> None:
@@ -272,10 +343,245 @@ def test_an_uncertain_event_is_recorded_and_the_retry_resends_it(
     assert job.error_snapshot["category"] == "transport"
     assert "contribuyente" not in job.error_snapshot["message"]
 
-    # Pending fiscal decision: today the retry sends the stored event again.
+    # SIFEN holds the DTE without a cancellation: the event travels again.
+    query = _Query(status=QUERY_FOUND)
     retry = _Gateway()
-    assert _run(context, retry)["event_status"] == "approved"
-    assert retry.submitted_requests
+    assert _run(context, retry, query=query)["event_status"] == "approved"
+    assert query.calls == 1
+    assert len(retry.submitted_requests) == 1
+
+
+def test_a_cancellation_already_registered_is_not_sent_again(
+    context: _Context,
+) -> None:
+    _run(context, _Gateway(submit_error=SifenTimeoutError("timeout de lectura")))
+
+    retry = _Gateway()
+    payload = _run(
+        context, retry, query=_Query(status=QUERY_FOUND, cancellation_registered=True)
+    )
+
+    event, job = _load(context)
+    assert retry.submitted_requests == []
+    assert payload["event_status"] == "approved"
+    assert event.sifen_result_code == "0422"
+    assert job.status == "succeeded"
+    with _session(context) as session:
+        document = SqlAlchemyDocumentRepository(session).get("doc-fe-recent")
+    assert document.internal_status == "cancelled"
+    # The siConsDE that settled the cancellation is kept on the document.
+    assert document.last_query_response_raw == "<rEnviConsDeResponse/>"
+
+
+def test_an_answer_without_code_is_reconciled_before_a_resend(
+    context: _Context,
+) -> None:
+    unclassified = EventSubmissionOutcome(
+        response_raw="<rRetEnviEventoDe/>",
+        status="submitted",
+        result_code=None,
+        result_message=None,
+        protocol=None,
+    )
+    _run(context, _Gateway(outcome=unclassified))
+    event, _ = _load(context)
+    assert event.status == "submitted"
+
+    retry = _Gateway()
+    payload = _run(
+        context, retry, query=_Query(status=QUERY_FOUND, cancellation_registered=True)
+    )
+
+    assert retry.submitted_requests == []
+    assert payload["event_status"] == "approved"
+
+
+def test_an_unanswerable_cdc_leaves_the_cancellation_to_an_operator(
+    context: _Context,
+) -> None:
+    _run(context, _Gateway(submit_error=SifenTimeoutError("timeout de lectura")))
+
+    retry = _Gateway()
+    payload = _run(
+        context, retry, query=_Query(status=QUERY_NOT_FOUND_OR_NOT_APPROVED)
+    )
+
+    event, job = _load(context)
+    # Whether a cancelled DTE answers 0420 is NO DETERMINADO: nothing is sent.
+    assert retry.submitted_requests == []
+    assert payload["event_status"] == "reconciliation_required"
+    assert event.status == "reconciliation_required"
+    assert job.status == "failed"
+    assert job.error_snapshot["category"] == "reconciliation_required"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        _Query(error=SifenTimeoutError("timeout de la consulta")),
+        _Query(status=QUERY_ERROR),
+    ],
+)
+def test_a_failed_cdc_query_sends_nothing_and_is_tried_again(
+    context: _Context,
+    query: _Query,
+) -> None:
+    _run(context, _Gateway(submit_error=SifenTimeoutError("timeout de lectura")))
+
+    retry = _Gateway()
+    payload = _run(context, retry, query=query)
+
+    event, job = _load(context)
+    assert retry.submitted_requests == []
+    assert payload["retryable"] is True
+    assert event.status == "retry_pending"
+    assert job.error_snapshot["category"] == "reconciliation_unavailable"
+
+
+@pytest.mark.parametrize("code", ["4002", "4003", "4009", "4010"])
+def test_a_suspicious_rejection_hiding_a_registration_is_approved(
+    context: _Context,
+    code: str,
+) -> None:
+    payload = _run(
+        context,
+        _Gateway(outcome=_rejection(code)),
+        query=_Query(status=QUERY_FOUND, cancellation_registered=True),
+    )
+
+    event, _ = _load(context)
+    assert payload["event_status"] == "approved"
+    assert event.sifen_response_raw == _rejection(code).response_raw
+    with _session(context) as session:
+        document = SqlAlchemyDocumentRepository(session).get("doc-fe-recent")
+    assert document.internal_status == "cancelled"
+
+
+@pytest.mark.parametrize("code", ["4002", "4009", "4010"])
+def test_a_suspicious_rejection_is_believed_when_no_cancellation_is_registered(
+    context: _Context,
+    code: str,
+) -> None:
+    query = _Query(status=QUERY_FOUND)
+    payload = _run(context, _Gateway(outcome=_rejection(code)), query=query)
+
+    event, job = _load(context)
+    assert query.calls == 1
+    assert payload["event_status"] == "rejected"
+    assert event.sifen_result_code == code
+    assert job.error_snapshot["category"] == "sifen_rejection"
+
+
+def test_a_duplicate_answer_is_never_read_as_a_rejection(context: _Context) -> None:
+    """4003 (GEC002b, MT v150 §11.6.1 p. 134): SIFEN says it is registered.
+
+    siConsDE finds the DTE but ``xContEv`` shows no cancellation: the two
+    answers disagree, so the event is left for an operator and the document
+    keeps its state instead of a false ``rejected`` (DECISIONES F00, F70).
+    """
+
+    query = _Query(status=QUERY_FOUND)
+    payload = _run(context, _Gateway(outcome=_rejection("4003")), query=query)
+
+    event, job = _load(context)
+    assert query.calls == 1
+    assert payload["event_status"] == "reconciliation_required"
+    assert event.status == "reconciliation_required"
+    assert event.sifen_result_code == "4003"
+    assert event.sifen_response_raw == _rejection("4003").response_raw
+    assert job.status == "failed"
+    assert job.error_snapshot["category"] == "reconciliation_required"
+    with _session(context) as session:
+        document = SqlAlchemyDocumentRepository(session).get("doc-fe-recent")
+    assert document.internal_status == "approved"
+
+
+@pytest.mark.parametrize("code", ["4002", "4003", "4009", "4010"])
+def test_a_suspicious_rejection_with_an_unreadable_container_is_not_believed(
+    context: _Context,
+    code: str,
+) -> None:
+    """0422 whose ``xContenDE`` cannot be read (form NO DETERMINADO)."""
+
+    query = _Query(status=QUERY_FOUND, readable=False)
+    payload = _run(context, _Gateway(outcome=_rejection(code)), query=query)
+
+    event, job = _load(context)
+    assert query.calls == 1
+    assert payload["event_status"] == "reconciliation_required"
+    assert event.sifen_result_code == code
+    assert job.error_snapshot["category"] == "reconciliation_required"
+
+
+def test_an_unreadable_container_after_an_uncertain_attempt_never_rejects(
+    context: _Context,
+) -> None:
+    """The reviewer's probe: timeout, 0422 unreadable, resend, then 4003."""
+
+    _run(context, _Gateway(submit_error=SifenTimeoutError("timeout de lectura")))
+
+    # The stored event travels again; its 4003 is queried and not believed.
+    query = _Query(status=QUERY_FOUND, readable=False)
+    retry = _Gateway(outcome=_rejection("4003"))
+    payload = _run(context, retry, query=query)
+
+    event, job = _load(context)
+    assert len(retry.submitted_requests) == 1
+    assert query.calls == 2
+    assert payload["event_status"] == "reconciliation_required"
+    assert event.sifen_result_code == "4003"
+    assert job.error_snapshot["category"] == "reconciliation_required"
+
+
+def test_an_unreadable_container_lets_the_stored_event_settle_itself(
+    context: _Context,
+) -> None:
+    """Without a readable ``xContEv`` the resend's own answer decides: 0600."""
+
+    _run(context, _Gateway(submit_error=SifenTimeoutError("timeout de lectura")))
+
+    retry = _Gateway()
+    payload = _run(
+        context, retry, query=_Query(status=QUERY_FOUND, readable=False)
+    )
+
+    assert len(retry.submitted_requests) == 1
+    assert payload["event_status"] == "approved"
+
+
+def test_an_ordinary_rejection_needs_no_query(context: _Context) -> None:
+    query = _Query()
+    payload = _run(context, _Gateway(outcome=_rejection("4006")), query=query)
+
+    assert payload["event_status"] == "rejected"
+    assert query.calls == 0
+
+
+def test_an_uncertain_event_that_exhausts_its_attempts_needs_reconciliation(
+    context: _Context,
+) -> None:
+    _run(context, _Gateway(submit_error=SifenTimeoutError("timeout de lectura")))
+    _set_event_attempts(context, 4)
+
+    payload = _run(
+        context,
+        _Gateway(),
+        query=_Query(error=SifenTimeoutError("timeout de la consulta")),
+    )
+
+    event, job = _load(context)
+    assert payload["event_status"] == "reconciliation_required"
+    assert job.status == "failed"
+    assert job.error_snapshot["category"] == "reconciliation_required"
+
+    # An operator retry reconciles again before anything is sent.
+    _requeue(context)
+    retry = _Gateway()
+    payload = _run(
+        context, retry, query=_Query(status=QUERY_FOUND, cancellation_registered=True)
+    )
+    assert retry.submitted_requests == []
+    assert payload["event_status"] == "approved"
 
 
 def test_a_crash_during_the_call_leaves_the_attempt_on_record(
@@ -340,9 +646,9 @@ def test_a_retry_once_the_window_closed_sends_the_event_again(
     _age_stored_request(context, EVENT_IN_FLIGHT_WINDOW + timedelta(seconds=1))
     _requeue(context)
 
-    # Pending fiscal decision: today an uncertain event is sent again.
+    # The worker died: the CDC is queried first; no cancellation registered.
     retry = _Gateway()
-    payload = _run(context, retry)
+    payload = _run(context, retry, query=_Query(status=QUERY_FOUND))
 
     assert len(retry.submitted_requests) == 1
     assert payload["event_status"] == "approved"
@@ -500,13 +806,20 @@ def _record_row_locks(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return locks
 
 
-def _run(context: _Context, gateway: _Gateway) -> dict:
+def _run(context: _Context, gateway: _Gateway, *, query: _Query | None = None) -> dict:
     return process_event_job(
         job_id=context.job_id,
         database_url=context.database_url,
         encryption_key=context.encryption_key,
         submission_gateway=gateway,
+        query_gateway=query or _Query(error=AssertionError("unexpected query")),
     )
+
+
+def _set_event_attempts(context: _Context, attempts: int) -> None:
+    with _session(context) as session:
+        jobs = SqlAlchemyJobRepository(session)
+        jobs.save(replace(jobs.get(context.job_id), attempts=attempts))
 
 
 def _session(context: _Context):

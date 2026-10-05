@@ -21,7 +21,9 @@ class DocumentRepository(ABC):
         """Lock a document row and load its committed state."""
 
     @abstractmethod
-    def get_by_idempotency_key(self, emitter_id: str, idempotency_key: str) -> Document | None:
+    def get_by_idempotency_key(
+        self, emitter_id: str, idempotency_key: str
+    ) -> Document | None:
         """Load a document by emitter and idempotency key."""
 
     @abstractmethod
@@ -33,11 +35,13 @@ class DocumentRepository(ABC):
         """Load a document by emitter and CDC."""
 
     @abstractmethod
-    def list_by_associated_cdc(self, *, emitter_id: str, associated_cdc: str) -> list[Document]:
+    def list_by_associated_cdc(
+        self, *, emitter_id: str, associated_cdc: str
+    ) -> list[Document]:
         """List documents that reference the given CDC in typed payloads."""
 
     @abstractmethod
-    def list_numbers_in_range(
+    def list_in_number_range(
         self,
         *,
         emitter_id: str,
@@ -46,8 +50,13 @@ class DocumentRepository(ABC):
         point: str,
         number_from: int,
         number_to: int,
-    ) -> list[int]:
-        """List persisted document numbers inside one numbering range."""
+        timbrado: str,
+    ) -> list[Document]:
+        """List the documents numbered inside one range of one timbrado.
+
+        A document whose timbrado is not known yet (never prepared) counts
+        for every timbrado.
+        """
 
     @abstractmethod
     def list_recent(

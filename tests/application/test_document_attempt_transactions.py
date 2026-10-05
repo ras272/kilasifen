@@ -62,6 +62,10 @@ from kilasifen.infrastructure.sifen.engine import (
     KilaSifenEmissionEngine,
     SubmissionOutcome,
 )
+from kilasifen.infrastructure.sifen.query import (
+    QUERY_ERROR,
+    QUERY_NOT_FOUND_OR_NOT_APPROVED,
+)
 from kilasifen.testing.database import managed_test_database_url
 from tests.application.test_emission_flow import (
     _PREPARED,
@@ -213,7 +217,7 @@ def test_a_crash_followed_by_an_unanswered_query_keeps_reconciling(
     payload = _run(
         database_url,
         never_resubmitted,
-        query_gateway=FakeQueryGateway(status="not_found"),
+        query_gateway=FakeQueryGateway(status=QUERY_ERROR),
     )
 
     assert never_resubmitted.calls == []
@@ -228,7 +232,7 @@ def test_a_crash_followed_by_an_unanswered_query_keeps_reconciling(
         SifenTransportClosedError("transporte cerrado"),
     ],
 )
-def test_a_request_that_never_left_is_sent_again_unchanged(
+def test_a_request_that_never_left_is_sent_again_as_signed(
     database_url: str,
     never_left: Exception,
 ) -> None:
@@ -247,8 +251,12 @@ def test_a_request_that_never_left_is_sent_again_unchanged(
     resend = FakeEmissionEngine(outcome=_APPROVED)
     payload = _run(database_url, resend)
 
-    assert resend.calls == ["submit"]
-    assert resend.submitted_requests == [_PREPARED.request_xml]
+    document, _ = _load(database_url)
+    # Never re-signed: the stored signed DE in a new rEnviDe, persisted
+    # before it travels.
+    assert resend.calls == ["wrap", "submit"]
+    assert resend.wrapped == [_PREPARED.signed_xml]
+    assert resend.submitted_requests == [document.sifen_request_xml]
     assert payload["document_status"] == "approved"
 
 
@@ -276,11 +284,12 @@ def test_any_other_failure_leaves_the_outcome_unknown(
     assert "contribuyente" not in job.error_snapshot["message"]
     assert _outbox_status(database_url) == "pending"
 
+    # The next attempt queries the CDC before anything is sent again.
     never_resubmitted = FakeEmissionEngine()
     _run(
         database_url,
         never_resubmitted,
-        query_gateway=FakeQueryGateway(status="not_found"),
+        query_gateway=FakeQueryGateway(status=QUERY_NOT_FOUND_OR_NOT_APPROVED),
     )
     assert never_resubmitted.calls == []
 
@@ -297,14 +306,14 @@ def test_an_unreachable_sifen_on_the_last_attempt_keeps_the_document_queued(
     document, job = _load(database_url)
     assert payload["job_status"] == "failed"
     assert document.internal_status == "queued"
-    assert document.sifen_request_xml == _PREPARED.request_xml
+    assert document.signed_xml == _PREPARED.signed_xml
     assert job.error_snapshot["category"] == "retry_exhausted"
     assert job.finished_at is not None
 
     _requeue(database_url)
     resend = FakeEmissionEngine(outcome=_APPROVED)
     payload = _run(database_url, resend)
-    assert resend.calls == ["submit"]
+    assert resend.calls == ["wrap", "submit"]
     assert payload["document_status"] == "approved"
 
 
@@ -619,7 +628,8 @@ def _run(database_url: str, engine, *, query_gateway=None) -> dict[str, str]:
         database_url=database_url,
         encryption_key=_fernet_key(),
         emission_engine=engine,
-        query_gateway=query_gateway or FakeQueryGateway(status="not_found"),
+        query_gateway=query_gateway
+        or FakeQueryGateway(status=QUERY_NOT_FOUND_OR_NOT_APPROVED),
         current_date=date(2024, 4, 24),
     )
 

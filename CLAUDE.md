@@ -22,11 +22,17 @@ señalar la contradicción en el commit o PR.
    conocida»); no se suman nuevas.
 5. Clean-room: no vuelve al repositorio nada del import original de terceros
    (ver la sección «Regla clean-room»).
-6. Los envíos de DE y de eventos no se reintentan ante un resultado incierto:
-   reenviar un documento cuyo resultado se desconoce puede duplicarlo ante la
-   SET. `TransmisionDE` y `TransmisionEvento` solo repiten una solicitud que
-   no llegó al SIFEN (`SifenRequestNotSentError`), aun con `max_retries > 0`;
-   la plataforma y `SifenClient` igual los usan con `max_retries=0`.
+6. Los envíos de DE y de eventos no se reintentan a ciegas ante un resultado
+   incierto: reenviar un documento cuyo resultado se desconoce puede
+   duplicarlo ante la SET. `TransmisionDE` y `TransmisionEvento` solo repiten
+   una solicitud que no llegó al SIFEN (`SifenRequestNotSentError`), aun con
+   `max_retries > 0`; la plataforma y `SifenClient` igual los usan con
+   `max_retries=0`. La plataforma consulta el CDC (siConsDE) antes de
+   reenviar: un DE solo vuelve a viajar cuando la consulta responde `0420`, el
+   request no salió o el rechazo fue `0161`/`0162`, y siempre es el mismo `rDE`
+   firmado en un `rEnviDe` nuevo; una cancelación incierta se verifica en
+   `xContEv` antes de reenviarse (`docs/normativa/matriz.md`, decisiones
+   F60-F64 y F70).
 
 ## Qué es KilaSifen
 
@@ -405,13 +411,28 @@ Plataforma (hallazgos de auditoría pendientes):
 - Dirección, teléfono, email y actividad del emisor reciben valores ficticios
   si faltan en el payload.
 - El QR de producción usa siempre el parámetro `dRucRec`.
-- Al clasificar la respuesta de un DE (`infrastructure/sifen/engine.py`), un
-  código distinto de `0260` se marca como rechazo salvo que `dEstRes` diga
-  «Aprobado» sin más texto; no se produce el estado «aprobado con
-  observación».
-- Un evento con resultado incierto (timeout, respuesta ilegible) se vuelve
-  a enviar en el próximo intento, sin consultar antes. Qué corresponde según
-  la normativa de eventos duplicados está pendiente de definir.
+- Una inutilización con resultado incierto se reenvía sin verificación
+  previa, porque ningún servicio oficial permite consultarla; un `4066`
+  posterior queda `reconciliation_required` para un operador. Lo mismo
+  una cancelación con `4003` cuya cancelación no aparece en `xContEv` (o
+  con un `xContenDE` ilegible) y una cuyo CDC responde `0420`. No existe un
+  endpoint para resolver a mano esos eventos: el reintento del operador
+  repite la consulta o el envío.
+- Un reenvío del mismo DE (tras `0420` o `0161`/`0162`) no vuelve a
+  controlar la ventana de `dFeEmiDE` (1150/1151, MT v150 §12.4 val. 19-20):
+  solo deja el aviso en `deadline_alerts`.
+- `KilaSifenQueryGateway.query_ruc` guarda para auditoría un request con un
+  `dId` distinto del que viajó (`query_document` ya guarda el real).
+- La respuesta de `GET /documents/{id}` (`api/schemas/documents.py`) todavía
+  no expone `sifen_approved_at`, `sifen_protocol`, `sifen_messages` ni
+  `retryable_server_error`: quedan en la base (el protocolo también sale en la
+  consulta por CDC y el reenvío por `0161`/`0162` en el `error_snapshot` del
+  job).
+- Los puntos que la normativa deja abiertos en respuestas, reenvíos, eventos e
+  inutilización (`0161`/`0162`, reglas del `dId`, forma de `xContenDE`, `0420`
+  de un DTE cancelado, hora de aprobación por consulta, entre otros) siguen la
+  opción documentada en `docs/normativa/matriz.md`; conviene confirmarlos en
+  el ambiente de test de la SET.
 - Un job cuyo worker muere durante la llamada al SIFEN queda `processing`
   (documento `submitting`) hasta que un operador lo reencola; no hay reaper
   que lo detecte solo. El reintento consulta el CDC antes de decidir.

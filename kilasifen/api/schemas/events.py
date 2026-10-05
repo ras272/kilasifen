@@ -39,6 +39,14 @@ class InutilizeRequest(BaseModel):
     numero_desde: int = Field(ge=1)
     numero_hasta: int = Field(ge=1)
     motivo: str = Field(min_length=5, max_length=500)
+    serie: str | None = Field(
+        default=None,
+        pattern=r"^[A-Z]{2}$",
+        description=(
+            "dSerieNum opcional (NT 10 §1.7): serie de la numeracion cuando se "
+            "reinicio despues de 9.999.999."
+        ),
+    )
 
     @field_validator("establishment", "point")
     @classmethod

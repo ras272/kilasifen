@@ -1710,6 +1710,19 @@
             "title": "Point",
             "type": "string"
           },
+          "serie": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z]{2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "dSerieNum opcional (NT 10 §1.7): serie de la numeracion cuando se reinicio despues de 9.999.999.",
+            "title": "Serie"
+          },
           "timbrado": {
             "pattern": "^\\d{8}$",
             "title": "Timbrado",
@@ -6284,6 +6297,7 @@
     },
     "/v1/emitters/{emitter_id}/inutilizations": {
       "post": {
+        "description": "Inutiliza un rango de numeros de un timbrado del emisor.\n\nSe pueden inutilizar numeros sin documento, rechazados, fallidos por\nvalidacion local o en cola abortados; nunca un DTE aprobado o cancelado ni\nun documento que pueda estar en el SIFEN. Pasado el dia 15 del mes\nsiguiente al consumo del numero, la respuesta trae el aviso\n`inutilization.extemporaneous` (el SIFEN no la rechaza por plazo).",
         "operationId": "inutilize_numbers_v1_emitters__emitter_id__inutilizations_post",
         "parameters": [
           {
@@ -6667,7 +6681,7 @@
     },
     "/v1/emitters/{emitter_id}/queries/documents/{document_id}/reconcile": {
       "post": {
-        "description": "Reconcile an uncertain document by CDC without resubmitting it.",
+        "description": "Consulta el CDC y registra la respuesta del SIFEN; no envia nada.\n\nCon 0422 un documento pendiente queda aprobado (o cancelado si hay una\ncancelacion registrada) y uno aprobado con una cancelacion registrada\nqueda cancelado. Con 0420 un documento pendiente que no se esta enviando\nvuelve a la cola: su proximo intento reenvia el mismo DE firmado.",
         "operationId": "reconcile_document_v1_emitters__emitter_id__queries_documents__document_id__reconcile_post",
         "parameters": [
           {
