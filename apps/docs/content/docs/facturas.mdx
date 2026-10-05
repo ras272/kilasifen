@@ -31,6 +31,51 @@ su perfil fiscal completo.
   A más de 120 h el documento se crea con un aviso en `fiscal_warnings`
   (el SIFEN lo aprueba con observación por extemporáneo).
 
+## Montos, IVA y pagos
+
+- `moneda` es un código ISO 4217 de la SET (por defecto `PYG`); el XML lleva
+  su nombre oficial (`Guarani`, `US Dollar`).
+- Cada ítem declara `afectacion`: `gravado` (con `tasa` 5 o 10), `exento` u
+  `exonerado` (con `tasa` 0) o `gravado_parcial`, que exige
+  `proporcion_gravada` mayor que 0 y menor que 100. KilaSifen calcula la base
+  gravada, el IVA y la base exenta con las fórmulas de la NT 13, con hasta
+  8 decimales también en guaraníes.
+- `porcentaje_descuento_global` (0 por defecto) se aplica a cada ítem como
+  `porcentaje * precio_unitario / 100`. No hace falta enviar
+  `descuento_global` por ítem; si lo enviás, tiene que coincidir con ese
+  cálculo (±0,8).
+- `redondeo`: `ninguno` (por defecto) o `multiplo_50`, que baja el total al
+  múltiplo de 50 Gs anterior. Sólo en PYG.
+- Contado: `formas_pago` suma el total neto (tolerancia 0,50); sin
+  `formas_pago` se informa un pago en efectivo por el total.
+- Crédito: `formas_pago` sólo va con `credito.monto_entrega_inicial` y suma
+  esa entrega.
+- Un pago sin `moneda` es en la moneda de la factura. Si el pago no es en PYG
+  necesita `tipo_cambio` (se toma el de la factura cuando el pago va en esa
+  moneda); un pago en PYG no lo admite.
+
+```json
+{
+  "factura": {
+    "cliente": {"ruc": "80025298-5", "tipo_contribuyente": 2, "razon_social": "Cliente prueba"},
+    "porcentaje_descuento_global": "10",
+    "redondeo": "multiplo_50",
+    "items": [
+      {"descripcion": "Servicio", "cantidad": 1, "precio_unitario": 110000, "afectacion": "gravado", "tasa": 10},
+      {"descripcion": "Alquiler", "cantidad": 1, "precio_unitario": 100000, "afectacion": "gravado_parcial", "proporcion_gravada": "30", "tasa": 10}
+    ],
+    "condicion_operacion": {
+      "tipo": "credito",
+      "formas_pago": [{"tipo": "efectivo", "monto": "50000"}],
+      "credito": {"tipo": "plazo", "descripcion": "30 dias", "monto_entrega_inicial": "50000"}
+    }
+  }
+}
+```
+
+Si una regla no se cumple, la respuesta es `422` con el código de la regla en
+el mensaje (por ejemplo `documents.items.proporcion_gravada_required`).
+
 ## Identificadores
 
 - `external_id`: identifica la venta en tu ERP.

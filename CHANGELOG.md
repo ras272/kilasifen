@@ -116,6 +116,48 @@ revisar la guía de migración de esta sección.
     120 h de la transmisión crea el documento con un aviso en el nuevo campo
     `fiscal_warnings`.
   - `dFecFirma` pasa a ser la hora real de la firma y no la fecha de emisión.
+- Correcciones fiscales de montos, IVA, redondeo, pagos y monedas (MT v150
+  con las NT 01, 08, 10 y 13; detalle y fuentes en
+  `docs/normativa/matriz.md`). Un único calculador
+  (`kilasifen.domain.documents.totals`) sirve a la API y al XML:
+  - **El redondeo deja de aplicarse por defecto.** El nuevo campo
+    `redondeo` vale `ninguno` (dRedon 0) o `multiplo_50`, que lleva
+    `dTotOpe` hacia abajo a un múltiplo de 50 Gs y sólo se admite en PYG
+    (`422 documents.redondeo.only_pyg`; con un total menor a 50 Gs,
+    `documents.redondeo.total_below_50`). Antes se redondeaba siempre, y las
+    monedas extranjeras a 0,50.
+  - **Descuento global por porcentaje.** El nuevo campo
+    `porcentaje_descuento_global` es `dPorcDescTotal` y se aplica a cada
+    ítem como `dDescGloItem = porcentaje * precio_unitario / 100` (NT 01).
+    `items[].descuento_global` pasa a ser opcional y, si se envía, tiene que
+    coincidir con ese cálculo con una variación de 0,8
+    (`422 documents.items.descuento_global_mismatch`). Antes `dPorcDescTotal`
+    mezclaba los descuentos particulares.
+  - `proporcion_gravada` es obligatoria y está entre 0 y 100 (sin
+    incluirlos) en `gravado_parcial`; ya no tiene default 100. Un ítem
+    exento o exonerado se escribe con `dPropIVA` 0 y `dBasExe` 0, y el
+    gravado parcial con las fórmulas de la NT 13.
+  - El IVA por ítem (`dBasGravIVA`, `dLiqIVAItem`, `dBasExe`) y sus totales
+    llevan hasta 8 decimales también en PYG, en lugar de redondearse a
+    guaraníes enteros campo por campo; los subtotales se informan con 0 cuando
+    algún ítem los necesita.
+  - Pagos: `formas_pago[].moneda` y `cuotas[].moneda` toman por defecto la
+    moneda de la operación (antes PYG); `dTiCamTiPag` se informa si y sólo si
+    el pago no es en PYG (con el `tipo_cambio` de la operación como default
+    si el pago va en esa moneda); un pago en PYG con `tipo_cambio` responde
+    `422`. En contado los pagos tienen que sumar `dTotGralOpe` (tolerancia
+    0,50). Un crédito con `monto_entrega_inicial` exige `formas_pago` con los
+    pagos de esa entrega, que tienen que sumarla; sin entrega inicial no se
+    admiten `formas_pago`.
+  - Las descripciones de moneda (`dDesMoneOpe`, `dDMoneTiPag`, `dDMoneCuo`)
+    son el nombre ISO oficial del XSD (`Guarani`, `US Dollar`); `moneda`
+    tiene que ser un código de `Monedas_v150.xsd` cuyo nombre quepa en 20
+    caracteres, y `formas_pago[].moneda_descripcion` queda obsoleto y se
+    ignora.
+  - `tipo_impuesto` 2 (ISC) se rechaza: el contrato tipado no lo puede
+    expresar (1902).
+  - Montos con más decimales que el XSD (8; 4 en pagos y tipos de cambio)
+    responden `422`.
 - Plataforma: `KilaSifenPayloadMapper.map_document` y
   `build_typed_document_xml` aceptan `signed_at` (y el builder
   `test_emitter_name_literal`); `KilaSifenEmissionEngine` acepta `clock`.
@@ -152,6 +194,12 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 | Consumidor innominado con `nombre` y dirección inventados | `{"naturaleza": 2, "tipo_operacion": 2, "tipo_documento_identidad": 5}`; nombre y número los pone la plataforma |
 | `codigo_seguridad` fijo en cada documento | Omitirlo (la plataforma genera uno aleatorio) o enviar un valor aleatorio distinto por documento |
 | `responsable_generacion` sin `tipo_documento` (se asumía 1) | Enviar `tipo_documento` (1-4 o 9 con `descripcion_tipo_documento`) |
+| Total redondeado automáticamente a múltiplos de 50 Gs | Enviar `"redondeo": "multiplo_50"` cuando corresponda (sólo PYG); por defecto ya no se redondea |
+| `items[].descuento_global` como monto libre por ítem | Enviar `porcentaje_descuento_global` en el documento; la plataforma calcula `dDescGloItem` |
+| `gravado_parcial` sin `proporcion_gravada` (se asumía 100) | Enviar `proporcion_gravada` entre 0 y 100 (sin incluirlos) |
+| Crédito con `monto_entrega_inicial` sin pagos | Enviar `formas_pago` en `condicion_operacion` con los pagos de esa entrega |
+| `formas_pago[].moneda` omitida en una operación en otra moneda (se asumía PYG) | Omitida vale la moneda de la operación; enviar `moneda` y `tipo_cambio` si el pago es en otra |
+| `formas_pago[].moneda_descripcion` | Sin efecto: se escribe el nombre oficial de la moneda |
 
 ### Added
 
@@ -162,6 +210,8 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   de administración.
 - `SifenClient`, fachada de alto nivel del SDK para envío, consultas y
   eventos.
+- `kilasifen.engine.sdk.catalogos.monedas()` y `descripcion_moneda()`: los
+  códigos ISO 4217 de `Monedas_v150.xsd` con su nombre oficial.
 - Registro de esquemas determinista para validar contra los XSD.
 - Utilidades de *polling* para lotes y para la consulta asíncrona de DTE.
 - Ejemplos ejecutables en `docs/examples/`.

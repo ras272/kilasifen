@@ -179,6 +179,33 @@ Reglas fiscales que se validan al crear (fuentes en `docs/normativa/matriz.md`):
   (hora oficial de Paraguay, UTC−3). Si queda a más de 120 h, el documento se
   crea igual pero `fiscal_warnings` avisa que el SIFEN lo aprobará con la
   observación 1005 (transmisión extemporánea).
+- `moneda` (y la de cada pago o cuota) es un código ISO 4217 de
+  `Monedas_v150.xsd`; las descripciones del XML son su nombre oficial
+  (`Guarani`, `US Dollar`). `formas_pago[].moneda_descripcion` se ignora.
+- IVA por ítem: `afectacion` `gravado` (proporción 100), `exento` o
+  `exonerado` (proporción 0, `tasa` 0) y `gravado_parcial`, que exige
+  `proporcion_gravada` entre 0 y 100 sin incluirlos. Base gravada, IVA y base
+  exenta salen de las fórmulas de la NT 13 con hasta 8 decimales, también en
+  PYG; los totales son la suma exacta de los ítems.
+- Descuento global: `porcentaje_descuento_global` (0 por defecto) se aplica a
+  cada ítem como `porcentaje * precio_unitario / 100`. `items[].descuento_global`
+  es opcional y, si se envía, tiene que coincidir con ese cálculo (±0,8).
+- Redondeo: `redondeo` es `ninguno` (por defecto, `dRedon` 0) o `multiplo_50`
+  (sólo PYG): baja `dTotOpe` al múltiplo de 50 Gs anterior. Nunca se redondea
+  una moneda extranjera.
+- Pagos (sólo facturas): en contado, `formas_pago` tiene que sumar el total
+  neto (tolerancia 0,50) y sin `formas_pago` se informa un pago en efectivo
+  por el total. A crédito, `formas_pago` sólo va con
+  `credito.monto_entrega_inicial` y tiene que sumarlo. Un pago sin `moneda` es
+  en la moneda de la operación; `tipo_cambio` es obligatorio si el pago no es
+  en PYG (si va en la moneda de la operación se usa el `tipo_cambio` del
+  documento) y no se admite si es en PYG.
+- `tipo_impuesto` 2 (ISC) no se admite.
+
+Los incumplimientos responden `422` con el código de la regla en el mensaje,
+por ejemplo `documents.items.proporcion_gravada_required`,
+`documents.redondeo.only_pyg` o
+`documents.condicion_operacion.formas_pago.total_mismatch`.
 
 ## Nota de crédito
 

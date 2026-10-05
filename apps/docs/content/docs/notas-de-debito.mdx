@@ -9,7 +9,9 @@ POST /v1/emitters/{emitter_id}/documents/notas-debito
 ```
 
 La nota de débito comparte cliente, ítems, moneda, numeración e idempotencia con
-los demás documentos tipados. Siempre requiere `documento_asociado`.
+los demás documentos tipados. Siempre requiere `documento_asociado`. Los
+montos siguen las reglas de [Facturas](/docs/facturas#montos-iva-y-pagos), sin
+condición de pago.
 
 ```json
 {

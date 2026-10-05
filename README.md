@@ -527,6 +527,15 @@ Hallazgos de una auditoría reciente, que se corregirán a continuación:
   no se validan localmente.
 - El QR de producción siempre usa el parámetro `dRucRec`, incluso cuando el
   receptor se identifica con `dNumIDRec`.
+- El IVA por ítem y sus totales llevan hasta 8 decimales, también en
+  guaraníes (NT 13, validaciones 1913 y 2367-2375), y el KuDE todavía los
+  imprime tal cual, sin formatear.
+- Qué deben sumar los pagos (`dMonTiPag`) y si el redondeo a 50 Gs se limita
+  al efectivo o a B2C no está determinado por la SET: la plataforma exige que
+  los pagos de contado sumen el total (y los de la entrega inicial, su monto)
+  con tolerancia 0,50, y sólo redondea cuando el documento pide
+  `"redondeo": "multiplo_50"`. El impuesto ISC (`tipo_impuesto` 2) no se
+  admite.
 - Solo el código `0260` (o el estado "Aprobado") cuenta como aprobación;
   cualquier otro código se clasifica como rechazo, así que nunca se produce
   `approved_with_observation` a partir de una respuesta real.

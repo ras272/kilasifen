@@ -267,7 +267,11 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   XSD en `dEntCont`). No se emite a través del binding `RDe`, que tiene el
   layout v141 (ver «Esquemas XSD»). `gEmis` sale sólo del emisor y de su
   perfil fiscal persistido (`domain/emitters/fiscal_profile.py`); `gDatRec`,
-  de `domain/documents/receiver.py`, que también usa la API; `dCodSeg` se
+  de `domain/documents/receiver.py`, que también usa la API; los montos de
+  `gCamItem`, `gTotSub` y `gCamCond` (IVA por ítem con las fórmulas de la
+  NT 13 y 8 decimales, subtotales, descuento global, redondeo opcional y
+  pagos), de `domain/documents/totals.py`, el mismo calculador que valida la
+  API; `dCodSeg` se
   elige al crear el documento (`documents.security_code`) y `dFecFirma` es
   la hora de la firma. Las reglas y sus fuentes están en
   `docs/normativa/matriz.md`. El `generated_xml` del endpoint raw
@@ -402,6 +406,11 @@ Plataforma (hallazgos de auditoría pendientes):
 - El timbrado se elige con la fecha del servidor y no con `dFeEmiDE`
   (1103/1104), y `establecimiento`/`punto` siguen con default `001`.
 - El QR de producción usa siempre el parámetro `dRucRec`.
+- El KuDE imprime los montos de IVA tal como están en el XML, con hasta 8
+  decimales también en guaraníes; falta formatearlos.
+- Qué deben sumar los pagos y el alcance del redondeo a 50 Gs siguen NO
+  DETERMINADOS por la SET (notas 9 y 10 de `docs/normativa/matriz.md`); la
+  plataforma aplica la opción documentada allí.
 - Al clasificar la respuesta de un DE (`infrastructure/sifen/engine.py`), un
   código distinto de `0260` se marca como rechazo salvo que `dEstRes` diga
   «Aprobado» sin más texto; no se produce el estado «aprobado con
