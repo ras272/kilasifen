@@ -11,17 +11,16 @@ from fastapi.testclient import TestClient
 
 from kilasifen.api.app import create_app
 from kilasifen.config import get_settings
+from kilasifen.engine.sdk.fiscal import build_qr_payload_from_signed_xml
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.repositories.documents import (
     SqlAlchemyDocumentRepository,
 )
 from kilasifen.infrastructure.db.session import build_engine, session_scope
-from kilasifen.infrastructure.kude.qr_generator import build_sifen_qr_url
 from kilasifen.testing.database import managed_test_database_url
 from tests._raw_xml import golden_signed_xml, raw_document_payload
 
 API_KEY = "secret-key"
-_GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden"
 _CSC = "ABCD0000000000000000000000000000"
 _CSC_ID = "0001"
 
@@ -322,11 +321,7 @@ def test_get_kude_data_does_not_expose_csc(client: TestClient):
     assert _CSC not in json.dumps(response.json())
 
 
-def test_get_kude_data_qr_matches_qr_generator_byte_exact(client: TestClient):
-    from datetime import datetime
-    from decimal import Decimal
-    from xml.etree import ElementTree as ET
-
+def test_get_kude_data_qr_is_the_dcarqr_of_the_signed_xml(client: TestClient):
     emitter = _create_emitter(client, external_id="erp-a", ruc="80024135", dv="5")
     document = _create_document_with_signed_xml(
         client,
@@ -341,34 +336,10 @@ def test_get_kude_data_qr_matches_qr_generator_byte_exact(client: TestClient):
     assert response.status_code == 200
     body = response.json()["data"]["kude"]
 
-    signed_xml = (_GOLDEN_DIR / "factura_b2b_iva10.xml").read_text(encoding="utf-8")
-    ns = "http://ekuatia.set.gov.py/sifen/xsd"
-    dsig = "http://www.w3.org/2000/09/xmldsig#"
-    root = ET.fromstring(signed_xml.encode("utf-8"))
-    de = root.find(f"{{{ns}}}DE")
-    cdc = de.attrib["Id"]
-    fecha_emi = datetime.fromisoformat(
-        de.find(f"{{{ns}}}gDatGralOpe/{{{ns}}}dFeEmiDE").text
-    )
-    rec_ruc = de.find(f"{{{ns}}}gDatGralOpe/{{{ns}}}gDatRec/{{{ns}}}dRucRec").text
-    g_tot = de.find(f"{{{ns}}}gTotSub")
-    total_general = Decimal(g_tot.find(f"{{{ns}}}dTotGralOpe").text)
-    total_iva = Decimal(g_tot.find(f"{{{ns}}}dTotIVA").text)
-    items_count = len(de.find(f"{{{ns}}}gDtipDE").findall(f"{{{ns}}}gCamItem"))
-    digest = root.find(
-        f"{{{dsig}}}Signature/{{{dsig}}}SignedInfo/{{{dsig}}}Reference/{{{dsig}}}DigestValue"
-    ).text.strip()
-
-    expected = build_sifen_qr_url(
-        cdc=cdc,
-        fecha_emision=fecha_emi,
-        rec_identifier=rec_ruc,
-        total_general=total_general,
-        total_iva=total_iva,
-        cantidad_items=items_count,
-        digest_value=digest,
-        csc=_CSC,
+    expected = build_qr_payload_from_signed_xml(
+        signed_xml=golden_signed_xml("factura_b2b_iva10"),
         id_csc=_CSC_ID,
-        ambiente="test",
-    )
+        csc=_CSC,
+        environment="test",
+    )["url"]
     assert body["qr"]["url"] == expected

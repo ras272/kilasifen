@@ -1,131 +1,132 @@
-"""Tests for SIFEN QR URL generator (Manual section 13.8)."""
+"""Tests for the platform QR: injection into the signed XML and its image."""
 
-from datetime import datetime
-from decimal import Decimal
+from dataclasses import replace
+from datetime import datetime, timezone
+from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import pytest
 
-from kilasifen.infrastructure.kude.qr_generator import (
-    build_sifen_qr_url,
-    render_qr_image,
+from kilasifen.domain.emitters.models import Emitter
+from kilasifen.engine.sdk.errors import SifenValidationError
+from kilasifen.engine.sdk.fiscal import build_qr_payload_from_signed_xml
+from kilasifen.infrastructure.kude.qr_generator import render_qr_image
+from kilasifen.infrastructure.kude.xml_qr_injector import (
+    apply_real_qr_to_signed_xml,
+    compute_qr_url_from_signed_xml,
 )
 
-# Values from Manual Tecnico v150 section 13.8.4 example.
-# Note: the manual table on line ~9812 shows nVersion=142 due to a typo;
-# the rest of the manual (and the project decision) uses 150.
-_MANUAL_CDC = "01444444017001001001452822017012515873260988"
-_MANUAL_FECHA = datetime(2017, 1, 25, 9, 35, 17)
-_MANUAL_RUC = "88899990"
-_MANUAL_TOTAL = Decimal("300000")
-_MANUAL_TOTAL_IVA = Decimal("27272")
-_MANUAL_ITEMS = 2
-_MANUAL_DIGEST = "yzGYhUx1/XYYzksWB+fPR3Qc50c="
-_MANUAL_CSC = "ABCD0000000000000000000000000000"
-_MANUAL_ID_CSC = "0001"
-_MANUAL_HASH = (
-    "97ddbb3c1e7d65af03a70ffe21f2b34846ab1c89e0566c35222086766b7374ed"
-)
-_MANUAL_DATA_PARAMS = (
-    "nVersion=150"
-    "&Id=01444444017001001001452822017012515873260988"
-    "&dFeEmiDE=323031372d30312d32355430393a33353a3137"
-    "&dRucRec=88899990"
-    "&dTotGralOpe=300000"
-    "&dTotIVA=27272"
-    "&cItems=2"
-    "&DigestValue=797a4759685578312f5859597a6b7357422b6650523351633530633d"
-    "&IdCSC=0001"
-)
+_GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden"
+_NS = {"s": "http://ekuatia.set.gov.py/sifen/xsd"}
+_CSC = "ABCD0000000000000000000000000000"
 
 
-def test_build_sifen_qr_url_matches_manual_example_byte_exact():
-    url = build_sifen_qr_url(
-        cdc=_MANUAL_CDC,
-        fecha_emision=_MANUAL_FECHA,
-        rec_identifier=_MANUAL_RUC,
-        total_general=_MANUAL_TOTAL,
-        total_iva=_MANUAL_TOTAL_IVA,
-        cantidad_items=_MANUAL_ITEMS,
-        digest_value=_MANUAL_DIGEST,
-        csc=_MANUAL_CSC,
-        id_csc=_MANUAL_ID_CSC,
-        ambiente="produccion",
+def _emitter(**overrides) -> Emitter:
+    ts = datetime.now(timezone.utc)
+    emitter = Emitter(
+        id="emitter-1",
+        external_id="erp-test",
+        ruc="80024135",
+        dv="5",
+        legal_name="ARES PARAGUAY SRL",
+        tax_environment="test",
+        status="active",
+        csc=_CSC,
+        csc_id="0001",
+        created_at=ts,
+        updated_at=ts,
+    )
+    return replace(emitter, **overrides)
+
+
+def _golden(name: str) -> str:
+    return (_GOLDEN_DIR / f"{name}.xml").read_text(encoding="utf-8")
+
+
+def _dcarqr(signed_xml: str) -> str:
+    return ET.fromstring(signed_xml).findtext("s:gCamFuFD/s:dCarQR", namespaces=_NS)
+
+
+def test_injected_qr_is_the_engine_qr_of_the_signed_xml():
+    signed_xml = _golden("factura_b2b_iva10")
+
+    injected = apply_real_qr_to_signed_xml(signed_xml, emitter=_emitter())
+
+    expected = build_qr_payload_from_signed_xml(
+        signed_xml=signed_xml, id_csc="0001", csc=_CSC, environment="test"
+    )["url"]
+    assert _dcarqr(injected) == expected
+    assert "&dRucRec=80069563&" in expected
+
+
+def test_injected_qr_names_the_receptor_of_a_non_taxpayer_dnumidrec():
+    # MT v150 §13.8.2 (D206 o D210) y NT 23 §1.1: innominado con D210 = 0.
+    signed_xml = _golden("factura_b2c_iva_mixto")
+    assert "<iNatRec>2</iNatRec>" in signed_xml
+
+    url = _dcarqr(apply_real_qr_to_signed_xml(signed_xml, emitter=_emitter()))
+
+    assert "&dNumIDRec=0&" in url
+    assert "dRucRec" not in url
+
+
+def test_injected_qr_escapes_ampersands_once_and_keeps_the_signature():
+    signed_xml = _golden("factura_b2b_iva10")
+
+    injected = apply_real_qr_to_signed_xml(signed_xml, emitter=_emitter())
+
+    assert "&amp;amp;" not in injected
+    assert injected.split("<gCamFuFD>")[0] == signed_xml.split("<gCamFuFD>")[0]
+
+
+def test_injected_qr_never_contains_the_csc():
+    injected = apply_real_qr_to_signed_xml(
+        _golden("factura_b2b_iva10"), emitter=_emitter()
     )
 
-    expected = (
-        "https://ekuatia.set.gov.py/consultas/qr?"
-        + _MANUAL_DATA_PARAMS
-        + f"&cHashQR={_MANUAL_HASH}"
-    )
-    assert url == expected
+    assert _CSC not in injected
 
 
-def test_build_sifen_qr_url_does_not_include_csc():
-    url = build_sifen_qr_url(
-        cdc=_MANUAL_CDC,
-        fecha_emision=_MANUAL_FECHA,
-        rec_identifier=_MANUAL_RUC,
-        total_general=_MANUAL_TOTAL,
-        total_iva=_MANUAL_TOTAL_IVA,
-        cantidad_items=_MANUAL_ITEMS,
-        digest_value=_MANUAL_DIGEST,
-        csc=_MANUAL_CSC,
-        id_csc=_MANUAL_ID_CSC,
-        ambiente="produccion",
+def test_injected_qr_uses_the_production_url_for_production_emitters():
+    url = compute_qr_url_from_signed_xml(
+        _golden("factura_b2b_iva10"), emitter=_emitter(tax_environment="production")
     )
 
-    assert _MANUAL_CSC not in url
+    assert url.startswith("https://ekuatia.set.gov.py/consultas/qr?")
 
 
-def test_build_sifen_qr_url_uses_test_base_url_for_test_ambiente():
-    url = build_sifen_qr_url(
-        cdc=_MANUAL_CDC,
-        fecha_emision=_MANUAL_FECHA,
-        rec_identifier=_MANUAL_RUC,
-        total_general=_MANUAL_TOTAL,
-        total_iva=_MANUAL_TOTAL_IVA,
-        cantidad_items=_MANUAL_ITEMS,
-        digest_value=_MANUAL_DIGEST,
-        csc=_MANUAL_CSC,
-        id_csc=_MANUAL_ID_CSC,
-        ambiente="test",
+def test_injected_qr_writes_a_legacy_short_id_csc_with_four_digits():
+    url = compute_qr_url_from_signed_xml(
+        _golden("factura_b2b_iva10"), emitter=_emitter(csc_id="1")
     )
 
-    assert url.startswith("https://ekuatia.set.gov.py/consultas-test/qr?")
+    assert "&IdCSC=0001&" in url
 
 
-def test_build_sifen_qr_url_treats_zero_amounts_as_literal_zero():
-    url = build_sifen_qr_url(
-        cdc=_MANUAL_CDC,
-        fecha_emision=_MANUAL_FECHA,
-        rec_identifier=_MANUAL_RUC,
-        total_general=Decimal("0"),
-        total_iva=None,
-        cantidad_items=1,
-        digest_value=_MANUAL_DIGEST,
-        csc=_MANUAL_CSC,
-        id_csc=_MANUAL_ID_CSC,
-        ambiente="test",
-    )
-
-    assert "&dTotGralOpe=0&" in url
-    assert "&dTotIVA=0&" in url
-
-
-def test_build_sifen_qr_url_rejects_unknown_ambiente():
-    with pytest.raises(ValueError):
-        build_sifen_qr_url(
-            cdc=_MANUAL_CDC,
-            fecha_emision=_MANUAL_FECHA,
-            rec_identifier=_MANUAL_RUC,
-            total_general=_MANUAL_TOTAL,
-            total_iva=_MANUAL_TOTAL_IVA,
-            cantidad_items=_MANUAL_ITEMS,
-            digest_value=_MANUAL_DIGEST,
-            csc=_MANUAL_CSC,
-            id_csc=_MANUAL_ID_CSC,
-            ambiente="staging",
+@pytest.mark.parametrize("missing", ["csc", "csc_id"])
+def test_injected_qr_requires_the_emitter_csc(missing):
+    with pytest.raises(SifenValidationError, match="emitters.csc_required"):
+        apply_real_qr_to_signed_xml(
+            _golden("factura_b2b_iva10"), emitter=_emitter(**{missing: None})
         )
+
+
+def test_invalid_qr_values_become_a_validation_error_without_the_csc():
+    with pytest.raises(SifenValidationError) as excinfo:
+        compute_qr_url_from_signed_xml(
+            _golden("factura_b2b_iva10"), emitter=_emitter(csc="short-csc")
+        )
+
+    assert str(excinfo.value).startswith("documents.qr.invalid")
+    assert "short-csc" not in str(excinfo.value)
+
+
+def test_injection_requires_the_dcarqr_element():
+    signed_xml = _golden("factura_b2b_iva10")
+    without_qr = signed_xml.split("<gCamFuFD>")[0] + "</rDE>"
+
+    with pytest.raises(SifenValidationError, match="dcarqr_element_missing"):
+        apply_real_qr_to_signed_xml(without_qr, emitter=_emitter())
 
 
 def test_render_qr_image_returns_png_bytes():
