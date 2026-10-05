@@ -1,5 +1,6 @@
 """Tests for the platform QR: injection into the signed XML and its image."""
 
+import hashlib
 from dataclasses import replace
 from datetime import datetime, timezone
 from io import BytesIO
@@ -72,6 +73,42 @@ def test_injected_qr_is_the_engine_qr_of_the_signed_xml():
         "s:DE/s:gDatGralOpe/s:gDatRec/s:dRucRec", namespaces=_NS
     )
     assert f"&dRucRec={ruc_rec}&" in expected
+
+
+def test_injected_qr_is_built_from_the_literals_of_the_signed_xml():
+    # Independent of the engine: rebuild Paso 1 from the XML text (MT v150
+    # §13.8.2-§13.8.4) and check cHashQR = sha256(Paso 1 + CSC) in hex.
+    signed_xml = _golden("factura_b2b_iva10")
+    root = ET.fromstring(signed_xml)
+    de = root.find("s:DE", _NS)
+    digest = root.findtext(
+        "{http://www.w3.org/2000/09/xmldsig#}Signature"
+        "/{http://www.w3.org/2000/09/xmldsig#}SignedInfo"
+        "/{http://www.w3.org/2000/09/xmldsig#}Reference"
+        "/{http://www.w3.org/2000/09/xmldsig#}DigestValue"
+    )
+    step1 = "&".join(
+        [
+            f"nVersion={root.findtext('s:dVerFor', namespaces=_NS)}",
+            f"Id={de.get('Id')}",
+            "dFeEmiDE="
+            + de.findtext("s:gDatGralOpe/s:dFeEmiDE", namespaces=_NS).encode().hex(),
+            "dRucRec="
+            + de.findtext("s:gDatGralOpe/s:gDatRec/s:dRucRec", namespaces=_NS),
+            f"dTotGralOpe={de.findtext('s:gTotSub/s:dTotGralOpe', namespaces=_NS)}",
+            f"dTotIVA={de.findtext('s:gTotSub/s:dTotIVA', namespaces=_NS)}",
+            f"cItems={len(de.findall('s:gDtipDE/s:gCamItem', _NS))}",
+            f"DigestValue={digest.encode().hex()}",
+            "IdCSC=0001",
+        ]
+    )
+    c_hash_qr = hashlib.sha256(f"{step1}{_CSC}".encode("ascii")).hexdigest()
+
+    url = compute_qr_url_from_signed_xml(signed_xml, emitter=_emitter())
+
+    assert url == (
+        f"https://ekuatia.set.gov.py/consultas-test/qr?{step1}&cHashQR={c_hash_qr}"
+    )
 
 
 def test_injected_qr_names_the_receptor_of_a_non_taxpayer_dnumidrec():
