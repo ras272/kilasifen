@@ -1,6 +1,6 @@
 ---
 title: Notas de débito
-description: Incrementá el valor de un DTE existente con un contrato fiscal tipado.
+description: Incrementá el valor de una factura de tu emisor con un contrato fiscal tipado.
 icon: FilePlus
 ---
 
@@ -8,10 +8,13 @@ icon: FilePlus
 POST /v1/emitters/{emitter_id}/documents/notas-debito
 ```
 
-La nota de débito comparte cliente, ítems, moneda, numeración e idempotencia con
-los demás documentos tipados. Siempre requiere `documento_asociado`. Los
-montos siguen las reglas de [Facturas](/docs/facturas#montos-iva-y-pagos), sin
-condición de pago.
+Una nota de débito suma valor a una factura ya emitida por el mismo emisor:
+por ejemplo, el recupero de un costo o de un gasto, o un ajuste de precio.
+Tiene el mismo contrato que la [nota de crédito](/docs/notas-de-credito), con
+`nota_debito` en lugar de `nota_credito`: receptor, ítems, moneda, montos
+(ver [Montos, IVA y pagos](/docs/facturas#montos-iva-y-pagos)), código de
+seguridad, fecha de emisión e idempotencia como en la factura, y
+`documento_asociado` obligatorio.
 
 ```json
 {
@@ -24,10 +27,10 @@ condición de pago.
     "motivo_emision": "recupero_costo",
     "documento_asociado": {
       "tipo": "electronico",
-      "cdc": "CDC_DE_44_DIGITOS"
+      "cdc": "01444444017001001000000122026100113640529815"
     },
     "cliente": {
-      "ruc": "80025298-5",
+      "ruc": "88899990-9",
       "tipo_contribuyente": 2,
       "razon_social": "Cliente de prueba"
     },
@@ -43,5 +46,48 @@ condición de pago.
 }
 ```
 
-El replay con la misma `idempotency_key` devuelve el documento y job originales.
-Un payload incompatible no genera una segunda nota.
+El CDC y el RUC del ejemplo son ficticios: el CDC es el de una factura del
+emisor `44444401-7`, el RUC de ejemplo del Manual Técnico v150. Usá el CDC de
+tu factura y su mismo receptor.
+
+## Documento asociado
+
+Valen las mismas reglas que en la
+[nota de crédito](/docs/notas-de-credito#documento-asociado): un solo
+`documento_asociado`, que tiene que ser una factura de tu emisor, electrónica
+(CDC que empieza con `01`) o impresa (`tipo_documento_impreso: 1`), que
+exista en SIFEN y no esté cancelada, con el mismo receptor y la misma moneda
+que la nota. KilaSifen todavía no lo controla al crear: SIFEN rechaza la nota
+con 2403, 2404, 2414, 2434, 2438, 2439, 2441 o 2442. El tope de la suma
+frente al total de la factura (2417) es sólo para las notas de crédito.
+
+Emití la nota cuando la factura ya esté `approved` o
+`approved_with_observation`.
+
+## Motivo de la nota
+
+`motivo_emision` (E401) usa la misma tabla que la
+[nota de crédito](/docs/notas-de-credito#motivo-de-la-nota) y es obligatorio
+en el XML, sin valor por defecto en el Manual Técnico. Elegí el que describe
+la operación, por ejemplo `recupero_costo` (6), `recupero_gasto` (7) o
+`ajuste_precio` (8). Si lo omitís, KilaSifen informa `1` («Devolución y
+Ajuste de precios»): envialo siempre. Un valor fuera de la tabla deja la nota
+`failed` cuando el worker arma el XML.
+
+## Receptor, numeración e idempotencia
+
+- El `cliente` sigue las reglas del [receptor de la factura](/docs/facturas#receptor)
+  y tiene que ser el receptor de la factura asociada. Una nota de débito no
+  admite un receptor innominado
+  (`documents.cliente.innominado_not_allowed`, validación 1331 de la NT 23).
+- No envíes `condicion_operacion` ni `tipo_transaccion`: una nota no los lleva
+  en el XML (Manual Técnico v150, E600 y D011; NT 06), aunque un
+  `tipo_transaccion` fuera de 1 a 13 igual deja la nota `failed`.
+- Cada tipo de documento tiene su propio correlativo por establecimiento y
+  punto: la primera nota de débito es la número 1 aunque ya haya facturas o
+  notas de crédito.
+- El replay con la misma `idempotency_key` y la misma intención devuelve el
+  documento y el job originales (`200`); un payload distinto con la misma
+  clave responde `409 documents.idempotency_key_conflict` y no genera una
+  segunda nota. `external_id` e `idempotency_key` son únicos por emisor entre
+  todos los tipos de documento (ver [Facturas](/docs/facturas#idempotencia)).

@@ -1,6 +1,6 @@
 ---
 title: Notas de crédito
-description: Ajustá un DTE existente conservando la asociación fiscal.
+description: Ajustá a la baja una factura de tu emisor, asociada por su CDC o por sus datos de impresión.
 icon: FileMinus
 ---
 
@@ -8,11 +8,13 @@ icon: FileMinus
 POST /v1/emitters/{emitter_id}/documents/notas-credito
 ```
 
-La estructura comparte cliente, ítems, moneda e idempotencia con la factura,
-pero requiere `documento_asociado`. Los montos siguen las mismas reglas (IVA
-por ítem, `porcentaje_descuento_global`, `redondeo`; ver
-[Facturas](/docs/facturas#montos-iva-y-pagos)); una nota de crédito no lleva
-condición de pago.
+Una nota de crédito resta valor a una factura ya emitida por el mismo emisor:
+devoluciones, descuentos, bonificaciones, créditos incobrables o ajustes de
+precio. Comparte con la [factura](/docs/facturas) el receptor, los ítems, la
+moneda, los montos (IVA por ítem, `porcentaje_descuento_global`, `redondeo`;
+ver [Montos, IVA y pagos](/docs/facturas#montos-iva-y-pagos)), el código de
+seguridad, la fecha de emisión y la idempotencia, y además exige
+`documento_asociado`.
 
 ```json
 {
@@ -22,19 +24,19 @@ condición de pago.
     "establecimiento": "001",
     "punto": "001",
     "moneda": "PYG",
-    "motivo_emision": 1,
+    "motivo_emision": "devolucion",
     "documento_asociado": {
       "tipo": "electronico",
-      "cdc": "CDC_DE_44_DIGITOS"
+      "cdc": "01444444017001001000000122026100113640529815"
     },
     "cliente": {
-      "ruc": "80025298-5",
+      "ruc": "88899990-9",
       "tipo_contribuyente": 2,
       "razon_social": "Cliente de prueba"
     },
     "items": [
       {
-        "descripcion": "Ajuste de servicio",
+        "descripcion": "Devolución de servicio",
         "cantidad": 1,
         "precio_unitario": 50000,
         "tasa": 10
@@ -44,5 +46,88 @@ condición de pago.
 }
 ```
 
-Para un DTE electrónico, el CDC asociado debe contener exactamente 44 dígitos.
-Una nota de crédito no admite un receptor innominado.
+El CDC y el RUC del ejemplo son ficticios: el CDC es el de una factura del
+emisor `44444401-7`, el RUC de ejemplo del Manual Técnico v150. Usá el CDC de
+tu factura y su mismo receptor.
+
+## Documento asociado
+
+`documento_asociado` es obligatorio y es un solo objeto, no una lista:
+
+- Factura electrónica: `"tipo": "electronico"` y el `cdc` de 44 dígitos de la
+  factura (empieza con `01`).
+- Factura impresa: `"tipo": "impreso"` con `timbrado`, `establecimiento`,
+  `punto`, `numero`, `fecha_emision` y `tipo_documento_impreso: 1` (factura,
+  el valor por defecto).
+- No uses `constancia_electronica` ni el CDC o los datos de otra nota: SIFEN
+  sólo admite asociar una factura.
+
+KilaSifen valida la forma de `documento_asociado` al crear (un `cdc` que no
+tiene 44 dígitos responde `422`), pero **todavía no controla** contra qué
+documento se asocia la nota. SIFEN sí, y la rechaza (`rejected`) en estos
+casos:
+
+| Regla de SIFEN | Código |
+| --- | --- |
+| El documento asociado no es una factura: un CDC que no empieza con `01` o un impreso con otro `tipo_documento_impreso` | 2414 |
+| El documento asociado es una constancia electrónica | 2434 |
+| El CDC no existe en SIFEN | 2403 |
+| La factura está cancelada | 2404 |
+| El CDC no es de tu emisor | 2439 |
+| El receptor de la nota no es el de la factura (o, si la factura fue nominada, el del evento de nominación) | 2441, 2442 |
+| La nota no va en la misma moneda que la factura | 2438 |
+| Las notas de crédito de la factura, sumadas, superan su total general | 2417 |
+
+Fuentes: Manual Técnico v150, §12.4, grupo H (pp. 186-189); NT 10 §2.3 (2439
+y 2441); NT 15 (2442); NT 23 §2.2 (2439 con RUC fusionado).
+
+Por eso, emití la nota cuando la factura ya esté `approved` o
+`approved_with_observation`, con el mismo `cliente` y la misma `moneda`, y
+llevá en tu ERP el acumulado de notas de crédito de cada factura.
+
+## Motivo de la nota
+
+`motivo_emision` (E401) es obligatorio en el XML y el Manual Técnico no le da
+valor por defecto. Enviá el código o el nombre:
+
+| Código | Nombre | Descripción en el XML |
+| --- | --- | --- |
+| 1 | `devolucion_y_ajuste` | Devolución y Ajuste de precios |
+| 2 | `devolucion` | Devolución |
+| 3 | `descuento` | Descuento |
+| 4 | `bonificacion` | Bonificación |
+| 5 | `credito_incobrable` | Crédito incobrable |
+| 6 | `recupero_costo` | Recupero de costo |
+| 7 | `recupero_gasto` | Recupero de gasto |
+| 8 | `ajuste_precio` | Ajuste de precio |
+
+Si lo omitís, KilaSifen informa `1`: enviá siempre el que describe la
+operación. Un valor fuera de la tabla no se rechaza al crear: la nota queda
+`failed` cuando el worker arma el XML.
+
+## Receptor, numeración e idempotencia
+
+- El `cliente` sigue las reglas del [receptor de la factura](/docs/facturas#receptor)
+  y tiene que ser el receptor de la factura asociada. Una nota de crédito no
+  admite un receptor innominado
+  (`documents.cliente.innominado_not_allowed`, validación 1331 de la NT 23).
+- Una nota no lleva condición de operación ni tipo de transacción (Manual
+  Técnico v150, E600 y D011; NT 06): no envíes `condicion_operacion` ni
+  `tipo_transaccion`. No van al XML, aunque un `tipo_transaccion` fuera de
+  1 a 13 igual deja la nota `failed`.
+- Cada tipo de documento tiene su propio correlativo por establecimiento y
+  punto: la primera nota de crédito es la número 1 aunque ya haya facturas.
+- `external_id` e `idempotency_key` son únicos por emisor entre todos los
+  tipos de documento: la nota necesita los suyos, distintos de los de la
+  factura (si no, `409`). El resto funciona como en
+  [Facturas](/docs/facturas#idempotencia).
+
+## Notas y cancelación
+
+- Una factura se puede cancelar sólo dentro de las 48 h desde su aprobación en
+  SIFEN. Pasado ese plazo, se anula con una nota de crédito (RG 23/2019
+  Art. 22; ver [Cancelación e inutilización](/docs/eventos)).
+- Mientras una nota asociada por CDC sea un documento válido en SIFEN (o pueda
+  llegar a serlo), KilaSifen no deja cancelar la factura
+  (`409 events.cancel.child_dte_not_cancelled`): primero hay que cancelar la
+  nota.

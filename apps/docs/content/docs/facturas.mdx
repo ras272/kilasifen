@@ -8,33 +8,159 @@ icon: ReceiptText
 POST /v1/emitters/{emitter_id}/documents/facturas
 ```
 
-El contrato valida receptor, ítems, IVA, moneda, tipo de cambio, descuentos,
-anticipos y condición de pago antes de crear el job. El emisor tiene que tener
-su perfil fiscal completo.
+Al crear la factura, KilaSifen valida el contrato y todas las reglas fiscales
+que puede comprobar sin SIFEN (emisor, receptor, ítems, IVA, moneda, totales,
+pagos, fecha de emisión y código de seguridad) y responde `422` si algo no
+cumple. Si pasa, responde `201` con el documento y su job en `queued`: el XML,
+la firma y el envío ocurren después, en el worker. Algunas reglas se
+comprueban recién ahí (ver [Errores y validaciones](#errores-y-validaciones)).
 
-## Reglas fiscales
+## Ejemplo
 
-- `emisor` sólo puede repetir el RUC, DV y razón social del emisor; si no
-  coinciden la respuesta es `422 documents.emisor.identity_mismatch`.
-- Un `cliente` con RUC necesita `tipo_contribuyente` y un DV válido
-  (`"ruc": "80025298-5"`).
-- Un no contribuyente sólo puede ser B2C o B2F y siempre informa su documento
-  de identidad. En B2F, `pais_codigo` es distinto de `PRY` y la dirección es
-  obligatoria.
-- Innominado (`tipo_documento_identidad: 5`): sólo B2C, menos de 7.000.000 Gs;
-  KilaSifen escribe número `0` y nombre `Sin Nombre`.
-- Con dirección fuera de B2F, `departamento`, `ciudad` y `descripcion_ciudad`
-  son obligatorios.
-- `codigo_seguridad` es opcional: si no lo enviás, KilaSifen genera uno
-  aleatorio y lo conserva en los reintentos.
-- `fecha_emision` tiene que estar entre 720 h antes y 120 h después de ahora.
-  A más de 120 h el documento se crea con un aviso en `fiscal_warnings`
-  (el SIFEN lo aprueba con observación por extemporáneo).
+```json
+{
+  "external_id": "venta_1843",
+  "idempotency_key": "venta_1843_v1",
+  "factura": {
+    "establecimiento": "001",
+    "punto": "001",
+    "moneda": "PYG",
+    "tipo_transaccion": 2,
+    "cliente": {
+      "ruc": "88899990-9",
+      "tipo_contribuyente": 2,
+      "razon_social": "Cliente de prueba"
+    },
+    "items": [
+      {
+        "descripcion": "Servicio mensual",
+        "cantidad": 1,
+        "precio_unitario": 150000,
+        "afectacion": "gravado",
+        "tasa": 10
+      }
+    ],
+    "condicion_operacion": {
+      "tipo": "contado",
+      "formas_pago": [{ "tipo": "transferencia", "monto": 150000 }]
+    }
+  }
+}
+```
+
+- `tipo_transaccion: 2` declara una prestación de servicios.
+- El RUC del receptor es ficticio (es el del ejemplo de QR del Manual Técnico
+  v150, §13.8.4): pasa la validación local, pero SIFEN exige que el RUC del
+  receptor exista y esté activo (validaciones 1306 a 1308). En el ambiente de
+  pruebas usá el RUC de un receptor inscripto.
+- El ejemplo no envía `fecha_emision`: KilaSifen usa la hora de Paraguay al
+  armar el XML. Una fecha fija en tu código envejece y sale de la ventana que
+  acepta SIFEN (ver «Fecha de emisión» más abajo).
+
+## Campos de la factura
+
+| Campo | Si lo omitís | Qué tener en cuenta |
+| --- | --- | --- |
+| `establecimiento`, `punto` | `001` | Código de 3 dígitos. |
+| `numero` | Lo asigna KilaSifen | Un `numero` enviado se ignora. Cada tipo de documento tiene su propio correlativo por establecimiento y punto. |
+| `fecha_emision` (o `fecha`) | Hora de armado del XML | Ver «Fecha de emisión». |
+| `moneda` | `PYG` | Ver [Montos, IVA y pagos](#montos-iva-y-pagos). |
+| `tipo_transaccion` | `1`, venta de mercadería | Código 1 a 13 (D011) o su nombre: `venta_mercaderia`, `prestacion_servicios`, `mixto`, `venta_activo_fijo`, `venta_divisas`, `compra_divisas`, `promocion`, `donacion`, `anticipo`, `compra_productos`, `compra_servicios`, `venta_credito_fiscal`, `muestras_medicas`. El Manual Técnico lo exige en toda factura y no le da valor por defecto: enviá siempre el que corresponde. |
+| `indicador_presencia` | `1`, operación presencial | Código o nombre (E011): `presencial`, `electronica`, `telemarketing`, `domicilio`, `bancaria`, `ciclica` (1 a 6). |
+| `tipo_impuesto` | `1`, IVA | Código o nombre (D013): `iva`, `renta`, `ninguno`, `iva_renta` (1, 3, 4, 5). El ISC (`2`) responde `422` (`documents.tipo_impuesto.isc_not_supported`). |
+| `condicion_operacion` | Contado, con un pago en efectivo por el total | `condicion` es un alias heredado. Ver [Montos, IVA y pagos](#montos-iva-y-pagos). |
+| `codigo_seguridad` | Uno aleatorio | Ver «Código de seguridad». |
+| `tipo_contribuyente` | El del perfil fiscal | Es el `iTipCont` del **emisor** (entra en el CDC), no el del cliente. Si lo enviás tiene que coincidir con el perfil. |
+| `emisor` | Datos del emisor registrado | Ver [Emisor](#emisor). |
+| `cliente` | Obligatorio | Ver [Receptor](#receptor). |
+| `items` | Obligatorio, de 1 a 1000 | Por ítem, si se omiten: `unidad_medida` 77 (unidad), `afectacion` `gravado` y `tasa` 10. Descuentos por ítem, anticipos y demás campos en la [referencia de la API](/docs/api-reference). |
+| `documento_asociado` | Sin documento asociado | Opcional. En una factura SIFEN sólo admite asociar una nota de remisión o una factura de anticipo (`tipo_transaccion: 9`) de tu emisor (validaciones 2414, 2437 y 2439); KilaSifen no lo controla. |
+| `metadata` | — | Datos libres de tu ERP. Se guardan con el documento y forman parte de la intención idempotente, pero no van al XML. |
+
+## Emisor
+
+- El emisor tiene que tener su perfil fiscal completo. Sin él, la respuesta es
+  `422 emitters.fiscal_profile_required` (ver [Emisores](/docs/emisores)).
+  RUC, DV, razón social, tipo de contribuyente, dirección y actividades del XML
+  salen sólo del emisor registrado y de ese perfil.
+- `emisor` es opcional. Si lo enviás, `ruc`, `dv` y `razon_social` sólo pueden
+  repetir los del emisor: si no coinciden, la respuesta es
+  `422 documents.emisor.identity_mismatch` con el campo en `details.field`.
+  Sus campos de dirección, contacto y actividad están deprecados y se ignoran.
+  `emisor.responsable_generacion` (quién generó el documento) sí se usa.
+
+## Receptor
+
+- Contribuyente (`cliente` con `ruc`): `tipo_contribuyente` (1 persona física,
+  2 persona jurídica) y el DV son obligatorios. El DV va en el RUC
+  (`"88899990-9"`) o en `dv`, y se valida por módulo 11.
+- `naturaleza` y `tipo_operacion` se infieren si no los enviás: con `ruc`,
+  contribuyente y B2B; sin `ruc`, no contribuyente y B2C. Para B2G
+  (`tipo_operacion: 3`, obligatorio si el receptor es un organismo del Estado)
+  o B2F (`4`) enviá `tipo_operacion`.
+- Un no contribuyente sólo puede ser B2C o B2F y siempre informa
+  `tipo_documento_identidad` y `numero_documento_identidad`, también en B2F.
+  Con el tipo 9 (otro), `descripcion_tipo_documento` describe el documento en
+  9 a 41 caracteres.
+- B2F: `pais_codigo` distinto de `PRY` y `direccion` obligatoria; no se
+  informan departamento, distrito ni ciudad. En las demás operaciones,
+  `pais_codigo` es `PRY`.
+- Dirección: con `direccion`, `numero_casa` es obligatorio y, salvo en B2F,
+  también `departamento`, `ciudad` y `descripcion_ciudad`. Fuera de B2F la
+  dirección es opcional.
+- Innominado (`tipo_documento_identidad: 5`): sólo en facturas B2C. KilaSifen
+  escribe número `0` y nombre `Sin Nombre`. No se admite si el total general es
+  de 7.000.000 Gs o más (en otra moneda, su equivalente en guaraníes), salvo
+  con `tipo_transaccion: 13`, muestras médicas (NT 24). Ese tope se controla
+  al armar el XML: si se supera, el documento queda `failed`.
+- B2G: `compras_publicas` es opcional (NT 26).
+
+Estas reglas responden `422 request.validation_failed` con el código de la
+regla en `details.errors[].message`, por ejemplo
+`documents.cliente.tipo_contribuyente_required` o
+`documents.cliente.dv_mismatch`.
+
+## Código de seguridad
+
+`codigo_seguridad` (`dCodSeg`) forma parte del CDC. Es opcional y lo
+recomendable es no enviarlo: KilaSifen genera uno aleatorio de 9 dígitos,
+distinto del número del documento, y lo conserva en todos los reintentos para
+que el CDC no cambie.
+
+Si lo enviás, el Manual Técnico (§10.3) exige que sea aleatorio, distinto en
+cada documento y sin relación con los datos del documento ni del emisor. Va de
+1 a 999999999 (con menos de 9 dígitos se completa con ceros). `0` responde
+`422 request.validation_failed`, y un valor igual al número que KilaSifen le
+asigna al documento responde `422 documents.codigo_seguridad.equals_numero`.
+Como el número lo asigna KilaSifen, no podés anticipar ese choque.
+
+## Fecha de emisión
+
+- `fecha_emision` (o `fecha`) es opcional. Sin ella, KilaSifen usa la hora de
+  Paraguay al armar el XML. Si la enviás en ISO 8601: sin zona horaria se toma
+  en hora de Paraguay (UTC−3), con zona se convierte, y una fecha sin hora es a
+  las 00:00:00.
+- SIFEN acepta una fecha de emisión de hasta 720 h antes y hasta 120 h después
+  de la transmisión, y posterior al 22/11/2018 (Manual Técnico v150, D002;
+  rechazos 1150, 1151 y 1156). KilaSifen la controla al crear, contra la hora
+  actual: fuera de la ventana responde `422 documents.fecha_emision.too_old`,
+  `too_far_ahead` o `before_sifen_launch`, y una fecha ilegible responde
+  `422 documents.fecha_emision.invalid`. La vuelve a controlar antes de firmar:
+  si el documento esperó en cola y salió de la ventana, queda `failed`.
+- Una fecha de más de 120 h atrás se acepta, pero el documento se crea con
+  `fiscal_warnings: ["documents.transmission.emission_far_from_now"]`: es una
+  transmisión extemporánea (Manual Técnico v150, §6.2.1), que se aprueba con
+  observación y puede tener sanción.
+- El timbrado se elige con esta fecha. Si ningún timbrado activo la cubre, el
+  documento queda `failed` (ver [Estados y reintentos](/docs/estados-y-reintentos)).
 
 ## Montos, IVA y pagos
 
 - `moneda` es un código ISO 4217 de la SET (por defecto `PYG`); el XML lleva
-  su nombre oficial (`Guarani`, `US Dollar`).
+  su nombre oficial (`Guarani`, `US Dollar`). Un código que no está en el XSD
+  responde `422`. En otra moneda, `condicion_tipo_cambio` es obligatorio: `1`
+  (global, con `tipo_cambio`) o `2` (por ítem, con `tipo_cambio_item` en cada
+  ítem). En PYG no se envían.
 - Cada ítem declara `afectacion`: `gravado` (con `tasa` 5 o 10), `exento` u
   `exonerado` (con `tasa` 0) o `gravado_parcial`, que exige
   `proporcion_gravada` mayor que 0 y menor que 100. KilaSifen calcula la base
@@ -43,21 +169,35 @@ su perfil fiscal completo.
 - `porcentaje_descuento_global` (0 por defecto) se aplica a cada ítem como
   `porcentaje * precio_unitario / 100`. No hace falta enviar
   `descuento_global` por ítem; si lo enviás, tiene que coincidir con ese
-  cálculo (±0,8).
-- `redondeo`: `ninguno` (por defecto) o `multiplo_50`, que baja el total al
-  múltiplo de 50 Gs anterior. Sólo en PYG.
-- Contado: `formas_pago` suma el total neto (tolerancia 0,50); sin
-  `formas_pago` se informa un pago en efectivo por el total.
-- Crédito: `formas_pago` sólo va con `credito.monto_entrega_inicial` y suma
-  esa entrega.
+  cálculo (±0,8) o la respuesta es `422` con
+  `documents.items.descuento_global_mismatch`.
+- `redondeo`: `ninguno` (por defecto, el total no cambia) o `multiplo_50`, que
+  baja el total al múltiplo de 50 Gs anterior (Manual Técnico v150, §F). Sólo
+  en PYG (`documents.redondeo.only_pyg`) y con un total de al menos 50 Gs
+  (`documents.redondeo.total_below_50`). Las versiones anteriores redondeaban
+  siempre: si tu ERP contaba con eso, enviá `multiplo_50`.
+  La norma no define si el redondeo corresponde sólo a ciertas operaciones
+  (por ejemplo, pagos en efectivo o consumidor final): lo decidís vos.
+- Contado: `formas_pago` tiene que sumar el total general, con una tolerancia
+  de 0,50 (`documents.condicion_operacion.formas_pago.total_mismatch`). La
+  norma no fija esa suma: es un control de KilaSifen. Sin `formas_pago` se
+  informa un pago en efectivo por el total, así que si cobraste de otra forma,
+  enviá `formas_pago`.
+- Crédito: `formas_pago` sólo va con `credito.monto_entrega_inicial` y tiene
+  que sumar esa entrega (`documents.condicion_operacion.formas_pago_not_allowed`,
+  `documents.condicion_operacion.credito.formas_pago_required` o
+  `documents.condicion_operacion.credito.formas_pago_mismatch`).
 - Un pago sin `moneda` es en la moneda de la factura. Si el pago no es en PYG
   necesita `tipo_cambio` (se toma el de la factura cuando el pago va en esa
   moneda); un pago en PYG no lo admite.
 
 ```json
 {
+  "external_id": "venta_1844",
+  "idempotency_key": "venta_1844_v1",
   "factura": {
-    "cliente": {"ruc": "80025298-5", "tipo_contribuyente": 2, "razon_social": "Cliente prueba"},
+    "tipo_transaccion": 2,
+    "cliente": {"ruc": "88899990-9", "tipo_contribuyente": 2, "razon_social": "Cliente de prueba"},
     "porcentaje_descuento_global": "10",
     "redondeo": "multiplo_50",
     "items": [
@@ -73,29 +213,72 @@ su perfil fiscal completo.
 }
 ```
 
-Si una regla no se cumple, la respuesta es `422` con el código de la regla en
-el mensaje (por ejemplo `documents.items.proporcion_gravada_required`).
+## Errores y validaciones
+
+Al crear, la respuesta es `422` en tres formas:
+
+- Contrato y formato de los campos: `request.validation_failed`, con el campo
+  en `details.errors[].loc` y un `message` descriptivo.
+- Reglas del receptor, los ítems, el IVA, los descuentos, el redondeo y los
+  pagos: `request.validation_failed`, con el código de la regla al final de
+  `details.errors[].message` (por ejemplo
+  `"Value error, documents.items.proporcion_gravada_required"`).
+- Emisor, fecha de emisión y código de seguridad: el código va en
+  `error.code` (`emitters.fiscal_profile_required`,
+  `documents.emisor.identity_mismatch`, `documents.fecha_emision.*`,
+  `documents.codigo_seguridad.equals_numero`).
+
+El formato completo de los errores está en
+[Errores y diagnóstico](/docs/errores).
+
+Después del `201`, al armar y firmar el XML, el documento queda `failed` sin
+llegar a SIFEN si `tipo_transaccion`, `tipo_impuesto` o `indicador_presencia`
+no están en su tabla, si un receptor innominado supera el tope, si ningún
+timbrado activo cubre la fecha de emisión, si esa fecha salió de la ventana,
+si el certificado no está vigente al firmar o si el emisor no tiene CSC
+(`emitters.csc_required`). El motivo queda en el `error_snapshot` del job, con
+`category: "fiscal_validation"`.
+
+Lo demás lo valida SIFEN, como que el RUC del receptor exista y esté activo
+(1306 a 1308). Un rechazo deja el documento en `rejected` (ver
+[Estados y reintentos](/docs/estados-y-reintentos)).
 
 ## Identificadores
 
-- `external_id`: identifica la venta en tu ERP.
-- `idempotency_key`: identifica esta intención fiscal exacta.
+- `external_id` (hasta 128 caracteres): identifica la venta en tu ERP. Es único
+  por emisor entre todos los tipos de documento: una nota de crédito no puede
+  reutilizar el de su factura.
+- `idempotency_key` (hasta 128 caracteres): identifica esta intención fiscal
+  exacta y también es única por emisor entre todos los tipos de documento. Es
+  opcional, pero sin ella cada reintento crea otro documento con otro número:
+  enviala siempre.
 - `document.id`: identifica el recurso dentro de KilaSifen.
 - `cdc`: aparece cuando el documento fiscal ya fue construido.
 
-No envíes número fiscal, XML generado, XML firmado ni CDC. Esos valores son
-responsabilidad de KilaSifen.
+No envíes número fiscal, XML ni CDC: el `numero` se ignora, y `cdc`,
+`generated_xml` y `signed_xml` no forman parte del contrato (`422`). Los
+objetos heredados `factura.factura`, `nota_credito.nota_credito` y
+`nota_debito.nota_debito` no se usan.
 
-## Semántica idempotente
+## Idempotencia
 
 | Situación | Respuesta |
 | --- | --- |
 | Primera creación | `201 Created` |
-| Misma intención y misma clave | `200 OK`, mismo documento y job |
-| Misma clave con contenido diferente | `409 Conflict` |
-| Payload fiscal inválido | `422 Unprocessable Entity` |
+| Misma clave y misma intención (`external_id`, tipo de documento y payload) | `200 OK`, el mismo documento y job |
+| Misma clave con otro payload, otro `external_id` u otro tipo de documento | `409 documents.idempotency_key_conflict`; `details.mismatched_parameters` dice qué cambió |
+| Mismo `external_id` con otra clave o sin clave | `409 documents.external_id_conflict` |
+| Emisor desactivado, también en un replay | `409 emitters.inactive` |
+| Payload fiscal inválido | `422` (ver [Errores y validaciones](#errores-y-validaciones)) |
+
+En el [sandbox](/docs/sandbox), el header `X-Kila-Test-Outcome` forma parte de
+la intención: repetir la clave con otro valor, o sin el header, responde
+`409 documents.idempotency_key_conflict`.
 
 <Callout type="info" title="Una creación no es una aprobación">
-  `queued`, `submitted` y `retry_pending` son estados intermedios. Sólo los
-  estados terminales describen el resultado fiscal definitivo.
+  `queued`, `submitting`, `submitted`, `retry_pending` y
+  `reconciliation_required` son estados intermedios. El resultado ante SIFEN
+  lo dan `approved`, `approved_with_observation` (también es un documento
+  válido) y `rejected`; `failed` significa que el documento no llegó a SIFEN.
+  Ver [Estados y reintentos](/docs/estados-y-reintentos).
 </Callout>

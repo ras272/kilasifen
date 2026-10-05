@@ -1,20 +1,69 @@
 ---
 title: Cancelación e inutilización
-description: Ejecutá eventos fiscales como procesos durables y observables.
+description: Cancelá DTE e inutilizá numeración como procesos durables que podés seguir por API y webhooks.
 icon: Ban
 ---
 
-Los eventos responden `201` con un evento y un job en cola. El request HTTP no
-espera a SIFEN.
+La v1 cubre los dos eventos del emisor: la cancelación de un DTE y la
+inutilización de numeración. Los eventos del receptor (notificación,
+conformidad, disconformidad, desconocimiento), el de transporte y el de
+nominación no están soportados.
 
-El worker guarda el evento firmado y el request exacto antes de enviarlo
-(estado `submitting`). Un evento queda registrado solo cuando SIFEN responde
-`0600` («Evento registrado correctamente»); cualquier otro código es un
-rechazo. Si el request no llegó a SIFEN el evento vuelve a `queued`; ante un
-timeout o una respuesta ilegible queda `retry_pending`. El job reintenta hasta
-cinco veces y el estado final es `approved`, `rejected`, `failed` (no salió) o
-`reconciliation_required` (no se pudo saber qué tiene SIFEN; un reintento del
-operador vuelve a verificar).
+Las dos operaciones exigen el scope `fiscal:write`, un emisor activo
+(`409 emitters.inactive`) y un certificado activo
+(`409 certificates.active_required`). Responden `201` con el `event` y su
+`job` en cola: el request HTTP no espera a SIFEN.
+
+<Callout type="warn" title="El sandbox no se aplica a los eventos">
+  `X-Kila-Test-Outcome` sólo existe en la creación de documentos. La
+  cancelación y la inutilización siempre viajan al SIFEN del ambiente
+  configurado, firmadas con el certificado del emisor. Un documento aprobado
+  por el [sandbox](/docs/sandbox) nunca existió en SIFEN: no lo canceles,
+  porque el resultado no está determinado.
+</Callout>
+
+## Cómo se procesa un evento
+
+La API arma y firma el evento al aceptar el pedido. Su `dFecFirma` es la hora
+del `POST`, y es la que SIFEN compara con el plazo de cancelación (`4009` y
+`4010`, MT v150 §11.6.1). El worker envuelve ese evento en `rEnviEventoDe`,
+verifica la firma, guarda el request exacto (`submitting`) y recién entonces
+lo envía. Cada reintento reenvía el mismo evento firmado.
+
+| Estado del evento | Significado |
+| --- | --- |
+| `queued` | En cola, o el intento anterior probó que el request no llegó a SIFEN. |
+| `submitting` | El request está guardado y el worker lo está enviando. |
+| `submitted` | SIFEN respondió sin código de resultado; se reintenta. |
+| `retry_pending` | Resultado incierto (timeout, respuesta ilegible o consulta por CDC fallida); se reintenta. |
+| `approved` | SIFEN registró el evento: respondió `0600` («Evento registrado correctamente») o la consulta por CDC muestra la cancelación. |
+| `rejected` | Rechazo de SIFEN; `sifen_result_code` y `sifen_result_message` dicen por qué. |
+| `failed` | El evento no salió: no se pudo preparar (por ejemplo, el ambiente del emisor no coincide con el del despliegue) o se agotaron los intentos sin que el request llegara a SIFEN. |
+| `reconciliation_required` | Pudo llegar a SIFEN y no se sabe qué registró (ver [abajo](#si-la-respuesta-de-sifen-se-pierde)). |
+
+Sólo `0600` registra un evento. Cualquier otro código es un rechazo, salvo
+los casos que se verifican consultando el CDC (ver
+[Si la respuesta de SIFEN se pierde](#si-la-respuesta-de-sifen-se-pierde)).
+El job hace hasta 5 intentos en total, con esperas de 30 s, 2 min, 10 min y
+30 min entre ellos.
+
+## Seguir el evento
+
+```http
+GET /v1/emitters/{emitter_id}/events/{event_id}
+X-API-Key: ...
+```
+
+Esta ruta exige `fiscal:write`; `tenant:read` no alcanza. Devuelve el `event`
+(`status`, `sifen_result_code`, `sifen_result_message`, el evento firmado y la
+respuesta cruda de SIFEN) y su `job` (`attempts`, `error_snapshot`,
+`scheduled_at`). El job también se lee con
+`GET /v1/emitters/{emitter_id}/jobs/{job_id}`, con `tenant:read`.
+
+Cuando SIFEN registra el evento se publica el webhook `document.cancelled` o
+`numbering.inutilized` (ver [Webhooks](/docs/webhooks#tipos-de-evento)). Un
+evento `rejected`, `failed` o `reconciliation_required` no publica ningún
+webhook: consultá el evento.
 
 ## Cancelar un documento
 
@@ -25,88 +74,199 @@ curl -X POST https://TU_API/v1/emitters/EMITTER_ID/documents/DOCUMENT_ID/cancel 
   -d '{"motivo":"Error en los datos de la operación"}'
 ```
 
-El documento pasa a `cancelled` solamente cuando SIFEN registra el evento.
+`motivo` lleva de 5 a 500 caracteres. El documento pasa a `cancelled`
+solamente cuando SIFEN registra el evento. Desde entonces
+`GET …/kude` responde `409 documents.kude_not_available`, porque un DTE
+cancelado no tiene validez tributaria (Decreto 872/2023, Art. 30). Si
+necesitás el KuDE como copia de archivo, descargalo antes de cancelar. El XML
+firmado sigue disponible en `GET …/xml`.
 
-Reglas que KilaSifen controla antes de firmar:
+<Callout type="info" title="Cuándo corresponde cancelar">
+  La cancelación es para un DTE cuya operación no se concretó: hubo errores
+  en la emisión, la mercadería no se entregó o el servicio no se prestó (MT
+  v150 §11.1.2 y Tabla J; Decreto 872/2023, Art. 30). KilaSifen no puede
+  verificarlo: la responsabilidad es del emisor.
+</Callout>
 
-- **Plazo**: 48 h para una factura y 168 h para los demás DTE, contadas desde la
-  aprobación en SIFEN (`dFecProc`). Si la aprobación se conoció por consulta,
-  SIFEN no informa la hora y se usa una cota inferior segura (la hora de firma
-  del DE o la de creación del documento), para que el plazo local nunca dure
-  más que el de SIFEN. Vencido el plazo, la respuesta es `409
-  events.cancel.deadline_exceeded` y el documento se anula con una nota de
-  crédito.
-- **Una cancelación a la vez**: mientras otra cancelación del mismo documento
-  pueda registrarse (en cola, enviándose o pendiente de reconciliación), la
-  respuesta es `409 events.cancel.already_pending`. Una segunda solicitud sería
-  rechazada como duplicada (`4003`).
-- **Documentos asociados**: bloquean la cancelación las notas de crédito o
-  débito asociadas que ya son DTE o que podrían serlo: en envío, pendientes de
-  reconciliación, o con su DE firmado y un job activo que las va a enviar
-  (el mismo DE después de un `0420`, o un rechazo `0161`/`0162` por
-  reenviar). Las rechazadas, fallidas, en cola sin armar, canceladas,
-  inutilizadas o las que ningún job va a enviar no bloquean.
+### Controles antes de firmar
+
+| Respuesta | Cuándo |
+| --- | --- |
+| `404 documents.not_found` | El documento no existe o es de otro emisor. |
+| `409 events.cancel.already_cancelled` | El documento ya está cancelado o tiene una cancelación aprobada. |
+| `409 events.cancel.document_not_approved` | El documento no tiene CDC o no está `approved` ni `approved_with_observation`. |
+| `409 events.cancel.already_pending` | Otra cancelación del mismo documento todavía puede registrarse (`details.event_ids`). |
+| `409 events.cancel.deadline_exceeded` | Venció el plazo (ver abajo). |
+| `409 events.cancel.child_dte_not_cancelled` | Hay documentos asociados que hay que cancelar antes (`details.child_cdcs`). |
+| `422 request.validation_failed` | `motivo` tiene menos de 5 o más de 500 caracteres. |
+
+**Una cancelación a la vez.** Una segunda solicitud sería rechazada como
+duplicada (`4003`), así que se bloquea mientras otra cancelación del documento
+esté `queued`, `submitting`, `submitted`, `retry_pending` o
+`reconciliation_required`. También bloquea una cancelación `failed` que llegó
+a guardar su request, porque un intento anterior pudo haber llegado a SIFEN:
+sólo un administrador de la plataforma puede reintentarla.
+
+**Plazo.** 48 h para una factura y 168 h para autofactura, nota de crédito,
+nota de débito y nota de remisión, contadas desde la aprobación en SIFEN,
+`dFecProc` (MT v150 §6.2.1; RG 23/2019, Art. 22). Si la aprobación se conoció
+por consulta, SIFEN no informa la hora, y se toma como cota inferior la más
+tardía entre la `dFecFirma` del DE y la creación del documento. Así el plazo
+local termina antes que el de SIFEN, nunca después. El
+`409 events.cancel.deadline_exceeded` trae `details.deadline_hours`,
+`details.approved_at`, `details.approved_at_source` y `details.remedy`.
+
+Vencido el plazo, una factura se anula con una nota de crédito (RG 23/2019,
+Art. 22). `details.remedy` vale `nota_credito` para cualquier tipo de
+documento, pero para una autofactura, nota de crédito, nota de débito o nota
+de remisión vencida la normativa no fija el remedio (NO DETERMINADO):
+consultá a tu asesor.
+
+**Documentos asociados.** Un DTE con otros DTE asociados se cancela del último
+al inicial (MT v150, Tabla J). Bloquean la cancelación los asociados que ya
+son DTE o que podrían serlo:
+
+- aprobados;
+- en envío o pendientes (`processing`, `submitting`, `submitted`,
+  `retry_pending`, `reconciliation_required`);
+- con su DE firmado y un job activo que los va a enviar (el mismo DE después
+  de un `0420`, un request que no salió o un rechazo `0161`/`0162` por
+  reenviar).
+
+No bloquean los rechazados, los fallidos, los que están en cola sin armar, los
+cancelados, los inutilizados ni los que ningún job va a enviar.
+
+KilaSifen sólo ve los documentos de este emisor creados por las rutas tipadas
+con un único `documento_asociado` que apunta al CDC. No ve los asociados
+emitidos por otro sistema ni los que lo referencian dentro de una lista de
+`documento_asociado`: cancelalos vos primero. Qué responde SIFEN si quedan
+asociados sin cancelar no está determinado.
 
 ### Si la respuesta de SIFEN se pierde
 
 No existe un servicio para consultar eventos: los eventos de un CDC vuelven en
 la consulta del documento (siConsDE, contenedor `xContEv`). Por eso:
 
-- después de un intento incierto, el siguiente consulta el CDC antes de
-  reenviar. Si la cancelación ya está registrada, el evento queda `approved`
-  sin volver a enviarse; si SIFEN tiene el DTE sin cancelación, se reenvía el
-  mismo evento firmado; si responde `0420` (no se sabe si un DTE cancelado
-  responde así), el evento queda `reconciliation_required` sin enviar nada;
-- una respuesta `4002`, `4003`, `4009` o `4010` puede esconder un registro
-  anterior: antes de darla por buena se consulta el CDC y, si la cancelación
-  figura registrada, el evento queda `approved`. El rechazo solo se acepta
-  si la consulta muestra el DTE sin cancelación;
+- Después de un intento incierto, una cancelación consulta el CDC antes de
+  reenviar:
+  - si la cancelación ya está registrada, el evento queda `approved` sin
+    volver a enviarse;
+  - si SIFEN tiene el DTE sin cancelación, se reenvía el mismo evento firmado;
+  - si responde `0420` (no se sabe si un DTE cancelado responde así), el
+    evento queda `reconciliation_required` sin enviar nada.
+- Una respuesta `4002`, `4003`, `4009` o `4010` puede esconder un registro
+  anterior. Antes de darla por buena se consulta el CDC: si la cancelación
+  figura registrada, el evento queda `approved`. El rechazo sólo se acepta si
+  la consulta muestra el DTE sin cancelación.
 - `4003` («el DTE ya se encuentra con un evento que se está requiriendo
-  nuevamente») nunca se toma como rechazo: si la consulta no muestra la
+  nuevamente») nunca se toma como rechazo. Si la consulta no muestra la
   cancelación, el evento queda `reconciliation_required` y el documento no
-  cambia. Lo mismo pasa con cualquiera de esos códigos cuando el contenedor
-  de la consulta (`xContenDE`, cuyo formato no está publicado) no se puede
-  leer. Antes de un reenvío, un contenedor ilegible no frena el envío: la
-  respuesta del mismo evento firmado decide (`0600`, o uno de esos códigos).
+  cambia.
+- Pasa lo mismo con cualquiera de esos códigos cuando no se puede leer el
+  contenedor de la consulta (`xContenDE`, cuyo formato no está publicado).
+  Antes de un reenvío, en cambio, un contenedor ilegible no frena el envío:
+  decide la respuesta al mismo evento firmado (`0600`, o uno de esos códigos).
+- Si el worker se cae durante el envío, el evento queda `submitting` y nada lo
+  retoma solo. Un reintento del administrador no envía nada hasta que pasen 5
+  minutos desde que se guardó el request, y después sigue estas mismas reglas.
 
-No hay todavía un endpoint para resolver a mano un evento
-`reconciliation_required`: un reintento del operador repite la consulta.
+**Resolver un evento `reconciliation_required`.** No hay una ruta pública para
+reintentarlo. Sólo un administrador de la plataforma puede reintentar el job
+(`POST /admin/jobs/{job_id}/retry`, fuera del contrato público), y ese
+reintento hace un único intento más. Mientras tanto, para una cancelación:
+`POST /v1/emitters/{emitter_id}/queries/documents/{document_id}/reconcile`
+(scope `fiscal:write`) deja el documento `cancelled` si `xContEv` muestra la
+cancelación (ver [Consultas](/docs/consultas#consultar-sifen)). El evento
+sigue `reconciliation_required` y no se publica `document.cancelled`, ni
+siquiera cuando un reintento posterior aprueba el evento.
 
 ## Inutilizar numeración
 
-```http
-POST /v1/emitters/{emitter_id}/inutilizations
+```bash
+curl -X POST https://TU_API/v1/emitters/EMITTER_ID/inutilizations \
+  -H "X-API-Key: $KILA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"timbrado":"12345678","document_type":"factura","establishment":"001","point":"001","numero_desde":15,"numero_hasta":20,"motivo":"Salto de numeración por error del sistema"}'
 ```
 
-Enviá timbrado, tipo de documento, establecimiento, punto, número inicial,
-número final, motivo y, si la numeración se reinició con serie, `serie` (dos
-letras mayúsculas, `dSerieNum`). El rango admite hasta 1000 números del mismo
-timbrado, establecimiento, punto y tipo, y el timbrado tiene que ser del emisor
-(`422 events.inutilize.unknown_timbrado`).
+| Campo | Regla |
+| --- | --- |
+| `timbrado` | 8 dígitos. Tiene que ser un timbrado registrado del emisor (`422 events.inutilize.unknown_timbrado`). |
+| `document_type` | `factura`, `autofactura`, `nota_credito`, `nota_debito` o `nota_remision`. |
+| `establishment`, `point` | De 0 a 999; se normalizan a 3 dígitos (`"1"` pasa a `"001"`). |
+| `numero_desde`, `numero_hasta` | Desde 1. `numero_hasta` no puede ser menor que `numero_desde` (`422 events.inutilize.invalid_range`), y el rango admite hasta 1000 números (`422 events.inutilize.range_too_large`). |
+| `motivo` | De 5 a 500 caracteres. |
+| `serie` | Opcional: dos letras mayúsculas (`dSerieNum`), sólo si la numeración se reinició con serie (NT 10). |
 
-Qué números se pueden inutilizar:
+El contrato también acepta `fe_exportacion`, `fe_importacion` y
+`comprobante_retencion` (iTiDE 2, 3 y 8), pero esos tipos no son DE vigentes en
+v150: no los uses. La boleta (iTiDE 9) no está disponible.
+
+KilaSifen no comprueba que el establecimiento y el punto pertenezcan al
+timbrado; si no pertenecen, SIFEN rechaza (`4054` o `4055`). Para un único
+número (`numero_desde` igual a `numero_hasta`), el MT exige que el número final
+sea mayor que el inicial (`4068`). Si SIFEN acepta un solo número no está
+determinado: probalo en el ambiente de test.
+
+El `201` trae `event`, `job`, `inutilization` (el rango guardado; el
+`sifen_protocol` de la aprobación llega en el webhook `numbering.inutilized`) y
+`warnings`.
+
+<Callout type="info" title="Cuándo corresponde inutilizar">
+  La inutilización es para números que no son DTE: saltos de numeración,
+  errores de llenado o DE rechazados cuya corrección cambia el CDC (MT v150
+  §11.1.1). La normativa exige además que no se haya configurado el hecho
+  imponible y que el DE no se haya entregado al receptor (RG 23/2019, Art. 23;
+  Decreto 872/2023, Art. 31). KilaSifen no puede verificarlo: si descargaste
+  el KuDE de un documento mientras estaba pendiente, pudo haberse entregado.
+  La responsabilidad es del emisor.
+</Callout>
+
+### Qué números se pueden inutilizar
 
 | Documento con ese número | ¿Se inutiliza? |
 | --- | --- |
-| Ninguno (salto de numeración) | Sí |
-| `rejected` (rechazo de SIFEN) | Sí, si su job no lo va a reenviar |
-| `failed` (validación local) | Sí |
-| `queued` con el job terminado (abortado) | Sí |
-| `approved`, `approved_with_observation` | No: es un DTE |
-| `cancelled` | No (precaución) |
-| En envío o pendiente de reconciliación | No, hasta que la consulta por CDC responda `0420` |
+| Ninguno (salto de numeración) | Sí. Si SIFEN acepta números todavía no alcanzados por la numeración no está determinado: probalo en test. |
+| `rejected` (rechazo de SIFEN) | Sí, si su job no lo va a reenviar (un rechazo `0161`/`0162` con el job activo no). |
+| `failed` (validación local) | Sí, si ningún job lo va a reintentar. |
+| `queued` | Sí, si ningún job lo va a enviar (por ejemplo, intentos agotados después de un `0420`). |
+| `approved`, `approved_with_observation` | No: es un DTE (SIFEN rechaza con `4065`). |
+| `cancelled` | No, por precaución: no está determinado si SIFEN aplica `4065` a un DTE cancelado. |
+| `inutilized` | No: ya está inutilizado. |
+| `processing`, `submitting`, `submitted`, `retry_pending`, `reconciliation_required` | No: puede estar en SIFEN. Si una consulta por CDC responde `0420`, vuelve a `queued` y se puede inutilizar cuando ningún job lo va a reenviar. |
 
 Los números bloqueados devuelven `409 events.inutilize.range_already_used`,
-con cada documento y su estado. Cuando SIFEN aprueba el evento, los documentos
-del rango pasan a `inutilized` y el webhook `numbering.inutilized` trae sus
-identificadores. KilaSifen evita superponer rangos ya inutilizados del mismo
-timbrado. La inutilización es por timbrado: un documento firmado con otro
-timbrado (según el `dNumTim` de su XML) no choca con el rango ni cambia de
-estado.
+con `details.collisions` (los números) y `details.documents` (`document_id`,
+`numero` y `status` de cada uno). Un rango que se superpone con una
+inutilización ya aprobada devuelve `409 events.inutilize.range_already_inutilized`,
+con `details.ranges`. Una inutilización del mismo rango que todavía no fue
+aprobada no se bloquea: esperá su resultado antes de repetirla, o SIFEN puede
+responder `4066`.
 
-El plazo normativo es hasta el día 15 del mes siguiente al consumo del número.
-SIFEN no rechaza por plazo, así que KilaSifen nunca bloquea una inutilización
-tardía: la respuesta trae `warnings: ["inutilization.extemporaneous"]` y el
-evento guarda la fecha límite. Si un reintento recibe `4066` después de un
-intento incierto, el evento queda `reconciliation_required`: ningún servicio
-permite saber si el rango lo inutilizó ese intento anterior.
+La inutilización es por timbrado: un documento firmado con otro timbrado
+(según el `dNumTim` de su XML) no choca con el rango ni cambia de estado.
+Aprobado el evento, la numeración automática del emisor saltea el rango para
+ese tipo, establecimiento y punto, sin distinguir timbrado.
+
+Cuando SIFEN aprueba el evento, los documentos del rango pasan a `inutilized`
+y su KuDE responde `409 documents.kude_not_available`. Si un job volvió a
+enviar alguno mientras tanto, ese documento queda en manos de su job y SIFEN lo
+rechazará (`1109`). El webhook `numbering.inutilized` trae los documentos
+marcados en `data.document_ids`; no se publica un `document.inutilized` por
+documento.
+
+### Plazo
+
+La normativa pide inutilizar dentro de los primeros 15 días del mes siguiente
+al error o al consumo del número (RG 23/2019, Art. 23; MT v150, Tabla J). El MT
+no define un código de rechazo por plazo, y si SIFEN rechaza una inutilización
+tardía no está determinado: KilaSifen no la bloquea. Si algún número del rango
+tiene documento y el plazo ya pasó (contado desde la creación del documento,
+en hora de Paraguay), la respuesta trae
+`warnings: ["inutilization.extemporaneous"]` y el evento guarda la fecha límite
+en `input_payload.typed_contract.payload.deadline`. Para los números sin
+documento no se calcula plazo: controlalo vos.
+
+Si un reintento recibe `4066` después de un intento incierto, el evento queda
+`reconciliation_required`: ningún servicio permite saber si el rango lo
+inutilizó ese intento anterior (NO DETERMINADO).

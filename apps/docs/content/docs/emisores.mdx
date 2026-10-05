@@ -4,11 +4,25 @@ description: Representá cada contribuyente y aislá su configuración fiscal.
 icon: Building2
 ---
 
-Un emisor pertenece a un único consumidor. Su RUC es una identidad global de la
-plataforma; por eso el alta y la asignación las hace un administrador. Sus
-certificados, timbrados, documentos, eventos y webhooks heredan ese límite.
+Un emisor es un RUC habilitado como facturador electrónico. Pertenece a un
+único consumidor (tu ERP) y sus certificados, timbrados, documentos, eventos y
+webhooks heredan ese límite: un emisor de otro consumidor responde `404`.
+
+Para emitir, el emisor necesita cuatro cosas:
+
+- perfil fiscal completo (`fiscal_profile_complete: true`);
+- CSC con su `csc_id`;
+- un certificado activo y vigente;
+- un timbrado activo que cubra la fecha de emisión.
+
+Las dos primeras se cargan en esta página. Certificado y timbrado se cargan en
+[Certificados y timbrado](/docs/certificados-y-timbrado).
 
 ## Crear
+
+El alta la hace un administrador de la plataforma (`platform:admin`). Una
+clave de ERP recibe `403 auth.insufficient_scope` en esta ruta, pero puede leer
+(`tenant:read`) y actualizar (`tenant:write`) los emisores de su consumidor.
 
 ```bash
 curl -X POST https://TU_API/v1/emitters \
@@ -24,20 +38,86 @@ curl -X POST https://TU_API/v1/emitters \
   }'
 ```
 
-`external_id` es la referencia estable de tu ERP. Usá el `id` asignado por
-KilaSifen en las rutas posteriores.
+```json title="Respuesta 201"
+{
+  "data": {
+    "emitter": {
+      "id": "3bddb53e-504f-4027-a59b-403968d425ab",
+      "external_id": "empresa_42",
+      "ruc": "44444401",
+      "dv": "7",
+      "legal_name": "Empresa Ejemplo S.A.",
+      "tax_environment": "test",
+      "status": "active",
+      "csc_configured": false,
+      "csc_id": null,
+      "fiscal_profile": null,
+      "fiscal_profile_complete": false,
+      "created_at": "2026-10-05T16:11:46.289890Z",
+      "updated_at": "2026-10-05T16:11:46.289890Z"
+    }
+  },
+  "correlation_id": "0ddcf00f-f531-4158-9634-4374a2a72aae"
+}
+```
 
-El RUC se valida con el formato oficial (3 a 8 caracteres, sin DV) y `dv` tiene
-que ser su dígito verificador por módulo 11. `legal_name` va de 4 a 255
-caracteres, el CSC tiene 32 caracteres alfanuméricos y `csc_id` se guarda con
-cuatro dígitos (`1` → `0001`).
+- `owner_consumer_id` es el `id` del consumidor de tu ERP (lo devuelve
+  `POST /v1/admin/consumers`). Mandalo siempre. Si falta, el emisor queda
+  asignado al consumidor de la clave administradora, y no hay endpoint para
+  reasignarlo. Con un id inexistente, la respuesta es `404 consumers.not_found`.
+- `external_id` es opcional y es tu referencia. Es único en toda la
+  plataforma, no por consumidor: si ya existe, la respuesta es
+  `409 emitters.external_id_conflict`.
+- Guardá el `id` de la respuesta y usalo en todas las rutas. No hay listado de
+  emisores (`GET /v1/emitters` no existe) ni búsqueda por `external_id`.
+- `tax_environment` tiene que ser el ambiente SIFEN de la instalación
+  (`KILA_SIFEN_SIFEN_ENVIRONMENT`). Si no lo es, la respuesta es
+  `422 emitters.tax_environment_mismatch`, con el valor permitido en
+  `details.allowed`. Un `PATCH` tampoco puede pasarlo a otro ambiente: un
+  emisor de producción se da de alta en la instalación de producción.
+- En el alta también se pueden enviar `csc`, `csc_id` y `fiscal_profile`
+  (ver abajo).
+
+## Identidad fiscal
+
+RUC, DV y razón social viajan en cada documento (`dRucEm`, `dDVEmi`,
+`dNomEmi`), y RUC y DV además forman el CDC. Por eso KilaSifen los valida en
+el alta (y `legal_name` también al editarlo):
+
+- `ruc`: de 3 a 8 caracteres, sin DV, con el patrón oficial
+  `[1-9][0-9]*[0-9A-D]?` (no empieza con `0`).
+- `dv`: un dígito, que tiene que ser el módulo 11 del RUC. Si no lo es, la
+  respuesta es `422 emitters.dv_mismatch` (el SIFEN lo rechazaría con `1253`).
+- `legal_name`: la razón social del RUC, de 4 a 255 caracteres sin contar los
+  espacios de los extremos (`422 emitters.legal_name_invalid`).
+
+Un campo con formato inválido responde `422 request.validation_failed`, con
+el campo en `details.errors`. El par RUC + DV es único en la plataforma: si se
+repite, la respuesta es `409 emitters.tax_id_conflict`. RUC y DV no se pueden
+cambiar después: un `PATCH` no los modifica. `legal_name` sí se puede cambiar
+con `PATCH` y `tenant:write`.
+
+<Callout type="warn" title="Razón social en el ambiente de pruebas">
+  El MT v150 (D105, validación `1263`) pide en pruebas un texto fijo en
+  `dNomEmi`, y la Guía de Pruebas de la DNIT de febrero de 2026 pide otro.
+  Cuál acepta el SIFEN de pruebas está NO DETERMINADO. KilaSifen usa
+  `legal_name`, salvo que el operador configure
+  `KILA_SIFEN_TEST_EMITTER_NAME_LITERAL`, que reemplaza `dNomEmi` sólo en los
+  emisores `test`. En `legal_name` cargá siempre la razón social real. En
+  producción, un emisor cuyo `legal_name` sea el texto de pruebas del MT no
+  puede emitir: sus documentos quedan `failed` con
+  `documents.emisor.test_name_in_production`.
+</Callout>
 
 ## Perfil fiscal
 
-Los datos del emisor que viajan en cada documento (`gEmis`) salen sólo del
-perfil fiscal, que tiene que coincidir con lo declarado en el RUC. Sin perfil
-no se pueden crear documentos: la API responde
-`422 emitters.fiscal_profile_required`.
+El grupo `gEmis` de cada documento se arma con el RUC, el DV y la razón social
+del emisor más su perfil fiscal. El bloque `emisor` de un documento puede
+repetir esos datos, pero no cambiarlos (ver [Facturas](/docs/facturas)).
+
+Sin perfil no se pueden crear documentos: la API responde
+`422 emitters.fiscal_profile_required`. Para cargarlo, usá `PATCH` con
+`tenant:write`, o mandalo en el alta.
 
 ```bash
 curl -X PATCH https://TU_API/v1/emitters/EMITTER_ID \
@@ -63,29 +143,85 @@ curl -X PATCH https://TU_API/v1/emitters/EMITTER_ID \
   }'
 ```
 
-- `tipo_contribuyente`: 1 persona física, 2 persona jurídica.
-- `actividades_economicas`: de 1 a 9, con código y descripción del RUC.
-- `domicilio`: dirección del local; `numero_casa` es `0` si no tiene
-  numeración. El departamento se valida contra el catálogo oficial y su
-  descripción se completa sola; distrito y ciudad van con código y
-  descripción.
-- `establecimientos`: la dirección propia de cada establecimiento (`dEst`) que
-  no use el domicilio por defecto.
+| Campo | Uso |
+| --- | --- |
+| `tipo_contribuyente` | Obligatorio: `1` persona física, `2` persona jurídica (`iTipCont`, entra en el CDC). |
+| `tipo_regimen` | Opcional: código de 1 a 8 (`cTipReg`). |
+| `nombre_fantasia` | Opcional: de 4 a 255 caracteres. |
+| `actividades_economicas` | Obligatorio: de 1 a 9, cada una con `codigo` y `descripcion`. |
+| `domicilio` | Obligatorio: dirección del local que emite. |
+| `establecimientos` | Opcional: dirección propia de un establecimiento, con su código de 3 dígitos en `establecimiento` y los mismos campos que `domicilio`. |
 
-Cada `PATCH` reemplaza el perfil completo. La respuesta del emisor incluye
+Los campos de `domicilio` son estos:
+
+- `direccion`, obligatoria.
+- `numero_casa`, de 1 a 6 dígitos (`0` si la dirección no tiene
+  numeración).
+- `complemento_1` y `complemento_2`, opcionales.
+- `departamento`, obligatorio: se valida contra el catálogo oficial y
+  KilaSifen guarda su descripción oficial. `descripcion_departamento` es
+  opcional, pero si la mandás tiene que coincidir con el código.
+- `distrito` y `descripcion_distrito`, opcionales; van juntos.
+- `ciudad` y `descripcion_ciudad`, obligatorios.
+- `telefono` (de 6 a 15 caracteres, con prefijo) y `email`, obligatorios.
+- `denominacion_sucursal`, opcional (hasta 30 caracteres).
+
+Dentro de `fiscal_profile`, un campo con formato inválido o desconocido
+responde `422 request.validation_failed`. Un departamento inexistente, una
+descripción de departamento que no coincide o un distrito sin descripción
+responden `422 emitters.fiscal_profile_invalid`, con `details.field` y
+`details.reason`.
+
+Todo el perfil tiene que coincidir con lo declarado en el RUC, pero KilaSifen
+sólo valida el departamento:
+
+- Distrito y ciudad no se validan localmente. Copiá código y descripción tal
+  como figuran en tu RUC: si no coinciden, el SIFEN rechaza con `1255` a
+  `1260`.
+- Una actividad económica que no es del RUC se rechaza con `1261` o `1262`.
+- Que el SIFEN rechace una dirección, un teléfono, un email o un nombre de
+  fantasía distintos del padrón es NO DETERMINADO.
+
+Un `PATCH` que incluye `fiscal_profile` reemplaza el perfil completo. Uno que
+no lo incluye lo deja como está. La respuesta del emisor trae
 `fiscal_profile` y `fiscal_profile_complete`.
 
-Una clave tenant no puede reclamar un RUC nuevo. Si intentaba usar esta ruta,
-ahora recibe `403 auth.insufficient_scope`; sus lecturas y actualizaciones de
-emisores asignados no cambian.
+<Callout type="info" title="Emisores anteriores al perfil fiscal">
+  Un emisor creado antes de que KilaSifen exigiera el perfil quedó con el
+  perfil vacío (`fiscal_profile_complete: false`), y no puede crear documentos
+  tipados hasta que se lo cargues con `PATCH`.
+</Callout>
 
-## Desactivar
+## CSC
 
-`POST /v1/emitters/{emitter_id}/deactivate` detiene inmediatamente nuevas
-emisiones, eventos, consultas SIFEN, cambios de certificados/timbrados y entregas
-webhook. También bloquea jobs que ya estaban en cola antes de descifrar secretos
-o contactar servicios externos. Las lecturas siguen disponibles y el error para
-una nueva operación es `409 emitters.inactive`.
+El CSC (código de seguridad del contribuyente) lo entrega la SET junto con su
+identificador (IdCSC). Es de 32 caracteres alfanuméricos y KilaSifen sólo lo
+usa para calcular el hash del QR. La API nunca lo devuelve: la respuesta trae
+`csc_configured` y `csc_id`.
+
+Para cargarlo, usá el alta o un `PATCH` con una clave que tenga `tenant:write`
+y `secrets:write`. Si falta cualquiera de los dos scopes, la respuesta es
+`403 auth.insufficient_scope`.
+
+```bash
+curl -X PATCH https://TU_API/v1/emitters/EMITTER_ID \
+  -H "X-API-Key: $KILA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d "{\"csc\": \"$KILA_CSC\", \"csc_id\": \"1\"}"
+```
+
+- `csc_id` admite de 1 a 4 dígitos, entre 1 y 9999, y se guarda con cuatro
+  (`1` → `0001`). Un `0` responde `422 emitters.csc_id_invalid`.
+- Hacen falta los dos. Sin CSC o sin `csc_id` no se puede armar el QR: el
+  documento queda `failed` con `emitters.csc_required` y el KuDE responde
+  `409 emitters.csc_required`.
+- Con el emisor desactivado, cambiar el CSC responde `409 emitters.inactive`.
+- KilaSifen guarda un solo CSC por emisor, aunque la SET permite hasta dos
+  activos (MT v150 §13.8.1).
+- El QR se calcula al firmar. Si cambiás el CSC, los documentos ya firmados
+  conservan el QR que se calculó con el anterior. Mantené el CSC al día: el
+  SIFEN responde `2501` si el CSC no está vigente en la fecha de emisión
+  (NT 10).
 
 ## Comprobar preparación
 
@@ -93,5 +229,63 @@ una nueva operación es `409 emitters.inactive`.
 GET /v1/emitters/{emitter_id}/health
 ```
 
-El resultado indica si existe certificado activo, timbrado activo y CSC. No
-intentes emitir hasta que el emisor esté preparado.
+Requiere `tenant:read`.
+
+```json title="Respuesta 200"
+{
+  "data": {
+    "health": {
+      "emitter_id": "3bddb53e-504f-4027-a59b-403968d425ab",
+      "emitter_status": "active",
+      "has_active_certificate": true,
+      "certificate_valid_until": "2027-10-05T16:11:50Z",
+      "has_active_stamping": true,
+      "stamping_number": "12345678",
+      "stamping_valid_on": "2026-10-05",
+      "queue_queued_count": 0,
+      "queue_retry_count": 0,
+      "queue_failed_count": 0,
+      "last_document_id": null,
+      "last_document_status": null,
+      "checked_at": "2026-10-05T16:11:53.059023Z"
+    }
+  },
+  "correlation_id": "9f6d0c14-daaa-40f0-ae67-e5adf44b03e1"
+}
+```
+
+- `has_active_certificate` dice si hay un certificado activo, aunque esté
+  vencido. Para saber si vale, mirá `certificate_valid_until`.
+- `has_active_stamping` y `stamping_number` se evalúan para
+  `stamping_valid_on`, la fecha del servidor. El documento usa el timbrado
+  vigente en su propia fecha de emisión (hora de Paraguay), así que con fechas
+  de emisión pasadas o futuras el resultado puede diferir.
+- Los contadores `queue_*` cuentan sólo los últimos 200 jobs del emisor.
+- `health` no informa el CSC ni el perfil fiscal. Para eso, mirá
+  `csc_configured` y `fiscal_profile_complete` en
+  `GET /v1/emitters/{emitter_id}`.
+
+## Desactivar
+
+```http
+POST /v1/emitters/{emitter_id}/deactivate
+```
+
+Alcanza con `tenant:write` del consumidor dueño, así que restringí ese scope.
+
+La desactivación es definitiva: la API no permite reactivar un emisor, y
+llamarla otra vez devuelve `200` sin cambios.
+
+Desde ese momento, cualquier operación nueva responde `409 emitters.inactive`.
+Eso incluye emisiones, eventos, consultas al SIFEN, cambios de certificados,
+timbrados y CSC, y entregas de webhooks.
+
+Lo que sigue disponible:
+
+- las lecturas;
+- un `PATCH` de `legal_name` o de `fiscal_profile`.
+
+Los jobs que ya estaban en cola se frenan antes de descifrar secretos o de
+contactar servicios externos. Esos documentos quedan en `queued`: nunca llegan
+a un estado final ni disparan un webhook (ver
+[Estados y reintentos](/docs/estados-y-reintentos#cuando-el-intento-no-arranca)).

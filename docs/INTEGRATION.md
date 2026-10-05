@@ -125,10 +125,9 @@ X-API-Key: ...
   "factura": {
     "establecimiento": "001",
     "punto": "001",
-    "fecha_emision": "2026-10-01T15:30:00-03:00",
     "moneda": "PYG",
     "cliente": {
-      "ruc": "80025298-5",
+      "ruc": "88899990-9",
       "tipo_contribuyente": 2,
       "razon_social": "Cliente prueba"
     },
@@ -178,10 +177,15 @@ Reglas fiscales que se validan al crear (fuentes en `docs/normativa/matriz.md`):
   Gs (salvo muestras médicas).
 - `codigo_seguridad` es opcional: si se omite, KilaSifen genera uno aleatorio y
   lo conserva en todos los reintentos. No puede ser `0` ni igual al número.
-- `fecha_emision` tiene que estar entre 720 h antes y 120 h después de ahora
-  (hora oficial de Paraguay, UTC−3). Si queda a más de 120 h, el documento se
-  crea igual pero `fiscal_warnings` avisa que el SIFEN lo aprobará con la
-  observación 1005 (transmisión extemporánea).
+- `fecha_emision` es opcional: sin ella se usa la hora de Paraguay al armar el
+  XML, y por eso el ejemplo no la envía (una fecha fija sale de la ventana).
+  Si se envía, tiene que estar entre 720 h antes y 120 h después de ahora
+  (hora oficial de Paraguay, UTC−3). Si es de más de 120 h antes, el documento
+  se crea igual con `documents.transmission.emission_far_from_now` en
+  `fiscal_warnings`: es una transmisión extemporánea (MT v150 §6.2.1), que se
+  aprueba con observación y puede tener sanción. Qué código de observación
+  informa el SIFEN en ese caso es NO DETERMINADO: el MT sólo publica la `1005`,
+  contada desde `dFecFirma`.
 - `moneda` (y la de cada pago o cuota) es un código ISO 4217 de
   `Monedas_v150.xsd`; las descripciones del XML son su nombre oficial
   (`Guarani`, `US Dollar`). `formas_pago[].moneda_descripcion` se ignora.
