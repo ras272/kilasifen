@@ -388,17 +388,18 @@
           "monto_entrega_inicial": {
             "anyOf": [
               {
-                "minimum": 0.0,
+                "exclusiveMinimum": 0.0,
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,20}0*$)\\d{0,15}\\.\\d{0,4}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dMonEnt (E645), con plazo o cuotas. Exige `formas_pago` en `condicion_operacion` con los pagos de esa entrega (1551), que tienen que sumarla.",
             "title": "Monto Entrega Inicial"
           },
           "plazo_descripcion": {
@@ -1814,6 +1815,22 @@
             ],
             "title": "Numero"
           },
+          "porcentaje_descuento_global": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,12}0*$)\\d{0,3}\\.\\d{0,8}0*$)",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "description": "dPorcDescTotal (F010): porcentaje de descuento global del documento, 0 si no hay. Se aplica a cada ítem sin prorratear: dDescGloItem = porcentaje * precio_unitario / 100 (NT 01, 1860/1862).",
+            "title": "Porcentaje Descuento Global"
+          },
           "punto": {
             "anyOf": [
               {
@@ -1828,6 +1845,16 @@
             ],
             "title": "Punto"
           },
+          "redondeo": {
+            "default": "ninguno",
+            "description": "dRedon (F013). `ninguno` (por defecto) informa 0. `multiplo_50` lleva dTotOpe hacia abajo a un múltiplo de 50 Gs (MT v150 §F); solo en PYG. Nunca se redondea una moneda extranjera.",
+            "enum": [
+              "ninguno",
+              "multiplo_50"
+            ],
+            "title": "Redondeo",
+            "type": "string"
+          },
           "tipo_cambio": {
             "anyOf": [
               {
@@ -1835,13 +1862,14 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,5}|(?=[\\d.]{1,10}0*$)\\d{0,5}\\.\\d{0,4}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dTiCam (D018): hasta 4 decimales (XSD tTipoCambioBase).",
             "title": "Tipo Cambio"
           },
           "tipo_contribuyente": {
@@ -2162,11 +2190,18 @@
             "title": "Fecha Vencimiento"
           },
           "moneda": {
-            "default": "PYG",
-            "maxLength": 3,
-            "minLength": 3,
-            "title": "Moneda",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cMoneCuo (E653), código ISO 4217. Si se omite, la moneda de la operación.",
+            "title": "Moneda"
           },
           "monto": {
             "anyOf": [
@@ -2275,7 +2310,7 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,24}0*$)\\d{0,15}\\.\\d{0,8}0*$)",
                 "type": "string"
               }
             ],
@@ -2289,7 +2324,7 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,24}0*$)\\d{0,15}\\.\\d{0,8}0*$)",
                 "type": "string"
               }
             ],
@@ -2359,11 +2394,14 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,24}0*$)\\d{0,15}\\.\\d{0,8}0*$)",
                 "type": "string"
+              },
+              {
+                "type": "null"
               }
             ],
-            "default": "0",
+            "description": "dDescGloItem (EA004). Se calcula como porcentaje_descuento_global * precio_unitario / 100 (NT 01); si se envía tiene que coincidir con ese cálculo con una variación de hasta 0,8 (1862).",
             "title": "Descuento Global"
           },
           "descuento_particular": {
@@ -2373,7 +2411,7 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,15}|(?=[\\d.]{1,24}0*$)\\d{0,15}\\.\\d{0,8}0*$)",
                 "type": "string"
               }
             ],
@@ -2396,18 +2434,19 @@
           "proporcion_gravada": {
             "anyOf": [
               {
-                "exclusiveMinimum": 0.0,
                 "maximum": 100.0,
+                "minimum": 0.0,
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,12}0*$)\\d{0,3}\\.\\d{0,8}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dPropIVA (E733): obligatoria y entre 0 y 100 (sin incluirlos) con `gravado_parcial` (1906); si se envía vale 100 con `gravado` (1904) y 0 con `exento` o `exonerado` (1905).",
             "title": "Proporcion Gravada"
           },
           "tasa": {
@@ -2427,13 +2466,14 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,5}|(?=[\\d.]{1,10}0*$)\\d{0,5}\\.\\d{0,4}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dTiCamIt (E725): obligatorio en cada ítem con condicion_tipo_cambio 2.",
             "title": "Tipo Cambio Item"
           },
           "unidad_medida": {
@@ -2646,6 +2686,22 @@
             ],
             "title": "Numero"
           },
+          "porcentaje_descuento_global": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,12}0*$)\\d{0,3}\\.\\d{0,8}0*$)",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "description": "dPorcDescTotal (F010): porcentaje de descuento global del documento, 0 si no hay. Se aplica a cada ítem sin prorratear: dDescGloItem = porcentaje * precio_unitario / 100 (NT 01, 1860/1862).",
+            "title": "Porcentaje Descuento Global"
+          },
           "punto": {
             "anyOf": [
               {
@@ -2660,6 +2716,16 @@
             ],
             "title": "Punto"
           },
+          "redondeo": {
+            "default": "ninguno",
+            "description": "dRedon (F013). `ninguno` (por defecto) informa 0. `multiplo_50` lleva dTotOpe hacia abajo a un múltiplo de 50 Gs (MT v150 §F); solo en PYG. Nunca se redondea una moneda extranjera.",
+            "enum": [
+              "ninguno",
+              "multiplo_50"
+            ],
+            "title": "Redondeo",
+            "type": "string"
+          },
           "tipo_cambio": {
             "anyOf": [
               {
@@ -2667,13 +2733,14 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,5}|(?=[\\d.]{1,10}0*$)\\d{0,5}\\.\\d{0,4}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dTiCam (D018): hasta 4 decimales (XSD tTipoCambioBase).",
             "title": "Tipo Cambio"
           },
           "tipo_contribuyente": {
@@ -2960,6 +3027,22 @@
             ],
             "title": "Numero"
           },
+          "porcentaje_descuento_global": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,3}|(?=[\\d.]{1,12}0*$)\\d{0,3}\\.\\d{0,8}0*$)",
+                "type": "string"
+              }
+            ],
+            "default": "0",
+            "description": "dPorcDescTotal (F010): porcentaje de descuento global del documento, 0 si no hay. Se aplica a cada ítem sin prorratear: dDescGloItem = porcentaje * precio_unitario / 100 (NT 01, 1860/1862).",
+            "title": "Porcentaje Descuento Global"
+          },
           "punto": {
             "anyOf": [
               {
@@ -2974,6 +3057,16 @@
             ],
             "title": "Punto"
           },
+          "redondeo": {
+            "default": "ninguno",
+            "description": "dRedon (F013). `ninguno` (por defecto) informa 0. `multiplo_50` lleva dTotOpe hacia abajo a un múltiplo de 50 Gs (MT v150 §F); solo en PYG. Nunca se redondea una moneda extranjera.",
+            "enum": [
+              "ninguno",
+              "multiplo_50"
+            ],
+            "title": "Redondeo",
+            "type": "string"
+          },
           "tipo_cambio": {
             "anyOf": [
               {
@@ -2981,13 +3074,14 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,5}|(?=[\\d.]{1,10}0*$)\\d{0,5}\\.\\d{0,4}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dTiCam (D018): hasta 4 decimales (XSD tTipoCambioBase).",
             "title": "Tipo Cambio"
           },
           "tipo_contribuyente": {
@@ -3111,6 +3205,7 @@
                 "type": "null"
               }
             ],
+            "description": "gPaConEIni. Contado: suman `dTotGralOpe` (tolerancia 0,50); sin formas se informa un pago en efectivo por el total. Crédito: solo con `monto_entrega_inicial`, y suman esa entrega (1551/1552).",
             "title": "Formas Pago"
           },
           "tipo": {
@@ -3135,6 +3230,7 @@
       },
       "PaymentPayload": {
         "additionalProperties": false,
+        "description": "gPaConEIni (E606-E611): one payment of a contado operation or of the\ninitial delivery of a credit one.",
         "properties": {
           "banco": {
             "anyOf": [
@@ -3150,11 +3246,18 @@
             "title": "Banco"
           },
           "moneda": {
-            "default": "PYG",
-            "maxLength": 3,
-            "minLength": 3,
-            "title": "Moneda",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 3,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "cMoneTiPag (E609), código ISO 4217. Si se omite, el pago es en la moneda de la operación.",
+            "title": "Moneda"
           },
           "moneda_descripcion": {
             "anyOf": [
@@ -3225,13 +3328,14 @@
                 "type": "number"
               },
               {
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,5}|(?=[\\d.]{1,10}0*$)\\d{0,5}\\.\\d{0,4}0*$)",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "description": "dTiCamTiPag (E611): obligatorio si `moneda` no es PYG (1556) y prohibido si es PYG (1557). Si se omite y el pago va en la moneda de la operación se usa su `tipo_cambio`.",
             "title": "Tipo Cambio"
           }
         },

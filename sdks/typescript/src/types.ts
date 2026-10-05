@@ -164,9 +164,15 @@ export interface CardPayment {
 export interface Payment {
   tipo: NumericCode;
   monto: DecimalValue;
+  /** cMoneTiPag, an ISO 4217 code; omitted, the currency of the operation. */
   moneda?: string;
   /** @deprecated Ignored: dDMoneTiPag is the official name of `moneda` (1555). */
   moneda_descripcion?: string;
+  /**
+   * dTiCamTiPag (up to 4 decimals): mandatory when `moneda` is not PYG (1556)
+   * and refused when it is PYG (1557). Omitted for a payment in the currency
+   * of the operation, the operation `tipo_cambio` is used.
+   */
   tipo_cambio?: DecimalValue;
   numero_cheque?: NumericCode;
   banco?: string;
@@ -176,6 +182,7 @@ export interface Payment {
 export interface Installment {
   monto: DecimalValue;
   fecha_vencimiento?: IsoDate;
+  /** cMoneCuo, an ISO 4217 code; omitted, the currency of the operation. */
   moneda?: string;
 }
 
@@ -183,12 +190,21 @@ export interface CreditCondition {
   tipo: NumericCode;
   descripcion?: string;
   plazo_descripcion?: string;
+  /**
+   * dMonEnt. Requires `formas_pago` in the operation condition with the
+   * payments of that initial delivery, which must add up to it (1551).
+   */
   monto_entrega_inicial?: DecimalValue;
   cuotas?: Installment[];
 }
 
 export interface OperationCondition {
   tipo?: NumericCode;
+  /**
+   * gPaConEIni. Contado: they add up to dTotGralOpe (0.50 tolerance); without
+   * them one cash payment of the total is written. Credito: only with
+   * `monto_entrega_inicial`, adding up to it (1551/1552).
+   */
   formas_pago?: Payment[];
   credito?: CreditCondition;
 }
@@ -203,11 +219,20 @@ export interface DocumentItem {
   cantidad: DecimalValue;
   precio_unitario: DecimalValue;
   descuento_particular?: DecimalValue;
+  /**
+   * dDescGloItem. Derived as `porcentaje_descuento_global * precio_unitario /
+   * 100` (NT 01); if sent it must match that within 0.8 (1862).
+   */
   descuento_global?: DecimalValue;
   anticipo_particular?: DecimalValue;
   anticipo_global?: DecimalValue;
   cdc_anticipo?: string;
   afectacion?: TaxAffectation;
+  /**
+   * dPropIVA: mandatory and strictly between 0 and 100 with `gravado_parcial`
+   * (1906); if sent, 100 with `gravado` (1904) and 0 with `exento` or
+   * `exonerado` (1905).
+   */
   proporcion_gravada?: DecimalValue;
   tasa?: 0 | 5 | 10;
   tipo_cambio_item?: DecimalValue;
@@ -235,9 +260,21 @@ export interface BaseFiscalDocument {
   fecha_emision?: IsoDateTime;
   /** cMoneOpe: an ISO 4217 code of the XSD (default PYG). */
   moneda?: string;
+  /** dTiCam: up to 4 decimals. */
   tipo_cambio?: DecimalValue;
   condicion_tipo_cambio?: number;
+  /**
+   * dPorcDescTotal: global discount percentage (default 0), applied to every
+   * item as dDescGloItem (NT 01, 1860/1862).
+   */
+  porcentaje_descuento_global?: DecimalValue;
+  /**
+   * dRedon. `ninguno` (default) writes 0; `multiplo_50` rounds dTotOpe down
+   * to a multiple of 50 Gs, only in PYG. Foreign currencies are never rounded.
+   */
+  redondeo?: "ninguno" | "multiplo_50";
   tipo_transaccion?: NumericCode;
+  /** iTImp. 2 (ISC) is refused: the typed contracts cannot express it. */
   tipo_impuesto?: NumericCode;
   /** Optional; must match the emitter fiscal profile (iTipCont). */
   tipo_contribuyente?: number;

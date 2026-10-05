@@ -294,9 +294,20 @@ class CardPayload(FiscalContractModel):
 
 
 class PaymentPayload(FiscalContractModel):
+    """gPaConEIni (E606-E611): one payment of a contado operation or of the
+    initial delivery of a credit one."""
+
     tipo: int | str
     monto: Decimal = Field(gt=0, max_digits=19, decimal_places=4)
-    moneda: str = Field(default="PYG", min_length=3, max_length=3)
+    moneda: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=3,
+        description=(
+            "cMoneTiPag (E609), código ISO 4217. Si se omite, el pago es en la "
+            "moneda de la operación."
+        ),
+    )
     moneda_descripcion: str | None = Field(
         default=None,
         max_length=60,
@@ -306,7 +317,17 @@ class PaymentPayload(FiscalContractModel):
         ),
         json_schema_extra={"deprecated": True},
     )
-    tipo_cambio: Decimal | None = Field(default=None, gt=0)
+    tipo_cambio: Decimal | None = Field(
+        default=None,
+        gt=0,
+        max_digits=9,
+        decimal_places=4,
+        description=(
+            "dTiCamTiPag (E611): obligatorio si `moneda` no es PYG (1556) y "
+            "prohibido si es PYG (1557). Si se omite y el pago va en la moneda "
+            "de la operación se usa su `tipo_cambio`."
+        ),
+    )
     numero_cheque: str | int | None = None
     banco: str | None = Field(default=None, min_length=4, max_length=20)
     tarjeta: CardPayload | None = None
@@ -318,6 +339,9 @@ class PaymentPayload(FiscalContractModel):
 
     @model_validator(mode="after")
     def validate_payment_details(self) -> "PaymentPayload":
+        if self.moneda == "PYG" and self.tipo_cambio is not None:
+            # MT v150 1557: no E611 for a payment in guaranies.
+            raise ValueError("tipo_cambio is not allowed for a payment in PYG")
         normalized = str(self.tipo).strip().lower()
         if normalized in {"2", "cheque"} and (
             self.numero_cheque is None or not self.banco
@@ -332,7 +356,15 @@ class PaymentPayload(FiscalContractModel):
 class InstallmentPayload(FiscalContractModel):
     monto: Decimal = Field(gt=0, max_digits=19, decimal_places=4)
     fecha_vencimiento: date | str | None = None
-    moneda: str = Field(default="PYG", min_length=3, max_length=3)
+    moneda: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=3,
+        description=(
+            "cMoneCuo (E653), código ISO 4217. Si se omite, la moneda de la "
+            "operación."
+        ),
+    )
 
     @field_validator("moneda")
     @classmethod
@@ -344,7 +376,17 @@ class CreditPayload(FiscalContractModel):
     tipo: int | Literal["plazo", "cuotas"]
     descripcion: str | None = Field(default=None, min_length=1, max_length=30)
     plazo_descripcion: str | None = Field(default=None, min_length=1, max_length=30)
-    monto_entrega_inicial: Decimal | None = Field(default=None, ge=0)
+    monto_entrega_inicial: Decimal | None = Field(
+        default=None,
+        gt=0,
+        max_digits=19,
+        decimal_places=4,
+        description=(
+            "dMonEnt (E645), con plazo o cuotas. Exige `formas_pago` en "
+            "`condicion_operacion` con los pagos de esa entrega (1551), que "
+            "tienen que sumarla."
+        ),
+    )
     cuotas: list[InstallmentPayload] | None = Field(default=None, max_length=999)
 
     @model_validator(mode="after")
@@ -361,7 +403,15 @@ class CreditPayload(FiscalContractModel):
 
 class OperationConditionPayload(FiscalContractModel):
     tipo: int | Literal["contado", "credito"] = "contado"
-    formas_pago: list[PaymentPayload] | None = Field(default=None, max_length=99)
+    formas_pago: list[PaymentPayload] | None = Field(
+        default=None,
+        max_length=99,
+        description=(
+            "gPaConEIni. Contado: suman `dTotGralOpe` (tolerancia 0,50); sin "
+            "formas se informa un pago en efectivo por el total. Crédito: solo "
+            "con `monto_entrega_inicial`, y suman esa entrega (1551/1552)."
+        ),
+    )
     credito: CreditPayload | None = None
 
     @model_validator(mode="after")
@@ -391,20 +441,55 @@ class ItemPayload(FiscalContractModel):
         decimal_places=8,
         validation_alias=AliasChoices("precio_unitario", "precioUnitario"),
     )
-    descuento_particular: Decimal = Field(default=Decimal("0"), ge=0)
-    descuento_global: Decimal = Field(default=Decimal("0"), ge=0)
-    anticipo_particular: Decimal = Field(default=Decimal("0"), ge=0)
-    anticipo_global: Decimal = Field(default=Decimal("0"), ge=0)
+    descuento_particular: Decimal = Field(
+        default=Decimal("0"), ge=0, max_digits=23, decimal_places=8
+    )
+    descuento_global: Decimal | None = Field(
+        default=None,
+        ge=0,
+        max_digits=23,
+        decimal_places=8,
+        description=(
+            "dDescGloItem (EA004). Se calcula como porcentaje_descuento_global * "
+            "precio_unitario / 100 (NT 01); si se envía tiene que coincidir con "
+            "ese cálculo con una variación de hasta 0,8 (1862)."
+        ),
+    )
+    anticipo_particular: Decimal = Field(
+        default=Decimal("0"), ge=0, max_digits=23, decimal_places=8
+    )
+    anticipo_global: Decimal = Field(
+        default=Decimal("0"), ge=0, max_digits=23, decimal_places=8
+    )
     cdc_anticipo: str | None = Field(default=None, pattern=r"^\d{44}$")
     afectacion: int | Literal["gravado", "exonerado", "exento", "gravado_parcial"] = (
         "gravado"
     )
-    proporcion_gravada: Decimal | None = Field(default=None, gt=0, le=100)
+    proporcion_gravada: Decimal | None = Field(
+        default=None,
+        ge=0,
+        le=100,
+        max_digits=11,
+        decimal_places=8,
+        description=(
+            "dPropIVA (E733): obligatoria y entre 0 y 100 (sin incluirlos) con "
+            "`gravado_parcial` (1906); si se envía vale 100 con `gravado` (1904) "
+            "y 0 con `exento` o `exonerado` (1905)."
+        ),
+    )
     tasa: Literal[0, 5, 10] = Field(
         default=10,
         validation_alias=AliasChoices("tasa", "iva"),
     )
-    tipo_cambio_item: Decimal | None = Field(default=None, gt=0)
+    tipo_cambio_item: Decimal | None = Field(
+        default=None,
+        gt=0,
+        max_digits=9,
+        decimal_places=4,
+        description=(
+            "dTiCamIt (E725): obligatorio en cada ítem con condicion_tipo_cambio 2."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_tax_and_net_amount(self) -> "ItemPayload":
@@ -416,7 +501,7 @@ class ItemPayload(FiscalContractModel):
             raise ValueError("items.tasa must be 0 for exempt or exonerated items")
         deductions = (
             self.descuento_particular
-            + self.descuento_global
+            + (self.descuento_global or Decimal("0"))
             + self.anticipo_particular
             + self.anticipo_global
         )
@@ -473,8 +558,34 @@ class BaseFiscalDocumentPayload(FiscalContractModel):
         max_length=3,
         description="cMoneOpe (D015), código ISO 4217 del XSD.",
     )
-    tipo_cambio: Decimal | None = Field(default=None, gt=0)
+    tipo_cambio: Decimal | None = Field(
+        default=None,
+        gt=0,
+        max_digits=9,
+        decimal_places=4,
+        description="dTiCam (D018): hasta 4 decimales (XSD tTipoCambioBase).",
+    )
     condicion_tipo_cambio: int | None = Field(default=None, ge=1, le=2)
+    porcentaje_descuento_global: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+        le=100,
+        max_digits=11,
+        decimal_places=8,
+        description=(
+            "dPorcDescTotal (F010): porcentaje de descuento global del documento, "
+            "0 si no hay. Se aplica a cada ítem sin prorratear: dDescGloItem = "
+            "porcentaje * precio_unitario / 100 (NT 01, 1860/1862)."
+        ),
+    )
+    redondeo: Literal["ninguno", "multiplo_50"] = Field(
+        default="ninguno",
+        description=(
+            "dRedon (F013). `ninguno` (por defecto) informa 0. `multiplo_50` "
+            "lleva dTotOpe hacia abajo a un múltiplo de 50 Gs (MT v150 §F); "
+            "solo en PYG. Nunca se redondea una moneda extranjera."
+        ),
+    )
     tipo_transaccion: int | str | None = None
     tipo_impuesto: int | str | None = None
     tipo_contribuyente: int | None = Field(

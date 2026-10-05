@@ -27,6 +27,17 @@ from kilasifen.domain.documents.security_code import (
     InvalidSecurityCodeError,
     normalize_security_code,
 )
+from kilasifen.domain.documents.totals import (
+    CASH,
+    DocumentAmounts,
+    DocumentTotals,
+    ItemAmounts,
+    PaymentForm,
+    PaymentPlan,
+    TotalsRuleError,
+    compute_document_amounts,
+    resolve_payment_plan,
+)
 from kilasifen.domain.emitters.fiscal_profile import (
     EmitterFiscalProfile,
     FiscalAddress,
@@ -49,7 +60,6 @@ _ZERO = Decimal("0")
 _AMOUNT_Q = Decimal("0.00000001")
 _AMOUNT4_Q = Decimal("0.0001")
 _PERCENT_Q = Decimal("0.00000001")
-_ITEM_TOTAL_Q = Decimal("0.00000001")
 #: Literal that MT v150 validation 1263 (D105) requires in the test
 #: environment and forbids in production.
 MT_TEST_EMITTER_NAME = (
@@ -193,15 +203,11 @@ _CARD_PROCESSING_CODE_BY_NAME = {
     "electronico": 2,
     "otro": 9,
 }
-_AFFECTATION_CODE_BY_NAME = {
-    "gravado": 1,
-    "exonerado": 2,
-    "exento": 3,
-    "gravado_parcial": 4,
-}
+#: E732 dDesAfecIVA: Tabla 6 as corrected by NT 10 §5.1, the values of the
+#: XSD ``tdDesAfecIVA`` in DE_Types_v150.
 _AFFECTATION_DESCRIPTION_BY_CODE = {
     1: "Gravado IVA",
-    2: "Exonerado (Art. 83- Ley 125/91)",
+    2: "Exonerado (Art. 100 - Ley 6380/2019)",
     3: "Exento",
     4: "Gravado parcial (Grav- Exento)",
 }
@@ -264,44 +270,6 @@ class _Issuer:
     name: str
     profile: EmitterFiscalProfile
     address: FiscalAddress
-
-
-@dataclass(slots=True)
-class _ItemComputation:
-    amount_exe: Decimal
-    amount_exo: Decimal
-    amount_5: Decimal
-    amount_10: Decimal
-    discount_particular: Decimal
-    discount_global: Decimal
-    anticipo_particular: Decimal
-    anticipo_global: Decimal
-    base_5: Decimal
-    base_10: Decimal
-    iva_5: Decimal
-    iva_10: Decimal
-    total_gs: Decimal | None
-
-
-@dataclass(slots=True)
-class _Totals:
-    sub_exe: Decimal
-    sub_exo: Decimal
-    sub_5: Decimal
-    sub_10: Decimal
-    total: Decimal
-    total_discount_particular: Decimal
-    total_discount_global: Decimal
-    total_anticipo_particular: Decimal
-    total_anticipo_global: Decimal
-    base_5: Decimal
-    base_10: Decimal
-    iva_5: Decimal
-    iva_10: Decimal
-    redondeo: Decimal
-    total_neto: Decimal
-    total_iva: Decimal
-    total_gs: Decimal | None
 
 
 def build_typed_document_xml(
@@ -416,29 +384,14 @@ def _build_factura_xml(
         max_value=9,
         field_name="indicador_presencia",
     )
-    moneda, moneda_descripcion, condicion_tipo_cambio, tipo_cambio = (
-        _resolve_currency_data(typed_payload)
-    )
-    item_computations = _append_items(
-        dtip=None,  # created later once DE structure exists
-        items=items,
-        moneda=moneda,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-    )
-    totals = _calculate_totals(item_computations, moneda=moneda)
-    totals.total_gs = _resolve_total_gs(
-        totals=totals,
-        item_computations=item_computations,
-        moneda=moneda,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-        tipo_cambio=tipo_cambio,
-    )
-    _assert_totals_consistency(totals)
+    amounts = _compute_amounts(typed_payload)
+    totals = amounts.totals
+    payment_plan = _resolve_payment_plan(typed_payload, amounts)
     receiver = _resolve_receiver(cliente, document_type=1)
     _assert_innominado_limit(
         receiver,
         transaction_type=tipo_transaccion,
-        currency=moneda,
+        currency=amounts.currency,
         totals=totals,
     )
 
@@ -468,10 +421,7 @@ def _build_factura_xml(
         tipo_transaccion=tipo_transaccion,
         include_tipo_transaccion=True,
         tipo_impuesto=tipo_impuesto,
-        moneda=moneda,
-        moneda_descripcion=moneda_descripcion,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-        tipo_cambio=tipo_cambio,
+        amounts=amounts,
     )
 
     de = _find_de(root)
@@ -482,20 +432,8 @@ def _build_factura_xml(
     if receiver.operation_type == 3:
         _append_public_procurement_group(gcam_fe=gcam_fe, cliente=cliente)
 
-    _append_condition_node(
-        dtip=dtip,
-        typed_payload=typed_payload,
-        total=totals.total_neto,
-        moneda=moneda,
-        moneda_descripcion=moneda_descripcion,
-        tipo_cambio=tipo_cambio,
-    )
-    _append_items(
-        dtip=dtip,
-        items=items,
-        moneda=moneda,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-    )
+    _append_condition_node(dtip=dtip, plan=payment_plan, amounts=amounts)
+    _append_items(dtip=dtip, items=items, amounts=amounts.items)
     _append_totals(de, totals)
     _append_associated_documents_if_any(de=de, typed_payload=typed_payload)
     _append_outside_signature_group(
@@ -505,8 +443,8 @@ def _build_factura_xml(
             doc_id=doc_id,
             fecha_emision=fecha_emision,
             receptor=_resolve_qr_receptor(cliente),
-            total_neto=totals.total_neto,
-            total_iva=totals.total_iva,
+            total_neto=totals.net_total,
+            total_iva=totals.total_tax or _ZERO,
             items_count=len(items),
         ),
     )
@@ -561,25 +499,8 @@ def _build_adjustment_note_xml(
         max_value=5,
         field_name="tipo_impuesto",
     )
-    moneda, moneda_descripcion, condicion_tipo_cambio, tipo_cambio = (
-        _resolve_currency_data(typed_payload)
-    )
-
-    item_computations = _append_items(
-        dtip=None,
-        items=items,
-        moneda=moneda,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-    )
-    totals = _calculate_totals(item_computations, moneda=moneda)
-    totals.total_gs = _resolve_total_gs(
-        totals=totals,
-        item_computations=item_computations,
-        moneda=moneda,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-        tipo_cambio=tipo_cambio,
-    )
-    _assert_totals_consistency(totals)
+    amounts = _compute_amounts(typed_payload)
+    totals = amounts.totals
     receiver = _resolve_receiver(cliente, document_type=document_type_code)
 
     doc_id = _build_doc_id(
@@ -608,10 +529,7 @@ def _build_adjustment_note_xml(
         tipo_transaccion=tipo_transaccion,
         include_tipo_transaccion=False,
         tipo_impuesto=tipo_impuesto,
-        moneda=moneda,
-        moneda_descripcion=moneda_descripcion,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-        tipo_cambio=tipo_cambio,
+        amounts=amounts,
     )
 
     de = _find_de(root)
@@ -628,12 +546,7 @@ def _build_adjustment_note_xml(
     _sub(gcam_ncde, "iMotEmi", str(motivo))
     _sub(gcam_ncde, "dDesMotEmi", _nota_credito_motive_description(motivo))
 
-    _append_items(
-        dtip=dtip,
-        items=items,
-        moneda=moneda,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-    )
+    _append_items(dtip=dtip, items=items, amounts=amounts.items)
     _append_totals(de, totals)
     _append_associated_document(de=de, asociado=asociado, required=True)
     _append_outside_signature_group(
@@ -643,8 +556,8 @@ def _build_adjustment_note_xml(
             doc_id=doc_id,
             fecha_emision=fecha_emision,
             receptor=_resolve_qr_receptor(cliente),
-            total_neto=totals.total_neto,
-            total_iva=totals.total_iva,
+            total_neto=totals.net_total,
+            total_iva=totals.total_tax or _ZERO,
             items_count=len(items),
         ),
     )
@@ -671,11 +584,11 @@ def _build_base_document_root(
     tipo_transaccion: int,
     include_tipo_transaccion: bool,
     tipo_impuesto: int,
-    moneda: str,
-    moneda_descripcion: str,
-    condicion_tipo_cambio: int | None,
-    tipo_cambio: Decimal | None,
+    amounts: DocumentAmounts,
 ) -> ET.Element:
+    moneda = amounts.currency
+    condicion_tipo_cambio = amounts.exchange_condition
+    tipo_cambio = amounts.exchange_rate
     root = ET.Element(_tag("rDE"))
     _sub(root, "dVerFor", "150")
     de = _sub(root, "DE")
@@ -708,7 +621,9 @@ def _build_base_document_root(
     _sub(ope, "iTImp", str(tipo_impuesto))
     _sub(ope, "dDesTImp", _tax_description(tipo_impuesto))
     _sub(ope, "cMoneOpe", moneda)
-    _sub(ope, "dDesMoneOpe", moneda_descripcion)
+    _sub(ope, "dDesMoneOpe", _currency_description(moneda))
+    if condicion_tipo_cambio is not None and condicion_tipo_cambio not in (1, 2):
+        raise SifenValidationError("documents.currency.condicion_tipo_cambio_invalid")
     if moneda != "PYG":
         if condicion_tipo_cambio is None:
             raise SifenValidationError(
@@ -724,7 +639,7 @@ def _build_base_document_root(
             "documents.currency.condicion_tipo_cambio_not_allowed"
         )
 
-    _append_anticipation_condition(ope=ope, typed_payload=typed_payload)
+    _append_anticipation_condition(ope=ope, items=amounts.items)
 
     _append_issuer(gdat=gdat, issuer=issuer, typed_payload=typed_payload)
     _append_receiver(gdat=gdat, receiver=receiver)
@@ -867,7 +782,7 @@ def _assert_innominado_limit(
     *,
     transaction_type: int,
     currency: str,
-    totals: _Totals,
+    totals: DocumentTotals,
 ) -> None:
     """1321 (NT 24): innominado below 7.000.000 Gs (F014, or F023 if not PYG)."""
 
@@ -875,8 +790,8 @@ def _assert_innominado_limit(
         receiver,
         transaction_type=transaction_type,
         currency=currency,
-        total_operation=totals.total_neto,
-        total_guaranies=totals.total_gs,
+        total_operation=totals.net_total,
+        total_guaranies=totals.total_guaranies,
     )
     if error is not None:
         raise SifenValidationError(error)
@@ -946,29 +861,11 @@ def _append_public_procurement_group(*, gcam_fe: ET.Element, cliente: dict) -> N
     _sub(gcomp, "dFeCodCont", fecha_codigo)
 
 
-def _append_anticipation_condition(*, ope: ET.Element, typed_payload: dict) -> None:
-    items = typed_payload.get("items")
-    if not isinstance(items, list) or not items:
-        return
-    has_global = False
-    has_item = False
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        anticipo_global = _coerce_decimal(
-            _first_non_none(item, "anticipo_global", "dAntGloPreUniIt"),
-            field_name="items.anticipo_global",
-            default=_ZERO,
-        )
-        anticipo_particular = _coerce_decimal(
-            _first_non_none(item, "anticipo_particular", "dAntPreUniIt"),
-            field_name="items.anticipo_particular",
-            default=_ZERO,
-        )
-        if anticipo_global > _ZERO:
-            has_global = True
-        if anticipo_particular > _ZERO:
-            has_item = True
+def _append_anticipation_condition(
+    *, ope: ET.Element, items: tuple[ItemAmounts, ...]
+) -> None:
+    has_global = any(item.global_advance > _ZERO for item in items)
+    has_item = any(item.advance > _ZERO for item in items)
     if has_global:
         _sub(ope, "iCondAnt", "1")
         _sub(ope, "dDesCondAnt", "Anticipo Global")
@@ -978,118 +875,59 @@ def _append_anticipation_condition(*, ope: ET.Element, typed_payload: dict) -> N
 
 
 def _append_condition_node(
-    *,
-    dtip: ET.Element,
-    typed_payload: dict,
-    total: Decimal,
-    moneda: str,
-    moneda_descripcion: str,
-    tipo_cambio: Decimal | None,
+    *, dtip: ET.Element, plan: PaymentPlan, amounts: DocumentAmounts
 ) -> None:
-    condicion_payload = _resolve_condition_payload(typed_payload)
-    condicion = _resolve_code(
-        _first_non_none(condicion_payload, "tipo", "iCondOpe", "condicion_operacion"),
-        mapping={"contado": 1, "credito": 2},
-        default=1,
-        min_value=1,
-        max_value=2,
-        field_name="condicion_operacion.tipo",
-    )
+    """gCamCond (E600): gPaConEIni before gPagCred, as in XSD tgCamCond.
+
+    gPaConEIni goes with contado (1550) and with a credit initial delivery
+    E645 (1551, MT v150 p. 81); never in credit without E645 (1552).
+    """
+
     gcond = _sub(dtip, "gCamCond")
-    _sub(gcond, "iCondOpe", str(condicion))
-    _sub(gcond, "dDCondOpe", "Contado" if condicion == 1 else "Crédito")
-    if condicion == 1:
-        _append_counted_payments(
-            gcond=gcond,
-            condicion_payload=condicion_payload,
-            total=total,
-            moneda=moneda,
-            moneda_descripcion=moneda_descripcion,
-            tipo_cambio=tipo_cambio,
-        )
-    else:
+    _sub(gcond, "iCondOpe", str(plan.condition))
+    _sub(gcond, "dDCondOpe", "Contado" if plan.condition == CASH else "Crédito")
+    for form in plan.forms:
+        _append_payment_form(gcond=gcond, payment=form)
+    if plan.credit is not None:
         _append_credit_payment(
             gcond=gcond,
-            condicion_payload=condicion_payload,
-            moneda=moneda,
-            moneda_descripcion=moneda_descripcion,
+            credit=plan.credit,
+            initial_delivery=plan.initial_delivery,
+            moneda=amounts.currency,
         )
 
 
-def _append_counted_payments(
-    *,
-    gcond: ET.Element,
-    condicion_payload: dict,
-    total: Decimal,
-    moneda: str,
-    moneda_descripcion: str,
-    tipo_cambio: Decimal | None,
-) -> None:
-    forms = condicion_payload.get("formas_pago")
-    if not isinstance(forms, list) or not forms:
-        forms = [
-            {
-                "tipo": 1,
-                "monto": _as_sifen_amount4(total),
-                "moneda": moneda,
-            }
-        ]
+def _append_payment_form(*, gcond: ET.Element, payment: PaymentForm) -> None:
+    form = payment.form
+    payment_type = _resolve_code(
+        _first_non_none(form, "tipo", "iTiPago"),
+        mapping=_PAYMENT_TYPE_CODE_BY_NAME,
+        default=1,
+        min_value=1,
+        max_value=99,
+        field_name="condicion_operacion.formas_pago.tipo",
+    )
+    pago = _sub(gcond, "gPaConEIni")
+    _sub(pago, "iTiPago", str(payment_type))
+    _sub(pago, "dDesTiPag", _payment_description(payment_type))
+    _sub(pago, "dMonTiPag", _as_sifen_amount4(payment.amount))
+    _sub(pago, "cMoneTiPag", payment.currency)
+    _sub(pago, "dDMoneTiPag", _currency_description(payment.currency))
+    if payment.exchange_rate is not None:
+        # 1556/1557: only, and always, when the payment is not in guaranies.
+        _sub(pago, "dTiCamTiPag", _as_sifen_amount4(payment.exchange_rate))
 
-    for form in forms:
-        if not isinstance(form, dict):
-            raise SifenValidationError(
-                "documents.condicion_operacion.forma_pago_invalid"
-            )
-        payment_type = _resolve_code(
-            _first_non_none(form, "tipo", "iTiPago"),
-            mapping=_PAYMENT_TYPE_CODE_BY_NAME,
-            default=1,
-            min_value=1,
-            max_value=99,
-            field_name="condicion_operacion.formas_pago.tipo",
-        )
-        amount = _coerce_decimal(
-            _first_non_none(form, "monto", "dMonTiPag"),
-            field_name="condicion_operacion.formas_pago.monto",
-            default=total,
-            min_value=_ZERO,
-        )
-        payment_currency = (
-            _clean_text(_first_non_none(form, "moneda", "cMoneTiPag")) or moneda
-        ).upper()
-        # 1555: always the official name of the code, never a caller text.
-        payment_currency_desc = _currency_description(payment_currency)
+    if payment_type in {3, 4}:
+        _append_card_payment(pago=pago, form=form)
 
-        pago = _sub(gcond, "gPaConEIni")
-        _sub(pago, "iTiPago", str(payment_type))
-        _sub(pago, "dDesTiPag", _payment_description(payment_type))
-        _sub(pago, "dMonTiPag", _as_sifen_amount4(amount))
-        _sub(pago, "cMoneTiPag", payment_currency)
-        _sub(pago, "dDMoneTiPag", payment_currency_desc)
-        payment_exchange = _coerce_decimal(
-            _first_non_none(form, "tipo_cambio", "dTiCamTiPag"),
-            field_name="condicion_operacion.formas_pago.tipo_cambio",
-            default=tipo_cambio,
-            min_value=Decimal("0.0001"),
-        )
-        if payment_currency != moneda and payment_exchange is not None:
-            _sub(pago, "dTiCamTiPag", _as_sifen_amount4(payment_exchange))
-
-        if payment_type == 2:
-            cheque_number = _clean_text(
-                _first_non_none(form, "numero_cheque", "dNumCheq")
-            )
-            bank = _clean_text(_first_non_none(form, "banco", "dBcoEmi"))
-            if not cheque_number or not bank:
-                raise SifenValidationError(
-                    "documents.condicion_operacion.cheque_invalid"
-                )
-            gcheq = _sub(pago, "gPagCheq")
-            _sub(gcheq, "dNumCheq", f"{int(cheque_number):08d}")
-            _sub(gcheq, "dBcoEmi", bank)
-
-        if payment_type in {3, 4}:
-            _append_card_payment(pago=pago, form=form)
+    if payment_type == 2:
+        cheque_number = _clean_text(_first_non_none(form, "numero_cheque", "dNumCheq"))
+        bank = _clean_text(_first_non_none(form, "banco", "dBcoEmi"))
+        if not cheque_number or not bank:
+            raise SifenValidationError("documents.condicion_operacion.cheque_invalid")
+        gcheq = _sub(pago, "gPagCheq")
+        _sub(gcheq, "dNumCheq", f"{int(cheque_number):08d}")
+        _sub(gcheq, "dBcoEmi", bank)
 
 
 def _append_card_payment(*, pago: ET.Element, form: dict) -> None:
@@ -1139,15 +977,12 @@ def _append_card_payment(*, pago: ET.Element, form: dict) -> None:
 def _append_credit_payment(
     *,
     gcond: ET.Element,
-    condicion_payload: dict,
+    credit: dict,
+    initial_delivery: Decimal | None,
     moneda: str,
-    moneda_descripcion: str,
 ) -> None:
-    credit = (
-        condicion_payload.get("credito")
-        if isinstance(condicion_payload.get("credito"), dict)
-        else condicion_payload
-    )
+    """gPagCred (E640-E659) in the order of XSD tgPagCred."""
+
     cond_cred = _resolve_code(
         _first_non_none(credit, "tipo", "iCondCred"),
         mapping={"plazo": 1, "cuotas": 2},
@@ -1160,6 +995,7 @@ def _append_credit_payment(
     _sub(gcred, "iCondCred", str(cond_cred))
     _sub(gcred, "dDCondCred", "Plazo" if cond_cred == 1 else "Cuota")
 
+    cuotas: list = []
     if cond_cred == 1:
         plazo = _clean_text(
             _first_non_none(credit, "descripcion", "plazo_descripcion", "dPlazoCre")
@@ -1169,22 +1005,17 @@ def _append_credit_payment(
                 "documents.condicion_operacion.credito.plazo_required"
             )
         _sub(gcred, "dPlazoCre", plazo)
-        return
-
-    cuotas = credit.get("cuotas")
-    if not isinstance(cuotas, list) or not cuotas:
-        raise SifenValidationError(
-            "documents.condicion_operacion.credito.cuotas_required"
-        )
-    _sub(gcred, "dCuotas", str(len(cuotas)))
-    entrega = _coerce_decimal(
-        _first_non_none(credit, "monto_entrega_inicial", "dMonEnt"),
-        field_name="condicion_operacion.credito.monto_entrega_inicial",
-        default=None,
-        min_value=_ZERO,
-    )
-    if entrega is not None:
-        _sub(gcred, "dMonEnt", _as_sifen_amount4(entrega))
+    else:
+        cuotas = credit.get("cuotas")
+        if not isinstance(cuotas, list) or not cuotas:
+            raise SifenValidationError(
+                "documents.condicion_operacion.credito.cuotas_required"
+            )
+        _sub(gcred, "dCuotas", str(len(cuotas)))
+    if initial_delivery is not None:
+        # E645 is allowed with plazo and with cuotas; its payment forms are
+        # the gPaConEIni written before gPagCred (1551).
+        _sub(gcred, "dMonEnt", _as_sifen_amount4(initial_delivery))
     for cuota in cuotas:
         if not isinstance(cuota, dict):
             raise SifenValidationError(
@@ -1212,376 +1043,146 @@ def _append_credit_payment(
             )
 
 
+def _compute_amounts(typed_payload: dict) -> DocumentAmounts:
+    """Item and total amounts (see kilasifen.domain.documents.totals)."""
+
+    try:
+        return compute_document_amounts(typed_payload)
+    except TotalsRuleError as exc:
+        raise SifenValidationError(exc.code) from exc
+
+
+def _resolve_payment_plan(typed_payload: dict, amounts: DocumentAmounts) -> PaymentPlan:
+    try:
+        return resolve_payment_plan(typed_payload, amounts)
+    except TotalsRuleError as exc:
+        raise SifenValidationError(exc.code) from exc
+
+
 def _append_items(
     *,
-    dtip: ET.Element | None,
+    dtip: ET.Element,
     items: list[dict],
-    moneda: str,
-    condicion_tipo_cambio: int | None,
-) -> list[_ItemComputation]:
-    computations: list[_ItemComputation] = []
-    for index, item in enumerate(items, start=1):
-        qty = _coerce_decimal(
-            _first_non_none(item, "cantidad", "dCantProSer"),
-            field_name=f"items[{index}].cantidad",
-            default=None,
-            required=True,
-            min_value=Decimal("0.00000001"),
+    amounts: tuple[ItemAmounts, ...],
+) -> None:
+    for index, (item, values) in enumerate(zip(items, amounts), start=1):
+        current = _sub(dtip, "gCamItem")
+        _sub(
+            current,
+            "dCodInt",
+            _clean_text(_first_non_none(item, "codigo_interno", "codigo"))
+            or f"ITEM{index:03d}",
         )
-        unit_price = _coerce_decimal(
-            _first_non_none(item, "precio_unitario", "precioUnitario", "dPUniProSer"),
-            field_name=f"items[{index}].precio_unitario",
-            default=None,
-            required=True,
-            min_value=_ZERO,
+        _sub(
+            current,
+            "dDesProSer",
+            _clean_text(_first_non_none(item, "descripcion", "dDesProSer"))
+            or f"Ítem {index}",
         )
-        discount_particular = _coerce_decimal(
-            _first_non_none(item, "descuento_particular", "dDescItem"),
-            field_name=f"items[{index}].descuento_particular",
-            default=_ZERO,
-            min_value=_ZERO,
-        )
-        discount_global = _coerce_decimal(
-            _first_non_none(item, "descuento_global", "dDescGloItem"),
-            field_name=f"items[{index}].descuento_global",
-            default=_ZERO,
-            min_value=_ZERO,
-        )
-        anticipo_particular = _coerce_decimal(
-            _first_non_none(item, "anticipo_particular", "dAntPreUniIt"),
-            field_name=f"items[{index}].anticipo_particular",
-            default=_ZERO,
-            min_value=_ZERO,
-        )
-        anticipo_global = _coerce_decimal(
-            _first_non_none(item, "anticipo_global", "dAntGloPreUniIt"),
-            field_name=f"items[{index}].anticipo_global",
-            default=_ZERO,
-            min_value=_ZERO,
-        )
-        net_unit = (
-            unit_price
-            - discount_particular
-            - discount_global
-            - anticipo_particular
-            - anticipo_global
-        )
-        if net_unit < _ZERO:
-            raise SifenValidationError("documents.items.net_unit_negative")
-
-        total_item = (net_unit * qty).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-        total_bruto = (unit_price * qty).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-        if total_item < _ZERO:
-            raise SifenValidationError("documents.items.total_negative")
-
-        affectation = _resolve_item_affectation(item)
-        proportion = _resolve_item_proportion(item, affectation=affectation)
-        rate = _resolve_item_rate(item, affectation=affectation)
-        if affectation in {1, 4}:
-            taxable = (
-                total_item
-                * (proportion / Decimal("100"))
-                / (Decimal("1") + (Decimal(rate) / Decimal("100")))
-            ).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-            iva = (taxable * (Decimal(rate) / Decimal("100"))).quantize(
-                _ITEM_TOTAL_Q,
-                rounding=ROUND_HALF_UP,
-            )
-            base_exe = _ZERO
-        else:
-            taxable = _ZERO
-            iva = _ZERO
-            base_exe = total_item
-        taxable = _quantize_tax_value(taxable, moneda=moneda)
-        iva = _quantize_tax_value(iva, moneda=moneda)
-        base_exe = _quantize_tax_value(base_exe, moneda=moneda)
-        rate_item = None
-        total_item_gs = None
-        if moneda != "PYG" and condicion_tipo_cambio == 2:
-            rate_item = _coerce_decimal(
-                _first_non_none(item, "tipo_cambio_item", "dTiCamIt"),
-                field_name=f"items[{index}].tipo_cambio_item",
-                default=None,
-                required=True,
-                min_value=Decimal("0.0001"),
-            )
-            total_item_gs = _quantize_guarani_value(total_item * rate_item)
-
-        if dtip is not None:
-            current = _sub(dtip, "gCamItem")
-            _sub(
-                current,
-                "dCodInt",
-                _clean_text(_first_non_none(item, "codigo_interno", "codigo"))
-                or f"ITEM{index:03d}",
-            )
-            _sub(
-                current,
-                "dDesProSer",
-                _clean_text(_first_non_none(item, "descripcion", "dDesProSer"))
-                or f"Ítem {index}",
-            )
-            _sub(
-                current,
-                "cUniMed",
-                str(
-                    int(
-                        _clean_text(
-                            _first_non_none(
-                                item, "unidad_medida", "codigoUnidad", "cUniMed"
-                            )
+        _sub(
+            current,
+            "cUniMed",
+            str(
+                int(
+                    _clean_text(
+                        _first_non_none(
+                            item, "unidad_medida", "codigoUnidad", "cUniMed"
                         )
-                        or "77"
                     )
-                ),
-            )
-            _sub(
-                current,
-                "dDesUniMed",
-                _clean_text(
-                    _first_non_none(item, "descripcion_unidad", "unidad", "dDesUniMed")
+                    or "77"
                 )
-                or "UNI",
-            )
-            _sub(current, "dCantProSer", _as_sifen_quantity(qty))
-            cdc_anticipo = _clean_text(
-                _first_non_none(item, "cdc_anticipo", "dCDCAnticipo")
-            )
-            if cdc_anticipo:
-                _sub(current, "dCDCAnticipo", cdc_anticipo)
-
-            values = _sub(current, "gValorItem")
-            _sub(values, "dPUniProSer", _as_sifen_amount(unit_price))
-            if rate_item is not None:
-                _sub(values, "dTiCamIt", _as_sifen_amount4(rate_item))
-            _sub(values, "dTotBruOpeItem", _as_sifen_amount(total_bruto))
-
-            rests = _sub(values, "gValorRestaItem")
-            _sub(rests, "dDescItem", _as_sifen_amount(discount_particular))
-            discount_percentage = _coerce_decimal(
-                _first_non_none(item, "porcentaje_descuento_particular", "dPorcDesIt"),
-                field_name=f"items[{index}].porcentaje_descuento_particular",
-                default=None,
-                min_value=_ZERO,
-            )
-            if (
-                discount_percentage is None
-                and unit_price > _ZERO
-                and discount_particular > _ZERO
-            ):
-                discount_percentage = (
-                    (discount_particular / unit_price) * Decimal("100")
-                ).quantize(_PERCENT_Q, rounding=ROUND_HALF_UP)
-            if discount_percentage is not None:
-                _sub(rests, "dPorcDesIt", _as_sifen_percent(discount_percentage))
-            _sub(rests, "dDescGloItem", _as_sifen_amount(discount_global))
-            _sub(rests, "dAntPreUniIt", _as_sifen_amount(anticipo_particular))
-            _sub(rests, "dAntGloPreUniIt", _as_sifen_amount(anticipo_global))
-            _sub(rests, "dTotOpeItem", _as_sifen_amount(total_item))
-            if total_item_gs is not None:
-                _sub(rests, "dTotOpeGs", _as_sifen_amount(total_item_gs))
-
-            iva_node = _sub(current, "gCamIVA")
-            _sub(iva_node, "iAfecIVA", str(affectation))
-            _sub(iva_node, "dDesAfecIVA", _affectation_description(affectation))
-            _sub(iva_node, "dPropIVA", _as_sifen_percent(proportion))
-            _sub(iva_node, "dTasaIVA", str(rate))
-            _sub(iva_node, "dBasGravIVA", _as_sifen_amount(taxable))
-            _sub(iva_node, "dLiqIVAItem", _as_sifen_amount(iva))
-            _sub(iva_node, "dBasExe", _as_sifen_amount(base_exe))
-
-        computations.append(
-            _ItemComputation(
-                amount_exe=total_item if affectation == 3 else _ZERO,
-                amount_exo=total_item if affectation == 2 else _ZERO,
-                amount_5=total_item if rate == 5 else _ZERO,
-                amount_10=total_item if rate == 10 else _ZERO,
-                discount_particular=(discount_particular * qty).quantize(
-                    _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-                ),
-                discount_global=(discount_global * qty).quantize(
-                    _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-                ),
-                anticipo_particular=(anticipo_particular * qty).quantize(
-                    _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-                ),
-                anticipo_global=(anticipo_global * qty).quantize(
-                    _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-                ),
-                base_5=taxable if rate == 5 else _ZERO,
-                base_10=taxable if rate == 10 else _ZERO,
-                iva_5=iva if rate == 5 else _ZERO,
-                iva_10=iva if rate == 10 else _ZERO,
-                total_gs=total_item_gs,
-            )
+            ),
         )
-    return computations
+        _sub(
+            current,
+            "dDesUniMed",
+            _clean_text(
+                _first_non_none(item, "descripcion_unidad", "unidad", "dDesUniMed")
+            )
+            or "UNI",
+        )
+        _sub(current, "dCantProSer", _as_sifen_quantity(values.quantity))
+        cdc_anticipo = _clean_text(
+            _first_non_none(item, "cdc_anticipo", "dCDCAnticipo")
+        )
+        if cdc_anticipo:
+            _sub(current, "dCDCAnticipo", cdc_anticipo)
+        _append_item_values(current, values)
+        _append_item_tax(current, values)
 
 
-def _calculate_totals(
-    item_computations: list[_ItemComputation], *, moneda: str
-) -> _Totals:
-    sub_exe = sum((x.amount_exe for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    sub_exo = sum((x.amount_exo for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    sub_5 = sum((x.amount_5 for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    sub_10 = sum((x.amount_10 for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    total = (sub_exe + sub_exo + sub_5 + sub_10).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    total_discount_particular = sum(
-        (x.discount_particular for x in item_computations), _ZERO
-    ).quantize(
-        _ITEM_TOTAL_Q,
-        rounding=ROUND_HALF_UP,
-    )
-    total_discount_global = sum(
-        (x.discount_global for x in item_computations), _ZERO
-    ).quantize(
-        _ITEM_TOTAL_Q,
-        rounding=ROUND_HALF_UP,
-    )
-    total_anticipo_particular = sum(
-        (x.anticipo_particular for x in item_computations), _ZERO
-    ).quantize(
-        _ITEM_TOTAL_Q,
-        rounding=ROUND_HALF_UP,
-    )
-    total_anticipo_global = sum(
-        (x.anticipo_global for x in item_computations), _ZERO
-    ).quantize(
-        _ITEM_TOTAL_Q,
-        rounding=ROUND_HALF_UP,
-    )
-    base_5 = sum((x.base_5 for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    base_10 = sum((x.base_10 for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    iva_5 = sum((x.iva_5 for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    iva_10 = sum((x.iva_10 for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    base_5 = _quantize_tax_value(base_5, moneda=moneda)
-    base_10 = _quantize_tax_value(base_10, moneda=moneda)
-    iva_5 = _quantize_tax_value(iva_5, moneda=moneda)
-    iva_10 = _quantize_tax_value(iva_10, moneda=moneda)
-    redondeo = _calculate_rounding(total=total, moneda=moneda)
-    total_neto = (total - redondeo).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    total_iva = (iva_5 + iva_10).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    total_iva = _quantize_tax_value(total_iva, moneda=moneda)
-    return _Totals(
-        sub_exe=sub_exe,
-        sub_exo=sub_exo,
-        sub_5=sub_5,
-        sub_10=sub_10,
-        total=total,
-        total_discount_particular=total_discount_particular,
-        total_discount_global=total_discount_global,
-        total_anticipo_particular=total_anticipo_particular,
-        total_anticipo_global=total_anticipo_global,
-        base_5=base_5,
-        base_10=base_10,
-        iva_5=iva_5,
-        iva_10=iva_10,
-        redondeo=redondeo,
-        total_neto=total_neto,
-        total_iva=total_iva,
-        total_gs=None,
-    )
+def _append_item_values(current: ET.Element, values: ItemAmounts) -> None:
+    """gValorItem (E720-EA009)."""
+
+    group = _sub(current, "gValorItem")
+    _sub(group, "dPUniProSer", _as_sifen_amount(values.unit_price))
+    if values.exchange_rate is not None:
+        _sub(group, "dTiCamIt", _as_sifen_amount4(values.exchange_rate))
+    _sub(group, "dTotBruOpeItem", _as_sifen_amount(values.gross_total))
+
+    rests = _sub(group, "gValorRestaItem")
+    _sub(rests, "dDescItem", _as_sifen_amount(values.discount))
+    if values.discount_percentage is not None:
+        _sub(rests, "dPorcDesIt", _as_sifen_percent(values.discount_percentage))
+    # EA004 = F010 * E721 / 100 (NT 01 A-1; 1860/1862).
+    _sub(rests, "dDescGloItem", _as_sifen_amount(values.global_discount))
+    _sub(rests, "dAntPreUniIt", _as_sifen_amount(values.advance))
+    _sub(rests, "dAntGloPreUniIt", _as_sifen_amount(values.global_advance))
+    _sub(rests, "dTotOpeItem", _as_sifen_amount(values.total))
+    if values.total_guaranies is not None:
+        _sub(rests, "dTotOpeGs", _as_sifen_amount(values.total_guaranies))
 
 
-def _append_totals(de: ET.Element, totals: _Totals) -> None:
+def _append_item_tax(current: ET.Element, values: ItemAmounts) -> None:
+    """gCamIVA (E730-E737): MT v150 E733/1904-1906 and NT 13 E735/E737."""
+
+    group = _sub(current, "gCamIVA")
+    _sub(group, "iAfecIVA", str(values.affectation))
+    _sub(group, "dDesAfecIVA", _affectation_description(values.affectation))
+    _sub(group, "dPropIVA", _as_sifen_percent(values.proportion))
+    _sub(group, "dTasaIVA", str(values.rate))
+    _sub(group, "dBasGravIVA", _as_sifen_amount(values.taxable_base))
+    _sub(group, "dLiqIVAItem", _as_sifen_amount(values.tax))
+    _sub(group, "dBasExe", _as_sifen_amount(values.exempt_base))
+
+
+def _append_totals(de: ET.Element, totals: DocumentTotals) -> None:
+    """gTotSub (F001-F023) in the order of XSD tgTotSub.
+
+    Optional subtotals are written whenever an item has that affectation or
+    rate, even with 0 (2352-2376); F025/F026 (commission) and F036/F037 are
+    not used, so F017 = F015 + F016 (2371).
+    """
+
     gtot = _sub(de, "gTotSub")
-    _sub_optional_amount(gtot, "dSubExe", totals.sub_exe)
-    _sub_optional_amount(gtot, "dSubExo", totals.sub_exo)
-    _sub_optional_amount(gtot, "dSub5", totals.sub_5)
-    _sub_optional_amount(gtot, "dSub10", totals.sub_10)
+    _sub_informed(gtot, "dSubExe", totals.exempt_subtotal)
+    _sub_informed(gtot, "dSubExo", totals.exonerated_subtotal)
+    _sub_informed(gtot, "dSub5", totals.subtotal_5)
+    _sub_informed(gtot, "dSub10", totals.subtotal_10)
     _sub(gtot, "dTotOpe", _as_sifen_amount(totals.total))
-    _sub(gtot, "dTotDesc", _as_sifen_amount(totals.total_discount_particular))
-    _sub(gtot, "dTotDescGlotem", _as_sifen_amount(totals.total_discount_global))
-    _sub(gtot, "dTotAntItem", _as_sifen_amount(totals.total_anticipo_particular))
-    _sub(gtot, "dTotAnt", _as_sifen_amount(totals.total_anticipo_global))
-    discount_total = (
-        totals.total_discount_particular + totals.total_discount_global
-    ).quantize(
-        _ITEM_TOTAL_Q,
-        rounding=ROUND_HALF_UP,
-    )
-    if totals.total > _ZERO:
-        pct = ((discount_total / totals.total) * Decimal("100")).quantize(
-            _PERCENT_Q, rounding=ROUND_HALF_UP
-        )
-    else:
-        pct = _ZERO
-    _sub(gtot, "dPorcDescTotal", _as_sifen_percent(pct))
-    _sub(gtot, "dDescTotal", _as_sifen_amount(discount_total))
+    _sub(gtot, "dTotDesc", _as_sifen_amount(totals.discount_total))
+    _sub(gtot, "dTotDescGlotem", _as_sifen_amount(totals.global_discount_total))
+    _sub(gtot, "dTotAntItem", _as_sifen_amount(totals.advance_total))
+    _sub(gtot, "dTotAnt", _as_sifen_amount(totals.global_advance_total))
     _sub(
-        gtot,
-        "dAnticipo",
-        _as_sifen_amount(
-            (totals.total_anticipo_particular + totals.total_anticipo_global)
-        ),
+        gtot, "dPorcDescTotal", _as_sifen_percent(totals.global_discount_percentage)
     )
-    _sub(gtot, "dRedon", _as_sifen_amount4(totals.redondeo))
-    _sub_optional_amount(gtot, "dComi", _ZERO)
-    _sub(gtot, "dTotGralOpe", _as_sifen_amount(totals.total_neto))
-    _sub_optional_amount(gtot, "dIVA5", totals.iva_5)
-    _sub_optional_amount(gtot, "dIVA10", totals.iva_10)
-    _sub_optional_amount(gtot, "dIVAComi", _ZERO)
-    _sub_optional_amount(gtot, "dTotIVA", totals.total_iva)
-    _sub_optional_amount(gtot, "dBaseGrav5", totals.base_5)
-    _sub_optional_amount(gtot, "dBaseGrav10", totals.base_10)
-    _sub_optional_amount(gtot, "dTBasGraIVA", totals.base_5 + totals.base_10)
-    if totals.total_gs is not None:
-        _sub(gtot, "dTotalGs", _as_sifen_amount(totals.total_gs))
+    _sub(gtot, "dDescTotal", _as_sifen_amount(totals.discounts))
+    _sub(gtot, "dAnticipo", _as_sifen_amount(totals.advances))
+    _sub(gtot, "dRedon", _as_sifen_amount4(totals.rounding))
+    _sub(gtot, "dTotGralOpe", _as_sifen_amount(totals.net_total))
+    _sub_informed(gtot, "dIVA5", totals.tax_5)
+    _sub_informed(gtot, "dIVA10", totals.tax_10)
+    _sub_informed(gtot, "dTotIVA", totals.total_tax)
+    _sub_informed(gtot, "dBaseGrav5", totals.base_5)
+    _sub_informed(gtot, "dBaseGrav10", totals.base_10)
+    _sub_informed(gtot, "dTBasGraIVA", totals.total_base)
+    _sub_informed(gtot, "dTotalGs", totals.total_guaranies)
 
 
-def _resolve_total_gs(
-    *,
-    totals: _Totals,
-    item_computations: list[_ItemComputation],
-    moneda: str,
-    condicion_tipo_cambio: int | None,
-    tipo_cambio: Decimal | None,
-) -> Decimal | None:
-    if moneda == "PYG":
-        return None
-    if condicion_tipo_cambio == 1 and tipo_cambio is not None:
-        return _quantize_guarani_value(totals.total_neto * tipo_cambio)
-    if condicion_tipo_cambio == 2:
-        total_item_gs = sum(
-            (item.total_gs or _ZERO for item in item_computations),
-            _ZERO,
-        )
-        return _quantize_guarani_value(total_item_gs)
-    return None
-
-
-def _quantize_tax_value(value: Decimal, *, moneda: str) -> Decimal:
-    if moneda == "PYG":
-        return _quantize_guarani_value(value)
-    return value.quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-
-
-def _quantize_guarani_value(value: Decimal) -> Decimal:
-    return value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-
-
-def _sub_optional_amount(parent: ET.Element, name: str, value: Decimal) -> None:
-    if value == _ZERO:
-        return
-    _sub(parent, name, _as_sifen_amount(value))
+def _sub_informed(parent: ET.Element, name: str, value: Decimal | None) -> None:
+    if value is not None:
+        _sub(parent, name, _as_sifen_amount(value))
 
 
 def _append_associated_documents_if_any(*, de: ET.Element, typed_payload: dict) -> None:
@@ -1818,87 +1419,6 @@ def _resolve_code(
     return resolved
 
 
-def _resolve_currency_data(
-    typed_payload: dict,
-) -> tuple[str, str, int | None, Decimal | None]:
-    moneda = (_clean_text(typed_payload.get("moneda")) or "PYG").upper()
-    condicion_tipo_cambio = _coerce_int(
-        typed_payload.get("condicion_tipo_cambio"),
-        field_name="condicion_tipo_cambio",
-        default=None,
-        min_value=1,
-        max_value=2,
-    )
-    tipo_cambio = _coerce_decimal(
-        typed_payload.get("tipo_cambio"),
-        field_name="tipo_cambio",
-        default=None,
-        min_value=Decimal("0.0001"),
-    )
-    return moneda, _currency_description(moneda), condicion_tipo_cambio, tipo_cambio
-
-
-def _resolve_condition_payload(typed_payload: dict) -> dict:
-    condition = typed_payload.get("condicion_operacion")
-    if isinstance(condition, dict):
-        return condition
-    legacy = typed_payload.get("condicion")
-    if isinstance(legacy, dict):
-        return legacy
-    return {}
-
-
-def _resolve_item_affectation(item: dict) -> int:
-    if item.get("afectacion") is None and item.get("iAfecIVA") is None:
-        legacy_rate = _coerce_int(
-            _first_non_none(item, "iva", "tasa", "dTasaIVA"),
-            field_name="items.iva",
-            default=10,
-            min_value=0,
-            max_value=10,
-        )
-        if legacy_rate in {5, 10}:
-            return 1
-        return 3
-    return _resolve_code(
-        _first_non_none(item, "afectacion", "iAfecIVA"),
-        mapping=_AFFECTATION_CODE_BY_NAME,
-        default=1,
-        min_value=1,
-        max_value=4,
-        field_name="items.afectacion",
-    )
-
-
-def _resolve_item_proportion(item: dict, *, affectation: int) -> Decimal:
-    proportion = _coerce_decimal(
-        _first_non_none(item, "proporcion_gravada", "dPropIVA"),
-        field_name="items.proporcion_gravada",
-        default=Decimal("100"),
-        min_value=_ZERO,
-    )
-    if affectation != 4:
-        return Decimal("100")
-    if proportion <= _ZERO or proportion > Decimal("100"):
-        raise SifenValidationError("items.proporcion_gravada must be between 0 and 100")
-    return proportion
-
-
-def _resolve_item_rate(item: dict, *, affectation: int) -> int:
-    rate = _coerce_int(
-        _first_non_none(item, "tasa", "iva", "dTasaIVA"),
-        field_name="items.tasa",
-        default=10 if affectation in {1, 4} else 0,
-        min_value=0,
-        max_value=10,
-    )
-    if affectation in {2, 3}:
-        return 0
-    if rate not in {5, 10}:
-        raise SifenValidationError("items.tasa must be 5 or 10 for taxable IVA items")
-    return rate
-
-
 def _resolve_emission_datetime(payload: dict) -> str:
     raw = _first_non_none(payload, "fecha_emision", "fecha")
     if raw is None:
@@ -2013,38 +1533,6 @@ def _currency_description(code: str) -> str:
     if description is None or not 3 <= len(description) <= _CURRENCY_DESCRIPTION_MAX:
         raise SifenValidationError("documents.moneda.unsupported")
     return description
-
-
-def _calculate_rounding(*, total: Decimal, moneda: str) -> Decimal:
-    if total <= _ZERO:
-        return _ZERO
-    if moneda == "PYG":
-        divisor = Decimal("50")
-    else:
-        divisor = Decimal("0.50")
-    redondeo = (total % divisor).quantize(_AMOUNT4_Q, rounding=ROUND_HALF_UP)
-    return redondeo
-
-
-def _assert_totals_consistency(totals: _Totals) -> None:
-    expected_total = (
-        totals.sub_exe + totals.sub_exo + totals.sub_5 + totals.sub_10
-    ).quantize(
-        _ITEM_TOTAL_Q,
-        rounding=ROUND_HALF_UP,
-    )
-    expected_iva = (totals.iva_5 + totals.iva_10).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    expected_base = (totals.base_5 + totals.base_10).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    if totals.total != expected_total:
-        raise SifenValidationError("documents.totals.mismatch")
-    if totals.total_iva != expected_iva:
-        raise SifenValidationError("documents.totals.mismatch")
-    if expected_base < _ZERO:
-        raise SifenValidationError("documents.totals.mismatch")
 
 
 def _finalize_xml(root: ET.Element) -> str:

@@ -1041,6 +1041,8 @@ _FICTIONAL_CLIENT = {
     "tipo_contribuyente": 2,
 }
 
+_USD = {"moneda": "USD", "condicion_tipo_cambio": 1, "tipo_cambio": "7300"}
+
 
 def _gravado(**changes) -> dict:
     item = {"descripcion": "Producto", "cantidad": 1, "precio_unitario": 1000}
@@ -1070,3 +1072,26 @@ def test_typed_document_currency_must_be_an_official_iso_code(
 
     assert response.status_code == 422
     assert "ISO 4217" in response.text
+
+
+def test_typed_factura_accepts_rounding_and_a_global_discount(
+    client: TestClient, emitter_id: str
+) -> None:
+    response = client.post(
+        f"/v1/emitters/{emitter_id}/documents/facturas",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "factura": {
+                "cliente": dict(_FICTIONAL_CLIENT),
+                "items": [_gravado(precio_unitario=107437)],
+                "porcentaje_descuento_global": "10",
+                "redondeo": "multiplo_50",
+            }
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()["data"]["document"]["payload_snapshot"]
+    typed = payload["typed_contract"]["payload"]
+    assert typed["redondeo"] == "multiplo_50"
+    assert typed["porcentaje_descuento_global"] == "10"
