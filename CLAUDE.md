@@ -273,8 +273,12 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   pagos), de `domain/documents/totals.py`, el mismo calculador que valida la
   API; `dCodSeg` se
   elige al crear el documento (`documents.security_code`) y `dFecFirma` es
-  la hora de la firma. Las reglas y sus fuentes están en
-  `docs/normativa/matriz.md`. El `generated_xml` del endpoint raw
+  la hora de la firma. Antes de firmar `dCarQR` lleva un marcador sin datos
+  fiscales (`DCARQR_PENDING_SIGNATURE`); después de firmar
+  `infrastructure/kude/xml_qr_injector.py` lo reemplaza con
+  `engine.sdk.fiscal.build_qr_payload_from_signed_xml`, la única
+  implementación del QR (literales del XML firmado). Las reglas y sus
+  fuentes están en `docs/normativa/matriz.md`. El `generated_xml` del endpoint raw
   deprecado pasa por `infrastructure/sifen/raw_xml_policy.py` al crearse
   (`DocumentService.create_raw_document`, con la política inyectada desde
   `api/deps.py` y aplicada después de la búsqueda idempotente)
@@ -393,6 +397,8 @@ mantener el mismo comportamiento; se corrigen en commits posteriores):
 - `consultar_dte_async` se reintenta como si fuera una consulta de solo
   lectura.
 - El único binding `RDe` tiene el layout v141 (sin `dSisFact`).
+- `TransmisionDE.enviar_de(rde, sign=True)` firma sin recalcular `dCarQR`,
+  que depende del `DigestValue` de la firma; la plataforma no lo usa.
 
 Plataforma (hallazgos de auditoría pendientes):
 
@@ -405,9 +411,13 @@ Plataforma (hallazgos de auditoría pendientes):
   `ds:` real).
 - El timbrado se elige con la fecha del servidor y no con `dFeEmiDE`
   (1103/1104), y `establecimiento`/`punto` siguen con default `001`.
-- El QR de producción usa siempre el parámetro `dRucRec`.
-- El KuDE imprime los montos de IVA tal como están en el XML, con hasta 8
-  decimales también en guaraníes; falta formatearlos.
+- El emisor guarda un solo CSC sin historial. El QR se calcula al firmar y
+  un reenvío conserva el XML firmado, pero no hay forma de regenerar el QR
+  de un DE ya emitido con el CSC vigente en su `dFeEmiDE` (2501, NT 10 §4).
+- Las opciones de QR y KuDE que la SET no determina (forma de los montos
+  en el QR, receptor B2F sin documento, *quiet zone*, redondeo de los montos
+  impresos, KuDE de un DTE cancelado) están en las notas 12-14 de
+  `docs/normativa/matriz.md`.
 - Qué deben sumar los pagos y el alcance del redondeo a 50 Gs siguen NO
   DETERMINADOS por la SET (notas 9 y 10 de `docs/normativa/matriz.md`); la
   plataforma aplica la opción documentada allí.

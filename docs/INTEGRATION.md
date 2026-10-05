@@ -234,6 +234,23 @@ POST /v1/emitters/{emitter_id}/inutilizations
 GET  /v1/emitters/{emitter_id}/events/{event_id}
 ```
 
+El KuDE (`/kude` en PDF y `/kude/data` en JSON) sale del XML firmado y se
+entrega para documentos `approved*` y para los que siguen en camino al SIFEN
+(`queued`, `processing`, `submitting`, `submitted`, `retry_pending`,
+`reconciliation_required`): con validación posterior puede entregarse antes
+de la aprobación, pero sólo vale si el SIFEN aprueba el DE (MT v150 §6.2 y
+§6.4). Para `rejected`, `failed`, `inutilized`, `cancelled` o cualquier otro
+estado responde `409 documents.kude_not_available` con
+`details.internal_status`. El PDF lleva el QR en la primera página, páginas
+`n/total`, la fecha de inicio del timbrado como `DD-MM-AAAA` (NT 10), el
+«Total en Guaraníes» (`dTotalGs` si la moneda no es PYG) y los montos
+redondeados para leerlos (guaraníes sin decimales, otras monedas con dos).
+`/kude/data` devuelve los literales del XML: `totales.total_general_operacion`
+es `dTotGralOpe` y `totales.total_general_guaranies` es `dTotalGs` fuera de
+PYG. El `qr.url` es el `dCarQR` del XML, calculado con los valores literales
+del XML firmado (MT v150 §13.8; con un receptor no contribuyente el
+parámetro es `dNumIDRec`).
+
 Cancelación usa `{"motivo": "..."}`; inutilización usa timbrado, tipo,
 establecimiento, punto, rango y motivo. Ambas crean un event/job `queued` con
 `201`; el worker `events` transmite a SIFEN y el ERP consulta el evento/job o

@@ -158,6 +158,35 @@ revisar la guía de migración de esta sección.
     expresar (1902).
   - Montos con más decimales que el XSD (8; 4 en pagos y tipos de cambio)
     responden `422`.
+- Código QR y KuDE (MT v150 §13.3, §13.4 y §13.8; NT 08, 10 y 23; Decreto
+  872/2023; detalle y fuentes en `docs/normativa/matriz.md`):
+  - **Una sola implementación del QR**, con los valores literales del XML
+    firmado: `kilasifen.engine.sdk.fiscal`. `build_qr_payload` deja de
+    formatear los montos con 8 decimales (`300000.00000000`): usa el texto
+    del campo (un `int` o un `Decimal` que se imprima igual) y `0` si falta,
+    y reproduce el ejemplo oficial del MT (hash `97ddbb3c…74ed`). Rechaza
+    con `ValueError` un `float`, una fecha D002 sin hora, un D206 con DV o
+    fuera del patrón `tRuc` y un D210 fuera de `tdNumDocId`. Sin receptor
+    escribe `dNumIDRec=0` (antes `dRucRec=0`).
+  - `build_qr_payload_from_signed_xml` toma `nVersion` de `dVerFor`
+    (`qr_version` pasa a ser opcional y, si se envía, tiene que coincidir),
+    el `DigestValue` de `rDE/Signature` y escribe `dTotIVA=0` cuando el DE
+    no trae F017 (antes la autofactura lanzaba `ValueError`).
+  - Ninguna de las dos devuelve más `hash_input`, que contenía el CSC.
+  - Se elimina `kilasifen.infrastructure.kude.qr_generator.build_sifen_qr_url`:
+    la plataforma calcula el `dCarQR` con el engine. Con un receptor no
+    contribuyente el QR pasa a llevar `dNumIDRec` (antes `dRucRec`), un
+    `IdCSC` guardado como `1` se escribe `0001` y un CSC que no tenga 32
+    alfanuméricos deja el documento `failed` por validación local
+    (`documents.qr.invalid`).
+  - `GET .../kude` y `.../kude/data` responden
+    `409 documents.kude_not_available` (con `details.internal_status`) para
+    documentos `rejected`, `failed`, `inutilized`, `cancelled` o en un estado
+    desconocido; siguen disponibles para `approved*` y para los que van en
+    camino al SIFEN.
+  - En `/kude/data`, `totales.total_general_guaranies` pasa a ser
+    `dTotalGs` (F023) cuando la moneda no es PYG (antes era `dTotGralOpe`);
+    el nuevo `totales.total_general_operacion` es `dTotGralOpe`.
 - Plataforma: `KilaSifenPayloadMapper.map_document` y
   `build_typed_document_xml` aceptan `signed_at` (y el builder
   `test_emitter_name_literal`); `KilaSifenEmissionEngine` acepta `clock`.
@@ -200,6 +229,11 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 | Crédito con `monto_entrega_inicial` sin pagos | Enviar `formas_pago` en `condicion_operacion` con los pagos de esa entrega |
 | `formas_pago[].moneda` omitida en una operación en otra moneda (se asumía PYG) | Omitida vale la moneda de la operación; enviar `moneda` y `tipo_cambio` si el pago es en otra |
 | `formas_pago[].moneda_descripcion` | Sin efecto: se escribe el nombre oficial de la moneda |
+| `build_qr_payload(..., d_tot_gral_ope=300000.0)` o una fecha `AAAA-MM-DD` | Pasar el texto de F014/F017 y de D002 (`AAAA-MM-DDThh:mm:ss`) del XML firmado, o directamente `build_qr_payload_from_signed_xml` |
+| `payload["hash_input"]` de `build_qr_payload*` | Sin reemplazo: el CSC no se devuelve; usar `step1` y `c_hash_qr` |
+| `qr_generator.build_sifen_qr_url(...)` | `kilasifen.engine.sdk.fiscal.build_qr_payload_from_signed_xml(signed_xml=..., id_csc=..., csc=..., environment=...)["url"]` |
+| `/kude/data` → `totales.total_general_guaranies` como total de la operación | `totales.total_general_operacion` (F014); `total_general_guaranies` es F023 fuera de PYG |
+| Descargar el KuDE de un documento rechazado, fallido o cancelado | Sin reemplazo: responde `409 documents.kude_not_available`; corregir y reenviar, inutilizar o emitir una nota de crédito |
 
 ### Added
 
@@ -397,6 +431,16 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   SubjectAlternativeName con DV verificado (MT v150 §7.5) y hora oficial con
   offset fijo UTC−03:00 (Ley 7354/2024). Migraciones `20261001_09`,
   `20261001_10` y `20261001_11`.
+- Fiscal (DECISIONES F50-F51): QR con los literales del XML firmado y el
+  parámetro `dNumIDRec` para receptores no contribuyentes (MT v150 §13.8.2;
+  NT 23 §1.1); `dCarQR` de las cinco muestras del engine y del golden
+  `factura_b2c_iva_mixto` regenerados; el XML sin firmar lleva un marcador
+  neutro en `dCarQR` en lugar de un QR falso. KuDE con el QR en la primera
+  página, páginas `n/total`, filas y totales sin cortar entre páginas,
+  *quiet zone* de al menos 4 módulos y del 10% del ancho (MT v150 §13.3 y
+  §13.8.1), «Total en Guaraníes» = F023 fuera de PYG (MT v150 §13.4.3,
+  NT 08), fecha de inicio del timbrado como DD-MM-AAAA (NT 10 §1.11) y
+  montos impresos sin decimales en guaraníes y con dos en otras monedas.
 - El constructor de XML tipado ya no rechaza textos que contienen «ds:»
   (por ejemplo «Brands: X»): sólo una etiqueta o declaración `ds:` real.
 - Docker Compose: `worker`, `outbox` y `migrate` deshabilitan el
