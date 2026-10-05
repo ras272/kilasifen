@@ -129,7 +129,7 @@ una de estas dos formas:
    | `documents.emisor.identity_mismatch` | `emisor` o `tipo_contribuyente` del payload no coinciden con el emisor registrado. | `field` |
    | `documents.fecha_emision.too_old` | `fecha_emision` es anterior a 720 h antes del pedido (el SIFEN rechazaría con 1150). | `fecha_emision` |
    | `documents.fecha_emision.too_far_ahead` | `fecha_emision` es posterior a 120 h después del pedido (1151). | `fecha_emision` |
-   | `documents.fecha_emision.before_sifen_launch` | `fecha_emision` es anterior al 2018-11-22 (1156). | `fecha_emision` |
+   | `documents.fecha_emision.before_sifen_launch` | `fecha_emision` es del 2018-11-22 o anterior; el SIFEN exige una fecha posterior (1156). | `fecha_emision` |
    | `documents.fecha_emision.invalid` | `fecha_emision` no se puede leer como fecha y hora. | — |
    | `documents.codigo_seguridad.equals_numero` | El `codigo_seguridad` enviado coincide con el número que la plataforma asignó. | — |
 

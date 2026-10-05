@@ -55,7 +55,7 @@ const result = await kila.facturas.create(
     external_id: "venta_987",
     factura: {
       cliente: {
-        ruc: "80025298-5",
+        ruc: "88899990-9",
         razon_social: "CLIENTE FICTICIO SA",
         tipo_contribuyente: 2,
       },
@@ -107,7 +107,7 @@ await kila.facturas.create(
     external_id: "prueba_rechazo_1",
     factura: {
       cliente: {
-        ruc: "80025298-5",
+        ruc: "88899990-9",
         razon_social: "CLIENTE FICTICIO SA",
         tipo_contribuyente: 2,
       },
@@ -138,7 +138,7 @@ await kila.notasCredito.create(
     nota_credito: {
       motivo_emision: "devolucion",
       cliente: {
-        ruc: "80025298-5",
+        ruc: "88899990-9",
         razon_social: "CLIENTE FICTICIO SA",
         tipo_contribuyente: 2,
       },
@@ -174,7 +174,7 @@ await kila.notasDebito.create(
     nota_debito: {
       motivo_emision: "recupero_costo",
       cliente: {
-        ruc: "80025298-5",
+        ruc: "88899990-9",
         razon_social: "CLIENTE FICTICIO SA",
         tipo_contribuyente: 2,
       },
@@ -212,7 +212,7 @@ const page = await kila.documents.list("emitter_123", {
   externalId: "venta_987",
 });
 
-const taxpayer = await kila.queries.ruc("emitter_123", "80025298-5");
+const taxpayer = await kila.queries.ruc("emitter_123", "88899990-9");
 ```
 
 La consulta de RUC exige un certificado activo del emisor

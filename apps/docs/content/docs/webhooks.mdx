@@ -187,7 +187,7 @@ Cada intento expira a los 5 segundos. Si aplicar el cambio puede tardar más,
 guardá la entrega (con su delivery ID) en tu base, respondé `2xx` y procesala
 aparte.
 
-El SDK TypeScript (`@kilasifen/sdk`, en `sdks/typescript`) hace los pasos 2 a
+El [SDK TypeScript](/docs/sdk-typescript) (`@kilasifen/sdk`, en `sdks/typescript`) hace los pasos 2 a
 4 con `verifyWebhook`. Si le pasás `isDeliveryProcessed` y el ID ya está
 guardado, devuelve `valid: false` con `reason: "duplicate_delivery"`: en ese
 caso respondé `2xx` sin repetir el efecto; cualquier otra respuesta deja la

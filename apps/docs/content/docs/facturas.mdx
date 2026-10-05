@@ -115,8 +115,8 @@ comprueban recién ahí (ver [Errores y validaciones](#errores-y-validaciones)).
   al armar el XML: si se supera, el documento queda `failed`.
 - B2G: `compras_publicas` es opcional (NT 26).
 
-Estas reglas responden `422 request.validation_failed` con el código de la
-regla en `details.errors[].message`, por ejemplo
+Estas reglas responden `422 request.validation_failed` con el código estable
+de la regla en `details.errors[].code`, por ejemplo
 `documents.cliente.tipo_contribuyente_required` o
 `documents.cliente.dv_mismatch`.
 
@@ -220,9 +220,10 @@ Al crear, la respuesta es `422` en tres formas:
 - Contrato y formato de los campos: `request.validation_failed`, con el campo
   en `details.errors[].loc` y un `message` descriptivo.
 - Reglas del receptor, los ítems, el IVA, los descuentos, el redondeo y los
-  pagos: `request.validation_failed`, con el código de la regla al final de
-  `details.errors[].message` (por ejemplo
-  `"Value error, documents.items.proporcion_gravada_required"`).
+  pagos: `request.validation_failed`, con el código estable de la regla en
+  `details.errors[].code` (por ejemplo
+  `documents.items.proporcion_gravada_required`). Usá ese campo y no el texto
+  de `message`.
 - Emisor, fecha de emisión y código de seguridad: el código va en
   `error.code` (`emitters.fiscal_profile_required`,
   `documents.emisor.identity_mismatch`, `documents.fecha_emision.*`,
