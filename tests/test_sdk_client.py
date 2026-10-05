@@ -1,17 +1,21 @@
 """Tests for the high-level SDK client facade."""
 
-from unittest.mock import MagicMock, patch
+from contextlib import contextmanager
+from types import SimpleNamespace
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from pysifen.sdk.client import SifenClient
+from kilasifen.engine.sdk.client import SifenClient
+from kilasifen.engine.sdk.errors import SifenLoteError, SifenRejectionError
+from tests._muestras import FACTURA, NOTA_DEBITO
 
 
 def test_sifen_client_builds_internal_services_with_shared_config():
     with (
-        patch("pysifen.sdk.client.TransmissaoDE") as de_cls,
-        patch("pysifen.sdk.client.ConsultaSIFEN") as cons_cls,
-        patch("pysifen.sdk.client.TransmissaoEvento") as evt_cls,
+        patch("kilasifen.engine.sdk.client.TransmisionDE") as de_cls,
+        patch("kilasifen.engine.sdk.client.ConsultaSIFEN") as cons_cls,
+        patch("kilasifen.engine.sdk.client.TransmisionEvento") as evt_cls,
     ):
         SifenClient(
             ambiente=2,
@@ -43,6 +47,7 @@ def test_sifen_client_delegates_all_operations():
 
     de.enviar_de.return_value = "de-ok"
     de.enviar_lote.return_value = "lote-ok"
+    de.enviar_lote_xml.return_value = "lote-xml-ok"
     cons.consultar_de.return_value = "cons-de"
     cons.consultar_lote.return_value = "cons-lote"
     cons.consultar_ruc.return_value = "cons-ruc"
@@ -51,11 +56,11 @@ def test_sifen_client_delegates_all_operations():
     evt.enviar_evento.return_value = "evt-ok"
 
     with (
-        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
-        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
         patch(
-            "pysifen.sdk.client.poll_dte_async_status",
+            "kilasifen.engine.sdk.client.poll_dte_async_status",
             return_value="polled-async",
         ) as poll_async,
     ):
@@ -74,8 +79,10 @@ def test_sifen_client_delegates_all_operations():
             )
             == "lote-ok"
         )
+        assert client.enviar_lote_xml(["<rDE/>"], lote_id=13) == "lote-xml-ok"
         assert client.consultar_de("1" * 44) == "cons-de"
         assert client.consultar_lote(123) == "cons-lote"
+        assert client.consultar_lote(cdc="7" * 44) == "cons-lote"
         assert client.consultar_ruc("80069563") == "cons-ruc"
         assert client.consultar_dte("payload") == "cons-dte"
         assert client.consultar_dte_async("payload-async") == "cons-dte-async"
@@ -91,7 +98,11 @@ def test_sifen_client_delegates_all_operations():
     de.enviar_de.assert_called_once_with("rde", sign=False)
     de.enviar_lote.assert_called_once_with(["rde1", "rde2"], lote_id=12, sign=False)
     cons.consultar_de.assert_called_once_with("1" * 44)
-    cons.consultar_lote.assert_called_once_with(123)
+    de.enviar_lote_xml.assert_called_once_with(["<rDE/>"], lote_id=13)
+    assert cons.consultar_lote.call_args_list == [
+        call(123, cdc=None),
+        call(None, cdc="7" * 44),
+    ]
     cons.consultar_ruc.assert_called_once_with("80069563")
     cons.consultar_dte.assert_called_once_with("payload")
     cons.consultar_dte_async.assert_called_once_with("payload-async")
@@ -99,20 +110,32 @@ def test_sifen_client_delegates_all_operations():
     evt.enviar_evento.assert_called_once_with("evento")
 
 
+@contextmanager
+def _servicios(de, cons, evt):
+    """Reemplaza los tres servicios que arma ``SifenClient`` por dobles."""
+    with (
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
+    ):
+        yield
+
+
 def test_sifen_client_enviar_lote_y_esperar_uses_polling_helper():
     de = MagicMock()
     cons = MagicMock()
     evt = MagicMock()
 
-    envio_lote = MagicMock(dProtConsLote="123456")
+    envio_lote = MagicMock(dCodRes="0300", dProtConsLote="123456")
     de.enviar_lote.return_value = envio_lote
-
+    documentos = [
+        SimpleNamespace(DE=SimpleNamespace(Id=FACTURA.cdc)),
+        SimpleNamespace(DE=SimpleNamespace(Id=NOTA_DEBITO.cdc)),
+    ]
     with (
-        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
-        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        _servicios(de, cons, evt),
         patch(
-            "pysifen.sdk.client.poll_lote_status",
+            "kilasifen.engine.sdk.client.poll_lote_status",
             return_value="lote-final",
         ) as poll_lote,
     ):
@@ -122,18 +145,23 @@ def test_sifen_client_enviar_lote_y_esperar_uses_polling_helper():
             pkcs12_password="pwd",
         )
         result = client.enviar_lote_y_esperar(
-            lista_rde=["rde"],
+            lista_rde=documentos,
             lote_id=12,
             sign=False,
         )
 
     assert result == "lote-final"
     de.enviar_lote.assert_called_once_with(
-        ["rde"],
+        documentos,
         lote_id=12,
         sign=False,
     )
     poll_lote.assert_called_once()
+    kwargs = poll_lote.call_args.kwargs
+    assert kwargs["prot_lote"] == "123456"
+    assert kwargs["cdcs"] == (FACTURA.cdc, NOTA_DEBITO.cdc)
+    assert kwargs["consultar_de"] == client.consultar_de
+    assert kwargs["consultar_lote"] == client.consultar_lote
 
 
 def test_sifen_client_consultar_dte_async_y_esperar_returns_both():
@@ -145,11 +173,11 @@ def test_sifen_client_consultar_dte_async_y_esperar_returns_both():
     cons.consultar_dte_async.return_value = async_response
 
     with (
-        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
-        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
         patch(
-            "pysifen.sdk.client.poll_dte_async_status",
+            "kilasifen.engine.sdk.client.poll_dte_async_status",
             return_value="estado-final",
         ) as poll_async,
     ):
@@ -176,9 +204,9 @@ def test_sifen_client_consultar_dte_async_y_esperar_requires_protocol():
     cons.consultar_dte_async.return_value = MagicMock(dProtConsDTEAsync="")
 
     with (
-        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
-        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
     ):
         client = SifenClient(
             ambiente=2,
@@ -193,23 +221,45 @@ def test_sifen_client_consultar_dte_async_y_esperar_requires_protocol():
 
 
 def test_sifen_client_enviar_lote_y_esperar_requires_protocol():
+    """0300 sin dProtConsLote: no se consulta por numero de lote."""
     de = MagicMock()
     cons = MagicMock()
     evt = MagicMock()
-    de.enviar_lote.return_value = MagicMock(dProtConsLote=None)
-
-    with (
-        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
-        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
-    ):
+    de.enviar_lote.return_value = MagicMock(dCodRes="0300", dProtConsLote=None)
+    with _servicios(de, cons, evt):
         client = SifenClient(
             ambiente=2,
             pkcs12_data=b"cert",
             pkcs12_password="pwd",
         )
-        with pytest.raises(ValueError, match="dProtConsLote"):
+        with pytest.raises(SifenLoteError, match="dProtConsLote"):
             client.enviar_lote_y_esperar(lista_rde=["rde"])
+
+    cons.consultar_lote.assert_not_called()
+
+
+def test_sifen_client_enviar_lote_y_esperar_no_consulta_un_lote_0301():
+    """MT sec. 12.3.2.3; Guia oct-2024 p. 9: con 0301 el lote no se procesa."""
+    de = MagicMock()
+    cons = MagicMock()
+    evt = MagicMock()
+    de.enviar_lote.return_value = MagicMock(
+        dCodRes="0301",
+        dMsgRes="Lote no encolado para procesamiento",
+        dProtConsLote=None,
+    )
+    with _servicios(de, cons, evt):
+        client = SifenClient(
+            ambiente=2,
+            pkcs12_data=b"cert",
+            pkcs12_password="pwd",
+        )
+        with pytest.raises(SifenRejectionError) as error:
+            client.enviar_lote_y_esperar(lista_rde=["rde"])
+
+    assert error.value.code == "0301"
+    cons.consultar_lote.assert_not_called()
+    cons.consultar_de.assert_not_called()
 
 
 def test_sifen_client_wraps_fiscal_generators():
@@ -218,19 +268,19 @@ def test_sifen_client_wraps_fiscal_generators():
     evt = MagicMock()
 
     with (
-        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
-        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
         patch(
-            "pysifen.sdk.client._generate_cdc",
+            "kilasifen.engine.sdk.client._generate_cdc",
             return_value="CDC-OK",
         ) as gen_cdc,
         patch(
-            "pysifen.sdk.client._generate_dcarqr",
+            "kilasifen.engine.sdk.client._generate_dcarqr",
             return_value="QRCODE-OK",
         ) as gen_qr,
         patch(
-            "pysifen.sdk.client._generate_dcarqr_from_signed_xml",
+            "kilasifen.engine.sdk.client._generate_dcarqr_from_signed_xml",
             return_value="QRCODE-XML-OK",
         ) as gen_qr_xml,
     ):
@@ -257,15 +307,15 @@ def test_sifen_client_wraps_kude_helpers():
     evt = MagicMock()
 
     with (
-        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
-        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
         patch(
-            "pysifen.sdk.client._render_kude_html",
+            "kilasifen.engine.sdk.client._render_kude_html",
             return_value="<html>kude</html>",
         ) as render_kude,
         patch(
-            "pysifen.sdk.client._save_kude_html",
+            "kilasifen.engine.sdk.client._save_kude_html",
             return_value="out.html",
         ) as save_kude,
     ):
@@ -299,9 +349,9 @@ def test_sifen_client_close_is_idempotent():
     evt = MagicMock()
 
     with (
-        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
-        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
     ):
         client = SifenClient(
             ambiente=2,
@@ -323,9 +373,9 @@ def test_sifen_client_context_manager_closes_services():
     evt = MagicMock()
 
     with (
-        patch("pysifen.sdk.client.TransmissaoDE", return_value=de),
-        patch("pysifen.sdk.client.ConsultaSIFEN", return_value=cons),
-        patch("pysifen.sdk.client.TransmissaoEvento", return_value=evt),
+        patch("kilasifen.engine.sdk.client.TransmisionDE", return_value=de),
+        patch("kilasifen.engine.sdk.client.ConsultaSIFEN", return_value=cons),
+        patch("kilasifen.engine.sdk.client.TransmisionEvento", return_value=evt),
     ):
         with SifenClient(
             ambiente=2,

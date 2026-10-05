@@ -11,7 +11,6 @@ from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
 
-
 API_KEY = "secret-key"
 
 
@@ -66,7 +65,7 @@ def second_emitter_id(client: TestClient) -> str:
         json={
             "external_id": "erp-otro",
             "ruc": "80111111",
-            "dv": "9",
+            "dv": "0",
             "legal_name": "OTRO EMISOR SA",
             "tax_environment": "test",
             "csc": None,

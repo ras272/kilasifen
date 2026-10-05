@@ -27,8 +27,9 @@ class InutilizedNumberRangeRepository(ABC):
         number_from: int,
         number_to: int,
         approved_only: bool = False,
+        timbrado: str | None = None,
     ) -> list[InutilizedNumberRange]:
-        """List ranges that overlap a requested interval."""
+        """List ranges that overlap a requested interval (of one timbrado)."""
 
     @abstractmethod
     def get_max_approved_end_covering_number(

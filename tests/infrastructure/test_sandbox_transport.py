@@ -4,9 +4,9 @@ from unittest.mock import Mock
 import pytest
 
 from kilasifen.domain.sandbox import SandboxOutcome
+from kilasifen.engine.sdk.errors import SifenTimeoutError
 from kilasifen.infrastructure.sandbox.transport import DeterministicSandboxTransport
-from kilasifen.infrastructure.sifen.engine import PysifenEmissionEngine
-from pysifen.sdk.errors import SifenTimeoutError
+from kilasifen.infrastructure.sifen.engine import KilaSifenEmissionEngine
 
 
 @pytest.mark.parametrize(
@@ -32,7 +32,7 @@ def test_sandbox_transport_forces_outcome_without_live_sifen(
         signed_xml='<rDE><DE Id="0180012345"/><Signature/></rDE>',
         doc_id="0180012345",
     )
-    engine = PysifenEmissionEngine(
+    engine = KilaSifenEmissionEngine(
         mapper=mapper,
         deployment_environment="test",
         transport=DeterministicSandboxTransport(
@@ -41,18 +41,24 @@ def test_sandbox_transport_forces_outcome_without_live_sifen(
         ),
     )
 
-    result = engine.emit_document(
+    emitter = SimpleNamespace(tax_environment="test")
+    prepared = engine.prepare_document(
         document=Mock(),
-        emitter=SimpleNamespace(tax_environment="test"),
-        certificate=Mock(),
+        emitter=emitter,
         certificate_bytes=b"not-used-by-sandbox",
         certificate_password="not-used-by-sandbox",
         stamping=Mock(),
     )
+    result = engine.submit_prepared(
+        request_xml=prepared.request_xml,
+        emitter=emitter,
+        certificate_bytes=b"not-used-by-sandbox",
+        certificate_password="not-used-by-sandbox",
+    )
 
+    assert prepared.cdc == "0180012345"
     assert result.sifen_status == expected_status
     assert result.result_code == expected_code
-    assert result.cdc == "0180012345"
     assert f"<outcome>{forced_outcome.value}</outcome>" in result.response_raw
 
 
@@ -77,7 +83,7 @@ def test_sandbox_transport_simulates_ambiguous_transport_failures(
 
     with pytest.raises(SifenTimeoutError, match=expected_message):
         transport.submit(
-            signed_xml="<rDE/>",
+            request_xml="<rEnviDe/>",
             tax_environment="test",
             certificate_bytes=b"unused",
             certificate_password="unused",
@@ -103,7 +109,7 @@ def test_sandbox_transport_refuses_production_emitter() -> None:
 
     with pytest.raises(ValueError, match="test emitter"):
         transport.submit(
-            signed_xml="<rDE/>",
+            request_xml="<rEnviDe/>",
             tax_environment="production",
             certificate_bytes=b"unused",
             certificate_password="unused",

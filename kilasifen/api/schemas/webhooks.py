@@ -5,32 +5,49 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
+from kilasifen.api.schemas.common import Pagination, SuccessEnvelope
+from kilasifen.api.schemas.jobs import JobResponse
+
 
 class WebhookRetryPolicy(BaseModel):
-    """Bounded automatic retry policy for one endpoint."""
+    """Reintentos automáticos de un endpoint (de 1 a 8 intentos)."""
 
     model_config = ConfigDict(extra="forbid")
 
     max_attempts: int = Field(default=5, ge=1, le=8)
 
 
+_EVENT_SUBSCRIPTIONS_DESCRIPTION = (
+    "Tipos de evento a recibir; sin valor, todos. Se compara por igualdad o "
+    "por prefijo con `.*`: `*`, `document.*`, `document.<estado>` "
+    "(`approved`, `approved_with_observation`, `rejected`, `failed`, "
+    "`submitted`, `queued`, `retry_pending`, `reconciliation_required`, "
+    "`cancelled`, `inutilized`), `document.updated` y `webhook.test`. Un "
+    "tipo mal escrito no se rechaza: nunca recibe entregas."
+)
+
+
 class WebhookEndpointCreateRequest(BaseModel):
-    """Webhook endpoint creation payload."""
+    """Alta de un endpoint de webhook."""
 
     url: HttpUrl
     secret: str = Field(min_length=32, max_length=255)
-    event_subscriptions: list[str] | None = None
+    event_subscriptions: list[str] | None = Field(
+        default=None, description=_EVENT_SUBSCRIPTIONS_DESCRIPTION
+    )
     retry_policy: WebhookRetryPolicy | None = None
 
 
 class WebhookEndpointUpdateRequest(BaseModel):
-    """Partial, secret-safe update for a webhook endpoint."""
+    """Cambios de un endpoint; los campos omitidos no cambian."""
 
     model_config = ConfigDict(extra="forbid")
 
     url: HttpUrl | None = None
     secret: str | None = Field(default=None, min_length=32, max_length=255)
-    event_subscriptions: list[str] | None = None
+    event_subscriptions: list[str] | None = Field(
+        default=None, description=_EVENT_SUBSCRIPTIONS_DESCRIPTION
+    )
     retry_policy: WebhookRetryPolicy | None = None
     is_active: bool | None = None
 
@@ -46,7 +63,7 @@ class WebhookEndpointUpdateRequest(BaseModel):
 
 
 class WebhookEndpointResponse(BaseModel):
-    """Webhook endpoint response payload."""
+    """Endpoint de webhook; el secreto nunca se devuelve."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -62,14 +79,22 @@ class WebhookEndpointResponse(BaseModel):
 
 
 class WebhookReplayRequest(BaseModel):
-    """Replay request payload."""
+    """Reenvío de una entrega existente; el contenido nunca lo arma el caller."""
 
-    event_type: str = Field(min_length=1, max_length=64)
-    payload: dict[str, Any] | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    delivery_id: str = Field(
+        min_length=1,
+        max_length=64,
+        description=(
+            "ID de una entrega ya generada para un endpoint de este emisor. "
+            "Se reenvían su tipo, data y occurred_at con un delivery ID nuevo."
+        ),
+    )
 
 
 class WebhookDeliveryResponse(BaseModel):
-    """Webhook delivery response payload."""
+    """Entrega de webhook y su resultado."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -85,3 +110,56 @@ class WebhookDeliveryResponse(BaseModel):
     final_status: str
     created_at: datetime
     updated_at: datetime
+
+
+class WebhookEndpointData(BaseModel):
+    """Endpoint de webhook."""
+
+    webhook_endpoint: WebhookEndpointResponse
+
+
+class WebhookEndpointListData(BaseModel):
+    """Endpoints de webhook del emisor."""
+
+    webhook_endpoints: list[WebhookEndpointResponse]
+
+
+class CreatedWebhookDeliveryData(BaseModel):
+    """Entrega creada y el job que la envía."""
+
+    delivery: WebhookDeliveryResponse
+    job: JobResponse
+
+
+class WebhookDeliveryWithJobData(BaseModel):
+    """Entrega y su job, si tiene."""
+
+    delivery: WebhookDeliveryResponse
+    job: JobResponse | None
+
+
+class WebhookDeliveryListData(BaseModel):
+    """Página de entregas de webhook."""
+
+    deliveries: list[WebhookDeliveryResponse]
+    pagination: Pagination
+
+
+class WebhookEndpointEnvelope(SuccessEnvelope[WebhookEndpointData]):
+    """Respuesta con un endpoint de webhook."""
+
+
+class WebhookEndpointListEnvelope(SuccessEnvelope[WebhookEndpointListData]):
+    """Respuesta con los endpoints de webhook."""
+
+
+class CreatedWebhookDeliveryEnvelope(SuccessEnvelope[CreatedWebhookDeliveryData]):
+    """Respuesta de la creación de una entrega."""
+
+
+class WebhookDeliveryWithJobEnvelope(SuccessEnvelope[WebhookDeliveryWithJobData]):
+    """Respuesta con una entrega de webhook."""
+
+
+class WebhookDeliveryListEnvelope(SuccessEnvelope[WebhookDeliveryListData]):
+    """Respuesta con una página de entregas."""

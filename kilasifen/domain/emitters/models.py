@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 
+from kilasifen.domain.emitters.fiscal_profile import EmitterFiscalProfile
+
 
 @dataclass(slots=True)
 class Emitter:
@@ -19,6 +21,8 @@ class Emitter:
     csc_id: str | None
     created_at: datetime
     updated_at: datetime
+    # None until the emitter registers the data of its RUC (MT v150 D103-D132).
+    fiscal_profile: EmitterFiscalProfile | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,3 +40,4 @@ class EmitterSummary:
     csc_id: str | None
     created_at: datetime
     updated_at: datetime
+    fiscal_profile: EmitterFiscalProfile | None = None

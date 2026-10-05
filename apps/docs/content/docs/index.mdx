@@ -4,23 +4,47 @@ description: La capa fiscal entre tu ERP y SIFEN.
 icon: BookOpen
 ---
 
-KilaSifen recibe intenciones de negocio tipadas, genera y firma el XML fiscal,
-lo transmite a SIFEN y conserva el resultado durable. Tu ERP no administra XML,
-certificados ni reintentos de red.
+KilaSifen recibe intenciones de negocio tipadas, arma y firma el XML fiscal, lo
+transmite a SIFEN y conserva el resultado. Tu ERP no arma XML ni gestiona la
+transmisión, los reintentos ni la consulta por CDC.
+
+Del lado de tu integración queda:
+
+- cargar y renovar el certificado PKCS#12, el timbrado y el CSC, y mantener el
+  perfil fiscal del emisor;
+- entregar al receptor el XML y el KuDE si es facturador electrónico, o el
+  KuDE si no lo es (Decreto 872/2023, Art. 25). KilaSifen sólo los deja
+  disponibles para descargar;
+- pedir la cancelación o la inutilización y atender los documentos que quedan
+  en `reconciliation_required`.
+
+<Callout type="warn" title="Versión alpha">
+  KilaSifen es software libre (licencia MIT) que instalás y operás en tu propia
+  infraestructura. Todavía está en alpha: probá cada flujo contra el ambiente de
+  pruebas de SIFEN antes de emitir en producción.
+</Callout>
 
 <Cards>
-  <Card title="Integrar en 10 minutos" description="Creá un emisor y enviá tu primera factura de prueba." href="/docs/inicio-rapido" />
+  <Card title="Primera factura de prueba" description="Verificá tu emisor y enviá una factura al ambiente de pruebas." href="/docs/inicio-rapido" />
   <Card title="Referencia HTTP" description="Explorá rutas, parámetros y esquemas generados desde OpenAPI." href="/docs/api-reference" />
 </Cards>
 
-## Qué cubre v1
+## Qué cubre la API v1
 
-- Factura electrónica y nota de crédito con contratos estrictos.
+- Factura electrónica, nota de crédito y nota de débito (`iTiDE` 1, 5 y 6) con
+  contratos tipados que validan receptor, montos, IVA y fechas antes de crear
+  el documento.
 - Numeración fiscal atómica e idempotencia por intención.
-- Firma, envío, consulta por CDC y generación de KuDE.
+- Firma, envío, consulta y reconciliación por CDC, y consulta de RUC.
+- KuDE en PDF y sus datos en JSON.
 - Cancelación e inutilización asíncronas.
-- Webhooks HMAC con reintentos y protección contra replay.
+- Webhooks firmados con HMAC y timestamp, con reintentos y reenvío manual
+  (replay).
+- Sandbox determinístico en instancias con `KILA_SIFEN_ENVIRONMENT=test`.
 - Aislamiento por consumidor, emisor y scopes.
+
+La API tipada no emite autofacturas, notas de remisión ni boletas (`iTiDE` 4,
+7, 9 y 10).
 
 <Callout type="info" title="Contrato backend-to-backend">
   La API key debe vivir únicamente en el backend del ERP. No la incluyas en una
@@ -29,8 +53,11 @@ certificados ni reintentos de red.
 
 ## Convenciones
 
-Todas las rutas públicas comienzan con `/v1`, los cuerpos JSON usan
-`snake_case` y las respuestas incluyen un `correlation_id` para diagnóstico.
+Todas las rutas públicas comienzan con `/v1` y los cuerpos JSON usan
+`snake_case`. Cada respuesta trae el header `X-Correlation-ID`; en las
+respuestas JSON el mismo valor va en `correlation_id` (éxito) o en
+`error.correlation_id` (error). `/xml` y `/kude` devuelven XML y PDF sin sobre
+JSON: ahí usá el header.
 
 ```json title="Respuesta exitosa"
 {
@@ -38,3 +65,17 @@ Todas las rutas públicas comienzan con `/v1`, los cuerpos JSON usan
   "correlation_id": "7d33c16a-4ec1-4327-90f2-bc5517c120f2"
 }
 ```
+
+```json title="Respuesta de error"
+{
+  "error": {
+    "code": "auth.insufficient_scope",
+    "message": "The credential lacks the required scope.",
+    "category": "authorization",
+    "correlation_id": "7d33c16a-4ec1-4327-90f2-bc5517c120f2",
+    "details": null
+  }
+}
+```
+
+Los códigos de error y cómo recuperarse están en [Errores y diagnóstico](/docs/errores).

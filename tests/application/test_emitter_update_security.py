@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -18,8 +18,8 @@ from kilasifen.infrastructure.db.session import (
 )
 
 _EMITTER_ID = "emitter-update-security"
-_OLD_CSC = "OLD-CSC-0000000000000000000000000001"
-_NEW_CSC = "NEW-CSC-0000000000000000000000000002"
+_OLD_CSC = "OLDCSC00000000000000000000000001"
+_NEW_CSC = "NEWCSC00000000000000000000000002"
 
 
 class _FailOnSecretAccess:
@@ -124,14 +124,14 @@ def test_metadata_update_cannot_restore_a_concurrently_rotated_csc(
 
 
 def _seed_emitter(factory, *, encrypted_csc: str) -> None:
-    timestamp = datetime.now(UTC)
+    timestamp = datetime.now(timezone.utc)
     with session_scope(factory) as session:
         session.add(
             EmitterModel(
                 id=_EMITTER_ID,
                 external_id="security-test",
                 ruc="80000001",
-                dv="1",
+                dv="3",
                 legal_name="Before",
                 tax_environment="test",
                 status="active",

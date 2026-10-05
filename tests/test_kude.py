@@ -2,17 +2,19 @@
 
 from pathlib import Path
 
-from pysifen.de.bindings.v150.fe_v141 import RDe
-from pysifen.sdk.kude import (
+from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
+from kilasifen.engine.sdk.kude import (
     build_kude_context,
     render_kude_html,
     render_kude_html_from_xml,
     save_kude_html,
 )
+from tests._muestras import FACTURA
 
 SAMPLES_DIR = (
     Path(__file__).resolve().parents[1]
-    / "pysifen"
+    / "kilasifen"
+    / "engine"
     / "de"
     / "samples"
     / "v150"
@@ -26,12 +28,12 @@ def _load_sample_rde() -> RDe:
 def test_build_kude_context_from_sample():
     ctx = build_kude_context(_load_sample_rde())
 
-    assert ctx["cdc"] == "01800695631001001000000612024112917595714694"
-    assert ctx["emisor_nombre"] == "Empresa Demo S.A."
-    assert ctx["receptor_nombre"] == "Cliente Demo S.A."
-    assert ctx["cantidad_items"] == "2"
-    assert ctx["total_operacion"] == "1150000"
-    assert len(ctx["items"]) == 2
+    assert ctx["cdc"] == FACTURA.cdc
+    assert ctx["emisor_nombre"] == FACTURA.nombre_emisor
+    assert ctx["receptor_nombre"] == FACTURA.nombre_receptor
+    assert ctx["cantidad_items"] == str(FACTURA.cantidad_items)
+    assert ctx["total_operacion"] == str(FACTURA.total_general)
+    assert len(ctx["items"]) == FACTURA.cantidad_items
 
 
 def test_render_kude_html_contains_main_sections():
@@ -40,10 +42,10 @@ def test_render_kude_html_contains_main_sections():
     assert "<!doctype html>" in html
     assert "KuDE Factura" in html
     assert "Detalle de items" in html
-    assert "Empresa Demo S.A." in html
-    assert "Cliente Demo S.A." in html
-    assert "PROD001" in html
-    assert "SERV001" in html
+    assert FACTURA.nombre_emisor in html
+    assert FACTURA.nombre_receptor in html
+    assert FACTURA.codigos_items[0] in html
+    assert FACTURA.codigos_items[1] in html
     assert "https://ekuatia.set.gov.py/consultas/qr?" in html
 
 
@@ -54,8 +56,8 @@ def test_render_kude_html_from_xml_string():
     html = render_kude_html_from_xml(xml)
 
     assert "KuDE" in html
-    assert "80069563-1" in html
-    assert "4192083-5" in html
+    assert f"{FACTURA.ruc_emisor}-{FACTURA.dv_emisor}" in html
+    assert f"{FACTURA.ruc_receptor}-{FACTURA.dv_receptor}" in html
 
 
 def test_save_kude_html_writes_file(tmp_path):
@@ -66,4 +68,4 @@ def test_save_kude_html_writes_file(tmp_path):
     assert out.exists()
     content = out.read_text(encoding="utf-8")
     assert "KuDE Test" in content
-    assert "1150000" in content
+    assert str(FACTURA.total_general) in content

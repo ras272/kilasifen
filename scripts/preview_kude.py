@@ -4,7 +4,7 @@ Usage: python scripts/preview_kude.py
 Output: tmp/kude_previews/<scenario>.pdf
 """
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from kilasifen.domain.documents.models import Document
@@ -18,7 +18,7 @@ OUT_DIR = REPO / "tmp" / "kude_previews"
 
 
 def make_emitter() -> Emitter:
-    ts = datetime.now(UTC)
+    ts = datetime.now(timezone.utc)
     return Emitter(
         id="emitter-1",
         external_id="erp-test",
@@ -36,7 +36,7 @@ def make_emitter() -> Emitter:
 
 def make_document(name: str, doc_type: str) -> Document:
     signed_xml = (GOLDEN_DIR / f"{name}.xml").read_text(encoding="utf-8")
-    ts = datetime.now(UTC)
+    ts = datetime.now(timezone.utc)
     return Document(
         id=f"doc-{name}",
         emitter_id="emitter-1",

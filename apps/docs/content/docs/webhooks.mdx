@@ -1,11 +1,161 @@
 ---
 title: Webhooks
-description: Recibí resultados terminales con firma HMAC y procesamiento idempotente.
+description: Recibí cambios de estado firmados con HMAC y procesalos de forma idempotente.
 icon: Webhook
 ---
 
-Registrá una URL HTTPS pública y un secreto aleatorio de al menos 32 caracteres.
-El secreto nunca vuelve a aparecer en la API.
+Un webhook avisa que algo cambió; la fuente de verdad sigue siendo la API. Si
+una entrega no llega, el estado se recupera consultando el documento o el
+evento (ver [Consultas](/docs/consultas)).
+
+## Registrar un endpoint
+
+```http
+POST /v1/emitters/{emitter_id}/webhooks
+X-API-Key: ...
+Content-Type: application/json
+
+{
+  "url": "https://erp.example.com/webhooks/kila",
+  "secret": "<secreto aleatorio de 32 a 255 caracteres>",
+  "event_subscriptions": ["document.*", "numbering.inutilized"],
+  "retry_policy": {"max_attempts": 5}
+}
+```
+
+| Campo | Regla |
+| --- | --- |
+| `url` | Obligatoria. Ver [Política de red](#política-de-red). |
+| `secret` | Obligatorio, de 32 a 255 caracteres. Generalo al azar (por ejemplo, `openssl rand -hex 32`). |
+| `event_subscriptions` | Opcional. Ver [Suscripciones](#suscripciones). |
+| `retry_policy.max_attempts` | Opcional, de 1 a 8 (por defecto 5). |
+
+Registrar, editar, probar y reenviar exigen el scope `tenant:write`; listar
+(`GET /v1/emitters/{emitter_id}/webhooks`) exige `tenant:read`. La respuesta
+trae `webhook_endpoint` con `secret_configured: true`: el secreto nunca vuelve
+a aparecer en la API.
+
+### Editar, desactivar y rotar el secreto
+
+`PATCH /v1/emitters/{emitter_id}/webhooks/{endpoint_id}` cambia `url`,
+`secret`, `event_subscriptions`, `retry_policy` o `is_active`. Enviá sólo los
+campos que cambian. `url`, `secret`, `retry_policy` e `is_active` no aceptan
+`null`, y un campo desconocido devuelve `422`. No hay `DELETE`: para dar de
+baja un endpoint, enviá `{"is_active": false}`.
+
+`is_active: false` deja de crear entregas nuevas, pero no cancela las que ya
+existen: sus reintentos se siguen enviando. Cada intento usa la URL y el
+secreto vigentes en ese momento, así que un cambio de `url` o `secret` también
+se aplica a las entregas pendientes.
+
+Para rotar el secreto sin perder entregas:
+
+1. Configurá tu receptor para aceptar el secreto nuevo además del actual.
+2. Enviá el `PATCH` con el secreto nuevo. Desde ese momento todos los
+   intentos, incluidos los reintentos pendientes, salen firmados con él.
+3. Unos segundos después (cada request expira a los 5 s), retirá el secreto
+   anterior.
+
+### Política de red
+
+KilaSifen valida la URL al registrarla o editarla, y otra vez antes de cada
+intento de entrega:
+
+- Fuera de `KILA_SIFEN_ENVIRONMENT=development` sólo se acepta `https`
+  (`422 webhooks.https_required`).
+- En todos los ambientes, todas las IP que resuelve el host tienen que ser
+  públicas. `localhost`, redes privadas, link-local y rangos reservados
+  responden `422 webhooks.non_public_address`. Para probar desde tu máquina,
+  usá un túnel con URL pública.
+- La URL no puede tener usuario y contraseña (`422 webhooks.userinfo_forbidden`)
+  ni fragmento (`422 webhooks.fragment_forbidden`). Un host que no resuelve
+  devuelve `422 webhooks.dns_resolution_failed`.
+- La conexión se fija a la IP validada, con verificación TLS del hostname, y
+  las redirecciones no se siguen.
+
+## Tipos de evento
+
+Todas las entregas tienen el mismo envelope. El body es JSON compacto con las
+claves ordenadas: verificá la firma sobre los bytes crudos, nunca sobre un
+JSON reserializado.
+
+```json
+{
+  "data": {
+    "document_id": "3f1c9a52-7d0e-4c1b-9a8e-5b2d6f4e1a07",
+    "document_type": "factura",
+    "external_id": "ERP-000123",
+    "internal_status": "approved",
+    "sifen_result_code": "0260",
+    "sifen_result_message": "Autorización del DE satisfactoria",
+    "sifen_status": "approved"
+  },
+  "delivery_id": "6f9c2d0e-4b1a-4c55-9b0e-2f3c1a7d8e90",
+  "occurred_at": "2026-10-05T13:20:11.482913+00:00",
+  "type": "document.approved"
+}
+```
+
+`type` repite el header `X-Kila-Event`, `delivery_id` repite
+`X-Kila-Delivery-ID`, y `occurred_at` es el momento en que se publicó el evento,
+en UTC.
+
+| Tipo | Cuándo se publica | `data` |
+| --- | --- | --- |
+| `document.approved` | SIFEN aprobó el DE: en la respuesta al envío, o con `0422` en la consulta por CDC que hace el worker. | Estado del documento |
+| `document.approved_with_observation` | Aprobado con observación (por ejemplo `1005`, transmisión extemporánea). | Estado del documento |
+| `document.rejected` | Rechazo de SIFEN. No siempre es final: si algún mensaje del rechazo es `0161` o `0162` (falla del servidor), el mismo DE se reenvía y puede llegar después `document.approved`. El webhook no trae esa marca: mirá el job del documento (ver [Estados y reintentos](/docs/estados-y-reintentos#rechazos-que-se-confirman-o-se-reenvían)). | Estado del documento |
+| `document.failed` | El documento no se pudo armar ni firmar (validación local); nunca llegó a SIFEN. | Estado del documento |
+| `document.retry_pending` | Resultado incierto, o rechazo `1001`/`1002` por confirmar; el próximo intento consulta el CDC. | Estado del documento |
+| `document.queued` | Volvió a la cola sin DTE en SIFEN: el request no salió, o SIFEN respondió `0420`. El mismo DE firmado se reenvía mientras queden intentos. | Estado del documento |
+| `document.reconciliation_required` | Se agotaron los intentos sin saber qué tiene SIFEN para el CDC. | Estado del documento |
+| `document.cancelled` | SIFEN registró la cancelación. | Ver abajo |
+| `numbering.inutilized` | SIFEN registró una inutilización. | `event_id`, `document_type`, `establishment`, `point`, `numero_desde`, `numero_hasta`, `timbrado`, `sifen_protocol`, `document_ids` |
+| `webhook.test` | Lo pediste con `POST …/test`. | `{"test": true, "endpoint_id": "..."}` |
+
+El `data` de estado del documento trae `document_id`, `external_id`,
+`document_type`, `internal_status`, `sifen_status`, `sifen_result_code` y
+`sifen_result_message`. No incluye los `fiscal_warnings`: si los necesitás,
+leé el documento con `GET /v1/emitters/{emitter_id}/documents/{document_id}`.
+
+`document.cancelled` llega con dos formas de `data`. Cuando lo aprueba tu
+evento de cancelación, trae `document_id`, `cdc` y `event_id`. Cuando el worker
+descubre la cancelación al consultar el CDC de un documento pendiente, trae el
+estado del documento. Apoyate sólo en `data.document_id`.
+
+Los documentos que pasan a `inutilized` vienen en
+`numbering.inutilized` (`data.document_ids`); no se publica un
+`document.inutilized` por documento. `document.submitted`,
+`document.updated` y `document.inutilized` existen en el código, pero ningún
+flujo actual los emite. Respondé `2xx` a cualquier tipo que no conozcas.
+
+### Cuándo no se publica nada
+
+- Los webhooks de documentos y de eventos (`document.*` y
+  `numbering.inutilized`) sólo se publican si el worker corre con
+  `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS=true`. En el código el valor por
+  defecto es `false`; `.env.example` lo pone en `true`. `webhook.test` y el
+  replay no dependen de ese flag.
+- Crear un documento (el `201`) y pasar a `submitting` no publican webhook.
+- Un evento rechazado, fallido o en `reconciliation_required` no publica
+  webhook: seguilo con `GET /v1/emitters/{emitter_id}/events/{event_id}` (ver
+  [Cancelación e inutilización](/docs/eventos#seguir-el-evento)).
+- Los cambios que aplica
+  `POST /v1/emitters/{emitter_id}/queries/documents/{document_id}/reconcile`
+  no publican webhook: después de reconciliar, leé el documento.
+
+### Suscripciones
+
+| `event_subscriptions` | Recibe |
+| --- | --- |
+| Ausente, `null` o `[]` | Todos los tipos. |
+| `["*"]` | Todos los tipos. |
+| `["document.*"]` | Los tipos que empiezan con `document.`; no incluye `numbering.inutilized`. |
+| `["document.approved", "document.rejected"]` | Sólo esos tipos. |
+
+Los nombres no se validan al registrar: una errata (por ejemplo
+`document.aproved`) se acepta y nunca recibe nada. Para el ciclo fiscal
+completo usá `["document.*", "numbering.inutilized"]`.
 
 ## Headers firmados
 
@@ -17,7 +167,8 @@ El secreto nunca vuelve a aparecer en la API.
 | `X-Kila-Event` | Tipo de evento |
 | `X-Kila-Signature` | `v1=` + HMAC-SHA256 hexadecimal |
 
-La entrada binaria exacta es:
+Cada request lleva además `Content-Type: application/json` y
+`User-Agent: KilaSifen-Webhook/1`. La entrada binaria exacta del HMAC es:
 
 ```text
 v1 + "." + timestamp + "." + delivery_id + "." + event_type + "." + raw_body
@@ -32,5 +183,79 @@ v1 + "." + timestamp + "." + delivery_id + "." + event_type + "." + raw_body
 5. Aplicá el cambio y guardá el ID dentro de la misma transacción.
 6. Respondé `2xx` después del commit.
 
-Un delivery ID repetido debe responder éxito sin repetir el efecto de negocio.
-KilaSifen reintenta transporte, `408`, `425`, `429` y `5xx`.
+Cada intento expira a los 5 segundos. Si aplicar el cambio puede tardar más,
+guardá la entrega (con su delivery ID) en tu base, respondé `2xx` y procesala
+aparte.
+
+El [SDK TypeScript](/docs/sdk-typescript) (`@kilasifen/sdk`, en `sdks/typescript`) hace los pasos 2 a
+4 con `verifyWebhook`. Si le pasás `isDeliveryProcessed` y el ID ya está
+guardado, devuelve `valid: false` con `reason: "duplicate_delivery"`: en ese
+caso respondé `2xx` sin repetir el efecto; cualquier otra respuesta deja la
+entrega como fallida o la hace reintentar. Durante una rotación de secreto,
+verificá con el secreto nuevo y, si da `invalid_signature`, con el anterior.
+
+## Reintentos
+
+| Respuesta de tu endpoint | Resultado |
+| --- | --- |
+| `2xx` | `delivered`. |
+| Timeout (5 s), error de conexión, `408`, `425`, `429` o `5xx` | Se reintenta. |
+| Otro `3xx` o `4xx` | `failed`, sin reintento (las redirecciones no se siguen). |
+| Host que ya no resuelve o que resuelve a una IP no pública | `failed`, sin reintento. |
+
+Se hacen hasta `retry_policy.max_attempts` intentos. Con los 5 por defecto,
+las esperas son 10 s, 30 s, 2 min y 5 min; con 6 a 8 intentos se suman 15, 30
+y 60 min. Cada reintento conserva el `delivery_id` y el body exacto; cambian
+`X-Kila-Timestamp` y la firma. Un body de más de 256 KiB no se envía y la
+entrega queda `failed`.
+
+El estado de una entrega cuyo ID conocés se lee con
+`GET /v1/emitters/{emitter_id}/webhook-deliveries/{delivery_id}` (scope
+`tenant:read`): `final_status` (`pending`, `retry_pending`, `delivered` o
+`failed`), `attempt_number`, `response_code` y un extracto de la respuesta. El
+listado de entregas es sólo para administradores de la plataforma.
+
+## Probar un endpoint y reenviar eventos
+
+`POST /v1/emitters/{emitter_id}/webhooks/{endpoint_id}/test` envía, sin body,
+un evento sintético `webhook.test` firmado con el secreto del endpoint. Su
+`data` es fija (`{"test": true, "endpoint_id": "..."}`) y nunca representa un
+cambio de estado fiscal: respondé `2xx` sin ejecutar lógica de negocio. Se
+entrega aunque el endpoint no esté suscripto a `webhook.test`. Un endpoint
+inactivo responde `409 webhooks.endpoint_inactive`.
+
+`POST /v1/emitters/{emitter_id}/webhooks/{endpoint_id}/deliveries/replay`
+reenvía a ese endpoint un evento que KilaSifen ya generó para tu emisor:
+
+```json
+{"delivery_id": "6f9c2d0e-4b1a-4c55-9b0e-2f3c1a7d8e90"}
+```
+
+El `delivery_id` es el que recibiste en `X-Kila-Delivery-ID` o el que devolvió
+un `test` o un replay anterior. Una entrega que nunca te llegó no tiene un ID
+que puedas conocer: recuperá ese estado consultando el documento. El destino
+puede ser otro endpoint activo del mismo emisor.
+
+La entrega nueva copia `type`, `data` y `occurred_at` de la original con otro
+`delivery_id`.
+
+| Respuesta | Cuándo |
+| --- | --- |
+| `422 request.validation_failed` | El body trae `event_type`, `payload` u otro campo además de `delivery_id`. |
+| `404 webhooks.endpoint_not_found` | El endpoint no existe o es de otro emisor. |
+| `404 webhooks.delivery_not_found` | La entrega no existe o es de otro emisor. |
+| `409 webhooks.endpoint_inactive` | El endpoint destino está inactivo. |
+| `409 webhooks.event_not_subscribed` | El endpoint destino no está suscripto al tipo del evento. |
+| `409 webhooks.delivery_not_replayable` | La entrega original no guardó un evento completo. |
+
+El replay de un `webhook.test` exige que el endpoint esté suscripto a ese tipo:
+para repetir una prueba, usá `POST …/test`.
+
+## Duplicados y orden
+
+Un reintento repite el delivery ID: respondé `2xx` sin repetir el efecto. Un
+replay, en cambio, trae un delivery ID nuevo con el mismo `occurred_at`, y
+puede llegar después de eventos más nuevos del mismo documento. Guardá, por
+documento (o por `data.event_id` en `numbering.inutilized`), el `occurred_at`
+del último evento que aplicaste, comparalo como fecha y no como texto, e
+ignorá con `2xx` todo evento con un `occurred_at` menor o igual.

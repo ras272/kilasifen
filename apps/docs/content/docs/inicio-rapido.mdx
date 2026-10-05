@@ -4,8 +4,16 @@ description: Emití una factura de prueba siguiendo el recorrido mínimo seguro.
 icon: Rocket
 ---
 
-Antes de empezar necesitás la URL del ambiente, una API key de consumidor y un
-emisor configurado por un administrador de la plataforma.
+Antes de empezar necesitás:
+
+- la URL de una instancia de KilaSifen conectada al ambiente de pruebas de
+  SIFEN. Para probar sin transmitir nada, mirá [Sandbox](/docs/sandbox);
+- una API key de consumidor con los scopes `tenant:read` y `fiscal:write`, que
+  emite un administrador de la plataforma (ver
+  [Autenticación](/docs/autenticacion));
+- un emisor asignado a tu consumidor, con perfil fiscal completo, CSC cargado,
+  certificado activo y timbrado vigente (ver [Emisores](/docs/emisores) y
+  [Certificados y timbrado](/docs/certificados-y-timbrado)).
 
 <Steps>
   <Step>
@@ -13,21 +21,41 @@ emisor configurado por un administrador de la plataforma.
 
   ```bash
   curl https://TU_API/v1/health
+  curl https://TU_API/v1/ready
   ```
 
-  `health` confirma que el proceso responde. Antes de emitir, verificá también
-  `/v1/ready`, que controla PostgreSQL, Redis y los workers.
+  `health` confirma que el proceso responde. `ready` controla la base de datos
+  y Redis y, en staging y producción, que haya workers en las colas
+  `documents`, `events` y `webhooks` y que el despachador del outbox esté
+  activo; si falta algo responde `503`. En `development` y `test` no controla
+  workers ni outbox: asegurate de que estén corriendo.
   </Step>
 
   <Step>
-  ### Consultá el emisor
+  ### Revisá el emisor
 
   ```bash
   curl https://TU_API/v1/emitters/EMITTER_ID \
     -H "X-API-Key: $KILA_API_KEY"
+
+  curl https://TU_API/v1/emitters/EMITTER_ID/health \
+    -H "X-API-Key: $KILA_API_KEY"
   ```
 
-  La clave sólo puede acceder a emisores pertenecientes a su consumidor.
+  La clave sólo ve emisores de su consumidor; cualquier otro responde `404`.
+  Antes de emitir comprobá que:
+
+  - el emisor tenga `status: active` y `fiscal_profile_complete: true`. Sin
+    perfil fiscal la factura responde `422 emitters.fiscal_profile_required`;
+  - el emisor tenga `csc_configured: true` y un `csc_id`. Sin CSC no se puede
+    calcular el QR y el documento termina en `failed` con
+    `emitters.csc_required`;
+  - `health` muestre `has_active_certificate` y `has_active_stamping` en
+    `true`, y un `certificate_valid_until` futuro (un certificado activo pero
+    vencido también da `true`). Sin certificado activo el documento queda en
+    `queued` sin un error visible (ver
+    [Estados y reintentos](/docs/estados-y-reintentos#cuando-el-intento-no-arranca));
+    sin un timbrado vigente en la fecha de emisión termina en `failed`.
   </Step>
 
   <Step>
@@ -47,10 +75,10 @@ emisor configurado por un administrador de la plataforma.
     "factura": {
       "establecimiento": "001",
       "punto": "001",
-      "fecha_emision": "2026-08-22T09:30:00-03:00",
       "moneda": "PYG",
       "cliente": {
-        "ruc": "80000000-0",
+        "ruc": "88899990-9",
+        "tipo_contribuyente": 2,
         "razon_social": "Cliente de prueba"
       },
       "items": [
@@ -60,27 +88,74 @@ emisor configurado por un administrador de la plataforma.
           "precio_unitario": 150000,
           "tasa": 10
         }
-      ]
+      ],
+      "condicion_operacion": {
+        "tipo": "contado",
+        "formas_pago": [{ "tipo": "efectivo", "monto": 150000 }]
+      }
     }
   }
   ```
+
+  - `cliente`: un receptor contribuyente necesita `tipo_contribuyente`
+    (1 persona física, 2 persona jurídica) y el RUC con su DV, que se valida
+    por módulo 11. Si falta o no coincide, la respuesta es `422` con
+    `documents.cliente.tipo_contribuyente_required` o
+    `documents.cliente.dv_mismatch` en el detalle.
+  - El RUC del ejemplo es ficticio (es el receptor del ejemplo de QR del
+    Manual Técnico v150, §13.8.4): pasa la validación local, pero el Manual
+    exige que el RUC del receptor exista y esté activo (validaciones 1306 a
+    1308). En el ambiente de pruebas usá el RUC de un receptor inscripto.
+  - `fecha_emision` no va en el ejemplo: si la omitís, KilaSifen usa la hora
+    de Paraguay al armar el XML. Si la enviás, tiene que estar entre 720 h
+    antes y 120 h después del momento de crear el documento
+    (`422 documents.fecha_emision.too_old` o `too_far_ahead`), y se vuelve a
+    controlar antes de firmar. Una fecha de más de 120 h atrás se acepta con
+    un aviso en `fiscal_warnings`: es una transmisión extemporánea (MT v150
+    §6.2.1), que se aprueba con observación y puede tener sanción.
+  - `condicion_operacion` declara cómo se cobró. Si la omitís, la factura se
+    informa al contado con un pago en efectivo por el total; para crédito u
+    otros medios de pago, ver [Facturas](/docs/facturas#montos-iva-y-pagos).
+  - `codigo_seguridad` es opcional: si no lo enviás, KilaSifen genera uno
+    aleatorio y lo conserva en los reintentos.
   </Step>
 
   <Step>
   ### Esperá el estado final
 
-  La creación devuelve un documento y un job en `queued`; todavía no significa
-  aprobación. Consultá el documento o procesá sus webhooks hasta obtener un
-  estado terminal.
+  La creación responde `201` con `document` y `job` en `queued`; todavía no
+  significa aprobación. Consultá el documento, o el job con
+  `GET /v1/emitters/EMITTER_ID/jobs/JOB_ID`, hasta que llegue a un estado
+  terminal. Qué significa cada estado y qué hacer está en
+  [Estados y reintentos](/docs/estados-y-reintentos).
 
   ```bash
   curl https://TU_API/v1/emitters/EMITTER_ID/documents/DOCUMENT_ID \
     -H "X-API-Key: $KILA_API_KEY"
   ```
+
+  En lugar de consultar podés registrar un [webhook](/docs/webhooks). Eso
+  requiere una clave con `tenant:write`, y la instancia publica los cambios de
+  estado sólo si el worker corre con `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS=true`
+  (en el código vale `false`).
   </Step>
 </Steps>
 
 <Callout type="warn" title="Reintentos del ERP">
-  Si tu request inicial pierde la respuesta, reenviá exactamente la misma
-  intención con el mismo `idempotency_key`. No inventes una nueva clave.
+  Si tu request inicial pierde la respuesta, reenviá exactamente el mismo
+  cuerpo y los mismos headers con el mismo `idempotency_key`: la respuesta es
+  `200` con el mismo documento y job. Si algo difiere, incluido el header
+  `X-Kila-Test-Outcome`, la respuesta es
+  `409 documents.idempotency_key_conflict`. No inventes una nueva clave: el
+  mismo `external_id` con otra clave responde
+  `409 documents.external_id_conflict`.
+</Callout>
+
+<Callout type="info" title="Nombre del emisor en el ambiente de pruebas">
+  Para el ambiente de pruebas, el Manual Técnico v150 pide un texto fijo como
+  nombre del emisor (`dNomEmi`, validación 1263) y la Guía de pruebas de la
+  DNIT (febrero de 2026) pide otro. Cuál acepta hoy el SIFEN de pruebas está
+  NO DETERMINADO. KilaSifen usa la razón social por defecto; si SIFEN rechaza
+  con `1263`, el operador puede fijar el texto con
+  `KILA_SIFEN_TEST_EMITTER_NAME_LITERAL`.
 </Callout>

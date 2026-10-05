@@ -8,7 +8,7 @@ import ipaddress
 import socket
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 SIGNATURE_VERSION = "v1"
@@ -165,10 +165,10 @@ def verify_signature(
     """
 
     try:
-        issued_at = datetime.fromtimestamp(int(timestamp), tz=UTC)
+        issued_at = datetime.fromtimestamp(int(timestamp), tz=timezone.utc)
     except (ValueError, OverflowError, OSError):
         return SignatureVerification(False, "invalid_timestamp")
-    reference = now or datetime.now(UTC)
+    reference = now or datetime.now(timezone.utc)
     if abs((reference - issued_at).total_seconds()) > tolerance_seconds:
         return SignatureVerification(False, "stale_timestamp", delivery_id)
 

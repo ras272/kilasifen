@@ -1,4 +1,11 @@
-"""Fiscal event submission adapters backed by pysifen."""
+"""Fiscal event submission adapters backed by kilasifen.engine.
+
+Like documents, an event is submitted in two steps so the platform can make
+the exact request durable before it travels: ``prepare_event`` wraps the
+signed ``gGroupGesEve`` in an ``rEnviEventoDe`` with its real ``dId`` and
+verifies the signature locally, without network; ``submit_prepared`` sends
+that text unchanged and normalizes the answer.
+"""
 
 from __future__ import annotations
 
@@ -11,21 +18,32 @@ from signxml import InvalidSignature, XMLVerifier
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
 
-from kilasifen.domain.certificates.models import Certificate
+from kilasifen.domain.common.sifen_results import EVENT_REGISTERED_CODE
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.events.models import Event
-from pysifen import PRODUCCION, TEST
-from pysifen.sdk.errors import SifenValidationError
-from pysifen.transmissao.evento import TransmissaoEvento, _generate_id
+from kilasifen.engine import PRODUCCION, TEST
+from kilasifen.engine.sdk.errors import (
+    SifenUnexpectedResponseError,
+    SifenValidationError,
+)
+from kilasifen.engine.transmision.evento import TransmisionEvento, _generate_id
+
+#: Root element of the answer of the event reception service.
+_EVENT_RESPONSE_ROOT = "rRetEnviEventoDe"
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedEventSubmission:
+    """Signed event group and the exact ``rEnviEventoDe`` that carries it."""
+
+    signed_xml: str
+    request_xml: str
 
 
 @dataclass(slots=True)
 class EventSubmissionOutcome:
-    """Normalized result from one event submission attempt."""
+    """Normalized SIFEN answer to one event submission."""
 
-    generated_xml: str | None
-    signed_xml: str | None
-    request_xml: str
     response_raw: str
     status: str
     result_code: str | None
@@ -36,20 +54,38 @@ class EventSubmissionOutcome:
 class EventSubmissionGateway(Protocol):
     """Contract for event submission adapters."""
 
-    def submit_event(
+    def prepare_event(
         self,
         *,
         event: Event,
         emitter: Emitter,
-        certificate: Certificate,
+        certificate_bytes: bytes,
+        certificate_password: str,
+    ) -> PreparedEventSubmission:
+        """Wrap and verify one signed event without contacting SIFEN.
+
+        Raises:
+            SifenValidationError: if the event cannot be sent as is.
+        """
+
+    def submit_prepared(
+        self,
+        *,
+        request_xml: str,
+        emitter: Emitter,
         certificate_bytes: bytes,
         certificate_password: str,
     ) -> EventSubmissionOutcome:
-        """Submit one event and return normalized artifacts."""
+        """Send a prepared ``rEnviEventoDe`` unchanged and normalize the answer.
+
+        Any exception other than
+        :class:`~kilasifen.engine.sdk.errors.SifenRequestNotSentError` leaves
+        the outcome unknown: SIFEN may have processed the request.
+        """
 
 
-class PysifenEventGateway:
-    """Concrete event submission adapter backed by pysifen."""
+class KilaSifenEventGateway:
+    """Concrete event submission adapter backed by kilasifen.engine."""
 
     def __init__(self, deployment_environment: str = "test"):
         self.deployment_environment = deployment_environment
@@ -57,15 +93,14 @@ class PysifenEventGateway:
             config=SerializerConfig(xml_declaration=True, encoding="UTF-8")
         )
 
-    def submit_event(
+    def prepare_event(
         self,
         *,
         event: Event,
         emitter: Emitter,
-        certificate: Certificate,
         certificate_bytes: bytes,
         certificate_password: str,
-    ) -> EventSubmissionOutcome:
+    ) -> PreparedEventSubmission:
         if emitter.tax_environment != self.deployment_environment:
             raise SifenValidationError(
                 "Emitter tax environment does not match this deployment"
@@ -80,7 +115,16 @@ class PysifenEventGateway:
             certificate_bytes=certificate_bytes,
             certificate_password=certificate_password,
         )
+        return PreparedEventSubmission(signed_xml=event_xml, request_xml=request_xml)
 
+    def submit_prepared(
+        self,
+        *,
+        request_xml: str,
+        emitter: Emitter,
+        certificate_bytes: bytes,
+        certificate_password: str,
+    ) -> EventSubmissionOutcome:
         ambiente = TEST if emitter.tax_environment == "test" else PRODUCCION
         response_raw = _submit_event_raw(
             ambiente=ambiente,
@@ -88,14 +132,10 @@ class PysifenEventGateway:
             certificate_password=certificate_password,
             request_xml=request_xml,
         )
-        response = response_raw
-
-        result_code, result_message, status, protocol = _normalize_response(response)
-
+        result_code, result_message, status, protocol = _normalize_response(
+            response_raw
+        )
         return EventSubmissionOutcome(
-            generated_xml=event_xml,
-            signed_xml=None,
-            request_xml=request_xml,
             response_raw=response_raw,
             status=status,
             result_code=result_code,
@@ -122,25 +162,38 @@ def _normalize_response(response) -> tuple[str | None, str | None, str, str | No
     status = "submitted"
     protocol = None
 
+    state_text = None
     g_res_proc = []
     if getattr(response, "gResProcEVe", None):
         first_group = response.gResProcEVe[0]
         g_res_proc = getattr(first_group, "gResProc", [])
         protocol = str(getattr(first_group, "dProtAut", "") or "").strip() or None
-        if getattr(first_group, "dEstRes", None):
-            raw_status = str(first_group.dEstRes).strip().lower()
-            status = "approved" if "aprob" in raw_status else "rejected"
+        state_text = getattr(first_group, "dEstRes", None)
 
     if g_res_proc:
         result_code = getattr(g_res_proc[0], "dCodRes", None)
         result_message = getattr(g_res_proc[0], "dMsgRes", None)
 
-    if result_code in {"0260", "0300", "0600"}:
-        status = "approved"
-    elif result_code is not None and status != "approved":
-        status = "rejected"
-
+    status = _event_status(result_code, state_text)
     return result_code, result_message, status, protocol
+
+
+def _event_status(result_code: str | None, state_text: str | None) -> str:
+    """Read an event answer: only 0600 registers it (DECISIONES F70).
+
+    "Evento registrado correctamente" is 0600 (MT v150 §12.3.6.3 BU01,
+    p. 158; dProtAut comes with it, §9.5.3 p. 53). 0260 and 0300 belong to
+    the DE and lot reception services. Any other code is a rejection; an
+    answer without code is not classified and stays pending.
+    """
+
+    if result_code == EVENT_REGISTERED_CODE:
+        return "approved"
+    if result_code is not None:
+        return "rejected"
+    if "rechaz" in str(state_text or "").strip().lower():
+        return "rejected"
+    return "submitted"
 
 
 def _submit_event_raw(
@@ -150,12 +203,12 @@ def _submit_event_raw(
     certificate_password: str,
     request_xml: str,
 ) -> str:
-    with TransmissaoEvento(
+    with TransmisionEvento(
         ambiente=ambiente,
         pkcs12_data=certificate_bytes,
         pkcs12_password=certificate_password,
-    ) as transmissao:
-        response_raw = transmissao._send_raw_xml("evento", request_xml)
+    ) as transmision:
+        response_raw = transmision._send_raw_xml("evento", request_xml)
     return response_raw.decode("utf-8")
 
 
@@ -249,27 +302,35 @@ def _extract_wrapped_event_group_xml(request_xml: str) -> str:
 def _normalize_response_raw_xml(
     response_raw: str,
 ) -> tuple[str | None, str | None, str, str | None]:
+    """Read an event answer; anything but ``rRetEnviEventoDe`` is uncertain.
+
+    A SOAP Fault, an HTML page from a proxy or a truncated body arrive after
+    the request may have been processed, so they raise
+    :class:`SifenUnexpectedResponseError` (outcome unknown) and never a
+    validation error.
+    """
     try:
         root = ET.fromstring(response_raw.encode("utf-8"))
     except ET.ParseError as exc:
-        raise SifenValidationError("events.response.invalid_xml") from exc
+        raise SifenUnexpectedResponseError(
+            expected_root=_EVENT_RESPONSE_ROOT,
+            actual_root="invalid_xml",
+            raw_body=response_raw,
+        ) from exc
+    root_name = root.tag.rsplit("}", 1)[-1]
+    if root_name != _EVENT_RESPONSE_ROOT:
+        raise SifenUnexpectedResponseError(
+            expected_root=_EVENT_RESPONSE_ROOT,
+            actual_root=root_name,
+            code=_find_text(root, "dCodRes"),
+            response_message=_find_text(root, "dMsgRes"),
+            raw_body=response_raw,
+        )
 
     result_code = _find_text(root, "dCodRes")
     result_message = _find_text(root, "dMsgRes")
     protocol = _find_text(root, "dProtAut")
-    status_text = (_find_text(root, "dEstRes") or "").strip().lower()
-
-    status = "submitted"
-    if "aprob" in status_text:
-        status = "approved"
-    elif "rechaz" in status_text:
-        status = "rejected"
-
-    if result_code in {"0260", "0300", "0600"}:
-        status = "approved"
-    elif result_code is not None and status != "approved":
-        status = "rejected"
-
+    status = _event_status(result_code, _find_text(root, "dEstRes"))
     return result_code, result_message, status, protocol
 
 

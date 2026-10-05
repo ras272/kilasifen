@@ -3,6 +3,7 @@
 import hmac
 import logging
 from collections.abc import AsyncGenerator, Callable, Generator
+from datetime import datetime
 
 from fastapi import Depends, Request, Security
 from fastapi.security import APIKeyHeader
@@ -24,6 +25,7 @@ from kilasifen.application.sandbox.service import SandboxOutcomePolicy
 from kilasifen.application.stampings.service import StampingService
 from kilasifen.application.webhooks.service import WebhookService
 from kilasifen.config import get_settings
+from kilasifen.domain.common.paraguay_time import paraguay_now
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.repositories.access import SqlAlchemyAccessRepository
 from kilasifen.infrastructure.db.repositories.api_keys import SqlAlchemyApiKeyRepository
@@ -56,8 +58,9 @@ from kilasifen.infrastructure.db.repositories.webhooks import (
 from kilasifen.infrastructure.db.session import session_scope
 from kilasifen.infrastructure.jobs.outbox import SqlAlchemyJobOutboxQueue
 from kilasifen.infrastructure.limits.redis import RedisRequestLimiter
-from kilasifen.infrastructure.sifen.event import PysifenEventGateway
-from kilasifen.infrastructure.sifen.query import PysifenQueryGateway
+from kilasifen.infrastructure.sifen.event import KilaSifenEventGateway
+from kilasifen.infrastructure.sifen.query import KilaSifenQueryGateway
+from kilasifen.infrastructure.sifen.raw_xml_policy import require_signable_raw_payload
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
 from kilasifen.security import (
@@ -74,7 +77,10 @@ api_key_header = APIKeyHeader(
     name="X-API-Key",
     auto_error=False,
     scheme_name="KilaApiKey",
-    description="Private consumer credential. Never expose it to browser clients.",
+    description=(
+        "Credencial privada del consumidor. Nunca la expongas en un navegador "
+        "ni en una app cliente."
+    ),
 )
 
 
@@ -215,6 +221,7 @@ async def enforce_request_limits(
                 message="Request limit exceeded. Retry later.",
                 category="rate_limit",
                 details={"retry_after_seconds": lease.retry_after_seconds},
+                headers={"Retry-After": str(lease.retry_after_seconds)},
             )
         yield
     finally:
@@ -324,8 +331,15 @@ def get_job_service(session: Session = Depends(get_db_session)) -> JobService:
     return JobService(repository)
 
 
+def get_fiscal_clock() -> Callable[[], datetime]:
+    """Clock the fiscal date rules use (official Paraguayan time, UTC-3)."""
+
+    return paraguay_now
+
+
 def get_document_service(
     session: Session = Depends(get_db_session),
+    clock: Callable[[], datetime] = Depends(get_fiscal_clock),
 ) -> DocumentService:
     """Build the document application service for one request."""
 
@@ -346,6 +360,8 @@ def get_document_service(
         database_url=settings.database_url,
         encryption_key=settings.encryption_key,
         sandbox_policy=SandboxOutcomePolicy(settings.environment),
+        raw_payload_policy=require_signable_raw_payload,
+        clock=clock,
     )
 
 
@@ -364,7 +380,7 @@ def get_query_service(
         document_repository=SqlAlchemyDocumentRepository(session),
         job_repository=SqlAlchemyJobRepository(session),
         certificate_store=EncryptedCertificateStore(settings.encryption_key),
-        query_gateway=PysifenQueryGateway(settings.sifen_environment),
+        query_gateway=KilaSifenQueryGateway(settings.sifen_environment),
     )
 
 
@@ -398,9 +414,10 @@ def get_event_service(
         certificate_repository=SqlAlchemyCertificateRepository(session),
         job_repository=SqlAlchemyJobRepository(session),
         certificate_store=EncryptedCertificateStore(settings.encryption_key),
-        submission_gateway=PysifenEventGateway(settings.sifen_environment),
-        numbering_repository=SqlAlchemyDocumentNumberingSequenceRepository(session),
+        submission_gateway=KilaSifenEventGateway(settings.sifen_environment),
         inutilized_range_repository=SqlAlchemyInutilizedNumberRangeRepository(session),
+        stamping_repository=SqlAlchemyStampingRepository(session),
+        query_gateway=KilaSifenQueryGateway(settings.sifen_environment),
         webhook_publisher=webhook_service,
         queue=outbox_queue,
         database_url=settings.database_url,

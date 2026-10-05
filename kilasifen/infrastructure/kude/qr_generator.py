@@ -1,106 +1,46 @@
-"""SIFEN QR URL generator (Manual Tecnico v150 section 13.8)."""
+"""Render the SIFEN QR of a KuDE.
+
+The QR URL itself is ``gCamFuFD/dCarQR`` of the signed XML, computed by
+:func:`kilasifen.engine.sdk.fiscal.build_qr_payload_from_signed_xml`; this
+module only draws it.
+"""
 
 from __future__ import annotations
 
-import hashlib
-from datetime import datetime
-from decimal import Decimal
+import math
 from io import BytesIO
 
 import qrcode
 
-_QR_VERSION = "150"
-_URL_BASE_PRODUCCION = "https://ekuatia.set.gov.py/consultas/qr?"
-_URL_BASE_TEST = "https://ekuatia.set.gov.py/consultas-test/qr?"
+#: ISO/IEC 18004, the standard MT v150 §13.8.1 follows, asks for a quiet
+#: zone of at least four modules around the symbol.
+MIN_QUIET_ZONE_MODULES = 4
 
 
-def build_sifen_qr_url(
-    *,
-    cdc: str,
-    fecha_emision: datetime,
-    rec_identifier: str,
-    total_general: Decimal | int | None,
-    total_iva: Decimal | int | None,
-    cantidad_items: int,
-    digest_value: str,
-    csc: str,
-    id_csc: str,
-    ambiente: str,
-) -> str:
-    """Build the SIFEN QR URL per Manual Tecnico section 13.8.
+def quiet_zone_modules(modules_count: int) -> int:
+    """Return the quiet zone, in modules, for a symbol of ``modules_count``.
 
-    The CSC is consumed for the hash but never appears in the returned URL.
+    At least four modules (ISO/IEC 18004) and, since the KuDE prints the QR
+    wider than 25 mm, a safe margin of at least 10% of the image width (MT
+    v150 §13.8.1 p. 205): ``2b / (n + 2b) >= 0.10`` holds for ``b >= n / 18``.
     """
 
-    if not cdc or len(cdc) != 44:
-        raise ValueError("cdc must be 44 chars")
-    if not csc:
-        raise ValueError("csc is required to compute cHashQR")
-    if not id_csc:
-        raise ValueError("id_csc is required")
-    if not digest_value:
-        raise ValueError("digest_value is required")
-
-    fecha_str = fecha_emision.strftime("%Y-%m-%dT%H:%M:%S")
-    fecha_hex = fecha_str.encode("utf-8").hex()
-    digest_hex = digest_value.encode("utf-8").hex()
-
-    receptor = (rec_identifier or "0").strip() or "0"
-    total_general_str = _amount_or_zero(total_general)
-    total_iva_str = _amount_or_zero(total_iva)
-
-    params = (
-        f"nVersion={_QR_VERSION}"
-        f"&Id={cdc}"
-        f"&dFeEmiDE={fecha_hex}"
-        f"&dRucRec={receptor}"
-        f"&dTotGralOpe={total_general_str}"
-        f"&dTotIVA={total_iva_str}"
-        f"&cItems={int(cantidad_items)}"
-        f"&DigestValue={digest_hex}"
-        f"&IdCSC={id_csc}"
-    )
-
-    hash_input = (params + csc).encode("utf-8")
-    chash_qr = hashlib.sha256(hash_input).hexdigest()
-
-    base_url = _resolve_base_url(ambiente)
-    return f"{base_url}{params}&cHashQR={chash_qr}"
+    return max(MIN_QUIET_ZONE_MODULES, math.ceil(modules_count / 18))
 
 
 def render_qr_image(url: str, *, box_size: int = 5) -> bytes:
-    """Render the QR URL as a PNG byte string."""
+    """Render the QR URL as a PNG byte string, quiet zone included."""
 
     qr = qrcode.QRCode(
         version=None,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
         box_size=box_size,
-        border=2,
+        border=MIN_QUIET_ZONE_MODULES,
     )
     qr.add_data(url)
     qr.make(fit=True)
+    qr.border = quiet_zone_modules(qr.modules_count)
     image = qr.make_image(fill_color="black", back_color="white")
     buffer = BytesIO()
     image.save(buffer, format="PNG")
     return buffer.getvalue()
-
-
-def _amount_or_zero(value: Decimal | int | None) -> str:
-    if value is None:
-        return "0"
-    decimal_value = Decimal(str(value))
-    if decimal_value == 0:
-        return "0"
-    text = format(decimal_value, "f")
-    if "." in text:
-        text = text.rstrip("0").rstrip(".")
-    return text or "0"
-
-
-def _resolve_base_url(ambiente: str) -> str:
-    normalized = (ambiente or "").strip().lower()
-    if normalized in {"produccion", "production", "prod"}:
-        return _URL_BASE_PRODUCCION
-    if normalized in {"test", "testing", "homologacion"}:
-        return _URL_BASE_TEST
-    raise ValueError(f"unknown ambiente: {ambiente!r}")

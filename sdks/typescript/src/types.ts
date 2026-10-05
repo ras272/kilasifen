@@ -19,6 +19,27 @@ export interface ApiErrorPayload {
   details?: Record<string, unknown> | null;
 }
 
+/**
+ * One entry of `details.errors` in a `422 request.validation_failed` error.
+ * The submitted value is never echoed back.
+ */
+export interface ValidationErrorItem {
+  loc: Array<string | number>;
+  message: string;
+  type: string;
+  /**
+   * Stable code of the fiscal rule the payload breaks, such as
+   * `documents.cliente.tipo_contribuyente_required`. Absent for plain
+   * contract errors (a missing field, a pattern).
+   */
+  code?: string;
+}
+
+/** `details` of a `422 request.validation_failed` error. */
+export interface ValidationErrorDetails {
+  errors: ValidationErrorItem[];
+}
+
 export interface ApiErrorEnvelope {
   error: ApiErrorPayload;
 }
@@ -35,20 +56,26 @@ export interface RequestOptions {
   headers?: Record<string, string>;
 }
 
+/** The five deterministic SIFEN outcomes of the API test runtime. */
 export type SandboxOutcome =
   | "approved"
   | "approved_with_observation"
-  | "rejected";
+  | "rejected"
+  | "transport_timeout"
+  | "accepted_but_response_lost";
 
 export interface CreateOptions extends RequestOptions {
   /**
    * Stable identifier for one fiscal intent. Reusing it returns the original
-   * document instead of emitting another one.
+   * document instead of emitting another one. It travels as the body field
+   * `idempotency_key`, the one the API reads; the `Idempotency-Key` header is
+   * sent too but the API ignores it today.
    */
   idempotencyKey?: string;
   /**
-   * Deterministic SIFEN result for automated tests. The API rejects this
-   * header outside its test runtime.
+   * Deterministic SIFEN result for automated tests. The API answers
+   * `422 sandbox.test_runtime_required` outside a deployment with
+   * `KILA_SIFEN_ENVIRONMENT=test`.
    */
   sandboxOutcome?: SandboxOutcome;
 }
@@ -67,45 +94,75 @@ export interface EconomicActivity {
 }
 
 export interface GenerationResponsible {
-  tipo_documento?: number;
+  /** iTipIDRespDE: 1-4, or 9 together with `descripcion_tipo_documento`. */
+  tipo_documento: 1 | 2 | 3 | 4 | 9;
+  /** Real document type (9-41 characters); only with `tipo_documento` 9. */
+  descripcion_tipo_documento?: string;
   numero_documento: string;
   nombre: string;
+  /** dCarRespDE: 4-100 characters. */
   cargo: string;
 }
 
+/**
+ * Optional echo of the emitter identity. `ruc`, `dv` and `razon_social` must
+ * match the registered emitter (422 otherwise); gEmis comes from the emitter
+ * fiscal profile.
+ */
 export interface EmitterData {
   ruc?: string;
   dv?: string;
   razon_social?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   direccion?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   numero?: NumericCode;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   complemento_1?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   complemento_2?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   departamento?: NumericCode;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   descripcion_departamento?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   distrito?: NumericCode;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   descripcion_distrito?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   ciudad?: NumericCode;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   descripcion_ciudad?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   telefono?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   email?: string;
+  /** @deprecated Ignored: set it in the emitter fiscal profile. */
   actividad_economica?: EconomicActivity;
   responsable_generacion?: GenerationResponsible;
 }
 
 export interface Customer {
   naturaleza?: number;
+  /** iTiOpe: a non-taxpayer only allows 2 (B2C) or 4 (B2F). */
   tipo_operacion?: number;
+  /** iTiContRec: mandatory with `ruc`; there is no default. */
   tipo_contribuyente?: number;
+  /** dRucRec, optionally as `RUC-DV`; the DV is mandatory and checked. */
   ruc?: string;
   dv?: string;
+  /** iTipIDRec: 1-6 or 9; 5 (innominado) only in B2C invoices. */
   tipo_documento_identidad?: number;
+  /** Real document type (9-41 characters) when `tipo_documento_identidad` is 9. */
+  descripcion_tipo_documento?: string;
   numero_documento_identidad?: string;
   razon_social?: string;
   nombre?: string;
   direccion?: string;
   numero_casa?: NumericCode;
+  /** cPaisRec: other than PRY only for B2F. */
   pais_codigo?: string;
+  /** Taken from the official country catalog; must match when sent. */
   pais_descripcion?: string;
   departamento?: NumericCode;
   descripcion_departamento?: string;
@@ -134,8 +191,15 @@ export interface CardPayment {
 export interface Payment {
   tipo: NumericCode;
   monto: DecimalValue;
+  /** cMoneTiPag, an ISO 4217 code; omitted, the currency of the operation. */
   moneda?: string;
+  /** @deprecated Ignored: dDMoneTiPag is the official name of `moneda` (1555). */
   moneda_descripcion?: string;
+  /**
+   * dTiCamTiPag (up to 4 decimals): mandatory when `moneda` is not PYG (1556)
+   * and refused when it is PYG (1557). Omitted for a payment in the currency
+   * of the operation, the operation `tipo_cambio` is used.
+   */
   tipo_cambio?: DecimalValue;
   numero_cheque?: NumericCode;
   banco?: string;
@@ -145,6 +209,7 @@ export interface Payment {
 export interface Installment {
   monto: DecimalValue;
   fecha_vencimiento?: IsoDate;
+  /** cMoneCuo, an ISO 4217 code; omitted, the currency of the operation. */
   moneda?: string;
 }
 
@@ -152,12 +217,21 @@ export interface CreditCondition {
   tipo: NumericCode;
   descripcion?: string;
   plazo_descripcion?: string;
+  /**
+   * dMonEnt. Requires `formas_pago` in the operation condition with the
+   * payments of that initial delivery, which must add up to it (1551).
+   */
   monto_entrega_inicial?: DecimalValue;
   cuotas?: Installment[];
 }
 
 export interface OperationCondition {
   tipo?: NumericCode;
+  /**
+   * gPaConEIni. Contado: they add up to dTotGralOpe (0.50 tolerance); without
+   * them one cash payment of the total is written. Credito: only with
+   * `monto_entrega_inicial`, adding up to it (1551/1552).
+   */
   formas_pago?: Payment[];
   credito?: CreditCondition;
 }
@@ -172,11 +246,20 @@ export interface DocumentItem {
   cantidad: DecimalValue;
   precio_unitario: DecimalValue;
   descuento_particular?: DecimalValue;
+  /**
+   * dDescGloItem. Derived as `porcentaje_descuento_global * precio_unitario /
+   * 100` (NT 01); if sent it must match that within 0.8 (1862).
+   */
   descuento_global?: DecimalValue;
   anticipo_particular?: DecimalValue;
   anticipo_global?: DecimalValue;
   cdc_anticipo?: string;
   afectacion?: TaxAffectation;
+  /**
+   * dPropIVA: mandatory and strictly between 0 and 100 with `gravado_parcial`
+   * (1906); if sent, 100 with `gravado` (1904) and 0 with `exento` or
+   * `exonerado` (1905).
+   */
   proporcion_gravada?: DecimalValue;
   tasa?: 0 | 5 | 10;
   tipo_cambio_item?: DecimalValue;
@@ -202,12 +285,30 @@ export interface BaseFiscalDocument {
   numero?: NumericCode;
   fecha?: IsoDateTime;
   fecha_emision?: IsoDateTime;
+  /** cMoneOpe: an ISO 4217 code of the XSD (default PYG). */
   moneda?: string;
+  /** dTiCam: up to 4 decimals. */
   tipo_cambio?: DecimalValue;
   condicion_tipo_cambio?: number;
+  /**
+   * dPorcDescTotal: global discount percentage (default 0), applied to every
+   * item as dDescGloItem (NT 01, 1860/1862).
+   */
+  porcentaje_descuento_global?: DecimalValue;
+  /**
+   * dRedon. `ninguno` (default) writes 0; `multiplo_50` rounds dTotOpe down
+   * to a multiple of 50 Gs, only in PYG. Foreign currencies are never rounded.
+   */
+  redondeo?: "ninguno" | "multiplo_50";
   tipo_transaccion?: NumericCode;
+  /** iTImp. 2 (ISC) is refused: the typed contracts cannot express it. */
   tipo_impuesto?: NumericCode;
+  /** Optional; must match the emitter fiscal profile (iTipCont). */
   tipo_contribuyente?: number;
+  /**
+   * dCodSeg. Omit it and the platform draws a random one; if sent it must be
+   * random, from 1 to 999999999 and different from the document number.
+   */
   codigo_seguridad?: NumericCode;
   emisor?: EmitterData;
   cliente: Customer;
@@ -225,16 +326,33 @@ export interface Factura extends BaseFiscalDocument {
   factura?: Record<string, JsonValue>;
 }
 
+/**
+ * iMotEmi (MT v150 E401): 1 `devolucion_y_ajuste`, 2 `devolucion`,
+ * 3 `descuento`, 4 `bonificacion`, 5 `credito_incobrable`,
+ * 6 `recupero_costo`, 7 `recupero_gasto` or 8 `ajuste_precio`. Always send
+ * the real motive: when omitted, the platform currently informs 1.
+ */
+export type IssueMotive =
+  | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8
+  | "devolucion_y_ajuste"
+  | "devolucion"
+  | "descuento"
+  | "bonificacion"
+  | "credito_incobrable"
+  | "recupero_costo"
+  | "recupero_gasto"
+  | "ajuste_precio";
+
 export interface NotaCredito extends BaseFiscalDocument {
   tipo_documento?: 5;
-  motivo_emision?: NumericCode;
+  motivo_emision?: IssueMotive;
   documento_asociado: AssociatedDocument;
   nota_credito?: Record<string, JsonValue>;
 }
 
 export interface NotaDebito extends BaseFiscalDocument {
   tipo_documento?: 6;
-  motivo_emision?: NumericCode;
+  motivo_emision?: IssueMotive;
   documento_asociado: AssociatedDocument;
   nota_debito?: Record<string, JsonValue>;
 }
@@ -276,6 +394,8 @@ export interface Document {
   establishment: string | null;
   point: string | null;
   document_number: number | null;
+  /** Fiscal warnings found at creation, such as an extemporaneous emission date. */
+  fiscal_warnings: string[];
   created_at: IsoDateTime;
   updated_at: IsoDateTime;
 }
@@ -307,14 +427,30 @@ export interface CreatedDocument {
   job: Job;
 }
 
+/** found (0422), not_found_or_not_approved (0420) or error (any other code). */
+export type DocumentQueryStatus =
+  | "found"
+  | "not_found_or_not_approved"
+  | "error";
+
+/** One event SIFEN registered on the CDC (xContEv). */
+export interface RegisteredEvent {
+  kind: string;
+  cdc: string | null;
+  protocol: string | null;
+}
+
 export interface DocumentQuery {
   document_id: string;
   cdc: string;
-  status: string;
+  status: DocumentQueryStatus | string;
   result_code: string | null;
   result_message: string | null;
   content_xml: string | null;
   processed_at: IsoDateTime | null;
+  sifen_protocol: string | null;
+  cancelled: boolean;
+  events: RegisteredEvent[];
 }
 
 export interface ReconciledDocument {
@@ -390,6 +526,11 @@ export interface CancelDocumentInput {
   motivo: string;
 }
 
+/**
+ * `fe_exportacion`, `fe_importacion` and `comprobante_retencion` (iTiDE 2, 3
+ * and 8) are not DE types in v150 (DE_Types_v150.xsd): there are no such
+ * numbers to inutilize and SIFEN may answer 4060.
+ */
 export type InutilizationDocumentType =
   | "factura"
   | "fe_exportacion"
@@ -408,6 +549,8 @@ export interface InutilizeNumbersInput {
   numero_desde: number;
   numero_hasta: number;
   motivo: string;
+  /** Optional dSerieNum (NT 10 §1.7): two capital letters. */
+  serie?: string | null;
 }
 
 export interface InutilizedRange {
@@ -427,6 +570,8 @@ export interface InutilizedRange {
 
 export interface CreatedInutilization extends CreatedEvent {
   inutilization: InutilizedRange;
+  /** "inutilization.extemporaneous" when past day 15 of the next month. */
+  warnings: string[];
 }
 
 export interface WebhookRetryPolicy {
@@ -436,6 +581,11 @@ export interface WebhookRetryPolicy {
 export interface WebhookEndpointCreateInput {
   url: string;
   secret: string;
+  /**
+   * Event types to receive; omitted, all of them. Matched exactly or by a
+   * `.*` prefix: `*`, `document.*`, `document.<status>`, `document.updated`
+   * and `webhook.test`. A misspelled type is accepted and never matches.
+   */
   event_subscriptions?: string[] | null;
   retry_policy?: WebhookRetryPolicy | null;
 }
@@ -475,7 +625,10 @@ export interface WebhookDelivery {
   updated_at: IsoDateTime;
 }
 
+/**
+ * Re-delivers an event KilaSifen already generated for this emitter. The new
+ * delivery copies its type, data and occurred_at and gets a new delivery ID.
+ */
 export interface WebhookReplayInput {
-  event_type: string;
-  payload?: Record<string, JsonValue> | null;
+  delivery_id: string;
 }

@@ -3,7 +3,10 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from kilasifen.domain.certificates.models import Certificate, ensure_single_active_certificate
+from kilasifen.domain.certificates.models import (
+    Certificate,
+    ensure_single_active_certificate,
+)
 from kilasifen.infrastructure.db.models import CertificateModel
 from kilasifen.repositories.certificates import CertificateRepository
 

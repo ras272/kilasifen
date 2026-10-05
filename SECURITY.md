@@ -13,10 +13,8 @@ Security fixes are provided for the latest minor release branch.
 
 Please do not create a public issue for security problems.
 
-Preferred channels:
-
-1. GitHub Security Advisory (private report).
-2. Email maintainer: `mileo@kmee.com.br`
+Report it privately through GitHub's private vulnerability reporting:
+<https://github.com/ras272/kilasifen/security/advisories/new>
 
 Include:
 

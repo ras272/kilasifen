@@ -6,24 +6,33 @@ from contextlib import asynccontextmanager
 from time import perf_counter
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from redis.asyncio import Redis as AsyncRedis
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from kilasifen.admin.router import router as admin_router
-from kilasifen.api.deps import enforce_request_limits, get_api_key_principal
+from kilasifen.api.deps import enforce_request_limits
 from kilasifen.api.errors import (
+    CORRELATION_ID_HEADER,
     ApiError,
     api_error_handler,
     conflict_error_handler,
+    error_responses,
+    http_exception_handler,
     not_found_error_handler,
+    request_validation_error_handler,
     service_unavailable_error_handler,
+    unhandled_error_handler,
     unprocessable_entity_error_handler,
 )
 from kilasifen.api.middleware import (
     PreAuthRateLimitMiddleware,
     RequestBodyLimitMiddleware,
 )
+from kilasifen.api.openapi import install_openapi_extensions
 from kilasifen.api.routers.access import router as access_router
+from kilasifen.api.routers.auth import router as auth_router
 from kilasifen.api.routers.certificates import router as certificates_router
 from kilasifen.api.routers.documents import router as documents_router
 from kilasifen.api.routers.emitters import router as emitters_router
@@ -33,7 +42,6 @@ from kilasifen.api.routers.jobs import router as jobs_router
 from kilasifen.api.routers.queries import router as queries_router
 from kilasifen.api.routers.stampings import router as stampings_router
 from kilasifen.api.routers.webhooks import router as webhooks_router
-from kilasifen.api.schemas.common import SuccessEnvelope
 from kilasifen.application.health.service import ReadinessProbeCache
 from kilasifen.config import get_settings
 from kilasifen.domain.common.errors import (
@@ -51,6 +59,25 @@ from kilasifen.logging import (
 from kilasifen.observability import initialize_sentry
 
 logger = logging.getLogger(__name__)
+
+# Error envelopes declared in the OpenAPI contract for authenticated routers.
+# Every protected route authenticates (401), checks a scope (403), resolves an
+# owned emitter or resource (404), validates input (422) and goes through the
+# shared request limiter (429, or 503 when its backend is unavailable). Routers
+# with write routes also declare 409 and the body size limit (413).
+_READ_ONLY_ERROR_RESPONSES = error_responses(401, 403, 404, 422, 429, 503)
+_TENANT_ERROR_RESPONSES = error_responses(401, 403, 404, 409, 413, 422, 429, 503)
+_PROTECTED_ROUTERS: tuple[tuple[APIRouter, dict], ...] = (
+    (emitters_router, _TENANT_ERROR_RESPONSES),
+    (certificates_router, _TENANT_ERROR_RESPONSES),
+    (stampings_router, _TENANT_ERROR_RESPONSES),
+    (documents_router, _TENANT_ERROR_RESPONSES),
+    (jobs_router, _READ_ONLY_ERROR_RESPONSES),
+    (queries_router, _TENANT_ERROR_RESPONSES),
+    (events_router, _TENANT_ERROR_RESPONSES),
+    (webhooks_router, _TENANT_ERROR_RESPONSES),
+    (access_router, _TENANT_ERROR_RESPONSES),
+)
 
 
 @asynccontextmanager
@@ -79,7 +106,8 @@ def create_app() -> FastAPI:
         title=settings.api_title,
         version=settings.api_version,
         description=(
-            "Independent multi-tenant fiscal API. Staging is restricted to SIFEN test."
+            "API fiscal multi-tenant para emitir, consultar y conciliar documentos "
+            "electrónicos con SIFEN."
         ),
         lifespan=_lifespan,
     )
@@ -110,6 +138,11 @@ def create_app() -> FastAPI:
     app.add_exception_handler(
         ServiceUnavailableError, service_unavailable_error_handler
     )
+    app.add_exception_handler(
+        RequestValidationError, request_validation_error_handler
+    )
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    app.add_exception_handler(Exception, unhandled_error_handler)
 
     @app.middleware("http")
     async def add_correlation_id(request: Request, call_next):
@@ -137,53 +170,29 @@ def create_app() -> FastAPI:
             )
             reset_correlation_id(token)
 
-        response.headers["X-Correlation-ID"] = correlation_id
+        response.headers[CORRELATION_ID_HEADER] = correlation_id
         return response
 
-    app.include_router(health_router, prefix=f"/{settings.api_version}")
+    api_prefix = f"/{settings.api_version}"
+    app.include_router(health_router, prefix=api_prefix)
     limited = [Depends(enforce_request_limits)]
-    app.include_router(
-        emitters_router, prefix=f"/{settings.api_version}", dependencies=limited
-    )
-    app.include_router(
-        certificates_router, prefix=f"/{settings.api_version}", dependencies=limited
-    )
-    app.include_router(
-        stampings_router, prefix=f"/{settings.api_version}", dependencies=limited
-    )
-    app.include_router(
-        documents_router, prefix=f"/{settings.api_version}", dependencies=limited
-    )
-    app.include_router(
-        jobs_router, prefix=f"/{settings.api_version}", dependencies=limited
-    )
-    app.include_router(
-        queries_router, prefix=f"/{settings.api_version}", dependencies=limited
-    )
-    app.include_router(
-        events_router, prefix=f"/{settings.api_version}", dependencies=limited
-    )
-    app.include_router(
-        webhooks_router, prefix=f"/{settings.api_version}", dependencies=limited
-    )
-    app.include_router(
-        access_router, prefix=f"/{settings.api_version}", dependencies=limited
-    )
-    app.include_router(admin_router, dependencies=limited)
-
-    @app.get(
-        f"/{settings.api_version}/auth/check",
-        response_model=SuccessEnvelope,
-        tags=["auth"],
-    )
-    def auth_check(
-        request: Request,
-        _principal=Depends(get_api_key_principal),
-        _limit=Depends(enforce_request_limits),
-    ) -> SuccessEnvelope:
-        return SuccessEnvelope(
-            data={"authenticated": True},
-            correlation_id=request.state.correlation_id,
+    for router, responses in _PROTECTED_ROUTERS:
+        app.include_router(
+            router,
+            prefix=api_prefix,
+            dependencies=limited,
+            responses=responses,
         )
+    app.include_router(admin_router, dependencies=limited)
+    app.include_router(auth_router, prefix=api_prefix)
 
+    install_openapi_extensions(
+        app,
+        api_prefix=api_prefix,
+        routers=[
+            health_router,
+            auth_router,
+            *(router for router, _responses in _PROTECTED_ROUTERS),
+        ],
+    )
     return app

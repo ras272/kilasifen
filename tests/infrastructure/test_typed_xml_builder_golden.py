@@ -1,6 +1,6 @@
 import os
 import xml.etree.ElementTree as ET
-from datetime import UTC, date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -8,14 +8,16 @@ import pytest
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
+from kilasifen.engine.firma import sign_xml
+from kilasifen.engine.sdk.validation import validate_xml
 from kilasifen.infrastructure.kude.xml_qr_injector import apply_real_qr_to_signed_xml
 from kilasifen.infrastructure.sifen.typed_xml_builder import build_typed_document_xml
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile
 from kilasifen.testing.typed_contract_scenarios import (
+    GOLDEN_SIGNED_AT,
     TypedContractScenario,
     get_typed_contract_scenarios,
 )
-from pysifen.assinatura import sign_xml
-from pysifen.sdk.validation import validate_xml
 
 _GOLDEN_DIR = Path(__file__).resolve().parents[1] / "golden"
 _CERT_PATH = Path(__file__).resolve().parents[1] / "test_cert.pfx"
@@ -44,6 +46,7 @@ def test_signed_typed_xml_matches_golden(
         document=_build_document(scenario),
         emitter=emitter,
         stamping=_build_stamping(),
+        signed_at=GOLDEN_SIGNED_AT,
     )
     assert typed is not None
 
@@ -141,6 +144,7 @@ def _build_emitter() -> Emitter:
         csc_id="0001",
         created_at=timestamp,
         updated_at=timestamp,
+        fiscal_profile=fictional_fiscal_profile(),
     )
 
 
@@ -160,4 +164,4 @@ def _build_stamping() -> Stamping:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

@@ -2,23 +2,26 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from xml.etree import ElementTree as ET
 
 from lxml import etree
-
-from pysifen.de.bindings.v150.evento_v150 import TgGroupGesEve
-from pysifen.de.bindings.v150.ws_si_recep_evento_v150 import REnviEventoDe
-from pysifen.sdk.errors import SifenValidationError
-from pysifen.sdk.signer import get_pkcs12_signer
-from pysifen.sdk.validation import validate_xml
 from xsdata.formats.dataclass.serializers import XmlSerializer
 from xsdata.formats.dataclass.serializers.config import SerializerConfig
+
+from kilasifen.engine.de.bindings.v150.evento_v150 import TgGroupGesEve
+from kilasifen.engine.de.bindings.v150.ws_si_recep_evento_v150 import REnviEventoDe
+from kilasifen.engine.sdk.errors import SifenValidationError
+from kilasifen.engine.sdk.signer import get_pkcs12_signer
+from kilasifen.engine.sdk.validation import validate_xml
 
 SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 ET.register_namespace("", SIFEN_NS)
 
-_WS_SERIALIZER = XmlSerializer(config=SerializerConfig(xml_declaration=True, encoding="UTF-8"))
+_WS_SERIALIZER = XmlSerializer(
+    config=SerializerConfig(xml_declaration=True, encoding="UTF-8")
+)
 
 
 def build_signed_cancel_event_group_xml(
@@ -73,8 +76,14 @@ def build_signed_inutilization_event_group_xml(
     event_id: str,
     certificate_bytes: bytes,
     certificate_password: str,
+    serie: str | None = None,
 ) -> str:
-    """Build and sign `gGroupGesEve` for inutilizacion."""
+    """Build and sign `gGroupGesEve` for inutilizacion.
+
+    ``serie`` is the optional ``dSerieNum`` added by NT 10 §1.7 (GEI009,
+    ``[A-Z][A-Z]``, Evento_Types_v150.xsd ``tserieNum``), for a numbering
+    restarted with a series after 9.999.999.
+    """
 
     normalized_timbrado = _normalize_timbrado(timbrado)
     normalized_event_id = _normalize_event_id(event_id)
@@ -105,6 +114,8 @@ def build_signed_inutilization_event_group_xml(
     ET.SubElement(inutilization, _tag("dNumFin")).text = normalized_to
     ET.SubElement(inutilization, _tag("iTiDE")).text = str(i_tide)
     ET.SubElement(inutilization, _tag("mOtEve")).text = normalized_motive
+    if serie is not None:
+        ET.SubElement(inutilization, _tag("dSerieNum")).text = _normalize_serie(serie)
 
     unsigned_xml = ET.tostring(root, encoding="unicode", xml_declaration=True)
     signed_xml = _sign_xml(
@@ -195,6 +206,13 @@ def _normalize_timbrado(timbrado: str) -> str:
     value = str(timbrado).strip()
     if len(value) != 8 or not value.isdigit():
         raise SifenValidationError("events.inutilize.invalid_timbrado")
+    return value
+
+
+def _normalize_serie(serie: str) -> str:
+    value = str(serie).strip()
+    if not re.fullmatch(r"[A-Z]{2}", value):
+        raise SifenValidationError("events.inutilize.invalid_serie")
     return value
 
 

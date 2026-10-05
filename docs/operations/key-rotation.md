@@ -20,11 +20,12 @@ y activar. La API nunca devuelve CSC, password ni PKCS#12.
 
 No existe dual-read automático. Programar mantenimiento:
 
-1. detener API/worker y respaldar PostgreSQL;
+1. detener `api`, `worker` y `outbox` y respaldar PostgreSQL;
 2. offline, descifrar cada CSC/PFX/password con la clave anterior y re-cifrar
    inmediatamente con la nueva, sin plaintext en disco;
 3. actualizar registros en una transacción;
-4. cambiar `KILA_SIFEN_ENCRYPTION_KEY` en API, worker y migraciones;
+4. cambiar `KILA_SIFEN_ENCRYPTION_KEY` en `api`, `worker`, `outbox` y la
+   migración (pre-deploy de `api` en Railway, servicio `migrate` en Compose);
 5. arrancar, verificar lecturas/readiness y eliminar la clave anterior después.
 
 Ensayar el procedimiento sobre una copia de staging.

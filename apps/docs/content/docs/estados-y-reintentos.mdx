@@ -4,33 +4,254 @@ description: Interpretá el resultado fiscal sin duplicar documentos.
 icon: RefreshCcw
 ---
 
+Cada documento tiene dos estados: el fiscal (`internal_status` del documento) y
+el de su job de emisión (`status` del job, con el detalle en `error_snapshot`).
+`GET /v1/emitters/{emitter_id}/documents/{document_id}` devuelve los dos (ver
+[Consultas y artefactos](/docs/consultas)).
+
 ## Estados del documento
+
+Los estados terminales (`approved`, `approved_with_observation`, `rejected`,
+`failed`, `cancelled` e `inutilized`) sólo cambian por los caminos de la
+columna «Qué sigue».
+
+| Estado | Significado | Qué sigue |
+| --- | --- | --- |
+| `queued` | En cola y sin nada aprobado en SIFEN: todavía no salió, el request no llegó a SIFEN o SIFEN respondió `0420` a la consulta del CDC. | El próximo intento arma y firma el DE o, si ya está firmado, reenvía el mismo DE. Si el job ya terminó, hace falta un reintento del operador o inutilizar el número. Si el intento ni siquiera arranca, ver [abajo](#cuando-el-intento-no-arranca). |
+| `submitting` | El XML firmado y el request exacto están guardados y el worker los está enviando. | El mismo intento registra la respuesta. Si el worker se cae, queda así ([ver abajo](#si-el-worker-se-cae)). |
+| `submitted` | Estado heredado: SIFEN recibió el request sin un resultado clasificable. | El próximo intento consulta el CDC. |
+| `retry_pending` | Resultado incierto: timeout, conexión cortada, SOAP Fault, respuesta ilegible o sin `dEstRes` reconocible, rechazo `1001`/`1002` por confirmar o consulta del CDC fallida. | El próximo intento consulta el CDC. |
+| `reconciliation_required` | Se agotaron los intentos automáticos sin saber qué tiene SIFEN para el CDC. | Un reintento del operador o `POST .../reconcile` vuelven a consultar. |
+| `approved` | Terminal. DTE aprobado. | Sólo puede pasar a `cancelled`. |
+| `approved_with_observation` | Terminal. DTE aprobado con observación: la única de un DE en el MT v150 es `1005`, transmisión extemporánea (con posible sanción). Es un DTE válido. | Sólo puede pasar a `cancelled`. |
+| `rejected` | Terminal. SIFEN rechazó el DE. | Definitivo, salvo `0161`/`0162`, que KilaSifen reenvía. Si no se reenvía, el número se inutiliza. |
+| `failed` | Terminal. No se pudo armar o firmar (validación local); nunca llegó a SIFEN. | Un reintento del operador lo vuelve a preparar una vez corregida la causa; si no, el número se inutiliza. |
+| `cancelled` | Terminal y definitivo: SIFEN registró su cancelación. | Nada. |
+| `inutilized` | Terminal y definitivo: su número se inutilizó con un evento aprobado. | Nada. |
+
+Las reglas del KuDE, la cancelación y la inutilización nombran también
+`processing` entre los estados pendientes del documento: es un estado heredado
+que ningún flujo actual le asigna a un documento. El `processing` que vas a
+ver es el del job.
+
+La cancelación y la inutilización están en
+[Cancelación e inutilización](/docs/eventos). Los webhooks `document.*` que
+publica el worker se describen en [Webhooks](/docs/webhooks).
+
+## Estados del job
 
 | Estado | Significado |
 | --- | --- |
-| `queued` | La intención fue persistida y espera worker. |
-| `submitted` | SIFEN recibió el request, pero aún no hay resultado definitivo. |
-| `retry_pending` | Existe incertidumbre recuperable; habrá reconciliación. |
-| `reconciliation_required` | Se agotó la reconciliación automática; requiere una consulta explícita por CDC. |
-| `approved` | Aprobado por SIFEN. |
-| `approved_with_observation` | Aprobado con observaciones que deben conservarse. |
-| `rejected` | Rechazo definitivo de SIFEN. |
-| `failed` | Fallo técnico terminal. |
-| `cancelled` | Cancelación aprobada posteriormente. |
+| `queued` | Espera que un worker lo tome (también después de un reintento del operador). |
+| `processing` | Un worker está ejecutando un intento. |
+| `retry_scheduled` | Hay otro intento programado para `scheduled_at`. |
+| `succeeded` | Terminado: el documento quedó aprobado, o SIFEN ya lo tenía cancelado. |
+| `failed` | Sin más intentos automáticos; el motivo está en `error_snapshot.category`. |
+
+`attempts` cuenta cada intento, sea un envío o una consulta del CDC. Hay hasta
+cinco intentos automáticos, con esperas de 30 s, 2 min, 10 min y 30 min (unos
+43 minutos en total): una caída de SIFEN más larga deja el job `failed`.
+Pasados los cinco, cada reintento del operador ejecuta un solo intento: si ese
+intento consulta el CDC y SIFEN responde `0420`, el reenvío necesita otro
+reintento. El reintento de jobs, al que esta página llama «reintento del
+operador», existe sólo en la consola de administración (`/admin`), que exige
+una clave `platform:admin`; no hay un endpoint público para el ERP.
+
+## Categorías de `error_snapshot`
+
+`error_snapshot` trae `category`, `message` y, cuando hay un código de SIFEN,
+`code`.
+
+| `category` | Documento | Qué pasa |
+| --- | --- | --- |
+| `transport` | `retry_pending` | El envío o la consulta del CDC fallaron sin saber si llegaron; el próximo intento consulta. |
+| `transport_not_sent` | `queued` | El request no salió; se reenvía el mismo DE firmado. |
+| `sifen_unclassified` | `retry_pending` | SIFEN respondió sin un `dEstRes` reconocible; se consulta el CDC. |
+| `duplicate_reconciliation` | `retry_pending` | Rechazo con `1001`/`1002`; se consulta el CDC antes de creerlo. |
+| `reconciliation_pending` | `retry_pending` | La consulta respondió otro código (por ejemplo `0421`); se vuelve a consultar. |
+| `resubmission` | `queued` | La consulta respondió `0420`; se reenvía el mismo DE firmado. |
+| `retryable_server_error` | `rejected` | Rechazo `0161`/`0162`; se reenvía el mismo DE firmado. |
+| `emitter_busy` | sin cambio | Otra operación retuvo el emisor; el intento no se consumió y se reprograma 30 s después. |
+| `sifen_rejection` | `rejected` | Rechazo definitivo. |
+| `fiscal_validation` | `failed` o pendiente | Validación local antes de firmar (documento `failed`), o una consulta del CDC rechazada por configuración antes de salir: en ese caso el documento sigue pendiente y un reintento del operador vuelve a consultar una vez corregida. |
+| `retry_exhausted` | `queued` o `rejected` | Se agotaron los intentos sin un DTE aprobado (`0420`, request que no salió o `0161`/`0162`); un reintento del operador reenvía el mismo DE firmado. |
+| `reconciliation_required` | `reconciliation_required` | Se agotaron los intentos sin conocer el resultado. |
+| `concurrent_update` | terminal | Otra operación cerró el documento mientras el intento esperaba a SIFEN. |
+
+## Cómo se lee la respuesta de SIFEN
+
+KilaSifen decide por `dEstRes`, comparado sin tildes ni mayúsculas: «Aprobado»
+es `approved`, «Aprobado con observación» es `approved_with_observation` y
+«Rechazado» es `rejected`. Se acepta `dEstRes` tanto en `rProtDe` (como dice el
+XSD) como dentro de `gResProc` (como muestra el Manual Técnico). Sin `dEstRes`
+solo el código `0260` prueba una aprobación; cualquier otra respuesta queda
+`retry_pending` y se consulta el CDC. Un código distinto de `0260` nunca alcanza
+para dar por rechazado un documento.
+
+Con la aprobación se guardan el número de transacción (`dProtAut`), todos los
+mensajes (`gResProc`) y la hora de aprobación (`dFecProc`), desde la que corre
+el plazo de cancelación. La API de documentos todavía no los expone como campos
+propios: están en `sifen_response_raw`, la respuesta de SIFEN tal cual llegó.
+
+Si la aprobación se conoce por consulta del CDC, siConsDE no trae `dEstRes` ni
+`dFecProc`:
+
+- el documento queda `approved` aunque SIFEN lo haya aprobado con observación:
+  KilaSifen no inventa un `1005` que SIFEN no informó;
+- el plazo de cancelación se cuenta desde la mayor de `dFecFirma` y la creación
+  del documento, así que KilaSifen puede rechazar una cancelación algo antes
+  que SIFEN;
+- el `dProtAut` viene en la respuesta de la consulta (`sifen_protocol`) y queda
+  en `last_query_response_raw`.
 
 ## Regla ante incertidumbre
 
-KilaSifen persiste el CDC, el XML exacto y el request enviado. Ante timeout o
-respuesta indeterminada:
+Antes de llamar a SIFEN, KilaSifen guarda y confirma en la base el CDC, el XML
+firmado y el request exacto que va a viajar (con su `dId` real), y deja el
+documento en `submitting`. Ante timeout, conexión cortada, SOAP Fault o
+respuesta ilegible, el documento pasa a `retry_pending` y el intento siguiente
+consulta el documento por CDC (siConsDE):
 
-1. consulta el documento por CDC;
-2. converge al resultado si SIFEN ya lo conoce;
-3. si no puede confirmar el resultado, pasa a `reconciliation_required`;
-4. nunca retransmite el DE ni genera otro CDC para la misma intención.
+- `0422`: el CDC ya es un DTE. El documento queda `approved` (o `cancelled` si
+  SIFEN tiene una cancelación registrada) y nunca se vuelve a enviar.
+- `0420`: SIFEN no tiene un DTE aprobado con ese CDC («no existe o no está
+  aprobado»). El documento vuelve a `queued` y el intento siguiente reenvía el
+  **mismo DE firmado** (mismo CDC, misma firma, misma `dFecFirma`) dentro de un
+  `rEnviDe` nuevo con un `dId` nuevo. El reenvío lo pide la Guía de Mejores
+  Prácticas de la DNIT (oct-2024, p. 12), y el Decreto 872/2023 (Art. 29) y el
+  Manual Técnico (§6.5) permiten reutilizar el CDC de un DE que SIFEN no
+  aprobó. La Guía pide comprobar antes que ningún lote en proceso contenga ese
+  CDC: KilaSifen nunca envía lotes.
+- Cualquier otro código (por ejemplo `0421`) es un error de la consulta: se
+  vuelve a consultar.
 
-Los reintentos internos sólo consultan. El ERP no debe crear una segunda
-intención para “destrabar” un documento ni reencolar el job esperando otro
-envío.
+Conservar la firma original es una decisión de KilaSifen: si un reenvío tiene
+que firmarse de nuevo es NO DETERMINADO en la norma. Como las 72 h corren desde
+esa `dFecFirma`, un reenvío que sale pasadas las 72 h se aprueba con
+observación `1005` (MT v150 §12.4, val. 6).
+
+Si la consulta misma falla por transporte, el documento sigue `retry_pending` y
+se vuelve a consultar. Si se rechaza antes de salir por configuración (por
+ejemplo, el ambiente del emisor no coincide con el del despliegue), el
+documento sigue pendiente y el job queda `failed` (`fiscal_validation`).
+
+Si al quinto intento el resultado sigue sin conocerse, el documento pasa a
+`reconciliation_required`. Si SIFEN respondió `0420` en el último intento, el
+documento queda `queued` y el job `failed` (`retry_exhausted`): un reintento
+del operador lo reenvía.
+
+El ERP no debe crear una segunda intención para «destrabar» un documento: la
+plataforma ya reenvía el mismo DE cuando SIFEN lo permite.
+
+### Si el worker se cae
+
+Si el worker se cae durante el envío, el documento queda en `submitting` y el
+job en `processing`, y nada los retoma de forma automática. Si SIFEN ya lo
+aprobó, `POST .../reconcile` lo cierra (consulta `0422`: `approved` y job
+`succeeded`). Con `0420` la reconciliación no toca un documento `submitting`:
+hace falta que un operador reintente el job desde la consola de
+administración, y ese reintento consulta el CDC antes de decidir.
+
+## Rechazos que se confirman o se reenvían
+
+| Código | Qué hace KilaSifen |
+| --- | --- |
+| `1001`, `1002` (CDC o documento duplicado) | Solo saltan si otro documento ya está **autorizado**. Si cualquier mensaje del rechazo trae uno de esos códigos, el documento queda `retry_pending` y se consulta el CDC: con `0422` queda `approved`; con `0420` el rechazo se vuelve definitivo, con el primer error que informó SIFEN. |
+| `0161`, `0162` (servidor de SIFEN sin respuesta o paralizado, en cualquier mensaje del rechazo) | El documento queda `rejected` con el error del job `retryable_server_error` y el mismo DE firmado se reenvía con espera creciente, dentro de los cinco intentos. Al agotarlos (`retry_exhausted`), un reintento del operador lo vuelve a enviar. Que estos códigos se puedan reenviar es una interpretación de KilaSifen: la norma no lo determina. |
+| Cualquier otro | Rechazo definitivo (job `failed`, `sifen_rejection`), con el primer error que informó SIFEN. KilaSifen no corrige ni reenvía un DE rechazado: corregí los datos y creá un documento nuevo, que recibe otro número y otro CDC. Como el CDC cambia, inutilizá el número rechazado (MT v150 §11.1.1; Decreto 872/2023 Art. 29). El Decreto también permite, si ya se configuró el hecho generador del impuesto, corregir el DE y reenviarlo con el mismo CDC mientras su estructura de datos no cambie; KilaSifen no ofrece ese camino. |
+
+<Callout type="warn" title="Un rechazo 0161/0162 no es definitivo">
+  Igual se publica `document.rejected`, y si el reenvío se aprueba llega
+  después `document.approved`. Ni el webhook ni el documento traen la marca de
+  reenvío, y `sifen_result_code` es el primer mensaje de SIFEN, que puede no
+  ser `0161`/`0162`. Antes de reemitir o inutilizar un `rejected`, mirá su job:
+  con `retryable_server_error` (job `retry_scheduled`) KilaSifen lo va a
+  reenviar, y con `retry_exhausted` un reintento del operador también puede
+  reenviarlo. Un rechazo definitivo tiene la categoría `sifen_rejection`.
+</Callout>
+
+## Avisos de plazo
+
+Al terminar cada intento sobre un documento pendiente (o rechazado con
+`0161`/`0162` y por reenviar) que ya tiene XML firmado, el job agrega a
+`error_snapshot` la lista `deadline_alerts` si corresponde algún aviso:
+
+| Aviso | Cuándo |
+| --- | --- |
+| `late_transmission_soon` | Faltan menos de 24 h para las 72 h desde `dFecFirma`. |
+| `late_transmission` | Pasaron las 72 h: si se aprueba, será con la observación `1005` (transmisión extemporánea, con posible sanción). |
+| `emission_rejection_soon` | Faltan menos de 24 h para las 720 h desde `dFeEmiDE`. |
+| `emission_rejection` | Pasaron las 720 h: SIFEN lo rechaza con `1150`. |
+
+La lista es una foto del momento en que terminó el intento: no se recalcula
+mientras el job está detenido (`failed`), un reintento del operador la borra y
+no genera webhooks, sólo el log `worker.document_job.transmission_deadline`.
+Para vigilar el plazo por tu cuenta, leé `dFecFirma` y `dFeEmiDE` del XML
+firmado (`GET .../xml`). Las 24 h de anticipación son una elección de
+KilaSifen, no de la norma.
+
+Las 72 h son la regla general: la DNIT puede fijar plazos menores, e incluso
+aprobación previa, según el perfil del facturador (Decreto 872/2023 Art. 27;
+MT v150 §6.2). Un DE rechazado por extemporáneo, con más de 720 h, sólo se
+normaliza con un trámite administrativo (MT v150 §6.2.1).
+
+El MT v150 (§6.2.1) también considera extemporánea la transmisión de un DE
+emitido más de 120 h antes (y hasta 720 h). KilaSifen lo avisa sólo al crear el
+documento, en `fiscal_warnings` (`documents.transmission.emission_far_from_now`),
+no en `deadline_alerts`. El MT sólo publica la validación `1005`, contada desde
+`dFecFirma`, así que qué informa SIFEN en ese caso es NO DETERMINADO.
+
+## Cuando el request no salió
+
+Si la falla prueba que nada llegó a SIFEN (DNS, conexión rechazada, timeout al
+conectar, handshake TLS), no hay incertidumbre: el documento vuelve a `queued`
+con su DE firmado, el job queda `retry_scheduled` con la categoría
+`transport_not_sent` y el próximo intento envía el mismo DE firmado en un
+`rEnviDe` nuevo, sin volver a firmar. Si SIFEN sigue inalcanzable al agotar los
+intentos, el job pasa a `failed` (`retry_exhausted`) pero el documento sigue
+`queued`: un reintento manual del job vuelve a enviar el mismo XML firmado.
+
+## Cuando el intento no arranca
+
+Si cuando el worker toma el job el emisor está inactivo o no tiene un
+certificado activo, el intento no arranca: documento y job quedan `queued`, con
+`attempts` en 0 y sin `error_snapshot`, y nada vuelve a despachar el job. Crear
+el documento no revisa el certificado: antes de emitir, comprobá
+`has_active_certificate` en `GET /v1/emitters/{emitter_id}/health`. Para
+destrabarlo, activá el certificado (o el emisor) y pedí a un operador que
+reintente el job.
+
+## Validación local (`failed`)
+
+Antes de firmar, el worker frena lo que SIFEN rechazaría con seguridad. El
+documento queda `failed` y el job `failed` (`fiscal_validation`), con el motivo
+en `error_snapshot.message`:
+
+| Motivo | Rechazo de SIFEN que evita |
+| --- | --- |
+| Ningún timbrado activo cubre la fecha de emisión. | `1103`, `1104` |
+| `dFeEmiDE` más de 720 h antes o más de 120 h después de ahora, o del 22/11/2018 o antes (`documents.fecha_emision.*`). | `1150`, `1151`, `1156` |
+| Certificado no vigente en `dFecFirma` (`documents.certificate.not_valid_at_signature`). | `2450` |
+| `dFecFirma` posterior a ahora (`documents.fecha_firma.after_now`). | `1004` |
+| Emisor sin CSC o sin `csc_id` (`emitters.csc_required`): no se puede calcular el QR. | — |
+| XML que no valida contra el XSD, ambiente del emisor distinto del despliegue u otros datos del emisor (ver [Emisores](/docs/emisores)). | — |
+
+La ventana de la fecha de emisión ya se controla al crear el documento (`422`,
+ver [Facturas](/docs/facturas)); el worker la vuelve a controlar al firmar,
+porque el tiempo pasa. Un reintento del operador vuelve a preparar un documento
+`failed`: sirve después de corregir la causa (por ejemplo, cargar el
+timbrado). Si la causa es la fecha de emisión, reintentar no sirve: inutilizá
+el número y creá un documento nuevo.
+
+### Timbrado
+
+El timbrado se elige al firmar, con la fecha de emisión del documento
+(`dFeEmiDE`, hora de Paraguay) y no con la fecha del servidor. Si ningún
+timbrado activo cubre esa fecha, el documento queda `failed` antes de salir:
+SIFEN lo rechazaría con `1103` (emisión anterior al inicio del timbrado) o
+`1104`. Cuándo activar un timbrado nuevo sin dejar documentos en `failed` está
+en
+[Certificados y timbrado](/docs/certificados-y-timbrado#cómo-se-elige-y-cuándo-cambiarlo).
 
 ## Reconciliación explícita
 
@@ -39,5 +260,21 @@ POST /v1/emitters/{emitter_id}/queries/documents/{document_id}/reconcile
 X-API-Key: ...
 ```
 
-La operación vuelve a consultar por el CDC persistido. Si SIFEN encuentra el DE,
-documento y job convergen atómicamente a `approved` y `succeeded`. Nunca emite.
+Requiere el scope `fiscal:write`. La operación consulta el CDC y aplica la
+respuesta; nunca envía nada. En resumen:
+
+- con `0422`, un documento que puede estar en SIFEN (incluido uno
+  `submitting`) queda `approved`, o `cancelled` si SIFEN tiene una
+  cancelación registrada, y un documento aprobado con una cancelación
+  registrada pasa a `cancelled`;
+- con `0420`, un documento que puede estar en SIFEN vuelve a `queued`, o queda
+  `rejected` si esperaba confirmar un rechazo `1001`/`1002`; un documento
+  `submitting` no se toca;
+- en los demás casos sólo se registra la consulta.
+
+Las reglas completas, los campos de la respuesta y los errores están en
+[Consultas y artefactos](/docs/consultas#consulta-por-cdc).
+
+La respuesta trae el resultado de la consulta, no el estado que quedó, y la
+reconciliación no publica webhooks: después leé el documento con
+`GET /v1/emitters/{emitter_id}/documents/{document_id}`.

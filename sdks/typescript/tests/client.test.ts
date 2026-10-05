@@ -29,6 +29,7 @@ const DOCUMENT = {
   establishment: null,
   point: null,
   document_number: null,
+  fiscal_warnings: [],
   created_at: "2026-08-22T12:00:00Z",
   updated_at: "2026-08-22T12:00:00Z",
 };
@@ -70,7 +71,7 @@ describe("KilaSifen client", () => {
       {
         external_id: "sale-123",
         factura: {
-          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
           items: [{ descripcion: "Producto", cantidad: 1, precio_unitario: 1000 }],
         },
       },
@@ -97,6 +98,37 @@ describe("KilaSifen client", () => {
     });
   });
 
+  it.each([
+    "approved",
+    "approved_with_observation",
+    "rejected",
+    "transport_timeout",
+    "accepted_but_response_lost",
+  ] as const)("accepts the %s sandbox outcome of the API contract", async (outcome) => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      success({ document: DOCUMENT, job: JOB }, 201),
+    );
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: fetchMock,
+    });
+
+    await client.facturas.create(
+      "emitter_1",
+      {
+        factura: {
+          cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
+          items: [{ descripcion: "Sandbox", cantidad: 1, precio_unitario: 1000 }],
+        },
+      },
+      { sandboxOutcome: outcome },
+    );
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    expect(new Headers(init?.headers).get("X-Kila-Test-Outcome")).toBe(outcome);
+  });
+
   it("sends a closed sandbox outcome only when explicitly requested", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       success({ document: DOCUMENT, job: JOB }, 201),
@@ -111,7 +143,7 @@ describe("KilaSifen client", () => {
       "emitter_1",
       {
         factura: {
-          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
           items: [{ descripcion: "Sandbox", cantidad: 1, precio_unitario: 1000 }],
         },
       },
@@ -135,7 +167,7 @@ describe("KilaSifen client", () => {
       "emitter_1",
       {
         factura: {
-          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
           items: [{ descripcion: "Sandbox", cantidad: 1, precio_unitario: 1000 }],
         },
       },
@@ -154,7 +186,7 @@ describe("KilaSifen client", () => {
       "emitter_1",
       {
         factura: {
-          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
           items: [{ descripcion: "Sandbox", cantidad: 1, precio_unitario: 1000 }],
         },
       },
@@ -174,7 +206,7 @@ describe("KilaSifen client", () => {
 
     await client.notasCredito.create("emitter_1", {
       nota_credito: {
-        cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+        cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
         documento_asociado: { cdc: "01800123450001001000000012026010112345678901" },
         items: [{ descripcion: "Descuento", cantidad: 1, precio_unitario: 500 }],
       },
@@ -201,7 +233,7 @@ describe("KilaSifen client", () => {
         external_id: "recupero-77",
         nota_debito: {
           motivo_emision: "recupero_costo",
-          cliente: { ruc: "80069563-1", razon_social: "TIPS S.A." },
+          cliente: { ruc: "80025298-5", razon_social: "CLIENTE FICTICIO SA", tipo_contribuyente: 2 },
           documento_asociado: {
             cdc: "01800123450001001000000012026010112345678901",
           },
@@ -258,6 +290,9 @@ describe("KilaSifen client", () => {
       result_message: "Aprobado",
       content_xml: "<rDE version='150'/>",
       processed_at: "2026-08-22T12:00:00Z",
+      sifen_protocol: "1234567890",
+      cancelled: false,
+      events: [],
     };
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       success({ document_query: documentQuery }),
@@ -283,7 +318,7 @@ describe("KilaSifen client", () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(success({ documents: [], pagination: { limit: 25, offset: 0, count: 0 } }))
       .mockResolvedValueOnce(success({ document_query: { document_id: "doc_1", cdc: "1", status: "found" } }))
-      .mockResolvedValueOnce(success({ ruc_query: { queried_ruc: "80069563", status: "found", taxpayer: null } }));
+      .mockResolvedValueOnce(success({ ruc_query: { queried_ruc: "80025298", status: "found", taxpayer: null } }));
     const client = new KilaSifen({
       apiKey: "sk_test_123",
       baseUrl: "https://api.example.test",
@@ -292,13 +327,13 @@ describe("KilaSifen client", () => {
 
     await client.documents.list("emitter_1", { limit: 25, externalId: "sale/1" });
     await client.documents.query("emitter_1", "doc_1");
-    await client.queries.ruc("emitter_1", "80069563-1");
+    await client.queries.ruc("emitter_1", "80025298-5");
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://api.example.test/v1/emitters/emitter_1/documents?limit=25&external_id=sale%2F1",
     );
     expect(fetchMock.mock.calls[1]?.[0]).toContain("/queries/documents/doc_1");
-    expect(fetchMock.mock.calls[2]?.[0]).toContain("/queries/ruc/80069563-1");
+    expect(fetchMock.mock.calls[2]?.[0]).toContain("/queries/ruc/80025298-5");
   });
 
   it("creates typed cancellation and inutilization events", async () => {
@@ -329,12 +364,13 @@ describe("KilaSifen client", () => {
     });
   });
 
-  it("manages webhook endpoints and explicit replay", async () => {
+  it("manages webhook endpoints, replay by delivery ID and test events", async () => {
     const fetchMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(success({ webhook_endpoint: { id: "wh_1" } }, 201))
       .mockResolvedValueOnce(success({ webhook_endpoints: [] }))
       .mockResolvedValueOnce(success({ webhook_endpoint: { id: "wh_1", is_active: false } }))
-      .mockResolvedValueOnce(success({ delivery: { id: "delivery_1" }, job: JOB }, 201));
+      .mockResolvedValueOnce(success({ delivery: { id: "delivery_2" }, job: JOB }, 201))
+      .mockResolvedValueOnce(success({ delivery: { id: "delivery_3" }, job: JOB }, 201));
     const client = new KilaSifen({
       apiKey: "sk_test_123",
       baseUrl: "https://api.example.test",
@@ -351,14 +387,20 @@ describe("KilaSifen client", () => {
       secret: "new-secret-123456789012345678901234",
       is_active: false,
     });
-    await client.webhooks.replay("emitter_1", "wh_1", {
-      event_type: "document.approved",
-      payload: { document_id: "doc_1" },
-    });
+    await client.webhooks.replay("emitter_1", "wh_1", { delivery_id: "delivery_1" });
+    await client.webhooks.sendTestEvent("emitter_1", "wh_1");
 
     expect(fetchMock.mock.calls[0]?.[0]).toContain("/webhooks");
     expect(fetchMock.mock.calls[2]?.[1]?.method).toBe("PATCH");
     expect(fetchMock.mock.calls[3]?.[0]).toContain("/webhooks/wh_1/deliveries/replay");
+    expect(JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body))).toEqual({
+      delivery_id: "delivery_1",
+    });
+    expect(fetchMock.mock.calls[4]?.[0]).toBe(
+      "https://api.example.test/v1/emitters/emitter_1/webhooks/wh_1/test",
+    );
+    expect(fetchMock.mock.calls[4]?.[1]?.method).toBe("POST");
+    expect(fetchMock.mock.calls[4]?.[1]?.body).toBeUndefined();
     expect(() => client.webhooks.update("emitter_1", "wh_1", {})).toThrow(
       "at least one field",
     );
@@ -396,6 +438,113 @@ describe("KilaSifen client", () => {
       correlationId: "corr_error",
       retryable: false,
     });
+  });
+
+  it("keeps field details from a 422 validation envelope", async () => {
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json(
+          {
+            error: {
+              code: "request.validation_failed",
+              message: "Request validation failed.",
+              category: "validation",
+              correlation_id: "corr_422",
+              details: {
+                errors: [
+                  { loc: ["body", "factura", "items"], message: "Field required", type: "missing" },
+                  {
+                    loc: ["body", "factura"],
+                    message: "Value error, documents.cliente.tipo_contribuyente_required",
+                    type: "value_error",
+                    code: "documents.cliente.tipo_contribuyente_required",
+                  },
+                ],
+              },
+            },
+          },
+          { status: 422 },
+        ),
+      ),
+    });
+
+    const error = await client.facturas
+      .create("emitter_1", { factura: {} as never })
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(KilaSifenError);
+    expect(error).toMatchObject({
+      status: 422,
+      code: "request.validation_failed",
+      category: "validation",
+      correlationId: "corr_422",
+      retryable: false,
+      details: {
+        errors: [
+          { loc: ["body", "factura", "items"], message: "Field required", type: "missing" },
+          {
+            loc: ["body", "factura"],
+            type: "value_error",
+            code: "documents.cliente.tipo_contribuyente_required",
+          },
+        ],
+      },
+    });
+  });
+
+  it("treats a non-JSON 5xx from a proxy as a retryable HTTP error", async () => {
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        new Response("<html>Bad Gateway</html>", {
+          status: 502,
+          headers: { "Content-Type": "text/html", "X-Correlation-ID": "corr_502" },
+        }),
+      ),
+    });
+
+    const error = await client.documents.get("emitter_1", "doc_1").catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(KilaSifenConnectionError);
+    expect(error).toMatchObject({
+      code: "sdk.http_error",
+      status: 502,
+      correlationId: "corr_502",
+      retryable: true,
+    } satisfies Partial<KilaSifenConnectionError>);
+  });
+
+  it("does not retry a 4xx that lacks the error envelope", async () => {
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json({ detail: "Not Found" }, { status: 404 }),
+      ),
+    });
+
+    await expect(client.documents.get("emitter_1", "doc_1")).rejects.toMatchObject({
+      code: "sdk.http_error",
+      status: 404,
+      correlationId: null,
+      retryable: false,
+    } satisfies Partial<KilaSifenConnectionError>);
+  });
+
+  it("rejects a non-JSON 2xx body as an invalid response", async () => {
+    const client = new KilaSifen({
+      apiKey: "sk_test_123",
+      baseUrl: "https://api.example.test",
+      fetch: vi.fn<typeof fetch>().mockResolvedValue(new Response("ok", { status: 200 })),
+    });
+
+    await expect(client.documents.get("emitter_1", "doc_1")).rejects.toMatchObject({
+      code: "sdk.invalid_response",
+      retryable: false,
+    } satisfies Partial<KilaSifenConnectionError>);
   });
 
   it("rejects malformed success envelopes", async () => {

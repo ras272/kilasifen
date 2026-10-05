@@ -15,7 +15,7 @@ Strengthen CI so engine and platform regressions are visible independently, with
   - `platform-tests`
   - existing build/schema jobs preserved
 - lint coverage added for:
-  - `pysifen/` (`ruff --select F`)
+  - `kilasifen/engine/` (`ruff --select F`)
   - `kilasifen/` (`ruff --select F`)
 - tests split for clearer failure domains:
   - engine: root regression suite (`tests/test_*.py`)
@@ -26,11 +26,11 @@ Strengthen CI so engine and platform regressions are visible independently, with
   - FastAPI `create_app()` + `/v1/health` and `/v1/ready` checks
 - alembic runtime updated to accept `KILA_SIFEN_DATABASE_URL` override for CI environments
 - small engine cleanup:
-  - removed unused import in `pysifen/transmissao/de.py` uncovered by lint
+  - removed unused import in `kilasifen/engine/transmissao/de.py` uncovered by lint
 
 ## Verification
 
-- `python -m ruff check pysifen/ --select F`
+- `python -m ruff check kilasifen/engine/ --select F`
 - `python -m ruff check kilasifen/ --select F`
 - root engine regressions:
   - `pytest <tests/test_*.py expanded file list> -v --tb=short`

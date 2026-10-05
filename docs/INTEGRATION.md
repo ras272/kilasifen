@@ -24,12 +24,41 @@ El RUC es una identidad global de plataforma. Por eso sólo una credencial con
 POST /v1/emitters
 {
   "owner_consumer_id": "consumer_uuid",
-  "ruc": "80024135",
-  "dv": "5",
+  "ruc": "44444401",
+  "dv": "7",
   "legal_name": "Empresa SA",
-  "tax_environment": "test"
+  "tax_environment": "test",
+  "fiscal_profile": {
+    "tipo_contribuyente": 2,
+    "actividades_economicas": [
+      {"codigo": "62010", "descripcion": "ACTIVIDADES DE PROGRAMACION INFORMATICA"}
+    ],
+    "domicilio": {
+      "direccion": "CALLE EJEMPLO",
+      "numero_casa": "123",
+      "departamento": 1,
+      "ciudad": 1,
+      "descripcion_ciudad": "ASUNCION (DISTRITO)",
+      "telefono": "021123456",
+      "email": "facturacion@example.com"
+    },
+    "establecimientos": []
+  }
 }
 ```
+
+El RUC tiene 3-8 caracteres (`tRuc`), `dv` es el módulo 11 del RUC,
+`legal_name` tiene 4-255, el CSC 32 caracteres alfanuméricos y `csc_id` 1-9999
+(se guarda con cuatro dígitos). Un dato inválido responde `422`.
+
+`fiscal_profile` es la única fuente de `gEmis`: tipo de contribuyente, régimen
+y nombre de fantasía opcionales, de 1 a 9 actividades económicas y el domicilio
+del RUC (`numero_casa` `0` si no tiene numeración; el departamento se valida
+contra el XSD de departamentos y su descripción se completa sola). Cada
+establecimiento con otra dirección se agrega en `establecimientos` con su
+código `dEst`. Puede cargarse después con `PATCH /v1/emitters/{id}`, que lo
+reemplaza completo; mientras falte, `fiscal_profile_complete` es `false` y
+crear un documento tipado responde `422 emitters.fiscal_profile_required`.
 
 Compatibilidad: la ruta y el resto del payload no cambian; si
 `owner_consumer_id` se omite, el emisor queda asignado al consumidor de la clave
@@ -60,7 +89,28 @@ un webhook.
 ```
 
 `401` credencial; `403` scope; `404` inexistente/ajeno; `409` conflicto; `422`
-payload; `429` límite; `503` dependencia. Conservar `correlation_id`.
+payload; `429` límite (esperar `Retry-After` segundos); `503` dependencia.
+Conservar `correlation_id`. Un `503` `emitters.lock_timeout` o
+`numbering.lock_timeout` significa que otra operación del mismo emisor retuvo
+el bloqueo más de 5 s: la intención no se registró y se reintenta con backoff
+y la misma `idempotency_key`.
+
+El mismo envelope cubre los errores del framework y el contrato OpenAPI lo
+declara (`ErrorEnvelope`) en cada ruta autenticada:
+
+- `422 request.validation_failed`: body, query o path inválidos. Los campos van
+  en `details.errors` como `{loc, message, type}`, más `code` cuando la entrada
+  incumple una regla fiscal con nombre (por ejemplo
+  `documents.cliente.tipo_contribuyente_required`); el valor enviado nunca se
+  devuelve.
+- `404 request.route_not_found` y `405 request.method_not_allowed` (con header
+  `Allow`): ruta o método inexistente.
+- `413 request.body_too_large`: body por encima del límite configurado.
+- `500 server.internal_error`: fallo inesperado, con `correlation_id` y header
+  `X-Correlation-ID`, sin detalle interno. Reintentar con backoff.
+
+Un `502`/`504` de un proxy puede llegar sin JSON: tratarlo como `5xx`
+reintentable.
 
 ## Crear factura
 
@@ -77,9 +127,12 @@ X-API-Key: ...
   "factura": {
     "establecimiento": "001",
     "punto": "001",
-    "fecha_emision": "2026-08-16T15:30:00-03:00",
     "moneda": "PYG",
-    "cliente": {"ruc": "80000000-0", "razon_social": "Cliente prueba"},
+    "cliente": {
+      "ruc": "88899990-9",
+      "tipo_contribuyente": 2,
+      "razon_social": "Cliente prueba"
+    },
     "items": [{"descripcion": "Servicio", "cantidad": 1, "precio_unitario": 1000}]
   }
 }
@@ -94,14 +147,74 @@ mapea el objeto ERP. Reutilizar `idempotency_key` al reintentar la misma intenci
 - contenido incompatible: `409 Conflict`.
 
 La respuesta trae documento `queued` y job; no implica aprobación. Estados de
-documento: `queued`, `submitted`, `retry_pending`, `reconciliation_required`,
-`approved`, `approved_with_observation`, `rejected`, `failed`, `cancelled`.
-Jobs: `queued`, `retry_scheduled`, `succeeded`, `failed`.
+documento: `queued`, `submitting`, `submitted`, `retry_pending`,
+`reconciliation_required`, `approved`, `approved_with_observation`, `rejected`,
+`failed`, `cancelled`, `inutilized`. La respuesta de SIFEN se lee por `dEstRes`
+(sin tildes ni mayúsculas): «Aprobado con observación» es un DTE válido
+(`approved_with_observation`), y sin `dEstRes` solo `0260` prueba una
+aprobación.
+Jobs: `queued`, `processing` (un worker está en medio de un intento),
+`retry_scheduled`, `succeeded`, `failed`.
 
 Cliente, ítems, IVA, descuentos/anticipos, moneda/tipo de cambio y condición de
 pago se validan de forma anidada antes de reservar el job. Un `422` significa que
 la intención no ingresó a la cola. Los aliases históricos `razonSocial`,
 `precioUnitario` e `iva` se normalizan a `snake_case` para compatibilidad.
+
+Reglas fiscales que se validan al crear (fuentes en `docs/normativa/matriz.md`):
+
+- `emisor` es opcional y sólo puede repetir la identidad del emisor
+  (`ruc`, `dv`, `razon_social`, y `tipo_contribuyente` en la raíz); si no
+  coincide responde `422 documents.emisor.identity_mismatch`. Sus campos de
+  dirección, contacto y actividad están obsoletos y se ignoran.
+- `cliente` con RUC exige `tipo_contribuyente` y un DV correcto (`RUC-DV` o
+  `dv`). Un no contribuyente sólo puede ser B2C o B2F, y siempre envía
+  `tipo_documento_identidad` y `numero_documento_identidad` (con 9, además
+  `descripcion_tipo_documento`). B2F exige `pais_codigo` distinto de `PRY` y
+  `direccion` con `numero_casa`; fuera de B2F, una dirección exige
+  `departamento`, `ciudad` y `descripcion_ciudad`. `compras_publicas` es
+  opcional en B2G.
+- Innominado (`tipo_documento_identidad` 5): sólo en facturas B2C; se escribe
+  con número `0` y nombre `Sin Nombre`, y el worker lo rechaza desde 7.000.000
+  Gs (salvo muestras médicas).
+- `codigo_seguridad` es opcional: si se omite, KilaSifen genera uno aleatorio y
+  lo conserva en todos los reintentos. No puede ser `0` ni igual al número.
+- `fecha_emision` es opcional: sin ella se usa la hora de Paraguay al armar el
+  XML, y por eso el ejemplo no la envía (una fecha fija sale de la ventana).
+  Si se envía, tiene que estar entre 720 h antes y 120 h después de ahora
+  (hora oficial de Paraguay, UTC−3). Si es de más de 120 h antes, el documento
+  se crea igual con `documents.transmission.emission_far_from_now` en
+  `fiscal_warnings`: es una transmisión extemporánea (MT v150 §6.2.1), que se
+  aprueba con observación y puede tener sanción. Qué código de observación
+  informa el SIFEN en ese caso es NO DETERMINADO: el MT sólo publica la `1005`,
+  contada desde `dFecFirma`.
+- `moneda` (y la de cada pago o cuota) es un código ISO 4217 de
+  `Monedas_v150.xsd`; las descripciones del XML son su nombre oficial
+  (`Guarani`, `US Dollar`). `formas_pago[].moneda_descripcion` se ignora.
+- IVA por ítem: `afectacion` `gravado` (proporción 100), `exento` o
+  `exonerado` (proporción 0, `tasa` 0) y `gravado_parcial`, que exige
+  `proporcion_gravada` entre 0 y 100 sin incluirlos. Base gravada, IVA y base
+  exenta salen de las fórmulas de la NT 13 con hasta 8 decimales, también en
+  PYG; los totales son la suma exacta de los ítems.
+- Descuento global: `porcentaje_descuento_global` (0 por defecto) se aplica a
+  cada ítem como `porcentaje * precio_unitario / 100`. `items[].descuento_global`
+  es opcional y, si se envía, tiene que coincidir con ese cálculo (±0,8).
+- Redondeo: `redondeo` es `ninguno` (por defecto, `dRedon` 0) o `multiplo_50`
+  (sólo PYG): baja `dTotOpe` al múltiplo de 50 Gs anterior. Nunca se redondea
+  una moneda extranjera.
+- Pagos (sólo facturas): en contado, `formas_pago` tiene que sumar el total
+  neto (tolerancia 0,50) y sin `formas_pago` se informa un pago en efectivo
+  por el total. A crédito, `formas_pago` sólo va con
+  `credito.monto_entrega_inicial` y tiene que sumarlo. Un pago sin `moneda` es
+  en la moneda de la operación; `tipo_cambio` es obligatorio si el pago no es
+  en PYG (si va en la moneda de la operación se usa el `tipo_cambio` del
+  documento) y no se admite si es en PYG.
+- `tipo_impuesto` 2 (ISC) no se admite.
+
+Los incumplimientos responden `422` con el código de la regla en el mensaje,
+por ejemplo `documents.items.proporcion_gravada_required`,
+`documents.redondeo.only_pyg` o
+`documents.condicion_operacion.formas_pago.total_mismatch`.
 
 ## Nota de crédito
 
@@ -130,17 +243,71 @@ POST /v1/emitters/{emitter_id}/inutilizations
 GET  /v1/emitters/{emitter_id}/events/{event_id}
 ```
 
-Cancelación usa `{"motivo": "..."}`; inutilización usa timbrado, tipo,
-establecimiento, punto, rango y motivo. Ambas crean un event/job `queued` con
-`201`; el worker `events` transmite a SIFEN y el ERP consulta el evento/job o
-recibe el webhook terminal. Los endpoints raw `/documents` y `/events` están
-deprecados y son sólo admin.
+El KuDE (`/kude` en PDF y `/kude/data` en JSON) sale del XML firmado y se
+entrega para documentos `approved*` y para los que siguen en camino al SIFEN
+(`queued`, `processing`, `submitting`, `submitted`, `retry_pending`,
+`reconciliation_required`): con validación posterior puede entregarse antes
+de la aprobación, pero sólo vale si el SIFEN aprueba el DE (MT v150 §6.2 y
+§6.4). Para `rejected`, `failed`, `inutilized`, `cancelled` o cualquier otro
+estado responde `409 documents.kude_not_available` con
+`details.internal_status`. El PDF lleva el QR en la primera página, páginas
+`n/total`, la fecha de inicio del timbrado como `DD-MM-AAAA` (NT 10), el
+«Total en Guaraníes» (`dTotalGs` si la moneda no es PYG) y las cantidades
+y los montos con todos los dígitos del XML, sin redondear (MT v150 §13.2 y
+§6.6): sólo cambian los separadores (`952.38095238` se imprime
+`952,38095238`).
+`/kude/data` devuelve los literales del XML: `totales.total_general_operacion`
+es `dTotGralOpe` y `totales.total_general_guaranies` es `dTotalGs` fuera de
+PYG. El `qr.url` es el `dCarQR` del XML, calculado con los valores literales
+del XML firmado (MT v150 §13.8; con un receptor no contribuyente el
+parámetro es `dNumIDRec`).
 
-Ante timeout o respuesta ambigua de emisión, Kila persiste el CDC, XML firmado y
-request exactos, y consulta SIFEN sin volver a transmitir el DE. Después de
-agotar la reconciliación automática queda `reconciliation_required`; el ERP usa
-el endpoint `reconcile` con la misma intención original. Ni el worker ni una
-recola manual pueden reenviar ese CDC.
+Cancelación usa `{"motivo": "..."}`; inutilización usa timbrado (del emisor),
+tipo, establecimiento, punto, rango, motivo y `serie` opcional (`dSerieNum`).
+Ambas crean un event/job `queued` con `201`; el worker `events` transmite a
+SIFEN y el ERP consulta el evento/job o recibe el webhook terminal. Un evento
+queda registrado solo con `0600`. La cancelación vence 48 h (factura) o 168 h
+(otros DTE) después de la aprobación en SIFEN, no admite una segunda solicitud
+mientras otra pueda registrarse (`409 events.cancel.already_pending`) y, ante
+una respuesta perdida o un rechazo `4002`/`4003`/`4009`/`4010`, consulta el CDC
+(`xContEv`) antes de reenviar o de creer el rechazo; un `4003` sin la
+cancelación visible, o cualquiera de esos códigos con un contenedor
+ilegible, deja el evento `reconciliation_required` y no `rejected`. La inutilización acepta
+números sin documento, rechazados, fallidos o en cola abortados, nunca un DTE
+ni un documento que pueda estar en SIFEN, y solo del timbrado pedido (un
+documento firmado con otro timbrado no cuenta); no tiene tope de días (pasado el día
+15 del mes siguiente responde `warnings: ["inutilization.extemporaneous"]`) y,
+al aprobarse, deja esos documentos en `inutilized`. Los endpoints raw `/documents` y `/events` están
+deprecados y son sólo admin. En el raw `/documents`, `payload.generated_xml`
+tiene que ser un `rDE` sin firmar que valide contra el XSD oficial (sin
+`DOCTYPE`), con `dVerFor`, un solo `DE`, una `Signature` opcional y
+`gCamFuFD` como únicos hijos; KilaSifen firma ese `DE` con el certificado del
+emisor. `payload.doc_id` es opcional y, si se envía, tiene que ser el `Id` de
+ese `DE` (`422 documents.raw.doc_id_mismatch`). Un `signed_xml` provisto por
+el caller se rechaza con `422 documents.raw.signed_xml_not_allowed`: la
+plataforma sólo transmite XML que firmó ella misma. Los `details.errors` de
+`documents.raw.generated_xml_invalid_schema` son mensajes del validador XSD y
+pueden citar valores del XML enviado.
+
+Kila confirma en la base el CDC, el XML firmado y el request exacto (con su
+`dId` real) antes de transmitir, con el documento en `submitting`. Ante
+timeout, respuesta ambigua o caída del worker durante el envío, el intento
+siguiente consulta SIFEN por CDC: con `0422` el documento queda aprobado y no se
+reenvía; con `0420` («no existe o no está aprobado») vuelve a `queued` y el
+intento siguiente reenvía el mismo DE firmado (mismo CDC y firma) en un
+`rEnviDe` con `dId` nuevo (Decreto 872/2023 Art. 29). Un rechazo que trae
+`1001`/`1002` en cualquiera de sus mensajes solo queda firme después de esa
+consulta, y uno con `0161`/`0162` (falla del servidor) se reenvía. Si al agotar los intentos SIFEN no dio una respuesta
+sobre el CDC, el documento queda `reconciliation_required`; el ERP usa el
+endpoint `reconcile` con la misma intención original. Cuando la falla prueba
+que el request no salió (`transport_not_sent` en el job) el documento vuelve a
+`queued` y se reenvía el mismo DE firmado; si se agotan los intentos, el job
+queda `failed` y el documento `queued`, listo para un reintento manual.
+Mientras SIFEN no aprueba un documento, el job avisa en
+`error_snapshot.deadline_alerts` cuando se acercan o pasan las 72 h desde la
+firma (observación `1005`) o las 720 h desde la emisión (rechazo `1150`). El
+timbrado se elige con la fecha de emisión (`dFeEmiDE`), no con la del
+servidor.
 
 ## Sandbox determinístico
 
@@ -169,10 +336,18 @@ Registrar URL HTTPS pública, secreto aleatorio ≥32 caracteres, suscripciones 
 `secret_configured`. Firma exacta, replay y backoff:
 [integrations/webhooks.md](integrations/webhooks.md).
 
+`POST .../webhooks/{endpoint_id}/test` envía un evento sintético
+`webhook.test` para verificar el endpoint. El replay
+(`POST .../webhooks/{endpoint_id}/deliveries/replay`) recibe sólo
+`{"delivery_id": "..."}` y reenvía un evento ya generado para el mismo emisor;
+desde 0.2.0 ya no acepta `event_type` ni `payload` del caller (`422`).
+
 El ERP actualiza por webhook y usa polling de documento/job como recuperación.
 
 ## Compatibilidad
 
 Dentro de `/v1`, cambios son aditivos. Remover/renombrar o cambiar semántica exige
-`/v2` y guía de migración. Clientes ignoran campos desconocidos; requests tipados
+`/v2` y guía de migración. La excepción son las correcciones exigidas por la
+normativa fiscal (por ejemplo el perfil fiscal del emisor o las reglas del
+receptor de 0.2.0): se documentan en el CHANGELOG con su guía de migración. Clientes ignoran campos desconocidos; requests tipados
 se validan estrictamente. No existe integración con FacturaSend.

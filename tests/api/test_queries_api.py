@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -117,6 +117,8 @@ def test_query_document_returns_normalized_payload_and_persists_trace(
     assert payload["result_code"] == "0300"
     assert payload["result_message"] == "Consulta DE exitosa"
     assert payload["content_xml"] == "<rDE version='150'/>"
+    assert payload["cancelled"] is False
+    assert payload["events"] == []
 
     engine = build_engine(get_settings().database_url)
     session_factory = build_session_factory(engine)
@@ -168,7 +170,9 @@ def test_query_document_reconciles_transport_uncertainty_without_resubmission(
     assert reconciled.internal_status == "approved"
     assert reconciled.sifen_status == "approved"
     assert reconciled.sifen_result_code == "0300"
-    assert reconciled.signed_xml == "<rDE version='150'/>"
+    # DECISIONES F62: the copy in xContenDE never replaces the signed XML.
+    assert reconciled.signed_xml == "<rDE><Signature/></rDE>"
+    assert reconciled.sifen_approved_at is not None
     assert reconciled.sifen_request_xml == "<emit-request/>"
     assert reconciled.sifen_response_raw == "<emit-response/>"
     assert reconciled.last_query_request_xml == "<query-document-request/>"
@@ -205,7 +209,7 @@ class FakeQueryGateway:
             result_message="Consulta DE exitosa",
             status="found",
             content_xml="<rDE version='150'/>",
-            processed_at=datetime(2026, 4, 24, 12, 0, tzinfo=UTC),
+            processed_at=datetime(2026, 4, 24, 12, 0, tzinfo=timezone.utc),
         )
 
 
@@ -291,4 +295,4 @@ def _seed_query_context(
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

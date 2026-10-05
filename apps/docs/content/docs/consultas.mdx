@@ -8,9 +8,29 @@ icon: SearchCheck
 
 ```http
 GET /v1/emitters/{emitter_id}/documents/{document_id}
+GET /v1/emitters/{emitter_id}/documents
+GET /v1/emitters/{emitter_id}/jobs/{job_id}
 ```
 
-La respuesta incluye el documento y su job asociado.
+Las tres rutas requieren el scope `tenant:read` y no llaman a SIFEN.
+
+El `GET` de un documento responde `data.document` (con `internal_status`,
+`cdc`, `sifen_result_code`, `fiscal_warnings` y los XML) y `data.job`, su job
+de emisión (con `status`, `attempts` y `error_snapshot`), que puede ser `null`.
+Cómo leer los dos estados está en
+[Estados y reintentos](/docs/estados-y-reintentos).
+
+El listado devuelve `data.documents`, del más nuevo al más viejo, donde cada
+elemento trae `document` y `job` con la misma forma, y `data.pagination` con
+`limit`, `offset` y `count` (la cantidad de esta página). Filtra por
+`internal_status`, `document_type` (`factura`, `nota_credito`, `nota_debito`),
+`external_id` y `cdc`; `limit` va de 1 a 100 (50 por defecto). Sirve para
+reconciliar tu ERP sin webhooks: por ejemplo, listá los `retry_pending` o buscá
+por tu `external_id`.
+
+`GET .../jobs/{job_id}` devuelve `data.job` para cualquier job del emisor, de
+un documento o de un evento; el `job_id` viene en `data.job.id` de la
+respuesta de creación.
 
 ## Consultar SIFEN
 
@@ -20,13 +40,105 @@ POST /v1/emitters/{emitter_id}/queries/documents/{document_id}/reconcile
 GET /v1/emitters/{emitter_id}/queries/ruc/{ruc}
 ```
 
-El `GET` consulta y registra la respuesta sin forzar una transición. Usá el
-`POST .../reconcile` cuando el documento esté `retry_pending` o
-`reconciliation_required`: si SIFEN reconoce el CDC, documento y job convergen
-atómicamente al estado aprobado. La operación nunca reenvía el DE.
+Estas rutas llaman a SIFEN en el momento, con el certificado activo del
+emisor. Los `GET` requieren `tenant:read`; `POST .../reconcile`, `fiscal:write`.
+
+<Callout type="warn" title="Sandbox">
+  Estas rutas no usan el simulador del [sandbox](/docs/sandbox): contactan el
+  SIFEN de pruebas real, que no conoce los documentos simulados. Con un
+  documento del sandbox no reproducen el resultado elegido, y una
+  reconciliación puede cambiar su estado según lo que responda ese SIFEN.
+  Seguí los documentos del sandbox con
+  `GET /v1/emitters/{emitter_id}/documents/{document_id}` y los webhooks.
+</Callout>
+
+### Consulta por CDC
+
+Sólo se consulta el CDC de un documento del emisor; no hay consulta de un CDC
+arbitrario. Un documento que todavía no tiene CDC (el worker no lo preparó)
+responde `409 documents.cdc_required_for_query`. La respuesta viene en
+`data.document_query`, con `status`:
+
+| `status` | Código SIFEN | Significado |
+| --- | --- | --- |
+| `found` | `0422` | El CDC es un DTE aprobado. |
+| `not_found_or_not_approved` | `0420` | No existe o no está aprobado (nunca llegó, o fue rechazado). |
+| `error` | cualquier otro (por ejemplo `0421`) | La consulta falló; no dice nada del CDC. El significado de `0421` es ambiguo en el MT v150 (NO DETERMINADO) y KilaSifen lo trata como error. |
+
+Los demás campos:
+
+- `document_id` y `cdc`: el documento consultado y su CDC.
+- `result_code` y `result_message`: `dCodRes` y `dMsgRes` de la consulta.
+- `processed_at`: el `dFecProc` de la consulta, es decir, cuándo SIFEN procesó
+  la consulta, no cuándo aprobó el DE.
+- Con `found`: `content_xml` es el contenedor que devuelve SIFEN
+  (`xContenDE`), tal cual; `sifen_protocol`, el número de transacción del DTE
+  (`dProtAut`); `events`, los eventos registrados del CDC (`kind`, `cdc`,
+  `protocol`), y `cancelled`, si hay una cancelación registrada.
+
+El `GET` registra la consulta en el documento (`last_query_request_xml`,
+`last_query_response_raw` y `last_query_at`; la solicitud guardada es
+exactamente la que viajó, con su `dId`) sin cambiar su estado.
+`POST .../reconcile` además aplica la respuesta, sin enviar nada:
+
+- con `0422`, un documento `submitting`, `submitted`, `retry_pending` o
+  `reconciliation_required` queda `approved` (o `cancelled` si hay una
+  cancelación registrada) y su job `succeeded`; un documento aprobado con una
+  cancelación registrada queda `cancelled`;
+- con `0420`, un documento `submitted`, `retry_pending` o
+  `reconciliation_required` que esperaba confirmar un rechazo `1001`/`1002`
+  queda `rejected`. Si no, vuelve a `queued`: si su job sigue programado, el
+  worker reenvía el mismo DE firmado; si el job ya terminó (`failed`), hace
+  falta un reintento del operador o inutilizar el número. Un documento
+  `submitting` no se toca: lo resuelve su worker;
+- en cualquier otro estado, incluido `queued`, o con `error`, sólo queda
+  registrada la consulta.
+
+Cuando hay un cambio de estado, `sifen_result_code` y `sifen_result_message`
+del documento pasan a ser los de la consulta (`0422` o `0420`), salvo en un
+rechazo `1001`/`1002` confirmado, que conserva el primer error que informó
+SIFEN.
+
+La respuesta de `reconcile` trae sólo el resultado de la consulta, no el estado
+que quedó, y la reconciliación no publica webhooks: después de reconciliar,
+leé el documento con `GET /v1/emitters/{emitter_id}/documents/{document_id}`.
+El XML firmado que emitió KilaSifen nunca se reemplaza por la copia de SIFEN.
+La operación no bloquea al emisor mientras espera la respuesta de SIFEN.
+
+### Consulta RUC
+
+`GET .../queries/ruc/{ruc}` acepta el RUC con o sin DV (`RUC` o `RUC-DV`).
+KilaSifen descarta el DV sin validarlo y consulta el número, que tiene que tener
+de 5 a 8 caracteres (MT v150 §9.6.1); si no, responde
+`422 queries.invalid_ruc`. Nada de esta consulta se guarda.
+
+La respuesta viene en `data.ruc_query`:
+
+| Campo | Contenido |
+| --- | --- |
+| `queried_ruc` | El RUC consultado, sin DV. |
+| `status` | `found` si SIFEN devolvió los datos del contribuyente; cualquier otra respuesta da `not_found`. |
+| `result_code`, `result_message` | `dCodRes` y `dMsgRes`: `0502` RUC encontrado, `0500` RUC no existe, `0501` RUC sin permiso para usar el servicio de consulta (MT v150 §9.6.2, Tabla H). |
+| `taxpayer` | Con `found`: `ruc`, `legal_name`, `state_code`, `state` (su descripción) y `electronic_taxpayer` (si es facturador electrónico). |
+
+`state_code` es `ACT` (activo), `SUS` (suspensión temporal), `SAD` (suspensión
+administrativa), `BLQ` (bloqueado), `CAN` (cancelado) o `CDE` (cancelado
+definitivo). `not_found` no siempre significa que el RUC no existe: un `0501`
+también sale así, así que decidí por `result_code`.
 
 La consulta RUC permite comprobar información tributaria expuesta por SIFEN; no
 es una central de riesgo crediticio.
+
+### Errores de las consultas
+
+| HTTP | `code` | Cuándo |
+| --- | --- | --- |
+| `403` | `auth.insufficient_scope` | A la clave le falta el scope de la ruta. |
+| `404` | `emitters.not_found`, `documents.not_found` | Emisor o documento inexistente, o de otro emisor. |
+| `409` | `documents.cdc_required_for_query` | El documento todavía no tiene CDC. |
+| `409` | `certificates.active_required`, `emitters.inactive` | El emisor no tiene un certificado activo, o está inactivo. |
+| `422` | `queries.invalid_cdc`, `queries.invalid_ruc` | CDC o RUC mal formado. Hoy también sale así si el certificado activo no se puede leer; el `message` trae ese error. |
+| `500` | `server.internal_error` | SIFEN no respondió (timeout o conexión cortada), o el ambiente del emisor no coincide con el del despliegue. Reintentá más tarde con backoff. |
 
 ## Descargar artefactos
 
@@ -36,5 +148,35 @@ GET /v1/emitters/{emitter_id}/documents/{document_id}/kude
 GET /v1/emitters/{emitter_id}/documents/{document_id}/kude/data
 ```
 
-El KuDE sólo está disponible cuando existe información suficiente para
-representar el documento.
+`/xml` devuelve el `rDE` firmado que emitió KilaSifen o, si el documento
+todavía no se firmó, su XML sin firmar; nunca el contenedor de SIFEN. Sin XML
+(por ejemplo, antes de que el worker prepare el documento) responde
+`409 documents.xml_not_available`.
+
+El KuDE sale del XML firmado, así que sólo existe cuando KilaSifen ya firmó
+el documento (si no, `409 documents.signed_xml_not_available`), y el emisor
+tiene que tener cargados `csc` y `csc_id` (si no, `409 emitters.csc_required`;
+ver [Emisores](/docs/emisores#csc)). Además depende del estado del documento:
+
+| Estado | KuDE |
+| --- | --- |
+| `approved`, `approved_with_observation` | Disponible. |
+| `queued`, `processing`, `submitting`, `submitted`, `retry_pending`, `reconciliation_required` | Disponible: con validación posterior el KuDE puede entregarse antes de la aprobación, pero sólo vale si el SIFEN aprueba el DE (MT v150 §6.2 y §6.4). |
+| `rejected`, `failed`, `inutilized`, `cancelled` u otro estado | `409 documents.kude_not_available`, con el estado en `details.internal_status`. Un DE rechazado nunca es un DTE (MT v150 §6.4; Decreto 872/2023, Arts. 4 y 29), un DTE cancelado pierde su validez (Art. 30) y un número inutilizado no tiene DE (Art. 31). |
+
+El PDF imprime el código QR en la primera página, numera las páginas como
+`n/total`, muestra la fecha de inicio del timbrado como `DD-MM-AAAA`
+(NT 10) y, si la moneda no es PYG, el total en guaraníes (`dTotalGs`).
+Cantidades y montos se imprimen con todos los dígitos del XML firmado, sin
+redondear: el KuDE no puede mostrar información que no esté en el XML y
+tiene que coincidir con el DTE (MT v150 §13.2 y §6.6). Sólo cambian los
+separadores: un IVA de `952.38095238` se imprime `952,38095238`. Los totales
+muestran también el subtotal exonerado y, cuando no son cero, el redondeo y
+la comisión, así los subtotales impresos suman como en el XML.
+
+`/kude/data` devuelve los mismos datos con el texto literal del XML firmado
+(montos con todos sus decimales, fechas `AAAA-MM-DD`): si armás tu propio
+KuDE con ellos, imprimí cada monto completo, sin redondearlo.
+`totales.total_general_operacion` es `dTotGralOpe`, en la moneda de la
+operación, y `totales.total_general_guaranies` es `dTotalGs` cuando la
+moneda no es PYG (o `dTotGralOpe` en PYG). `qr.url` es el `dCarQR` del XML.

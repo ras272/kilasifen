@@ -2,15 +2,15 @@
 
 ## Goal
 
-Connect the emission worker to the `pysifen` engine and persist emission artifacts plus normalized outcomes.
+Connect the emission worker to the `kilasifen.engine` engine and persist emission artifacts plus normalized outcomes.
 
 ## Commit
 
-- `0914799` `feat: process emission jobs through pysifen`
+- `0914799` `feat: process emission jobs through kilasifen.engine`
 
 ## What was created
 
-- `pysifen` emission bridge under `kilasifen/infrastructure/sifen/`
+- `kilasifen.engine` emission bridge under `kilasifen/infrastructure/sifen/`
 - normalized `EmissionOutcome`
 - payload mapper for XML-based emission inputs
 - worker processing that:
@@ -46,8 +46,8 @@ This is an intentional bridge layer so the worker can already process real emiss
 - `kilasifen/infrastructure/jobs/workers.py`
 - `kilasifen/domain/documents/models.py`
 - `kilasifen/infrastructure/db/models.py`
-- `pysifen/sdk/client.py`
-- `pysifen/sdk/errors.py`
+- `kilasifen/engine/sdk/client.py`
+- `kilasifen/engine/sdk/errors.py`
 - `tests/application/test_emission_flow.py`
 
 ## Verification

@@ -4,7 +4,27 @@ description: Cargá material fiscal sin exponerlo al consumidor.
 icon: BadgeCheck
 ---
 
-La carga del PKCS#12 requiere `secrets:write` y usa `multipart/form-data`.
+Para emitir, cada emisor necesita un certificado activo, que firma los
+documentos y autentica la conexión mTLS con el SIFEN, y un timbrado activo. El
+resto de la preparación (perfil fiscal y CSC) está en
+[Emisores](/docs/emisores).
+
+## Certificado
+
+Según el MT v150 (§7.5 y §7.6), el certificado tiene que cumplir esto:
+
+- Lo emite un prestador de servicios de certificación (PSC) habilitado.
+- Si es de persona jurídica, el RUC va en el `SerialNumber` del Subject.
+- Si es de persona física, tiene que ser de un dependiente del contribuyente y
+  llevar el RUC de la entidad en el `SerialNumber` del SubjectAlternativeName.
+- En los dos casos, el RUC se escribe `RUC<número>-<DV>`, sin espacios.
+- La clave es RSA de 2048 bits (por software) o de 2048 o 4096 bits (por
+  hardware).
+- Para la conexión mTLS, tiene que tener el uso extendido `clientAuth`.
+
+### Subir
+
+La carga requiere `secrets:write` y usa `multipart/form-data`.
 
 ```bash
 curl -X POST https://TU_API/v1/emitters/EMITTER_ID/certificates \
@@ -14,19 +34,181 @@ curl -X POST https://TU_API/v1/emitters/EMITTER_ID/certificates \
   -F "file=@certificado.pfx;type=application/x-pkcs12"
 ```
 
-Antes de activarlo, KilaSifen comprueba:
+- `logical_name` es un nombre tuyo, de hasta 128 caracteres.
+- `password` es obligatoria: un PFX sin contraseña no se puede cargar.
+- `file` admite los media types `application/x-pkcs12`, `application/pkcs12`
+  y `application/octet-stream`.
 
-- estructura PKCS#12 y contraseña;
-- presencia de clave privada RSA de al menos 2048 bits;
-- vigencia temporal del certificado;
-- RUC detectado contra el RUC del emisor;
-- tamaño máximo configurado para el upload.
+Al subirlo, KilaSifen comprueba lo siguiente:
 
-Los bytes del PFX y su contraseña se cifran antes de persistir. Ninguna
-respuesta API devuelve el material ni su contraseña.
+| Control | Error |
+| --- | --- |
+| El PKCS#12 se abre con la contraseña y trae certificado y clave privada. | `409 certificates.invalid_pkcs12` |
+| La clave es RSA de 2048 bits o más. | `409 certificates.unsupported_private_key` |
+| Si el RUC viene como `RUC<número>-<DV>`, el DV es el módulo 11 del número. | `409 certificates.ruc_dv_invalid` |
+| El archivo no supera `KILA_SIFEN_MAX_PFX_UPLOAD_BYTES` (2 MiB por defecto). | `413 certificates.upload_too_large` |
+| El media type es uno de los admitidos. | `415 certificates.unsupported_media_type` |
+| El emisor está activo. | `409 emitters.inactive` |
+
+KilaSifen acepta claves de más de 2048 bits, pero el MT sólo prevé 2048 y
+4096: usá uno de esos dos tamaños.
+
+El certificado queda guardado inactivo (`is_active: false`). La respuesta trae
+`fingerprint`, `subject_summary`, `valid_from`, `valid_until` y `detected_ruc`.
+
+El RUC se busca primero en el SubjectAlternativeName (persona física) y después
+en el Subject (persona jurídica). `detected_ruc` puede tomar tres formas:
+
+- `número-DV` (por ejemplo, `44444401-7`), si el certificado usa el formato
+  oficial;
+- sólo el número, si el `SerialNumber` no tiene ese formato;
+- `null`, si no se encontró ningún RUC.
+
+El MT no dice en qué tipo de nombre del SubjectAlternativeName va el RUC.
+KilaSifen lo lee de un `directoryName` o de un `otherName` con el OID
+`2.5.4.5`, y esa lectura es NO DETERMINADO: falta probarla con certificados
+reales de los PSC.
+
+El PFX y su contraseña se cifran antes de guardarse, y ninguna respuesta los
+devuelve.
+
+### Activar
+
+```bash
+curl -X POST https://TU_API/v1/emitters/EMITTER_ID/certificates/CERTIFICATE_ID/activate \
+  -H "X-API-Key: $KILA_API_KEY"
+```
+
+Requiere `secrets:write`. Al activar, KilaSifen comprueba lo siguiente:
+
+- Vigencia. Si falla, responde `409 certificates.not_yet_valid`,
+  `certificates.expired` o `certificates.validity_missing`.
+- RUC. Sin RUC detectado, responde `409 certificates.ruc_missing`. Si el RUC
+  no es el del emisor, o el DV del certificado no es el del emisor, responde
+  `409 certificates.ruc_mismatch`. Un `SerialNumber` sin el formato
+  `RUC<número>-<DV>` se compara sólo por número.
+
+Crear un documento no revisa el certificado. Sin uno activo, el worker no
+arranca el intento y el documento queda en `queued` (ver
+[Estados y reintentos](/docs/estados-y-reintentos#cuando-el-intento-no-arranca)).
+
+Cada emisor tiene un solo certificado activo: activar uno desactiva los demás.
+Para saber cuál está activo, usá `is_active`; `status` sigue en `uploaded`
+después de activar. Listar los certificados
+(`GET /v1/emitters/{emitter_id}/certificates`) también requiere
+`secrets:write`.
+
+<Callout type="warn" title="Lo que KilaSifen no verifica">
+  KilaSifen no verifica que el certificado sea de un PSC habilitado, que no
+  esté revocado ni sus usos de clave (firma digital y no repudio para firmar,
+  `clientAuth` para el mTLS): un certificado autofirmado se activa igual.
+  Esos controles los hace el SIFEN (MT v150 §12.2).
+
+  - Casi todos los de la conexión los aplica el propio handshake TLS. Si el
+    handshake falla, KilaSifen lo trata como un envío que no salió (ver
+    [Estados y reintentos](/docs/estados-y-reintentos)).
+  - Los del certificado de firma (cadena del PSC, revocación, usos de clave)
+    vuelven como rechazo del documento.
+</Callout>
+
+### Renovar
+
+Subí y activá el certificado nuevo antes de que venza el anterior. La
+activación lo reemplaza, y los workers descartan las claves al terminar cada
+job, así que lo que se firme después usa el certificado nuevo.
+
+Antes de firmar, KilaSifen comprueba que el certificado valga en la hora de
+firma (`dFecFirma`). Si no vale, el documento queda `failed` con
+`documents.certificate.not_valid_at_signature` (el SIFEN lo rechazaría con
+`2450`, NT 16). En `health`, `has_active_certificate` sigue en `true` con el
+certificado vencido: vigilá `certificate_valid_until`.
+
+No hay endpoint para desactivar ni borrar un certificado. Si uno queda
+comprometido, reemplazalo activando otro: el anterior queda guardado, cifrado
+e inactivo. La única otra salida es desactivar el emisor, que es definitivo.
 
 ## Timbrado
 
-Creá el timbrado con su vigencia y rangos, y activalo sólo después de revisar
-establecimiento y punto de expedición. La numeración posterior se reserva de
-forma atómica en el servidor.
+El timbrado de facturación electrónica lo otorga la SET en Marangatu. No tiene
+fecha de fin de vigencia (RG 23/2019 Art. 12), y el XSD v150 no tiene campo
+para ella.
+
+```bash
+curl -X POST https://TU_API/v1/emitters/EMITTER_ID/stampings \
+  -H "X-API-Key: $KILA_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "number": "12345678",
+    "start_date": "2026-01-01"
+  }'
+```
+
+| Campo | Uso |
+| --- | --- |
+| `number` | Los 8 dígitos del timbrado, tal como figuran en Marangatu (`dNumTim`). |
+| `start_date` | La fecha de inicio de vigencia exacta del timbrado (`dFeIniT`). Si no coincide, el SIFEN rechaza con `1107`. |
+| `end_date` | Opcional. No viaja al SIFEN: sólo deja de usar el timbrado localmente después de esa fecha. |
+
+- KilaSifen todavía no valida el formato de `number`. Un número que no tiene 8
+  dígitos, o que es todo ceros, hace fallar el documento en el worker
+  (`documents.xml.invalid_schema`).
+- Si `end_date` es anterior a `start_date`, la respuesta es
+  `409 stampings.invalid_date_window`.
+- La API ignora sin error los campos que no conoce, como establecimientos,
+  puntos o rangos.
+- El timbrado tiene que ser de facturación electrónica: uno de otro medio de
+  generación se rechaza con `1102`.
+
+Para activarlo:
+
+```bash
+curl -X POST https://TU_API/v1/emitters/EMITTER_ID/stampings/STAMPING_ID/activate \
+  -H "X-API-Key: $KILA_API_KEY"
+```
+
+Crear y activar timbrados requiere `fiscal:write`; listarlos
+(`GET /v1/emitters/{emitter_id}/stampings`) requiere `tenant:read`. Con el
+emisor desactivado, crear o activar responde `409 emitters.inactive`. No hay
+endpoint para borrar un timbrado: uno cargado por error queda en la lista,
+inactivo.
+
+Cada emisor tiene un solo timbrado activo, para todos los tipos de documento.
+Al activar uno, su `status` pasa de `inactive` a `active` y el que estaba
+activo vuelve a `inactive`.
+El SIFEN comprueba que el timbrado corresponda al RUC y al tipo de documento
+(`1101`), pero KilaSifen no lo valida.
+
+### Cómo se elige y cuándo cambiarlo
+
+El worker usa el timbrado activo vigente en la fecha de emisión del documento
+(`dFeEmiDE`, hora de Paraguay). Si ninguno la cubre, el documento queda
+`failed` antes de salir (ver
+[Estados y reintentos](/docs/estados-y-reintentos#validación-local-failed)).
+
+La activación no controla fechas:
+
+- Un timbrado con `start_date` futura deja al emisor sin timbrado válido hasta
+  esa fecha.
+- Los documentos todavía sin firmar con una fecha de emisión anterior al
+  inicio del timbrado nuevo quedan `failed`. Un documento ya firmado conserva
+  su timbrado.
+
+Por eso, activá el timbrado nuevo cuando ya esté vigente y no queden en cola
+documentos sin firmar con una fecha anterior.
+
+KilaSifen no guarda qué establecimientos ni qué puntos de expedición habilita
+el timbrado, y no los valida. Cada documento lleva su `establecimiento` y su
+`punto` (por defecto `001`). Usá sólo los habilitados en Marangatu: el SIFEN
+rechaza los demás con `1105` o `1106`.
+
+### Numeración
+
+KilaSifen reserva el número de cada documento de forma atómica, por emisor,
+establecimiento, punto y tipo de documento. El `numero` que envíes se ignora.
+
+- La secuencia no depende del timbrado: activar otro no la reinicia. El MT
+  v150 (C007) indica que la numeración empieza en 1 con un timbrado nuevo, y
+  KilaSifen hoy no lo hace.
+- Los documentos no admiten serie (`dSerieNum`), que es el mecanismo oficial
+  para seguir numerando después de 9.999.999 (RG 23/2019 Art. 12; MT v150
+  C010).

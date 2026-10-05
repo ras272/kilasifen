@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
+from datetime import datetime
+
+#: dFecFirma of the golden documents. It is the real signing time in
+#: production; the goldens pin it five minutes after the dFeEmiDE of the
+#: scenarios (2026-04-25T10:00:00) so the snapshots stay deterministic.
+GOLDEN_SIGNED_AT = datetime(2026, 4, 25, 10, 5, 0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +32,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "482019375",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -40,6 +47,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -66,6 +76,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "731640258",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -76,10 +87,6 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "naturaleza": 2,
                     "tipo_operacion": 2,
                     "tipo_documento_identidad": 5,
-                    "numero_documento_identidad": "0",
-                    "nombre": "CONSUMIDOR FINAL",
-                    "direccion": "ASUNCION",
-                    "numero_casa": "123",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -124,9 +131,12 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "205877413",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
+                # F010; each item gets EA004 = F010 * E721 / 100 (NT 01).
+                "porcentaje_descuento_global": "10",
                 "cliente": {
                     "naturaleza": 1,
                     "tipo_operacion": 1,
@@ -135,6 +145,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "items": [
                     {
@@ -143,7 +156,6 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                         "unidad_medida": "77",
                         "cantidad": "1",
                         "precio_unitario": "90000",
-                        "descuento_global": "5000",
                         "afectacion": "gravado",
                         "tasa": 10,
                     },
@@ -153,7 +165,6 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                         "unidad_medida": "77",
                         "cantidad": "1",
                         "precio_unitario": "70000",
-                        "descuento_global": "5000",
                         "afectacion": "gravado",
                         "tasa": 10,
                     },
@@ -166,6 +177,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "918346027",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -177,6 +189,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "items": [
                     {
@@ -199,6 +214,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "364052981",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -210,9 +226,16 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "condicion_operacion": {
                     "tipo": "credito",
+                    # 1551: the initial delivery goes with its gPaConEIni.
+                    "formas_pago": [
+                        {"tipo": "efectivo", "monto": "10000", "moneda": "PYG"}
+                    ],
                     "credito": {
                         "tipo": "cuotas",
                         "monto_entrega_inicial": "10000",
@@ -254,6 +277,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "657213904",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -265,6 +289,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -304,6 +331,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "140698732",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -315,6 +343,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -347,6 +378,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "829471560",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -361,6 +393,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "condicion_operacion": {
                     "tipo": "contado",
@@ -387,6 +422,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="factura_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "573908146",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -398,6 +434,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "MINISTERIO TEST",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                     "compras_publicas": {
                         "modalidad": "1",
                         "entidad": "12345",
@@ -420,11 +459,98 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             },
         ),
         TypedContractScenario(
+            # NT 13: a partially taxed item (E731=4, E733=30) next to an
+            # exonerated one (E731=2, dDesAfecIVA of NT 10 Tabla 6).
+            name="factura_iva_parcial_exonerado",
+            document_type="factura",
+            contract="factura_v1",
+            payload={
+                "numero": 1,
+                "codigo_seguridad": "417306952",
+                "establecimiento": "001",
+                "punto": "001",
+                "fecha_emision": "2026-04-25T10:00:00",
+                # Fictional receiver (DNIT Guia de Mejores Practicas example).
+                "cliente": {
+                    "naturaleza": 1,
+                    "tipo_operacion": 1,
+                    "tipo_contribuyente": 2,
+                    "ruc": "80025298-5",
+                    "razon_social": "CLIENTE FICTICIO SA",
+                    "direccion": "CALLE FICTICIA",
+                    "numero_casa": "100",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
+                },
+                "items": [
+                    {
+                        "codigo_interno": "GP-1",
+                        "descripcion": "Item gravado parcial",
+                        "unidad_medida": "77",
+                        "cantidad": "1",
+                        "precio_unitario": "100000",
+                        "afectacion": "gravado_parcial",
+                        "proporcion_gravada": "30",
+                        "tasa": 10,
+                    },
+                    {
+                        "codigo_interno": "EXO-1",
+                        "descripcion": "Item exonerado",
+                        "unidad_medida": "77",
+                        "cantidad": "1",
+                        "precio_unitario": "15000",
+                        "afectacion": "exonerado",
+                        "tasa": 0,
+                    },
+                ],
+            },
+        ),
+        TypedContractScenario(
+            # MT v150 §F p. 103: 107.437 Gs rounded to 107.400 (dRedon 37).
+            name="factura_redondeo_50",
+            document_type="factura",
+            contract="factura_v1",
+            payload={
+                "numero": 1,
+                "codigo_seguridad": "583120746",
+                "establecimiento": "001",
+                "punto": "001",
+                "fecha_emision": "2026-04-25T10:00:00",
+                "redondeo": "multiplo_50",
+                # Fictional receiver (DNIT Guia de Mejores Practicas example).
+                "cliente": {
+                    "naturaleza": 1,
+                    "tipo_operacion": 1,
+                    "tipo_contribuyente": 2,
+                    "ruc": "80025298-5",
+                    "razon_social": "CLIENTE FICTICIO SA",
+                    "direccion": "CALLE FICTICIA",
+                    "numero_casa": "100",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
+                },
+                "items": [
+                    {
+                        "codigo_interno": "RED-1",
+                        "descripcion": "Producto redondeado",
+                        "unidad_medida": "77",
+                        "cantidad": "1",
+                        "precio_unitario": "107437",
+                        "afectacion": "gravado",
+                        "tasa": 10,
+                    }
+                ],
+            },
+        ),
+        TypedContractScenario(
             name="nc_total",
             document_type="nota_credito",
             contract="nota_credito_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "396185270",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -437,6 +563,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "documento_asociado": {
                     "tipo": 1,
@@ -461,6 +590,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="nota_credito_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "761502849",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -473,6 +603,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "documento_asociado": {
                     "tipo": 1,
@@ -506,6 +639,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="nota_credito_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "258943617",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -518,6 +652,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "documento_asociado": {
                     "tipo": 1,
@@ -542,6 +679,7 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
             contract="nota_debito_v1",
             payload={
                 "numero": 1,
+                "codigo_seguridad": "604327195",
                 "establecimiento": "001",
                 "punto": "001",
                 "fecha_emision": "2026-04-25T10:00:00",
@@ -554,6 +692,9 @@ def get_typed_contract_scenarios() -> list[TypedContractScenario]:
                     "razon_social": "TIPS SA",
                     "direccion": "ASUNCION",
                     "numero_casa": "123",
+                    "departamento": 1,
+                    "ciudad": 1,
+                    "descripcion_ciudad": "ASUNCION (DISTRITO)",
                 },
                 "documento_asociado": {
                     "tipo": 1,

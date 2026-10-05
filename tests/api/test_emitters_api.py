@@ -10,7 +10,8 @@ from kilasifen.config import get_settings
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
-
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile_payload
+from tests._raw_xml import raw_document_payload
 
 API_KEY = "secret-key"
 
@@ -116,7 +117,7 @@ def test_create_emitter_rejects_duplicate_external_id(client: TestClient) -> Non
         json={
             **payload,
             "ruc": "80111111",
-            "dv": "9",
+            "dv": "0",
         },
     )
 
@@ -131,7 +132,7 @@ def test_get_emitter_health_returns_operational_snapshot(client: TestClient) -> 
         json={
             "external_id": "erp-health",
             "ruc": "81234123",
-            "dv": "1",
+            "dv": "6",
             "legal_name": "EMITTER HEALTH SA",
             "tax_environment": "test",
             "csc": None,
@@ -146,7 +147,7 @@ def test_get_emitter_health_returns_operational_snapshot(client: TestClient) -> 
             "external_id": "erp-health-doc-1",
             "idempotency_key": "idem-health-doc-1",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='H1'/></rDE>", "doc_id": "H1"},
+            "payload": raw_document_payload(),
         },
     )
 
@@ -162,3 +163,199 @@ def test_get_emitter_health_returns_operational_snapshot(client: TestClient) -> 
     assert health["has_active_certificate"] is False
     assert health["has_active_stamping"] is False
     assert health["last_document_id"] is not None
+
+
+def test_create_emitter_rejects_a_dv_that_is_not_the_modulo_11(
+    client: TestClient,
+) -> None:
+    # MT v150 p. 211: "RUC Emisor: 44444401-7" (validation 1253, D102).
+    response = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "ruc": "44444401",
+            "dv": "8",
+            "legal_name": "EMISOR FICTICIO SA",
+            "tax_environment": "test",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "emitters.dv_mismatch"
+
+
+def test_create_emitter_accepts_short_ruc_and_normalizes_csc_id(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "ruc": "123",
+            "dv": "6",
+            "legal_name": "PERSONA FISICA FICTICIA",
+            "tax_environment": "test",
+            "csc": "ABCD0000000000000000000000000000",
+            "csc_id": "1",
+        },
+    )
+
+    assert response.status_code == 201
+    emitter = response.json()["data"]["emitter"]
+    assert emitter["ruc"] == "123"
+    assert emitter["csc_id"] == "0001"
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"ruc": "0123456"},
+        {"ruc": "123456789"},
+        {"legal_name": "ABC"},
+        {"csc": "short-csc"},
+        {"csc_id": "12345"},
+    ],
+)
+def test_create_emitter_rejects_identity_outside_official_formats(
+    client: TestClient, override: dict
+) -> None:
+    payload = {
+        "ruc": "44444401",
+        "dv": "7",
+        "legal_name": "EMISOR FICTICIO SA",
+        "tax_environment": "test",
+        **override,
+    }
+
+    response = client.post("/v1/emitters", headers={"X-API-Key": API_KEY}, json=payload)
+
+    assert response.status_code == 422
+
+
+def test_update_emitter_rejects_csc_id_zero(client: TestClient) -> None:
+    created = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "ruc": "44444401",
+            "dv": "7",
+            "legal_name": "EMISOR FICTICIO SA",
+            "tax_environment": "test",
+        },
+    )
+    emitter_id = created.json()["data"]["emitter"]["id"]
+
+    response = client.patch(
+        f"/v1/emitters/{emitter_id}",
+        headers={"X-API-Key": API_KEY},
+        json={"csc_id": "0000"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "emitters.csc_id_invalid"
+
+
+def test_emitter_without_fiscal_profile_reports_it_incomplete(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "ruc": "44444401",
+            "dv": "7",
+            "legal_name": "EMISOR FICTICIO SA",
+            "tax_environment": "test",
+        },
+    )
+
+    emitter = response.json()["data"]["emitter"]
+    assert emitter["fiscal_profile"] is None
+    assert emitter["fiscal_profile_complete"] is False
+
+
+def test_fiscal_profile_is_persisted_and_replaced_whole(client: TestClient) -> None:
+    profile = fictional_fiscal_profile_payload()
+    profile["domicilio"]["descripcion_departamento"] = None
+    created = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "ruc": "44444401",
+            "dv": "7",
+            "legal_name": "EMISOR FICTICIO SA",
+            "tax_environment": "test",
+            "fiscal_profile": profile,
+        },
+    )
+    assert created.status_code == 201
+    emitter = created.json()["data"]["emitter"]
+    assert emitter["fiscal_profile_complete"] is True
+    stored = emitter["fiscal_profile"]
+    assert stored["domicilio"]["descripcion_departamento"] == "CAPITAL"
+    assert stored["actividades_economicas"] == profile["actividades_economicas"]
+
+    replacement = fictional_fiscal_profile_payload()
+    replacement["tipo_contribuyente"] = 1
+    replacement["establecimientos"] = [
+        {
+            **replacement["domicilio"],
+            "establecimiento": "002",
+            "direccion": "SUCURSAL FICTICIA",
+            "departamento": 12,
+            "descripcion_departamento": "CENTRAL",
+            "ciudad": 5,
+            "descripcion_ciudad": "CIUDAD FICTICIA",
+        }
+    ]
+    updated = client.patch(
+        f"/v1/emitters/{emitter['id']}",
+        headers={"X-API-Key": API_KEY},
+        json={"fiscal_profile": replacement},
+    )
+    assert updated.status_code == 200
+
+    fetched = client.get(
+        f"/v1/emitters/{emitter['id']}", headers={"X-API-Key": API_KEY}
+    ).json()["data"]["emitter"]
+    assert fetched["legal_name"] == "EMISOR FICTICIO SA"
+    assert fetched["fiscal_profile"]["tipo_contribuyente"] == 1
+    branch = fetched["fiscal_profile"]["establecimientos"][0]
+    assert branch["establecimiento"] == "002"
+    assert branch["descripcion_departamento"] == "CENTRAL"
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("domicilio", "departamento"), 21),
+        (("domicilio", "descripcion_departamento"), "CENTRAL"),
+        (("domicilio", "email"), "no-es-un-email"),
+        (("domicilio", "telefono"), "12345"),
+        (("domicilio", "numero_casa"), "S/N"),
+        (("actividades_economicas",), []),
+        (("tipo_contribuyente",), 3),
+    ],
+)
+def test_fiscal_profile_outside_official_formats_is_rejected(
+    client: TestClient, path: tuple, value
+) -> None:
+    profile = fictional_fiscal_profile_payload()
+    target = profile
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
+
+    response = client.post(
+        "/v1/emitters",
+        headers={"X-API-Key": API_KEY},
+        json={
+            "ruc": "44444401",
+            "dv": "7",
+            "legal_name": "EMISOR FICTICIO SA",
+            "tax_environment": "test",
+            "fiscal_profile": profile,
+        },
+    )
+
+    assert response.status_code == 422

@@ -21,7 +21,7 @@ Document the platform and provide a runnable local deployment path for ERP integ
   - `docs/examples/kila_api_register_certificate.py`
   - `docs/examples/kila_api_emit_document.py`
 - public docs updates:
-  - README section separating `pysifen` engine and `kilasifen` platform
+  - README section separating `kilasifen.engine` engine and `kilasifen` platform
   - `docs/architecture/public-api.md` updated with platform-doc pointers
 
 ## Verification

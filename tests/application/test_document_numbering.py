@@ -1,7 +1,7 @@
 import os
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -15,14 +15,19 @@ from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.repositories.document_numbering_sequences import (
     SqlAlchemyDocumentNumberingSequenceRepository,
 )
-from kilasifen.infrastructure.db.repositories.emitters import SqlAlchemyEmitterRepository
+from kilasifen.infrastructure.db.repositories.emitters import (
+    SqlAlchemyEmitterRepository,
+)
 from kilasifen.infrastructure.db.repositories.events import SqlAlchemyEventRepository
 from kilasifen.infrastructure.db.repositories.inutilized_number_ranges import (
     SqlAlchemyInutilizedNumberRangeRepository,
 )
-from kilasifen.infrastructure.db.session import build_engine, build_session_factory, session_scope
+from kilasifen.infrastructure.db.session import (
+    build_engine,
+    build_session_factory,
+    session_scope,
+)
 from kilasifen.testing.database import managed_test_database_url
-
 
 pytestmark = pytest.mark.requires_postgres
 
@@ -67,7 +72,7 @@ def test_reserve_next_number_is_sequential(postgres_database_url: str) -> None:
 def test_reserve_next_number_is_isolated_between_sequences(postgres_database_url: str) -> None:
     session_factory = _build_session_factory(postgres_database_url)
     _seed_emitter(session_factory, emitter_id="emitter-a", external_id="erp-a", ruc="80024135", dv="5")
-    _seed_emitter(session_factory, emitter_id="emitter-b", external_id="erp-b", ruc="80111111", dv="9")
+    _seed_emitter(session_factory, emitter_id="emitter-b", external_id="erp-b", ruc="80111111", dv="0")
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         futures_a = [
@@ -287,4 +292,4 @@ def _seed_approved_inutilization_range(
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

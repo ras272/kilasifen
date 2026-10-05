@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">
+  <dVerFor>150</dVerFor>
+  <DE Id="01801726492001001000014822026031214829130767">
+    <dDVId>7</dDVId>
+    <dFecFirma>2026-03-12T10:24:31</dFecFirma>
+    <gOpeDE>
+      <iTipEmi>1</iTipEmi>
+      <dDesTipEmi>Normal</dDesTipEmi>
+      <dCodSeg>482913076</dCodSeg>
+    </gOpeDE>
+    <gTimb>
+      <iTiDE>1</iTiDE>
+      <dDesTiDE>Factura electrónica</dDesTiDE>
+      <dNumTim>16482039</dNumTim>
+      <dEst>001</dEst>
+      <dPunExp>001</dPunExp>
+      <dNumDoc>0000148</dNumDoc>
+      <dFeIniT>2025-11-03</dFeIniT>
+      <dFeFinT>2026-12-31</dFeFinT>
+    </gTimb>
+    <gDatGralOpe>
+      <dFeEmiDE>2026-03-12T10:24:05</dFeEmiDE>
+      <gOpeCom>
+        <iTipTra>3</iTipTra>
+        <dDesTipTra>Mixto (Venta de mercadería y servicios)</dDesTipTra>
+        <iTImp>1</iTImp>
+        <dDesTImp>IVA</dDesTImp>
+        <cMoneOpe>PYG</cMoneOpe>
+        <dDesMoneOpe>Guarani</dDesMoneOpe>
+      </gOpeCom>
+      <gEmis>
+        <dRucEm>80172649</dRucEm>
+        <dDVEmi>2</dDVEmi>
+        <iTipCont>2</iTipCont>
+        <dNomEmi>Lapacho Sur Comercial S.A.</dNomEmi>
+        <dNomFanEmi>Lapacho Sur</dNomFanEmi>
+        <dDirEmi>Calle Yvyrá Pytã esquina Los Lapachos</dDirEmi>
+        <dNumCas>1180</dNumCas>
+        <cDepEmi>1</cDepEmi>
+        <dDesDepEmi>CAPITAL</dDesDepEmi>
+        <cDisEmi>1</cDisEmi>
+        <dDesDisEmi>ASUNCION (DISTRITO)</dDesDisEmi>
+        <cCiuEmi>1</cCiuEmi>
+        <dDesCiuEmi>ASUNCION (DISTRITO)</dDesCiuEmi>
+        <dTelEmi>021558904</dTelEmi>
+        <dEmailE>facturacion@lapachosur.example</dEmailE>
+        <dDenSuc>Casa matriz</dDenSuc>
+        <gActEco>
+          <cActEco>46699</cActEco>
+          <dDesActEco>Venta al por mayor de artículos de riego y jardinería</dDesActEco>
+        </gActEco>
+      </gEmis>
+      <gDatRec>
+        <iNatRec>1</iNatRec>
+        <iTiOpe>1</iTiOpe>
+        <cPaisRec>PRY</cPaisRec>
+        <dDesPaisRe>Paraguay</dDesPaisRe>
+        <iTiContRec>2</iTiContRec>
+        <dRucRec>80293518</dRucRec>
+        <dDVRec>4</dDVRec>
+        <dNomRec>Viveros Tres Arroyos S.R.L.</dNomRec>
+        <dDirRec>Calle Ñasaindy 452, barrio Tembetary</dDirRec>
+        <dTelRec>021667301</dTelRec>
+        <dEmailRec>compras@tresarroyos.example</dEmailRec>
+        <dCodCliente>CLI-0457</dCodCliente>
+      </gDatRec>
+    </gDatGralOpe>
+    <gDtipDE>
+      <gCamFE>
+        <iIndPres>1</iIndPres>
+        <dDesIndPres>Operación presencial</dDesIndPres>
+      </gCamFE>
+      <gCamCond>
+        <iCondOpe>1</iCondOpe>
+        <dDCondOpe>Contado</dDCondOpe>
+        <gPaConEIni>
+          <iTiPago>5</iTiPago>
+          <dDesTiPag>Transferencia</dDesTiPag>
+          <dMonTiPag>895000</dMonTiPag>
+          <cMoneTiPag>PYG</cMoneTiPag>
+          <dDMoneTiPag>Guarani</dDMoneTiPag>
+        </gPaConEIni>
+      </gCamCond>
+      <gCamItem>
+        <dCodInt>LS-1042</dCodInt>
+        <dDesProSer>Manguera de riego reforzada de 25 m</dDesProSer>
+        <cUniMed>77</cUniMed>
+        <dDesUniMed>UNI</dDesUniMed>
+        <dCantProSer>3</dCantProSer>
+        <gValorItem>
+          <dPUniProSer>185000</dPUniProSer>
+          <dDescItem>0</dDescItem>
+          <dTotOpeItem>555000</dTotOpeItem>
+          <dTotOpeGs>555000</dTotOpeGs>
+        </gValorItem>
+        <gCamIVA>
+          <iAfecIVA>1</iAfecIVA>
+          <dDesAfecIVA>Gravado IVA</dDesAfecIVA>
+          <dPropIVA>100</dPropIVA>
+          <dTasaIVA>10</dTasaIVA>
+          <dBasGravIVA>504545</dBasGravIVA>
+          <dLiqIVAItem>50455</dLiqIVAItem>
+        </gCamIVA>
+      </gCamItem>
+      <gCamItem>
+        <dCodInt>LS-2210</dCodInt>
+        <dDesProSer>Servicio de instalación de riego por goteo</dDesProSer>
+        <cUniMed>77</cUniMed>
+        <dDesUniMed>UNI</dDesUniMed>
+        <dCantProSer>1</dCantProSer>
+        <gValorItem>
+          <dPUniProSer>340000</dPUniProSer>
+          <dDescItem>0</dDescItem>
+          <dTotOpeItem>340000</dTotOpeItem>
+          <dTotOpeGs>340000</dTotOpeGs>
+        </gValorItem>
+        <gCamIVA>
+          <iAfecIVA>1</iAfecIVA>
+          <dDesAfecIVA>Gravado IVA</dDesAfecIVA>
+          <dPropIVA>100</dPropIVA>
+          <dTasaIVA>10</dTasaIVA>
+          <dBasGravIVA>309091</dBasGravIVA>
+          <dLiqIVAItem>30909</dLiqIVAItem>
+        </gCamIVA>
+      </gCamItem>
+    </gDtipDE>
+    <gTotSub>
+      <dSub10>895000</dSub10>
+      <dTotOpe>895000</dTotOpe>
+      <dTotDesc>0</dTotDesc>
+      <dPorcDescTotal>0</dPorcDescTotal>
+      <dDescTotal>0</dDescTotal>
+      <dAnticipo>0</dAnticipo>
+      <dRedon>0</dRedon>
+      <dTotGralOpe>895000</dTotGralOpe>
+      <dIVA10>81364</dIVA10>
+      <dTotIVA>81364</dTotIVA>
+      <dBaseGrav10>813636</dBaseGrav10>
+      <dTBasGraIVA>813636</dTBasGraIVA>
+      <dTotalGs>895000</dTotalGs>
+    </gTotSub>
+  </DE>
+  <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+    <ds:SignedInfo>
+      <ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+      <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+      <ds:Reference URI="#01801726492001001000014822026031214829130767">
+        <ds:Transforms>
+          <ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+          <ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+        </ds:Transforms>
+        <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+        <ds:DigestValue>uIVzH5wQQFum96Ws81f23mp2PsxWrSX6Alado4d/dsQ=</ds:DigestValue>
+      </ds:Reference>
+    </ds:SignedInfo>
+    <ds:SignatureValue>E+fdeMYAryVehOuJuTQ8YgZ6lB/SkCKTyaqAIypi2NHKpbQ1O+YAKchGiM7UCs/Q/0MbQxAvh+7ngDMOVJC08E0QLXnhJ3GgaeCIn3xwk6r9e2PHaAfIDheJGSQu2irnSzsUdcRUB7YS4qNqNfZH/ChH/3nGbnpskYaJidMHpNSjGJ5rRKeNbrRpKHSg8/1a/LUSmXv9fZ33n89f7z7SmdEmXUMg8aQMj89TYc1poZsEGMKxBrQ3vKFQt3FuBeqBwH95VHErRQl26WY3+XWCpm0gegLH0tfzm9WOUnXuaSTmDF/GH2U9XListwQLsAl6w4aEaKbwCsfbAmpkPrahmA==</ds:SignatureValue>
+  </ds:Signature>
+  <gCamFuFD>
+    <dCarQR>https://ekuatia.set.gov.py/consultas/qr?nVersion=150&amp;Id=01801726492001001000014822026031214829130767&amp;dFeEmiDE=323032362d30332d31325431303a32343a3035&amp;dRucRec=80293518&amp;dTotGralOpe=895000&amp;dTotIVA=81364&amp;cItems=2&amp;DigestValue=7549567a483577515146756d3936577338316632336d70325073785772535836416c61646f34642f6473513d&amp;IdCSC=0001&amp;cHashQR=be3a241d2163715229167b85c9a2df80354129cf536fc37899bafbc82f6d4cff</dCarQR>
+  </gCamFuFD>
+</rDE>

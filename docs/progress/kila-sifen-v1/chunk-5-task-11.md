@@ -15,7 +15,7 @@ Add read-side SIFEN query workflows for RUC lookup and document status lookup.
 - normalized API contracts for:
   - query RUC
   - query document
-- `pysifen`-backed query adapter using `ConsultaSIFEN`
+- `kilasifen.engine`-backed query adapter using `ConsultaSIFEN`
 - persistence of last document-query traces:
   - `last_query_request_xml`
   - `last_query_response_raw`

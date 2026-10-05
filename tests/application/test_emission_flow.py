@@ -1,5 +1,7 @@
-from dataclasses import dataclass, replace
-from datetime import UTC, date, datetime
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
+from datetime import date, datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +13,12 @@ from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.jobs.models import Job
 from kilasifen.domain.stampings.models import Stamping
 from kilasifen.domain.webhooks.models import WebhookEndpoint
+from kilasifen.engine.sdk.errors import (
+    SifenRejectionError,
+    SifenTimeoutError,
+    SifenValidationError,
+)
+from kilasifen.engine.sdk.signer import clear_pkcs12_signer_cache, get_pkcs12_signer
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.models import CertificateModel, EmitterModel
@@ -40,16 +48,16 @@ from kilasifen.infrastructure.db.session import (
 )
 from kilasifen.infrastructure.jobs.workers import process_document_job
 from kilasifen.infrastructure.sifen.engine import (
-    EmissionOutcome,
-    EmissionTransportUncertainError,
+    PreparedSubmission,
+    SubmissionOutcome,
 )
-from kilasifen.infrastructure.sifen.query import DocumentQueryOutcome
+from kilasifen.infrastructure.sifen.query import (
+    QUERY_ERROR,
+    QUERY_FOUND,
+    QUERY_NOT_FOUND_OR_NOT_APPROVED,
+    DocumentQueryOutcome,
+)
 from kilasifen.testing.database import managed_test_database_url
-from pysifen.sdk.errors import (
-    SifenRejectionError,
-    SifenTimeoutError,
-    SifenValidationError,
-)
 
 
 def test_process_document_job_persists_emission_artifacts(tmp_path) -> None:
@@ -61,7 +69,7 @@ def test_process_document_job_persists_emission_artifacts(tmp_path) -> None:
         _seed_emission_context(database_url, store)
 
         fake_engine = FakeEmissionEngine(
-            outcome=EmissionOutcome(
+            **_answer(
                 generated_xml="<rDE/>",
                 signed_xml=(
                     '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
@@ -109,6 +117,35 @@ def test_process_document_job_persists_emission_artifacts(tmp_path) -> None:
         assert job.error_snapshot is None
 
 
+def test_completed_document_job_drops_cached_signing_keys(tmp_path) -> None:
+    pfx = (Path(__file__).resolve().parents[1] / "test_cert.pfx").read_bytes()
+    clear_pkcs12_signer_cache()
+    cached_signer = get_pkcs12_signer(pfx, "test1234")
+    try:
+        with managed_test_database_url(
+            tmp_path=tmp_path,
+            name="emission_drops_signers",
+        ) as database_url:
+            _seed_emission_context(
+                database_url, EncryptedCertificateStore(_fernet_key())
+            )
+
+            payload = process_document_job(
+                job_id="job-1",
+                database_url=database_url,
+                encryption_key=_fernet_key(),
+                emission_engine=FakeEmissionEngine(
+                    prepare_error=SifenValidationError("payload invalido")
+                ),
+                current_date=date(2024, 4, 24),
+            )
+
+        assert payload["job_status"] == "failed"
+        assert get_pkcs12_signer(pfx, "test1234") is not cached_signer
+    finally:
+        clear_pkcs12_signer_cache()
+
+
 def test_queued_document_job_honors_inactive_emitter_before_secret_access(
     tmp_path,
 ) -> None:
@@ -130,11 +167,13 @@ def test_queued_document_job_honors_inactive_emitter_before_secret_access(
             certificate.encrypted_password = "invalid-ciphertext-must-not-be-decrypted"
 
         class NeverCalledEmissionEngine:
-            def emit_document(self, **kwargs):
+            def prepare_document(self, **kwargs):
                 del kwargs
                 raise AssertionError(
                     "inactive emitter reached the SIFEN emission engine"
                 )
+
+            submit_prepared = prepare_document
 
         with pytest.raises(ConflictError, match="emitters.inactive"):
             process_document_job(
@@ -153,22 +192,26 @@ def test_queued_document_job_honors_inactive_emitter_before_secret_access(
 
 
 @pytest.mark.parametrize(
-    ("error", "expected_job_status", "expected_document_status", "expected_category"),
+    ("engine", "expected_job_status", "expected_document_status", "expected_category"),
     [
         (
-            SifenValidationError("payload invalido"),
+            lambda: FakeEmissionEngine(
+                prepare_error=SifenValidationError("payload invalido")
+            ),
             "failed",
             "failed",
             "fiscal_validation",
         ),
         (
-            SifenTimeoutError("timeout"),
+            lambda: FakeEmissionEngine(submit_error=SifenTimeoutError("timeout")),
             "retry_scheduled",
             "retry_pending",
             "transport",
         ),
         (
-            SifenRejectionError("2500", "calculo-coincide-info-xml"),
+            lambda: FakeEmissionEngine(
+                submit_error=SifenRejectionError("2500", "calculo-coincide-info-xml")
+            ),
             "failed",
             "rejected",
             "sifen_rejection",
@@ -177,7 +220,7 @@ def test_queued_document_job_honors_inactive_emitter_before_secret_access(
 )
 def test_process_document_job_categorizes_failures(
     tmp_path,
-    error,
+    engine,
     expected_job_status,
     expected_document_status,
     expected_category,
@@ -193,7 +236,7 @@ def test_process_document_job_categorizes_failures(
             job_id="job-1",
             database_url=database_url,
             encryption_key=_fernet_key(),
-            emission_engine=FakeEmissionEngine(error=error),
+            emission_engine=engine(),
             current_date=date(2024, 4, 24),
         )
         assert payload["job_status"] == expected_job_status
@@ -234,7 +277,7 @@ def test_process_document_job_publishes_webhook_events_when_enabled(
             database_url=database_url,
             encryption_key=_fernet_key(),
             emission_engine=FakeEmissionEngine(
-                outcome=EmissionOutcome(
+                **_answer(
                     generated_xml="<rDE/>",
                     signed_xml="<rDE><Signature/></rDE>",
                     request_xml="<soap>request</soap>",
@@ -298,7 +341,7 @@ def test_process_document_job_propagates_worker_correlation_id(
             database_url=database_url,
             encryption_key=_fernet_key(),
             emission_engine=FakeEmissionEngine(
-                outcome=EmissionOutcome(
+                **_answer(
                     generated_xml="<rDE/>",
                     signed_xml=(
                         '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
@@ -343,7 +386,7 @@ def test_process_document_job_marks_rejected_outcome_without_engine_exception(
             database_url=database_url,
             encryption_key=_fernet_key(),
             emission_engine=FakeEmissionEngine(
-                outcome=EmissionOutcome(
+                **_answer(
                     generated_xml="<rDE/>",
                     signed_xml=(
                         '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
@@ -381,7 +424,7 @@ def test_process_document_job_marks_rejected_outcome_without_engine_exception(
         assert job.error_snapshot["category"] == "sifen_rejection"
 
 
-def test_process_document_job_keeps_submitted_outcome_reconcilable(tmp_path) -> None:
+def test_an_unclassified_answer_is_reconciled_not_rejected(tmp_path) -> None:
     with managed_test_database_url(
         tmp_path=tmp_path,
         name="emission_submitted_outcome",
@@ -394,7 +437,7 @@ def test_process_document_job_keeps_submitted_outcome_reconcilable(tmp_path) -> 
             database_url=database_url,
             encryption_key=_fernet_key(),
             emission_engine=FakeEmissionEngine(
-                outcome=EmissionOutcome(
+                **_answer(
                         generated_xml="<rDE/>",
                         signed_xml=(
                             '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd">'
@@ -424,10 +467,12 @@ def test_process_document_job_keeps_submitted_outcome_reconcilable(tmp_path) -> 
         assert outbox.status == "pending"
         assert outbox.available_at == job.scheduled_at
         assert job.error_snapshot == {
-            "category": "sifen_pending",
+            "category": "sifen_unclassified",
             "code": "0300",
             "message": "Procesamiento pendiente",
         }
+        # DECISIONES F60: without a recognizable dEstRes the CDC is queried.
+        assert payload["document_status"] == "retry_pending"
 
 
 def test_transport_uncertainty_persists_exact_payload_before_retry(tmp_path) -> None:
@@ -437,19 +482,15 @@ def test_transport_uncertainty_persists_exact_payload_before_retry(tmp_path) -> 
     ) as database_url:
         store = EncryptedCertificateStore(_fernet_key())
         _seed_emission_context(database_url, store)
-        error = EmissionTransportUncertainError(
-            "timeout after send",
-            generated_xml="<rDE/>",
-            signed_xml='<rDE><DE Id="0180012345"/><Signature/></rDE>',
-            request_xml="<soap>request</soap>",
-            cdc="0180012345",
+        engine = FakeEmissionEngine(
+            submit_error=SifenTimeoutError("timeout after send")
         )
 
         payload = process_document_job(
             job_id="job-1",
             database_url=database_url,
             encryption_key=_fernet_key(),
-            emission_engine=FakeEmissionEngine(error=error),
+            emission_engine=engine,
             current_date=date(2024, 4, 24),
         )
         assert payload["job_status"] == "retry_scheduled"
@@ -461,7 +502,8 @@ def test_transport_uncertainty_persists_exact_payload_before_retry(tmp_path) -> 
         assert document is not None
         assert document.internal_status == "retry_pending"
         assert document.cdc == "0180012345"
-        assert document.signed_xml == error.signed_xml
+        assert document.signed_xml == _PREPARED.signed_xml
+        assert document.sifen_request_xml == _PREPARED.request_xml
 
 
 def test_retry_queries_cdc_and_does_not_resubmit_when_sifen_has_document(
@@ -471,6 +513,7 @@ def test_retry_queries_cdc_and_does_not_resubmit_when_sifen_has_document(
         tmp_path=tmp_path,
         name="emission_reconcile_before_retry",
     ) as database_url:
+        never_resubmitted = FakeEmissionEngine()
         store = EncryptedCertificateStore(_fernet_key())
         _seed_emission_context(database_url, store)
         engine = build_engine(database_url)
@@ -497,9 +540,7 @@ def test_retry_queries_cdc_and_does_not_resubmit_when_sifen_has_document(
             job_id="job-1",
             database_url=database_url,
             encryption_key=_fernet_key(),
-            emission_engine=FakeEmissionEngine(
-                error=AssertionError("document must not be resubmitted")
-            ),
+            emission_engine=never_resubmitted,
             query_gateway=FakeQueryGateway(),
             current_date=date(2024, 4, 24),
         )
@@ -512,6 +553,7 @@ def test_retry_queries_cdc_and_does_not_resubmit_when_sifen_has_document(
 
         assert payload["document_status"] == "approved"
         assert payload["job_status"] == "succeeded"
+        assert never_resubmitted.calls == []
         assert document is not None
         assert document.sifen_request_xml == "<emit-request/>"
         assert document.sifen_response_raw == "<emit-response/>"
@@ -521,13 +563,27 @@ def test_retry_queries_cdc_and_does_not_resubmit_when_sifen_has_document(
         assert job is not None
 
 
-def test_ambiguous_cdc_query_never_resubmits_and_persists_query_trace(
+def test_a_cdc_sifen_does_not_approve_is_queued_and_resent_as_signed(
     tmp_path,
 ) -> None:
+    """DECISIONES F63: query first; with 0420 the same signed DE travels again.
+
+    Dto 872/2023 Art. 29 and MT v150 §6.5 (pp. 26-27) allow the same CDC to
+    be sent again; the Guia MP oct-2024 (p. 12) asks for it after 0420.
+    """
+
     with managed_test_database_url(
         tmp_path=tmp_path,
-        name="emission_ambiguous_reconciliation",
+        name="emission_not_approved_resend",
     ) as database_url:
+        engine_double = FakeEmissionEngine(
+            outcome=SubmissionOutcome(
+                response_raw="<approved/>",
+                sifen_status="approved",
+                result_code="0260",
+                result_message="Autorizacion satisfactoria",
+            )
+        )
         store = EncryptedCertificateStore(_fernet_key())
         _seed_emission_context(database_url, store)
         _seed_retry_pending_document(database_url, attempts=1)
@@ -536,13 +592,13 @@ def test_ambiguous_cdc_query_never_resubmits_and_persists_query_trace(
             job_id="job-1",
             database_url=database_url,
             encryption_key=_fernet_key(),
-            emission_engine=FakeEmissionEngine(
-                error=AssertionError("ambiguous CDC must never be resubmitted")
-            ),
-            query_gateway=FakeQueryGateway(status="not_found"),
+            emission_engine=engine_double,
+            query_gateway=FakeQueryGateway(status=QUERY_NOT_FOUND_OR_NOT_APPROVED),
             current_date=date(2024, 4, 24),
         )
         assert payload["job_status"] == "retry_scheduled"
+        assert payload["document_status"] == "queued"
+        assert engine_double.calls == []
 
         engine = build_engine(database_url)
         session_factory = build_session_factory(engine)
@@ -551,33 +607,85 @@ def test_ambiguous_cdc_query_never_resubmits_and_persists_query_trace(
             job = SqlAlchemyJobRepository(session).get("job-1")
 
         assert document is not None
-        assert document.internal_status == "retry_pending"
         assert document.cdc == "0180012345"
         assert document.signed_xml == (
             '<rDE><DE Id="0180012345"/><Signature/></rDE>'
         )
-        assert document.sifen_request_xml == "<emit-request/>"
-        assert document.sifen_response_raw == "<emit-response/>"
         assert document.last_query_request_xml == "<query/>"
         assert document.last_query_response_raw == "<not-found/>"
-        assert document.last_query_at is not None
         assert job is not None
-        assert job.status == "retry_scheduled"
         assert job.attempts == 2
         assert job.error_snapshot == {
-            "category": "reconciliation_pending",
+            "category": "resubmission",
             "code": "0420",
             "message": "CDC no encontrado o no aprobado",
         }
 
+        payload = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            emission_engine=engine_double,
+            query_gateway=FakeQueryGateway(status=QUERY_NOT_FOUND_OR_NOT_APPROVED),
+            current_date=date(2024, 4, 24),
+        )
 
-def test_ambiguous_cdc_after_retry_budget_requires_reconciliation_without_resend(
+        with session_scope(session_factory) as session:
+            document = SqlAlchemyDocumentRepository(session).get("document-1")
+        assert payload["document_status"] == "approved"
+        # Never re-signed: the stored signed DE in a new rEnviDe (new dId).
+        assert engine_double.calls == ["wrap", "submit"]
+        assert engine_double.wrapped == [document.signed_xml]
+        assert engine_double.submitted_requests == [document.sifen_request_xml]
+        assert document.sifen_request_xml != "<emit-request/>"
+
+
+def test_a_query_error_is_not_an_answer_on_the_cdc(tmp_path) -> None:
+    """0421 and any code but 0420/0422 keep querying (DECISIONES F62)."""
+
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="emission_query_error",
+    ) as database_url:
+        never_resubmitted = FakeEmissionEngine()
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
+        _seed_retry_pending_document(database_url, attempts=1)
+
+        payload = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            emission_engine=never_resubmitted,
+            query_gateway=FakeQueryGateway(status=QUERY_ERROR),
+            current_date=date(2024, 4, 24),
+        )
+
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            document = SqlAlchemyDocumentRepository(session).get("document-1")
+            job = SqlAlchemyJobRepository(session).get("job-1")
+
+        assert payload["document_status"] == "retry_pending"
+        assert never_resubmitted.calls == []
+        assert document is not None and job is not None
+        assert document.sifen_request_xml == "<emit-request/>"
+        assert job.error_snapshot == {
+            "category": "reconciliation_pending",
+            "code": "0421",
+            "message": "RUC Certificado sin permiso",
+        }
+
+
+def test_an_unanswered_cdc_after_the_retry_budget_requires_reconciliation(
     tmp_path,
 ) -> None:
     with managed_test_database_url(
         tmp_path=tmp_path,
         name="emission_reconciliation_required",
     ) as database_url:
+        never_resubmitted = FakeEmissionEngine()
         store = EncryptedCertificateStore(_fernet_key())
         _seed_emission_context(database_url, store)
         _seed_retry_pending_document(database_url, attempts=4)
@@ -586,10 +694,8 @@ def test_ambiguous_cdc_after_retry_budget_requires_reconciliation_without_resend
             job_id="job-1",
             database_url=database_url,
             encryption_key=_fernet_key(),
-            emission_engine=FakeEmissionEngine(
-                error=AssertionError("ambiguous CDC must never be resubmitted")
-            ),
-            query_gateway=FakeQueryGateway(status="not_found"),
+            emission_engine=never_resubmitted,
+            query_gateway=FakeQueryGateway(status=QUERY_ERROR),
             current_date=date(2024, 4, 24),
         )
 
@@ -601,20 +707,54 @@ def test_ambiguous_cdc_after_retry_budget_requires_reconciliation_without_resend
 
         assert payload["document_status"] == "reconciliation_required"
         assert payload["job_status"] == "failed"
+        assert never_resubmitted.calls == []
         assert document is not None
         assert document.internal_status == "reconciliation_required"
         assert document.cdc == "0180012345"
-        assert document.last_query_response_raw == "<not-found/>"
+        assert document.last_query_response_raw == "<error/>"
         assert job is not None
         assert job.attempts == 5
         assert job.error_snapshot == {
             "category": "reconciliation_required",
-            "code": "0420",
+            "code": "0421",
             "message": (
-                "automatic reconciliation attempts exhausted; "
-                "the immutable CDC was not resubmitted"
+                "automatic attempts exhausted while SIFEN's answer for the CDC "
+                "is unknown; an operator retry queries the CDC again"
             ),
         }
+
+
+def test_a_cdc_not_approved_on_the_last_attempt_waits_queued_for_a_retry(
+    tmp_path,
+) -> None:
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="emission_not_approved_budget",
+    ) as database_url:
+        never_resubmitted = FakeEmissionEngine()
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
+        _seed_retry_pending_document(database_url, attempts=4)
+
+        payload = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            emission_engine=never_resubmitted,
+            query_gateway=FakeQueryGateway(status=QUERY_NOT_FOUND_OR_NOT_APPROVED),
+            current_date=date(2024, 4, 24),
+        )
+
+        engine = build_engine(database_url)
+        session_factory = build_session_factory(engine)
+        with session_scope(session_factory) as session:
+            job = SqlAlchemyJobRepository(session).get("job-1")
+
+        assert payload["document_status"] == "queued"
+        assert payload["job_status"] == "failed"
+        assert never_resubmitted.calls == []
+        assert job is not None
+        assert job.error_snapshot["category"] == "retry_exhausted"
 
 
 def test_requeued_reconciliation_required_document_still_cannot_be_resubmitted(
@@ -624,6 +764,7 @@ def test_requeued_reconciliation_required_document_still_cannot_be_resubmitted(
         tmp_path=tmp_path,
         name="emission_reconciliation_hard_barrier",
     ) as database_url:
+        never_resubmitted = FakeEmissionEngine()
         store = EncryptedCertificateStore(_fernet_key())
         _seed_emission_context(database_url, store)
         _seed_retry_pending_document(database_url, attempts=5)
@@ -656,44 +797,229 @@ def test_requeued_reconciliation_required_document_still_cannot_be_resubmitted(
             job_id="job-1",
             database_url=database_url,
             encryption_key=_fernet_key(),
-            emission_engine=FakeEmissionEngine(
-                error=AssertionError("hard barrier must survive a manual requeue")
-            ),
+            emission_engine=never_resubmitted,
             query_gateway=FakeQueryGateway(status="found"),
             current_date=date(2024, 4, 24),
         )
 
         assert payload["document_status"] == "approved"
         assert payload["job_status"] == "succeeded"
+        assert never_resubmitted.calls == []
+
+
+def _raw_document_issued_on(database_url: str, issued_at: str) -> None:
+    """Make document-1 a raw DE whose dFeEmiDE is ``issued_at``."""
+
+    generated_xml = (
+        '<rDE xmlns="http://ekuatia.set.gov.py/sifen/xsd"><DE Id="0180012345">'
+        f"<gDatGralOpe><dFeEmiDE>{issued_at}</dFeEmiDE></gDatGralOpe>"
+        "</DE></rDE>"
+    )
+    session_factory = build_session_factory(build_engine(database_url))
+    with session_scope(session_factory) as session:
+        documents = SqlAlchemyDocumentRepository(session)
+        document = documents.get("document-1")
+        assert document is not None
+        documents.save(
+            replace(
+                document,
+                payload_snapshot={
+                    "generated_xml": generated_xml,
+                    "doc_id": "0180012345",
+                },
+            )
+        )
+
+
+def test_the_timbrado_is_chosen_with_the_emission_date_not_the_server_date(
+    tmp_path,
+) -> None:
+    """DECISIONES F23: D002 picks the timbrado (1103/1104, MT v150 p. 160)."""
+
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="emission_timbrado_by_d002",
+    ) as database_url:
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
+        session_factory = build_session_factory(build_engine(database_url))
+        with session_scope(session_factory) as session:
+            stampings = SqlAlchemyStampingRepository(session)
+            first = stampings.get("stamp-1")
+            assert first is not None
+            stampings.save(replace(first, end_date=date(2024, 4, 10)))
+            stampings.save(
+                replace(
+                    first,
+                    id="stamp-2",
+                    number="80024199",
+                    start_date=date(2024, 4, 11),
+                    end_date=None,
+                )
+            )
+        _raw_document_issued_on(database_url, "2024-04-01T10:00:00")
+        engine_double = FakeEmissionEngine(
+            outcome=SubmissionOutcome(
+                response_raw="<approved/>",
+                sifen_status="approved",
+                result_code="0260",
+                result_message="Autorizacion satisfactoria",
+            )
+        )
+
+        payload = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            emission_engine=engine_double,
+            # The server date falls in the second timbrado; D002 does not.
+            current_date=date(2024, 4, 24),
+        )
+
+        with session_scope(session_factory) as session:
+            document = SqlAlchemyDocumentRepository(session).get("document-1")
+        assert payload["document_status"] == "approved"
+        assert [stamping.id for stamping in engine_double.stampings] == ["stamp-1"]
+        assert document is not None and document.timbrado == "80024135"
+
+
+def test_an_emission_date_before_the_timbrado_is_refused_locally(tmp_path) -> None:
+    """D002 before the timbrado start: SIFEN 1103 (NT 01), refused before."""
+
+    with managed_test_database_url(
+        tmp_path=tmp_path,
+        name="emission_before_timbrado",
+    ) as database_url:
+        store = EncryptedCertificateStore(_fernet_key())
+        _seed_emission_context(database_url, store)
+        _raw_document_issued_on(database_url, "2024-03-01T10:00:00")
+        never_prepared = FakeEmissionEngine()
+
+        payload = process_document_job(
+            job_id="job-1",
+            database_url=database_url,
+            encryption_key=_fernet_key(),
+            emission_engine=never_prepared,
+            current_date=date(2024, 4, 24),
+        )
+
+        session_factory = build_session_factory(build_engine(database_url))
+        with session_scope(session_factory) as session:
+            job = SqlAlchemyJobRepository(session).get("job-1")
+        assert payload["document_status"] == "failed"
+        assert never_prepared.calls == []
+        assert job is not None
+        assert job.error_snapshot["category"] == "fiscal_validation"
+        assert "2024-03-01" in job.error_snapshot["message"]
+        assert "1103" in job.error_snapshot["message"]
+
+
+_PREPARED = PreparedSubmission(
+    generated_xml="<rDE/>",
+    signed_xml='<rDE><DE Id="0180012345"/><Signature/></rDE>',
+    request_xml="<rEnviDe><dId>101</dId></rEnviDe>",
+    cdc="0180012345",
+)
 
 
 @dataclass
 class FakeEmissionEngine:
-    outcome: EmissionOutcome | None = None
-    error: Exception | None = None
+    """Two-step engine double; ``calls`` records which steps ran."""
 
-    def emit_document(self, **kwargs) -> EmissionOutcome:
+    prepared: PreparedSubmission = _PREPARED
+    outcome: SubmissionOutcome | None = None
+    prepare_error: Exception | None = None
+    submit_error: BaseException | None = None
+    during_submit: Callable[[], None] | None = None
+    calls: list[str] = field(default_factory=list)
+    submitted_requests: list[str] = field(default_factory=list)
+    wrapped: list[str] = field(default_factory=list)
+    stampings: list[Stamping] = field(default_factory=list)
+
+    def prepare_document(self, *, stamping: Stamping, **kwargs) -> PreparedSubmission:
         del kwargs
-        if self.error is not None:
-            raise self.error
+        self.calls.append("prepare")
+        self.stampings.append(stamping)
+        if self.prepare_error is not None:
+            raise self.prepare_error
+        return self.prepared
+
+    def wrap_signed_document(self, *, signed_xml: str) -> str:
+        """A new rEnviDe (new dId) around the same signed DE."""
+
+        self.calls.append("wrap")
+        self.wrapped.append(signed_xml)
+        return f"<rEnviDe><dId>{900 + len(self.wrapped)}</dId>{signed_xml}</rEnviDe>"
+
+    def submit_prepared(self, *, request_xml: str, **kwargs) -> SubmissionOutcome:
+        del kwargs
+        self.calls.append("submit")
+        self.submitted_requests.append(request_xml)
+        if self.during_submit is not None:
+            self.during_submit()
+        if self.submit_error is not None:
+            raise self.submit_error
         assert self.outcome is not None
         return self.outcome
 
 
+def _answer(
+    *,
+    generated_xml: str,
+    signed_xml: str,
+    request_xml: str,
+    response_raw: str,
+    sifen_status: str,
+    result_code: str,
+    result_message: str,
+    cdc: str = "0180012345",
+) -> dict:
+    """Engine double settings: what gets prepared and how SIFEN answers."""
+
+    return {
+        "prepared": PreparedSubmission(
+            generated_xml=generated_xml,
+            signed_xml=signed_xml,
+            request_xml=request_xml,
+            cdc=cdc,
+        ),
+        "outcome": SubmissionOutcome(
+            response_raw=response_raw,
+            sifen_status=sifen_status,
+            result_code=result_code,
+            result_message=result_message,
+        ),
+    }
+
+
 @dataclass
 class FakeQueryGateway:
-    status: str = "found"
+    """siConsDE double: ``status`` is one of the gateway statuses."""
+
+    status: str = QUERY_FOUND
+    container: object | None = None
 
     def query_document(self, **kwargs) -> DocumentQueryOutcome:
         del kwargs
-        if self.status == "not_found":
+        if self.status == QUERY_NOT_FOUND_OR_NOT_APPROVED:
             return DocumentQueryOutcome(
                 cdc="0180012345",
                 request_xml="<query/>",
                 response_raw="<not-found/>",
                 result_code="0420",
                 result_message="CDC no encontrado o no aprobado",
-                status="not_found",
+                status=QUERY_NOT_FOUND_OR_NOT_APPROVED,
+                content_xml=None,
+                processed_at=None,
+            )
+        if self.status == QUERY_ERROR:
+            return DocumentQueryOutcome(
+                cdc="0180012345",
+                request_xml="<query/>",
+                response_raw="<error/>",
+                result_code="0421",
+                result_message="RUC Certificado sin permiso",
+                status=QUERY_ERROR,
                 content_xml=None,
                 processed_at=None,
             )
@@ -703,9 +1029,10 @@ class FakeQueryGateway:
             response_raw="<found/>",
             result_code="0422",
             result_message="CDC encontrado y aprobado",
-            status="found",
-            content_xml='<rDE><DE Id="0180012345"/><Signature/></rDE>',
+            status=QUERY_FOUND,
+            content_xml="<rContDe/>",
             processed_at=None,
+            container=self.container,
         )
 
 
@@ -863,4 +1190,4 @@ def _fernet_key() -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

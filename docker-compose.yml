@@ -19,8 +19,13 @@ services:
   redis:
     image: redis:7.4.5-alpine
     restart: unless-stopped
+    # Append-only file so queued RQ jobs, leases and the outbox heartbeat
+    # survive a container restart. Fsync every second is enough for local dev.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
     ports:
       - "127.0.0.1:6379:6379"
+    volumes:
+      - kila-redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -50,6 +55,7 @@ services:
       migrate:
         condition: service_completed_successfully
     command: uvicorn kilasifen.api.app:create_app --factory --host 0.0.0.0 --port 8000
+    # Keeps the image HEALTHCHECK (GET /v1/health on $PORT, 8000 by default).
     ports:
       - "127.0.0.1:8000:8000"
     stop_grace_period: 30s
@@ -69,6 +75,9 @@ services:
       migrate:
         condition: service_completed_successfully
     command: rq worker documents events webhooks -u ${KILA_SIFEN_REDIS_URL}
+    healthcheck:
+      # The image HEALTHCHECK probes HTTP /v1/health; this process serves no HTTP.
+      disable: true
     stop_grace_period: 60s
 
   outbox:
@@ -86,6 +95,9 @@ services:
       migrate:
         condition: service_completed_successfully
     command: python -m kilasifen.infrastructure.jobs.outbox_worker
+    healthcheck:
+      # The image HEALTHCHECK probes HTTP /v1/health; this process serves no HTTP.
+      disable: true
     stop_grace_period: 30s
 
   migrate:
@@ -99,7 +111,11 @@ services:
       postgres:
         condition: service_healthy
     command: alembic upgrade head
+    healthcheck:
+      # The image HEALTHCHECK probes HTTP /v1/health; this process serves no HTTP.
+      disable: true
 
 volumes:
   kila-postgres-data:
+  kila-redis-data:
 

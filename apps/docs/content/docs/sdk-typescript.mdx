@@ -1,0 +1,134 @@
+---
+title: SDK TypeScript
+description: Cliente tipado para emitir, consultar y verificar webhooks desde el backend del ERP.
+icon: Package
+---
+
+`@kilasifen/sdk` es el SDK oficial en TypeScript, sin dependencias de runtime.
+Requiere Node.js 20 o superior.
+
+<Callout type="warn" title="Todavía no está publicado en npm">
+  El paquete vive en `sdks/typescript` del repositorio. Compilalo con
+  `pnpm install && pnpm build` dentro de esa carpeta e instalalo desde ahí, por
+  ejemplo `pnpm add file:../kilasifen/sdks/typescript`.
+</Callout>
+
+## Crear el cliente
+
+```ts
+import { KilaSifen } from "@kilasifen/sdk";
+
+const kila = new KilaSifen({
+  apiKey: process.env.KILASIFEN_API_KEY!,
+  // Origen de la API, sin `/v1`: el SDK lo agrega en cada ruta.
+  baseUrl: "https://api.example.com",
+});
+```
+
+Usalo sólo en el backend: la API key no puede llegar a un navegador ni a una
+app cliente.
+
+## Qué cubre
+
+| Recurso | Métodos |
+| --- | --- |
+| `facturas`, `notasCredito`, `notasDebito` | `create` |
+| `documents` | `get`, `list`, `query`, `reconcile` |
+| `jobs` | `get` |
+| `queries` | `ruc` |
+| `events` | `cancel`, `inutilize`, `get` |
+| `webhooks` | `create`, `list`, `update`, `replay`, `sendTestEvent`, `getDelivery` |
+| `verifyWebhook` | Verifica la firma de una entrega antes de parsear el JSON. |
+
+Emisores, perfil fiscal, certificados, timbrados, la descarga del XML y del
+KuDE (`/xml`, `/kude`, `/kude/data`) y `/v1/auth/check` todavía no tienen
+método: usá la API HTTP directamente (ver la [referencia](/docs/api-reference)).
+
+## Emitir una factura
+
+Antes de emitir, el emisor necesita su perfil fiscal completo
+(`PATCH /v1/emitters/{emitter_id}`, ver [Emisores](/docs/emisores)); si falta,
+la creación responde `422 emitters.fiscal_profile_required`. Un cliente con RUC
+lleva `tipo_contribuyente`, sin valor por defecto.
+
+```ts
+const result = await kila.facturas.create(
+  emitterId,
+  {
+    external_id: "venta_987",
+    factura: {
+      cliente: {
+        ruc: "88899990-9",
+        razon_social: "CLIENTE FICTICIO SA",
+        tipo_contribuyente: 2,
+      },
+      items: [
+        { descripcion: "Producto", cantidad: 1, precio_unitario: 100_000, tasa: 10 },
+      ],
+    },
+  },
+  { idempotencyKey: "venta_987" },
+);
+
+console.log(result.status); // 201, o 200 si es un reintento de la misma intención
+console.log(result.data.document.id, result.data.job.id, result.correlationId);
+```
+
+Sin `fecha_emision` el documento toma la hora en que se arma el XML. Si la
+enviás, tiene que estar entre 720 h antes y 120 h después del pedido; fuera de
+esa ventana la respuesta es `422 documents.fecha_emision.too_old` o
+`too_far_ahead`. `codigo_seguridad` es opcional: si lo omitís, la plataforma
+genera uno aleatorio. `redondeo` vale `ninguno` por defecto. Las reglas
+completas están en [Facturas](/docs/facturas).
+
+`idempotencyKey` identifica una intención fiscal: guardala con la venta y
+reusala en cada reintento. El SDK la envía en el body como `idempotency_key`,
+que es lo que la API usa; también manda el header `Idempotency-Key`, que la API
+hoy ignora.
+
+## Resultados del sandbox
+
+En un despliegue con `KILA_SIFEN_ENVIRONMENT=test`, `sandboxOutcome` fuerza el
+resultado del SIFEN sin armar el header `X-Kila-Test-Outcome` a mano (el SDK
+rechaza ese header si lo agregás vos). Acepta los cinco valores del contrato:
+`approved`, `approved_with_observation`, `rejected`, `transport_timeout` y
+`accepted_but_response_lost`. Ver [Sandbox](/docs/sandbox).
+
+```ts
+// `input`: el mismo FacturaCreateInput del ejemplo anterior.
+await kila.facturas.create(emitterId, input, {
+  idempotencyKey: "prueba_timeout_1",
+  sandboxOutcome: "transport_timeout",
+});
+```
+
+## Reconciliar
+
+`documents.reconcile` consulta el CDC en el SIFEN y no transmite el DE. Si el
+SIFEN responde `0420` y el documento estaba pendiente sin un envío en curso,
+vuelve a la cola y el worker reenvía el mismo DE firmado (mismo CDC); nunca
+crea otro documento.
+Ver [Consultas](/docs/consultas).
+
+## Errores
+
+```ts
+import { KilaSifenConnectionError, isKilaSifenError } from "@kilasifen/sdk";
+
+try {
+  await kila.documents.get(emitterId, documentId);
+} catch (error) {
+  if (isKilaSifenError(error) || error instanceof KilaSifenConnectionError) {
+    console.error(error.code, error.status, error.correlationId);
+    if (error.retryable) {
+      // Reintentar con backoff; en una creación, con la misma idempotencyKey.
+    }
+  }
+  throw error;
+}
+```
+
+`KilaSifenError` trae el envelope de la API (`code`, `category`, `details`);
+en `422 request.validation_failed`, cada entrada de `details.errors` puede
+traer el `code` de la regla fiscal. `KilaSifenConnectionError` cubre timeouts,
+errores de red y respuestas sin envelope. Ver [Errores](/docs/errores).

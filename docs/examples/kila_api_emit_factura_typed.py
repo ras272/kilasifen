@@ -20,10 +20,13 @@ def main() -> None:
         "factura": {
             "establecimiento": 1,
             "punto": "001",
-            "fecha": "2026-04-25T10:00:00",
+            # Without fecha_emision the platform uses the current time. A date
+            # must be within 720 h before and 120 h after the transmission.
             "cliente": {
                 "ruc": "80069563-1",
                 "razon_social": "TIPS S.A",
+                # D205 iTiContRec: mandatory for a taxpayer, never defaulted.
+                "tipo_contribuyente": 2,
             },
             "items": [
                 {

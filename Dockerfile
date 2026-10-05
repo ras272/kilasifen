@@ -11,9 +11,8 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock README.md MIT-LICENSE ./
 COPY kilasifen ./kilasifen
-COPY pysifen ./pysifen
 
-RUN uv sync --frozen --no-dev --extra platform --extra transmissao
+RUN uv sync --frozen --no-dev --extra platform --extra transmision
 
 FROM python:3.12.11-slim-bookworm AS runtime
 
@@ -28,7 +27,6 @@ RUN groupadd --system --gid 10001 kilasifen \
 WORKDIR /app
 COPY --from=builder --chown=kilasifen:kilasifen /app/.venv /app/.venv
 COPY --chown=kilasifen:kilasifen kilasifen ./kilasifen
-COPY --chown=kilasifen:kilasifen pysifen ./pysifen
 COPY --chown=kilasifen:kilasifen alembic ./alembic
 COPY --chown=kilasifen:kilasifen alembic.ini pyproject.toml README.md MIT-LICENSE ./
 
@@ -36,6 +34,8 @@ USER kilasifen
 
 EXPOSE 8000
 STOPSIGNAL SIGTERM
+# Probes the API process. Containers that run the worker, outbox or migration
+# from this image serve no HTTP and must disable it (see docker-compose.yml).
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.getenv('PORT','8000')+'/v1/health', timeout=3)"
 

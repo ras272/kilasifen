@@ -7,14 +7,24 @@ from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from kilasifen.domain.common.errors import NotFoundError
+from kilasifen.domain.emitters.fiscal_profile import (
+    EmitterFiscalProfile,
+    fiscal_profile_from_dict,
+    fiscal_profile_to_dict,
+)
 from kilasifen.domain.emitters.models import Emitter, EmitterSummary
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
+from kilasifen.infrastructure.db.locks import run_with_lock_timeout
 from kilasifen.infrastructure.db.models import (
     ConsumerEmitterModel,
     ConsumerModel,
     EmitterModel,
 )
 from kilasifen.repositories.emitters import EmitterRepository
+
+#: Longest wait for the emitter row lock before answering a retryable 503.
+#: The lock is only held by short transactions (never across a SIFEN call).
+EMITTER_LOCK_TIMEOUT_MS = 5000
 
 
 class SqlAlchemyEmitterRepository(EmitterRepository):
@@ -41,6 +51,7 @@ class SqlAlchemyEmitterRepository(EmitterRepository):
                 status=emitter.status,
                 csc=self._encrypt_csc(emitter.csc),
                 csc_id=emitter.csc_id,
+                fiscal_profile=_profile_document(emitter.fiscal_profile),
                 created_at=emitter.created_at,
                 updated_at=emitter.updated_at,
             )
@@ -54,6 +65,7 @@ class SqlAlchemyEmitterRepository(EmitterRepository):
             existing.status = emitter.status
             existing.csc = self._encrypt_csc(emitter.csc)
             existing.csc_id = emitter.csc_id
+            existing.fiscal_profile = _profile_document(emitter.fiscal_profile)
             existing.updated_at = emitter.updated_at
         self.session.flush()
         return emitter
@@ -64,13 +76,35 @@ class SqlAlchemyEmitterRepository(EmitterRepository):
             return None
         return _to_domain(model, self.secret_store)
 
+    def get_summary(self, emitter_id: str) -> EmitterSummary | None:
+        statement = select(*_SUMMARY_COLUMNS).where(EmitterModel.id == emitter_id)
+        return _summary_from_mapping(
+            self.session.execute(statement).mappings().one_or_none()
+        )
+
+    def get_status(self, emitter_id: str) -> str | None:
+        statement = select(EmitterModel.status).where(EmitterModel.id == emitter_id)
+        return self.session.scalar(statement)
+
     def get_status_for_update(self, emitter_id: str) -> str | None:
         statement = (
             select(EmitterModel.status)
             .where(EmitterModel.id == emitter_id)
             .with_for_update()
         )
-        return self.session.scalar(statement)
+        return run_with_lock_timeout(
+            self.session,
+            lambda: self.session.scalar(statement),
+            timeout_ms=EMITTER_LOCK_TIMEOUT_MS,
+            error_code="emitters.lock_timeout",
+        )
+
+    def lock_row(self, emitter_id: str) -> None:
+        self.session.execute(
+            select(EmitterModel.id)
+            .where(EmitterModel.id == emitter_id)
+            .with_for_update()
+        )
 
     def update_metadata(
         self,
@@ -79,12 +113,15 @@ class SqlAlchemyEmitterRepository(EmitterRepository):
         legal_name: str | None,
         tax_environment: str | None,
         updated_at: datetime,
+        fiscal_profile: EmitterFiscalProfile | None = None,
     ) -> EmitterSummary | None:
         values: dict[str, Any] = {"updated_at": updated_at}
         if legal_name is not None:
             values["legal_name"] = legal_name
         if tax_environment is not None:
             values["tax_environment"] = tax_environment
+        if fiscal_profile is not None:
+            values["fiscal_profile"] = fiscal_profile_to_dict(fiscal_profile)
         statement = (
             update(EmitterModel)
             .where(EmitterModel.id == emitter_id)
@@ -204,7 +241,16 @@ def _to_domain(
         csc_id=model.csc_id,
         created_at=model.created_at,
         updated_at=model.updated_at,
+        fiscal_profile=_profile_from_document(model.fiscal_profile),
     )
+
+
+def _profile_document(profile: EmitterFiscalProfile | None) -> dict | None:
+    return None if profile is None else fiscal_profile_to_dict(profile)
+
+
+def _profile_from_document(document: dict | None) -> EmitterFiscalProfile | None:
+    return None if document is None else fiscal_profile_from_dict(document)
 
 
 _SUMMARY_COLUMNS = (
@@ -219,6 +265,7 @@ _SUMMARY_COLUMNS = (
     EmitterModel.csc_id,
     EmitterModel.created_at,
     EmitterModel.updated_at,
+    EmitterModel.fiscal_profile,
 )
 
 
@@ -237,4 +284,5 @@ def _summary_from_mapping(row) -> EmitterSummary | None:
         csc_id=row["csc_id"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        fiscal_profile=_profile_from_document(row["fiscal_profile"]),
     )

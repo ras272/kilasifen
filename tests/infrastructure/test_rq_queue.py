@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import fakeredis
 from rq import Queue
@@ -31,7 +31,10 @@ from kilasifen.infrastructure.db.session import (
 )
 from kilasifen.infrastructure.jobs.queue import RqJobQueue
 from kilasifen.infrastructure.jobs.workers import process_document_job
-from kilasifen.infrastructure.sifen.engine import EmissionOutcome
+from kilasifen.infrastructure.sifen.engine import (
+    PreparedSubmission,
+    SubmissionOutcome,
+)
 from kilasifen.logging import reset_correlation_id, set_correlation_id
 from kilasifen.testing.database import managed_test_database_url
 
@@ -177,7 +180,7 @@ def test_process_document_job_hydrates_job_and_document_context(tmp_path) -> Non
             id="stamp-1",
             emitter_id="emitter-1",
             number="80024135",
-            start_date=datetime(2024, 3, 11, tzinfo=UTC).date(),
+            start_date=datetime(2024, 3, 11, tzinfo=timezone.utc).date(),
             end_date=None,
             is_active=True,
             status="active",
@@ -213,17 +216,14 @@ def test_process_document_job_hydrates_job_and_document_context(tmp_path) -> Non
             database_url=database_url,
             encryption_key=_fernet_key(),
             emission_engine=FakeEmissionEngine(
-                EmissionOutcome(
-                    generated_xml="<rDE/>",
-                    signed_xml="<rDE><Signature/></rDE>",
-                    request_xml="<soap>request</soap>",
+                SubmissionOutcome(
                     response_raw="<soap>response</soap>",
                     sifen_status="approved",
                     result_code="0260",
                     result_message="ok",
                 )
             ),
-            current_date=datetime(2024, 4, 24, tzinfo=UTC).date(),
+            current_date=datetime(2024, 4, 24, tzinfo=timezone.utc).date(),
         )
 
         assert payload["job_id"] == "job-1"
@@ -278,9 +278,19 @@ def test_rq_queue_enqueues_webhook_delivery_with_correlation_id() -> None:
 
 @dataclass
 class FakeEmissionEngine:
-    outcome: EmissionOutcome
+    outcome: SubmissionOutcome
 
-    def emit_document(self, **kwargs) -> EmissionOutcome:
+    def prepare_document(self, **kwargs) -> PreparedSubmission:
+        del kwargs
+        return PreparedSubmission(
+            generated_xml="<rDE/>",
+            signed_xml='<rDE><DE Id="0180012345"/><Signature/></rDE>',
+            request_xml="<rEnviDe><dId>1</dId></rEnviDe>",
+            cdc="0180012345",
+        )
+
+    def submit_prepared(self, **kwargs) -> SubmissionOutcome:
+        del kwargs
         return self.outcome
 
 
@@ -289,4 +299,4 @@ def _fernet_key() -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

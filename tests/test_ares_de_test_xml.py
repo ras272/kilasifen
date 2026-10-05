@@ -5,7 +5,6 @@ from pathlib import Path
 
 from lxml import etree
 
-
 EXAMPLE_PATH = (
     Path(__file__).resolve().parents[1]
     / "docs"
@@ -34,7 +33,7 @@ def test_build_unsigned_de_base_has_required_v150_fields():
         fecha_emision="2026-04-24T12:00:00",
         timbrado="17094237",
         fecha_inicio_timbrado="2025-07-07",
-        codigo_seguridad="123456789",
+        codigo_seguridad="482019375",
         codigo_actividad="82999",
         descripcion_actividad="OTRAS ACTIVIDADES DE SERVICIOS DE APOYO A EMPRESAS N.C.P.",
     )

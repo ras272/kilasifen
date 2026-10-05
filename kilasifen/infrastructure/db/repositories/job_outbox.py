@@ -213,6 +213,6 @@ def _to_domain(model: JobOutboxModel) -> JobOutboxMessage:
 
 
 def _now() -> datetime:
-    from datetime import UTC
+    from datetime import timezone
 
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

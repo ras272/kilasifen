@@ -27,6 +27,8 @@ from kilasifen.security import (
     key_prefix,
 )
 from kilasifen.testing.database import managed_test_database_url
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile_payload
+from tests._raw_xml import raw_document_payload
 
 _KEY_A = "ks_test_consumer_a_000000000000000001"
 _KEY_B = "ks_test_consumer_b_000000000000000002"
@@ -83,7 +85,7 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
             "external_id": "tenant-a-document",
             "idempotency_key": "tenant-a-idempotency",
             "document_type": "factura",
-            "payload": {"generated_xml": "<rDE><DE Id='A1'/></rDE>", "doc_id": "A1"},
+            "payload": raw_document_payload(),
         },
     )
     create_response = client.post(
@@ -94,8 +96,9 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
             "idempotency_key": "tenant-a-idempotency",
             "factura": {
                 "cliente": {
-                    "ruc": "80000001-1",
+                    "ruc": "80025298-5",
                     "razon_social": "CLIENTE TENANT A",
+                    "tipo_contribuyente": 2,
                 },
                 "items": [
                     {"descripcion": "Servicio", "cantidad": 1, "precioUnitario": 1}
@@ -130,7 +133,7 @@ def test_scopes_and_admin_boundary_are_enforced(client: TestClient) -> None:
     secret_update_response = client.patch(
         "/v1/emitters/emitter-a",
         headers={"X-API-Key": _KEY_A},
-        json={"csc": "caller-must-not-write-this", "csc_id": "0001"},
+        json={"csc": "CallerMustNotWriteThis0000000000", "csc_id": "0001"},
     )
     read_only_stamping_response = client.post(
         "/v1/emitters/emitter-a/stampings",
@@ -153,7 +156,7 @@ def test_tenants_cannot_claim_a_global_ruc(client: TestClient) -> None:
     payload = {
         "external_id": "attempted-global-claim",
         "ruc": "80000999",
-        "dv": "9",
+        "dv": "1",
         "legal_name": "GLOBAL RUC CLAIM",
         "tax_environment": "test",
     }
@@ -185,19 +188,21 @@ def _seed_tenants(session_factory) -> None:
                     id="emitter-a",
                     external_id="erp-a",
                     ruc="80000001",
-                    dv="1",
+                    dv="3",
                     legal_name="Emitter A",
                     tax_environment="test",
                     status="active",
+                    fiscal_profile=fictional_fiscal_profile_payload(),
                 ),
                 EmitterModel(
                     id="emitter-b",
                     external_id="erp-b",
                     ruc="80000002",
-                    dv="2",
+                    dv="1",
                     legal_name="Emitter B",
                     tax_environment="test",
                     status="active",
+                    fiscal_profile=fictional_fiscal_profile_payload(),
                 ),
             ]
         )

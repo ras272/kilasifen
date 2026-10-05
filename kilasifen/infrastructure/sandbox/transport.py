@@ -1,8 +1,8 @@
 """Network-free SIFEN transport with deterministic test outcomes."""
 
 from kilasifen.domain.sandbox import SandboxOutcome
+from kilasifen.engine.sdk.errors import SifenTimeoutError
 from kilasifen.infrastructure.sifen.engine import SubmissionOutcome
-from pysifen.sdk.errors import SifenTimeoutError
 
 _OUTCOMES = {
     SandboxOutcome.APPROVED: (
@@ -36,12 +36,12 @@ class DeterministicSandboxTransport:
     def submit(
         self,
         *,
-        signed_xml: str,
+        request_xml: str,
         tax_environment: str,
         certificate_bytes: bytes,
         certificate_password: str,
     ) -> SubmissionOutcome:
-        del signed_xml, certificate_bytes, certificate_password
+        del request_xml, certificate_bytes, certificate_password
         if tax_environment != "test":
             raise ValueError("deterministic sandbox transport requires a test emitter")
 

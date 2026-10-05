@@ -9,7 +9,7 @@ from copy import deepcopy
 from typing import Any
 
 from kilasifen.config import Settings, get_settings
-from kilasifen.logging import get_correlation_id
+from kilasifen.logging import configure_logging, get_correlation_id
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,10 @@ _SENSITIVE_FIELDS = {
 _CERTIFICATE_MARKERS = ("BEGIN CERTIFICATE", "BEGIN PRIVATE KEY")
 _BASE64_BLOB_PATTERN = re.compile(r"^[A-Za-z0-9+/=\s]{200,}$")
 _INITIALIZED_COMPONENTS: set[str] = set()
+_WORKER_LOGGING_CONFIGURED = False
+
+#: Logger that RQ configures with its own text handlers when a worker starts.
+_RQ_WORKER_LOGGER = "rq.worker"
 
 
 def initialize_sentry(*, settings: Settings, component: str) -> bool:
@@ -98,9 +102,30 @@ def initialize_sentry(*, settings: Settings, component: str) -> bool:
 
 
 def ensure_worker_observability() -> bool:
-    """Initialize worker-side observability for the current process."""
+    """Initialize logging and Sentry for a worker or outbox process.
 
-    return initialize_sentry(settings=get_settings(), component="worker")
+    Workers have no application factory: every job entry point and the outbox
+    sweeper call this first. The first call in a process configures the same
+    JSON logging as the API (``configure_logging``); later calls only make
+    sure Sentry is initialized.
+    """
+
+    settings = get_settings()
+    _configure_worker_logging(settings.log_level)
+    return initialize_sentry(settings=settings, component="worker")
+
+
+def _configure_worker_logging(level: str) -> None:
+    global _WORKER_LOGGING_CONFIGURED
+    if _WORKER_LOGGING_CONFIGURED:
+        return
+    configure_logging(level)
+    rq_logger = logging.getLogger(_RQ_WORKER_LOGGER)
+    if rq_logger.handlers:
+        # RQ prints its own lifecycle lines; letting them also reach the root
+        # JSON handler would log each of them twice.
+        rq_logger.propagate = False
+    _WORKER_LOGGING_CONFIGURED = True
 
 
 def _before_send(event: dict[str, Any], hint: dict[str, Any]) -> dict[str, Any] | None:

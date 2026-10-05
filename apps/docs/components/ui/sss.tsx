@@ -3,7 +3,7 @@
 export function AsciiArt({ className }: { className?: string }) {
   return (
     <video
-      aria-label="Arte ASCII animado"
+      aria-hidden="true"
       autoPlay
       className={className}
       loop

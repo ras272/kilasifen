@@ -2,18 +2,56 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from xml.etree import ElementTree as ET
-from zoneinfo import ZoneInfo
 
+from kilasifen.domain.common.paraguay_time import (
+    format_sifen_datetime,
+    paraguay_now,
+)
+from kilasifen.domain.documents.emitter_identity import (
+    find_emitter_identity_mismatch,
+)
+from kilasifen.domain.documents.fiscal_dates import parse_sifen_datetime
 from kilasifen.domain.documents.models import Document
+from kilasifen.domain.documents.receiver import (
+    Receiver,
+    ReceiverRuleError,
+    innominado_limit_error,
+    resolve_receiver,
+)
+from kilasifen.domain.documents.security_code import (
+    InvalidSecurityCodeError,
+    normalize_security_code,
+)
+from kilasifen.domain.documents.totals import (
+    CASH,
+    DocumentAmounts,
+    DocumentTotals,
+    ItemAmounts,
+    PaymentForm,
+    PaymentPlan,
+    TotalsRuleError,
+    compute_document_amounts,
+    resolve_payment_plan,
+)
+from kilasifen.domain.emitters.fiscal_profile import (
+    EmitterFiscalProfile,
+    FiscalAddress,
+)
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.stampings.models import Stamping
-from pysifen.sdk.errors import SifenValidationError
-from pysifen.sdk.fiscal import calculate_mod11_dv, generate_cdc
-from pysifen.sdk.validation import validate_xml
+from kilasifen.engine.sdk.catalogos import (
+    descripcion_departamento,
+    descripcion_moneda,
+    descripcion_pais,
+)
+from kilasifen.engine.sdk.errors import SifenValidationError
+from kilasifen.engine.sdk.fiscal import calculate_mod11_dv, generate_cdc
+from kilasifen.engine.sdk.validation import validate_xml
 
 SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 ET.register_namespace("", SIFEN_NS)
@@ -22,8 +60,26 @@ _ZERO = Decimal("0")
 _AMOUNT_Q = Decimal("0.00000001")
 _AMOUNT4_Q = Decimal("0.0001")
 _PERCENT_Q = Decimal("0.00000001")
-_ITEM_TOTAL_Q = Decimal("0.00000001")
-_PY_TZ = ZoneInfo("America/Asuncion")
+#: Literal that MT v150 validation 1263 (D105) requires in the test
+#: environment and forbids in production.
+MT_TEST_EMITTER_NAME = (
+    "DE generado en ambiente de prueba - sin valor comercial ni fiscal"
+)
+#: dCarQR before signing. The QR carries the DigestValue of the signature
+#: (MT v150 §13.8.2, XS17), so it only exists after signing:
+#: KilaSifenEmissionEngine always replaces this text with
+#: apply_real_qr_to_signed_xml right after signing and it never travels. It
+#: satisfies the XSD (noEmptyString, 100-600 characters) for the validation
+#: before signing and carries no fiscal data, so a stored unsigned XML can
+#: not be mistaken for a document with a QR.
+DCARQR_PENDING_SIGNATURE = (
+    "PENDIENTE-DE-FIRMA: KilaSifen calcula el dCarQR despues de firmar, con "
+    "los valores del XML firmado (MT v150 13.8)."
+)
+#: MT v150 D016/E610/E654 (XSD tdDMoneTiPag for the three): 3-20 characters.
+_CURRENCY_DESCRIPTION_MAX = 20
+#: A qualified ``ds:`` tag (opening or closing) or an ``xmlns:ds`` declaration.
+_DS_PREFIX_PATTERN = re.compile(r"</?ds:|\sxmlns:ds\s*=")
 
 _TRANSACTION_CODE_BY_NAME = {
     "venta_mercaderia": 1,
@@ -158,27 +214,23 @@ _CARD_PROCESSING_CODE_BY_NAME = {
     "electronico": 2,
     "otro": 9,
 }
-_AFFECTATION_CODE_BY_NAME = {
-    "gravado": 1,
-    "exonerado": 2,
-    "exento": 3,
-    "gravado_parcial": 4,
-}
+#: E732 dDesAfecIVA: Tabla 6 as corrected by NT 10 §5.1, the values of the
+#: XSD ``tdDesAfecIVA`` in DE_Types_v150.
 _AFFECTATION_DESCRIPTION_BY_CODE = {
     1: "Gravado IVA",
-    2: "Exonerado (Art. 83- Ley 125/91)",
+    2: "Exonerado (Art. 100 - Ley 6380/2019)",
     3: "Exento",
     4: "Gravado parcial (Grav- Exento)",
 }
-_DOC_ID_TYPE_DESCRIPTION = {
+#: D141/D142: XSD tiTipIDRespDE ([1-4]|9) and tdDTipIDRespDE. With 9 the
+#: real document type is given in 9-41 characters (NT 10 §2.2, 1265).
+_RESPONSIBLE_ID_TYPE_DESCRIPTION = {
     1: "Cédula paraguaya",
     2: "Pasaporte",
     3: "Cédula extranjera",
     4: "Carnet de residencia",
-    5: "Innominado",
-    6: "Tarjeta Diplomática de exoneración fiscal",
-    9: "Otro",
 }
+_RESPONSIBLE_OTHER_ID_TYPE = 9
 _MOTIVE_CODE_BY_NAME = {
     "devolucion_y_ajuste": 1,
     "devolucion": 2,
@@ -220,42 +272,15 @@ class TypedXmlBuildResult:
     doc_id: str
 
 
-@dataclass(slots=True)
-class _ItemComputation:
-    amount_exe: Decimal
-    amount_exo: Decimal
-    amount_5: Decimal
-    amount_10: Decimal
-    discount_particular: Decimal
-    discount_global: Decimal
-    anticipo_particular: Decimal
-    anticipo_global: Decimal
-    base_5: Decimal
-    base_10: Decimal
-    iva_5: Decimal
-    iva_10: Decimal
-    total_gs: Decimal | None
+@dataclass(frozen=True, slots=True)
+class _Issuer:
+    """``gEmis`` data of one document, all taken from the registered emitter."""
 
-
-@dataclass(slots=True)
-class _Totals:
-    sub_exe: Decimal
-    sub_exo: Decimal
-    sub_5: Decimal
-    sub_10: Decimal
-    total: Decimal
-    total_discount_particular: Decimal
-    total_discount_global: Decimal
-    total_anticipo_particular: Decimal
-    total_anticipo_global: Decimal
-    base_5: Decimal
-    base_10: Decimal
-    iva_5: Decimal
-    iva_10: Decimal
-    redondeo: Decimal
-    total_neto: Decimal
-    total_iva: Decimal
-    total_gs: Decimal | None
+    ruc: str
+    dv: str
+    name: str
+    profile: EmitterFiscalProfile
+    address: FiscalAddress
 
 
 def build_typed_document_xml(
@@ -263,8 +288,18 @@ def build_typed_document_xml(
     document: Document,
     emitter: Emitter,
     stamping: Stamping,
+    test_emitter_name_literal: str | None = None,
+    signed_at: datetime | None = None,
 ) -> TypedXmlBuildResult | None:
-    """Build unsigned XML when payload includes a supported typed contract."""
+    """Build unsigned XML when payload includes a supported typed contract.
+
+    ``test_emitter_name_literal`` replaces ``dNomEmi`` for emitters of the
+    SIFEN test environment (validation 1263); ``None`` keeps the legal name.
+    ``signed_at`` is the moment the XML will be signed, written as
+    ``dFecFirma``; it defaults to now.
+    """
+
+    fecha_firma = format_sifen_datetime(signed_at or paraguay_now())
 
     payload = document.payload_snapshot or {}
     typed_contract = payload.get("typed_contract")
@@ -280,12 +315,18 @@ def build_typed_document_xml(
             typed_payload=typed_payload,
             emitter=emitter,
             stamping=stamping,
+            test_emitter_name_literal=test_emitter_name_literal,
+            security_code=document.security_code,
+            fecha_firma=fecha_firma,
         )
     if contract == "nota_credito_v1":
         return _build_adjustment_note_xml(
             typed_payload=typed_payload,
             emitter=emitter,
             stamping=stamping,
+            test_emitter_name_literal=test_emitter_name_literal,
+            security_code=document.security_code,
+            fecha_firma=fecha_firma,
             document_type_code=5,
             document_type_description="Nota de crédito electrónica",
         )
@@ -294,6 +335,9 @@ def build_typed_document_xml(
             typed_payload=typed_payload,
             emitter=emitter,
             stamping=stamping,
+            test_emitter_name_literal=test_emitter_name_literal,
+            security_code=document.security_code,
+            fecha_firma=fecha_firma,
             document_type_code=6,
             document_type_description="Nota de débito electrónica",
         )
@@ -305,6 +349,9 @@ def _build_factura_xml(
     typed_payload: dict,
     emitter: Emitter,
     stamping: Stamping,
+    test_emitter_name_literal: str | None,
+    security_code: str | None,
+    fecha_firma: str,
 ) -> TypedXmlBuildResult:
     numero_documento = _required_intlike(typed_payload, "numero")
     fecha_emision = _resolve_emission_datetime(typed_payload)
@@ -312,11 +359,14 @@ def _build_factura_xml(
         typed_payload.get("establecimiento"), "001"
     )
     punto = _normalize_three_digits(typed_payload.get("punto"), "001")
-    codigo_seguridad = _normalize_nine_digits(
-        typed_payload.get("codigo_seguridad"), "123456789"
+    codigo_seguridad = _resolve_security_code(
+        security_code, typed_payload, numero_documento
     )
-    tipo_contribuyente = _required_intlike(
-        typed_payload, "tipo_contribuyente", default=2
+    issuer = _resolve_issuer(
+        emitter=emitter,
+        typed_payload=typed_payload,
+        establecimiento=establecimiento,
+        test_emitter_name_literal=test_emitter_name_literal,
     )
     cliente = _required_object(typed_payload, "cliente")
     items = _required_items(typed_payload)
@@ -345,55 +395,44 @@ def _build_factura_xml(
         max_value=9,
         field_name="indicador_presencia",
     )
-    moneda, moneda_descripcion, condicion_tipo_cambio, tipo_cambio = (
-        _resolve_currency_data(typed_payload)
-    )
-    item_computations = _append_items(
-        dtip=None,  # created later once DE structure exists
-        items=items,
-        moneda=moneda,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-    )
-    totals = _calculate_totals(item_computations, moneda=moneda)
-    totals.total_gs = _resolve_total_gs(
+    amounts = _compute_amounts(typed_payload)
+    totals = amounts.totals
+    payment_plan = _resolve_payment_plan(typed_payload, amounts)
+    receiver = _resolve_receiver(cliente, document_type=1)
+    _assert_innominado_limit(
+        receiver,
+        transaction_type=tipo_transaccion,
+        currency=amounts.currency,
         totals=totals,
-        item_computations=item_computations,
-        moneda=moneda,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-        tipo_cambio=tipo_cambio,
     )
-    _assert_totals_consistency(totals)
 
     doc_id = _build_doc_id(
         i_tide=1,
-        emitter=emitter,
+        issuer=issuer,
         fecha_emision=fecha_emision,
         establecimiento=establecimiento,
         punto=punto,
         numero_documento=numero_documento,
-        tipo_contribuyente=tipo_contribuyente,
         codigo_seguridad=codigo_seguridad,
     )
     root = _build_base_document_root(
         doc_id=doc_id,
         fecha_emision=fecha_emision,
+        fecha_firma=fecha_firma,
         i_tide=1,
         d_des_tide="Factura electrónica",
         stamping=stamping,
-        emitter=emitter,
+        issuer=issuer,
         establecimiento=establecimiento,
         punto=punto,
         numero_documento=numero_documento,
         codigo_seguridad=codigo_seguridad,
         typed_payload=typed_payload,
-        cliente=cliente,
+        receiver=receiver,
         tipo_transaccion=tipo_transaccion,
         include_tipo_transaccion=True,
         tipo_impuesto=tipo_impuesto,
-        moneda=moneda,
-        moneda_descripcion=moneda_descripcion,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-        tipo_cambio=tipo_cambio,
+        amounts=amounts,
     )
 
     de = _find_de(root)
@@ -401,37 +440,14 @@ def _build_factura_xml(
     gcam_fe = _sub(dtip, "gCamFE")
     _sub(gcam_fe, "iIndPres", str(indicador_presencia))
     _sub(gcam_fe, "dDesIndPres", _presence_description(indicador_presencia))
-    if _customer_operation_type(cliente) == 3:
+    if receiver.operation_type == 3:
         _append_public_procurement_group(gcam_fe=gcam_fe, cliente=cliente)
 
-    _append_condition_node(
-        dtip=dtip,
-        typed_payload=typed_payload,
-        total=totals.total_neto,
-        moneda=moneda,
-        moneda_descripcion=moneda_descripcion,
-        tipo_cambio=tipo_cambio,
-    )
-    _append_items(
-        dtip=dtip,
-        items=items,
-        moneda=moneda,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-    )
+    _append_condition_node(dtip=dtip, plan=payment_plan, amounts=amounts)
+    _append_items(dtip=dtip, items=items, amounts=amounts.items)
     _append_totals(de, totals)
     _append_associated_documents_if_any(de=de, typed_payload=typed_payload)
-    _append_outside_signature_group(
-        root=root,
-        dcarqr=_resolve_dcarqr_value(
-            typed_payload=typed_payload,
-            doc_id=doc_id,
-            fecha_emision=fecha_emision,
-            receptor=_resolve_qr_receptor(cliente),
-            total_neto=totals.total_neto,
-            total_iva=totals.total_iva,
-            items_count=len(items),
-        ),
-    )
+    _append_outside_signature_group(root=root)
 
     generated_xml = _finalize_xml(root)
     return TypedXmlBuildResult(generated_xml=generated_xml, doc_id=doc_id)
@@ -442,6 +458,9 @@ def _build_adjustment_note_xml(
     typed_payload: dict,
     emitter: Emitter,
     stamping: Stamping,
+    test_emitter_name_literal: str | None,
+    security_code: str | None,
+    fecha_firma: str,
     document_type_code: int,
     document_type_description: str,
 ) -> TypedXmlBuildResult:
@@ -451,11 +470,14 @@ def _build_adjustment_note_xml(
         typed_payload.get("establecimiento"), "001"
     )
     punto = _normalize_three_digits(typed_payload.get("punto"), "001")
-    codigo_seguridad = _normalize_nine_digits(
-        typed_payload.get("codigo_seguridad"), "123456789"
+    codigo_seguridad = _resolve_security_code(
+        security_code, typed_payload, numero_documento
     )
-    tipo_contribuyente = _required_intlike(
-        typed_payload, "tipo_contribuyente", default=2
+    issuer = _resolve_issuer(
+        emitter=emitter,
+        typed_payload=typed_payload,
+        establecimiento=establecimiento,
+        test_emitter_name_literal=test_emitter_name_literal,
     )
     cliente = _required_object(typed_payload, "cliente")
     items = _required_items(typed_payload)
@@ -477,56 +499,37 @@ def _build_adjustment_note_xml(
         max_value=5,
         field_name="tipo_impuesto",
     )
-    moneda, moneda_descripcion, condicion_tipo_cambio, tipo_cambio = (
-        _resolve_currency_data(typed_payload)
-    )
-
-    item_computations = _append_items(
-        dtip=None,
-        items=items,
-        moneda=moneda,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-    )
-    totals = _calculate_totals(item_computations, moneda=moneda)
-    totals.total_gs = _resolve_total_gs(
-        totals=totals,
-        item_computations=item_computations,
-        moneda=moneda,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-        tipo_cambio=tipo_cambio,
-    )
-    _assert_totals_consistency(totals)
+    amounts = _compute_amounts(typed_payload)
+    totals = amounts.totals
+    receiver = _resolve_receiver(cliente, document_type=document_type_code)
 
     doc_id = _build_doc_id(
         i_tide=document_type_code,
-        emitter=emitter,
+        issuer=issuer,
         fecha_emision=fecha_emision,
         establecimiento=establecimiento,
         punto=punto,
         numero_documento=numero_documento,
-        tipo_contribuyente=tipo_contribuyente,
         codigo_seguridad=codigo_seguridad,
     )
     root = _build_base_document_root(
         doc_id=doc_id,
         fecha_emision=fecha_emision,
+        fecha_firma=fecha_firma,
         i_tide=document_type_code,
         d_des_tide=document_type_description,
         stamping=stamping,
-        emitter=emitter,
+        issuer=issuer,
         establecimiento=establecimiento,
         punto=punto,
         numero_documento=numero_documento,
         codigo_seguridad=codigo_seguridad,
         typed_payload=typed_payload,
-        cliente=cliente,
+        receiver=receiver,
         tipo_transaccion=tipo_transaccion,
         include_tipo_transaccion=False,
         tipo_impuesto=tipo_impuesto,
-        moneda=moneda,
-        moneda_descripcion=moneda_descripcion,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-        tipo_cambio=tipo_cambio,
+        amounts=amounts,
     )
 
     de = _find_de(root)
@@ -543,26 +546,10 @@ def _build_adjustment_note_xml(
     _sub(gcam_ncde, "iMotEmi", str(motivo))
     _sub(gcam_ncde, "dDesMotEmi", _nota_credito_motive_description(motivo))
 
-    _append_items(
-        dtip=dtip,
-        items=items,
-        moneda=moneda,
-        condicion_tipo_cambio=condicion_tipo_cambio,
-    )
+    _append_items(dtip=dtip, items=items, amounts=amounts.items)
     _append_totals(de, totals)
     _append_associated_document(de=de, asociado=asociado, required=True)
-    _append_outside_signature_group(
-        root=root,
-        dcarqr=_resolve_dcarqr_value(
-            typed_payload=typed_payload,
-            doc_id=doc_id,
-            fecha_emision=fecha_emision,
-            receptor=_resolve_qr_receptor(cliente),
-            total_neto=totals.total_neto,
-            total_iva=totals.total_iva,
-            items_count=len(items),
-        ),
-    )
+    _append_outside_signature_group(root=root)
 
     generated_xml = _finalize_xml(root)
     return TypedXmlBuildResult(generated_xml=generated_xml, doc_id=doc_id)
@@ -572,30 +559,32 @@ def _build_base_document_root(
     *,
     doc_id: str,
     fecha_emision: str,
+    fecha_firma: str,
     i_tide: int,
     d_des_tide: str,
     stamping: Stamping,
-    emitter: Emitter,
+    issuer: _Issuer,
     establecimiento: str,
     punto: str,
     numero_documento: int,
     codigo_seguridad: str,
     typed_payload: dict,
-    cliente: dict,
+    receiver: Receiver,
     tipo_transaccion: int,
     include_tipo_transaccion: bool,
     tipo_impuesto: int,
-    moneda: str,
-    moneda_descripcion: str,
-    condicion_tipo_cambio: int | None,
-    tipo_cambio: Decimal | None,
+    amounts: DocumentAmounts,
 ) -> ET.Element:
+    moneda = amounts.currency
+    condicion_tipo_cambio = amounts.exchange_condition
+    tipo_cambio = amounts.exchange_rate
     root = ET.Element(_tag("rDE"))
     _sub(root, "dVerFor", "150")
     de = _sub(root, "DE")
     de.set("Id", doc_id)
     _sub(de, "dDVId", str(calculate_mod11_dv(doc_id[:-1])))
-    _sub(de, "dFecFirma", fecha_emision)
+    # A004: the real signing time (RG 23/2019 Art. 13), not dFeEmiDE.
+    _sub(de, "dFecFirma", fecha_firma)
     _sub(de, "dSisFact", "1")
 
     gope = _sub(de, "gOpeDE")
@@ -621,7 +610,9 @@ def _build_base_document_root(
     _sub(ope, "iTImp", str(tipo_impuesto))
     _sub(ope, "dDesTImp", _tax_description(tipo_impuesto))
     _sub(ope, "cMoneOpe", moneda)
-    _sub(ope, "dDesMoneOpe", moneda_descripcion)
+    _sub(ope, "dDesMoneOpe", _currency_description(moneda))
+    if condicion_tipo_cambio is not None and condicion_tipo_cambio not in (1, 2):
+        raise SifenValidationError("documents.currency.condicion_tipo_cambio_invalid")
     if moneda != "PYG":
         if condicion_tipo_cambio is None:
             raise SifenValidationError(
@@ -637,251 +628,211 @@ def _build_base_document_root(
             "documents.currency.condicion_tipo_cambio_not_allowed"
         )
 
-    _append_anticipation_condition(ope=ope, typed_payload=typed_payload)
+    _append_anticipation_condition(ope=ope, items=amounts.items)
 
-    emis = _sub(gdat, "gEmis")
-    emisor_payload = (
-        typed_payload.get("emisor")
-        if isinstance(typed_payload.get("emisor"), dict)
-        else {}
-    )
-    emisor_ruc = _clean_text(emisor_payload.get("ruc")) or emitter.ruc
-    emisor_dv = _clean_text(emisor_payload.get("dv")) or emitter.dv
-    emisor_name = (
-        _clean_text(emisor_payload.get("razon_social"))
-        or _clean_text(emisor_payload.get("nombre"))
-        or emitter.legal_name
-    )
-    _sub(emis, "dRucEm", emisor_ruc)
-    _sub(emis, "dDVEmi", emisor_dv)
-    _sub(
-        emis,
-        "iTipCont",
-        str(_required_intlike(typed_payload, "tipo_contribuyente", default=2)),
-    )
-    _sub(emis, "dNomEmi", emisor_name)
-    _sub(
-        emis,
-        "dDirEmi",
-        _clean_text(emisor_payload.get("direccion"))
-        or _clean_text(typed_payload.get("direccion_emisor"))
-        or "ASUNCION",
-    )
-    _sub(
-        emis,
-        "dNumCas",
-        _clean_text(emisor_payload.get("numero"))
-        or _clean_text(typed_payload.get("numero_casa_emisor"))
-        or "0",
-    )
-    comp1 = _clean_text(emisor_payload.get("complemento_1"))
-    comp2 = _clean_text(emisor_payload.get("complemento_2"))
-    if comp1:
-        _sub(emis, "dCompDir1", comp1)
-    if comp2:
-        _sub(emis, "dCompDir2", comp2)
-    _sub(
-        emis,
-        "cDepEmi",
-        _clean_text(emisor_payload.get("departamento"))
-        or _clean_text(typed_payload.get("departamento_emisor"))
-        or "1",
-    )
-    _sub(
-        emis,
-        "dDesDepEmi",
-        _clean_text(emisor_payload.get("descripcion_departamento"))
-        or _clean_text(typed_payload.get("descripcion_departamento_emisor"))
-        or "CAPITAL",
-    )
-    distrito = _clean_text(emisor_payload.get("distrito")) or _clean_text(
-        typed_payload.get("distrito_emisor")
-    )
-    if distrito:
-        _sub(emis, "cDisEmi", distrito)
-    distrito_descripcion = _clean_text(
-        emisor_payload.get("descripcion_distrito")
-    ) or _clean_text(typed_payload.get("descripcion_distrito_emisor"))
-    if distrito_descripcion:
-        _sub(emis, "dDesDisEmi", distrito_descripcion)
-    _sub(
-        emis,
-        "cCiuEmi",
-        _clean_text(emisor_payload.get("ciudad"))
-        or _clean_text(typed_payload.get("ciudad_emisor"))
-        or "1",
-    )
-    _sub(
-        emis,
-        "dDesCiuEmi",
-        _clean_text(emisor_payload.get("descripcion_ciudad"))
-        or _clean_text(typed_payload.get("descripcion_ciudad_emisor"))
-        or "ASUNCION (DISTRITO)",
-    )
-    _sub(
-        emis,
-        "dTelEmi",
-        _clean_text(emisor_payload.get("telefono"))
-        or _clean_text(typed_payload.get("telefono_emisor"))
-        or "021000000",
-    )
-    _sub(
-        emis,
-        "dEmailE",
-        _clean_text(emisor_payload.get("email"))
-        or _clean_text(typed_payload.get("email_emisor"))
-        or "facturacion@kila.local",
-    )
-    activity = emisor_payload.get("actividad_economica")
-    activity_payload = activity if isinstance(activity, dict) else {}
-    gact = _sub(emis, "gActEco")
-    _sub(
-        gact,
-        "cActEco",
-        _clean_text(activity_payload.get("codigo"))
-        or _clean_text(typed_payload.get("codigo_actividad"))
-        or "82999",
-    )
-    _sub(
-        gact,
-        "dDesActEco",
-        _clean_text(activity_payload.get("descripcion"))
-        or _clean_text(typed_payload.get("descripcion_actividad"))
-        or "OTRAS ACTIVIDADES DE SERVICIOS DE APOYO A EMPRESAS N.C.P.",
-    )
-    responsable = emisor_payload.get("responsable_generacion")
-    if isinstance(responsable, dict):
-        _append_generation_responsible(emis=emis, responsable=responsable)
-
-    _append_receiver(gdat=gdat, cliente=cliente)
+    _append_issuer(gdat=gdat, issuer=issuer, typed_payload=typed_payload)
+    _append_receiver(gdat=gdat, receiver=receiver)
     return root
 
 
+def _resolve_issuer(
+    *,
+    emitter: Emitter,
+    typed_payload: dict,
+    establecimiento: str,
+    test_emitter_name_literal: str | None,
+) -> _Issuer:
+    """Take every gEmis value from the registered emitter (MT v150 D101-D132)."""
+
+    profile = emitter.fiscal_profile
+    if profile is None:
+        raise SifenValidationError("emitters.fiscal_profile_required")
+    mismatch = find_emitter_identity_mismatch(
+        typed_payload,
+        ruc=emitter.ruc,
+        dv=emitter.dv,
+        legal_name=emitter.legal_name,
+        taxpayer_type=profile.taxpayer_type,
+    )
+    if mismatch is not None:
+        raise SifenValidationError(f"documents.emisor.identity_mismatch:{mismatch}")
+    return _Issuer(
+        ruc=emitter.ruc,
+        dv=emitter.dv,
+        name=_issuer_name(emitter, test_emitter_name_literal),
+        profile=profile,
+        address=profile.address_for(establecimiento),
+    )
+
+
+def _issuer_name(emitter: Emitter, test_emitter_name_literal: str | None) -> str:
+    """dNomEmi (D105): the test literal only applies to test emitters (1263)."""
+
+    if emitter.tax_environment == "test":
+        return test_emitter_name_literal or emitter.legal_name
+    if emitter.legal_name.strip().casefold() == MT_TEST_EMITTER_NAME.casefold():
+        # 1263: the test literal must not be used in production.
+        raise SifenValidationError("documents.emisor.test_name_in_production")
+    return emitter.legal_name
+
+
+def _append_issuer(*, gdat: ET.Element, issuer: _Issuer, typed_payload: dict) -> None:
+    profile = issuer.profile
+    address = issuer.address
+    emis = _sub(gdat, "gEmis")
+    _sub(emis, "dRucEm", issuer.ruc)
+    _sub(emis, "dDVEmi", issuer.dv)
+    _sub(emis, "iTipCont", str(profile.taxpayer_type))
+    if profile.regime_type is not None:
+        _sub(emis, "cTipReg", str(profile.regime_type))
+    _sub(emis, "dNomEmi", issuer.name)
+    if profile.trade_name:
+        _sub(emis, "dNomFanEmi", profile.trade_name)
+    _sub(emis, "dDirEmi", address.street)
+    _sub(emis, "dNumCas", address.house_number)
+    if address.complement_1:
+        _sub(emis, "dCompDir1", address.complement_1)
+    if address.complement_2:
+        _sub(emis, "dCompDir2", address.complement_2)
+    _sub(emis, "cDepEmi", str(address.department_code))
+    _sub(emis, "dDesDepEmi", address.department_description)
+    if address.district_code is not None:
+        _sub(emis, "cDisEmi", str(address.district_code))
+        _sub(emis, "dDesDisEmi", address.district_description)
+    _sub(emis, "cCiuEmi", str(address.city_code))
+    _sub(emis, "dDesCiuEmi", address.city_description)
+    _sub(emis, "dTelEmi", address.phone)
+    _sub(emis, "dEmailE", address.email)
+    if address.branch_name:
+        _sub(emis, "dDenSuc", address.branch_name)
+    for activity in profile.activities:
+        gact = _sub(emis, "gActEco")
+        _sub(gact, "cActEco", activity.code)
+        _sub(gact, "dDesActEco", activity.description)
+    emisor_payload = typed_payload.get("emisor")
+    responsable = (
+        emisor_payload.get("responsable_generacion")
+        if isinstance(emisor_payload, dict)
+        else None
+    )
+    if isinstance(responsable, dict):
+        _append_generation_responsible(emis=emis, responsable=responsable)
+
+
 def _append_generation_responsible(*, emis: ET.Element, responsable: dict) -> None:
-    tipo = _resolve_code(
+    """gRespDE (D140-D145): every value comes from the payload, none defaulted."""
+
+    tipo = _coerce_int(
         _first_non_none(responsable, "tipo_documento", "tipo_id"),
-        mapping={},
-        default=1,
-        min_value=1,
-        max_value=9,
         field_name="emisor.responsable_generacion.tipo_documento",
     )
+    if tipo == _RESPONSIBLE_OTHER_ID_TYPE:
+        descripcion = _clean_text(responsable.get("descripcion_tipo_documento"))
+        if descripcion is None or not 9 <= len(descripcion) <= 41:
+            raise SifenValidationError(
+                "documents.emisor.responsable_generacion.descripcion_tipo_documento"
+            )
+    elif tipo in _RESPONSIBLE_ID_TYPE_DESCRIPTION:
+        descripcion = _RESPONSIBLE_ID_TYPE_DESCRIPTION[tipo]
+    else:
+        raise SifenValidationError(
+            "documents.emisor.responsable_generacion.tipo_documento_invalid"
+        )
     numero = _clean_text(_first_non_none(responsable, "numero_documento", "numero"))
     nombre = _clean_text(_first_non_none(responsable, "nombre", "razon_social"))
     cargo = _clean_text(responsable.get("cargo"))
-    if not numero or not nombre or not cargo:
+    if not numero or not nombre or not cargo or not 4 <= len(cargo) <= 100:
         raise SifenValidationError("documents.emisor.responsable_generacion_invalid")
     gresp = _sub(emis, "gRespDE")
     _sub(gresp, "iTipIDRespDE", str(tipo))
-    _sub(gresp, "dDTipIDRespDE", _doc_identity_description(tipo))
+    _sub(gresp, "dDTipIDRespDE", descripcion)
     _sub(gresp, "dNumIDRespDE", numero)
     _sub(gresp, "dNomRespDE", nombre)
     _sub(gresp, "dCarRespDE", cargo)
 
 
-def _append_receiver(*, gdat: ET.Element, cliente: dict) -> None:
-    naturaleza = _customer_nature(cliente)
-    tipo_operacion = _customer_operation_type(cliente)
+def _resolve_receiver(cliente: dict, *, document_type: int) -> Receiver:
+    """Apply the gDatRec rules in force (see kilasifen.domain.documents.receiver)."""
+
+    try:
+        return resolve_receiver(
+            cliente,
+            document_type=document_type,
+            country_description=descripcion_pais,
+            department_description=descripcion_departamento,
+            mod11_dv=calculate_mod11_dv,
+        )
+    except ReceiverRuleError as exc:
+        raise SifenValidationError(exc.code) from exc
+
+
+def _assert_innominado_limit(
+    receiver: Receiver,
+    *,
+    transaction_type: int,
+    currency: str,
+    totals: DocumentTotals,
+) -> None:
+    """1321 (NT 24): innominado below 7.000.000 Gs (F014, or F023 if not PYG)."""
+
+    error = innominado_limit_error(
+        receiver,
+        transaction_type=transaction_type,
+        currency=currency,
+        total_operation=totals.net_total,
+        total_guaranies=totals.total_guaranies,
+    )
+    if error is not None:
+        raise SifenValidationError(error)
+
+
+def _append_receiver(*, gdat: ET.Element, receiver: Receiver) -> None:
     rec = _sub(gdat, "gDatRec")
-    _sub(rec, "iNatRec", str(naturaleza))
-    _sub(rec, "iTiOpe", str(tipo_operacion))
-    _sub(rec, "cPaisRec", _clean_text(cliente.get("pais_codigo")) or "PRY")
-    _sub(rec, "dDesPaisRe", _clean_text(cliente.get("pais_descripcion")) or "Paraguay")
-
-    cliente_tipo_contribuyente = _coerce_int(
-        _first_non_none(cliente, "tipo_contribuyente", "iTiContRec"),
-        field_name="cliente.tipo_contribuyente",
-        default=2,
-        min_value=1,
-        max_value=2,
-    )
-
-    if naturaleza == 1:
-        ruc_rec, dv_rec = _split_ruc_dv(cliente)
-        _sub(rec, "iTiContRec", str(cliente_tipo_contribuyente))
-        _sub(rec, "dRucRec", ruc_rec)
-        if dv_rec:
-            _sub(rec, "dDVRec", dv_rec)
+    _sub(rec, "iNatRec", str(receiver.nature))
+    _sub(rec, "iTiOpe", str(receiver.operation_type))
+    _sub(rec, "cPaisRec", receiver.country_code)
+    _sub(rec, "dDesPaisRe", receiver.country_description)
+    if receiver.nature == 1:
+        _sub(rec, "iTiContRec", str(receiver.taxpayer_type))
+        _sub(rec, "dRucRec", receiver.ruc)
+        _sub(rec, "dDVRec", receiver.dv)
     else:
-        if tipo_operacion != 4:
-            doc_type = _coerce_int(
-                _first_non_none(
-                    cliente,
-                    "tipo_documento_identidad",
-                    "iTipIDRec",
-                    "tipo_documento",
-                ),
-                field_name="cliente.tipo_documento_identidad",
-                min_value=1,
-                max_value=9,
-            )
-            doc_number = _clean_text(
-                _first_non_none(
-                    cliente,
-                    "numero_documento_identidad",
-                    "dNumIDRec",
-                    "numero_documento",
-                )
-            )
-            if not doc_number:
-                raise SifenValidationError(
-                    "documents.cliente.numero_documento_identidad_required"
-                )
-            _sub(rec, "iTipIDRec", str(doc_type))
-            _sub(rec, "dDTipIDRec", _doc_identity_description(doc_type))
-            _sub(rec, "dNumIDRec", doc_number)
-
-    _sub(
-        rec,
-        "dNomRec",
-        _clean_text(_first_non_none(cliente, "razon_social", "nombre")) or "CLIENTE",
-    )
-    ddir = _clean_text(cliente.get("direccion"))
-    if naturaleza == 2 and tipo_operacion != 4 and not ddir:
-        raise SifenValidationError("documents.cliente.direccion_required")
-    if ddir:
-        _sub(rec, "dDirRec", ddir)
-    numero_casa = _clean_text(cliente.get("numero_casa"))
-    if ddir and not numero_casa:
-        raise SifenValidationError("documents.cliente.numero_casa_required")
-    if numero_casa:
-        _sub(rec, "dNumCasRec", numero_casa)
-    dep = _clean_text(cliente.get("departamento"))
-    dep_desc = _clean_text(cliente.get("descripcion_departamento"))
-    if dep:
-        _sub(rec, "cDepRec", dep)
-    if dep_desc:
-        _sub(rec, "dDesDepRec", dep_desc)
-    distrito = _clean_text(cliente.get("distrito"))
-    distrito_desc = _clean_text(cliente.get("descripcion_distrito"))
-    if distrito:
-        _sub(rec, "cDisRec", distrito)
-    if distrito_desc:
-        _sub(rec, "dDesDisRec", distrito_desc)
-    ciudad = _clean_text(cliente.get("ciudad"))
-    ciudad_desc = _clean_text(cliente.get("descripcion_ciudad"))
-    if ciudad:
-        _sub(rec, "cCiuRec", ciudad)
-    if ciudad_desc:
-        _sub(rec, "dDesCiuRec", ciudad_desc)
-    tel = _clean_text(cliente.get("telefono"))
-    if tel:
-        _sub(rec, "dTelRec", tel)
-    cel = _clean_text(cliente.get("celular"))
-    if cel:
-        _sub(rec, "dCelRec", cel)
-    email = _clean_text(cliente.get("email"))
-    if email:
-        _sub(rec, "dEmailRec", email)
-    cod_cliente = _clean_text(cliente.get("codigo_cliente"))
-    if cod_cliente:
-        _sub(rec, "dCodCliente", cod_cliente)
+        _sub(rec, "iTipIDRec", str(receiver.id_type))
+        _sub(rec, "dDTipIDRec", receiver.id_type_description)
+        _sub(rec, "dNumIDRec", receiver.id_number)
+    _sub(rec, "dNomRec", receiver.name)
+    address = receiver.address
+    if address is not None:
+        optional_fields = (
+            ("dDirRec", address.street),
+            ("dNumCasRec", address.house_number),
+            ("cDepRec", address.department_code),
+            ("dDesDepRec", address.department_description),
+            ("cDisRec", address.district_code),
+            ("dDesDisRec", address.district_description),
+            ("cCiuRec", address.city_code),
+            ("dDesCiuRec", address.city_description),
+        )
+        for tag, value in optional_fields:
+            if value is not None:
+                _sub(rec, tag, str(value))
+    for tag, value in (
+        ("dTelRec", receiver.phone),
+        ("dCelRec", receiver.cellphone),
+        ("dEmailRec", receiver.email),
+        ("dCodCliente", receiver.customer_code),
+    ):
+        if value is not None:
+            _sub(rec, tag, value)
 
 
 def _append_public_procurement_group(*, gcam_fe: ET.Element, cliente: dict) -> None:
+    # NT 26 (prod 16/06/2025): E020 gCompPub is optional in B2G.
     compras = cliente.get("compras_publicas")
+    if compras is None:
+        return
     if not isinstance(compras, dict):
-        raise SifenValidationError("documents.cliente.compras_publicas_required")
+        raise SifenValidationError("documents.cliente.compras_publicas_invalid")
     modalidad = _clean_text(_first_non_none(compras, "modalidad_dncp", "modalidad"))
     entidad = _clean_text(compras.get("entidad"))
     anio = _clean_text(compras.get("anio"))
@@ -899,29 +850,11 @@ def _append_public_procurement_group(*, gcam_fe: ET.Element, cliente: dict) -> N
     _sub(gcomp, "dFeCodCont", fecha_codigo)
 
 
-def _append_anticipation_condition(*, ope: ET.Element, typed_payload: dict) -> None:
-    items = typed_payload.get("items")
-    if not isinstance(items, list) or not items:
-        return
-    has_global = False
-    has_item = False
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        anticipo_global = _coerce_decimal(
-            _first_non_none(item, "anticipo_global", "dAntGloPreUniIt"),
-            field_name="items.anticipo_global",
-            default=_ZERO,
-        )
-        anticipo_particular = _coerce_decimal(
-            _first_non_none(item, "anticipo_particular", "dAntPreUniIt"),
-            field_name="items.anticipo_particular",
-            default=_ZERO,
-        )
-        if anticipo_global > _ZERO:
-            has_global = True
-        if anticipo_particular > _ZERO:
-            has_item = True
+def _append_anticipation_condition(
+    *, ope: ET.Element, items: tuple[ItemAmounts, ...]
+) -> None:
+    has_global = any(item.global_advance > _ZERO for item in items)
+    has_item = any(item.advance > _ZERO for item in items)
     if has_global:
         _sub(ope, "iCondAnt", "1")
         _sub(ope, "dDesCondAnt", "Anticipo Global")
@@ -931,122 +864,59 @@ def _append_anticipation_condition(*, ope: ET.Element, typed_payload: dict) -> N
 
 
 def _append_condition_node(
-    *,
-    dtip: ET.Element,
-    typed_payload: dict,
-    total: Decimal,
-    moneda: str,
-    moneda_descripcion: str,
-    tipo_cambio: Decimal | None,
+    *, dtip: ET.Element, plan: PaymentPlan, amounts: DocumentAmounts
 ) -> None:
-    condicion_payload = _resolve_condition_payload(typed_payload)
-    condicion = _resolve_code(
-        _first_non_none(condicion_payload, "tipo", "iCondOpe", "condicion_operacion"),
-        mapping={"contado": 1, "credito": 2},
-        default=1,
-        min_value=1,
-        max_value=2,
-        field_name="condicion_operacion.tipo",
-    )
+    """gCamCond (E600): gPaConEIni before gPagCred, as in XSD tgCamCond.
+
+    gPaConEIni goes with contado (1550) and with a credit initial delivery
+    E645 (1551, MT v150 p. 81); never in credit without E645 (1552).
+    """
+
     gcond = _sub(dtip, "gCamCond")
-    _sub(gcond, "iCondOpe", str(condicion))
-    _sub(gcond, "dDCondOpe", "Contado" if condicion == 1 else "Crédito")
-    if condicion == 1:
-        _append_counted_payments(
-            gcond=gcond,
-            condicion_payload=condicion_payload,
-            total=total,
-            moneda=moneda,
-            moneda_descripcion=moneda_descripcion,
-            tipo_cambio=tipo_cambio,
-        )
-    else:
+    _sub(gcond, "iCondOpe", str(plan.condition))
+    _sub(gcond, "dDCondOpe", "Contado" if plan.condition == CASH else "Crédito")
+    for form in plan.forms:
+        _append_payment_form(gcond=gcond, payment=form)
+    if plan.credit is not None:
         _append_credit_payment(
             gcond=gcond,
-            condicion_payload=condicion_payload,
-            moneda=moneda,
-            moneda_descripcion=moneda_descripcion,
+            credit=plan.credit,
+            initial_delivery=plan.initial_delivery,
+            moneda=amounts.currency,
         )
 
 
-def _append_counted_payments(
-    *,
-    gcond: ET.Element,
-    condicion_payload: dict,
-    total: Decimal,
-    moneda: str,
-    moneda_descripcion: str,
-    tipo_cambio: Decimal | None,
-) -> None:
-    forms = condicion_payload.get("formas_pago")
-    if not isinstance(forms, list) or not forms:
-        forms = [
-            {
-                "tipo": 1,
-                "monto": _as_sifen_amount4(total),
-                "moneda": moneda,
-            }
-        ]
+def _append_payment_form(*, gcond: ET.Element, payment: PaymentForm) -> None:
+    form = payment.form
+    payment_type = _resolve_code(
+        _first_non_none(form, "tipo", "iTiPago"),
+        mapping=_PAYMENT_TYPE_CODE_BY_NAME,
+        default=1,
+        min_value=1,
+        max_value=99,
+        field_name="condicion_operacion.formas_pago.tipo",
+    )
+    pago = _sub(gcond, "gPaConEIni")
+    _sub(pago, "iTiPago", str(payment_type))
+    _sub(pago, "dDesTiPag", _payment_description(payment_type))
+    _sub(pago, "dMonTiPag", _as_sifen_amount4(payment.amount))
+    _sub(pago, "cMoneTiPag", payment.currency)
+    _sub(pago, "dDMoneTiPag", _currency_description(payment.currency))
+    if payment.exchange_rate is not None:
+        # 1556/1557: only, and always, when the payment is not in guaranies.
+        _sub(pago, "dTiCamTiPag", _as_sifen_amount4(payment.exchange_rate))
 
-    for form in forms:
-        if not isinstance(form, dict):
-            raise SifenValidationError(
-                "documents.condicion_operacion.forma_pago_invalid"
-            )
-        payment_type = _resolve_code(
-            _first_non_none(form, "tipo", "iTiPago"),
-            mapping=_PAYMENT_TYPE_CODE_BY_NAME,
-            default=1,
-            min_value=1,
-            max_value=99,
-            field_name="condicion_operacion.formas_pago.tipo",
-        )
-        amount = _coerce_decimal(
-            _first_non_none(form, "monto", "dMonTiPag"),
-            field_name="condicion_operacion.formas_pago.monto",
-            default=total,
-            min_value=_ZERO,
-        )
-        payment_currency = (
-            _clean_text(_first_non_none(form, "moneda", "cMoneTiPag")) or moneda
-        ).upper()
-        payment_currency_desc = _currency_description(
-            _clean_text(_first_non_none(form, "moneda_descripcion", "dDMoneTiPag"))
-            or moneda_descripcion
-            if payment_currency == moneda
-            else _currency_description(payment_currency)
-        )
+    if payment_type in {3, 4}:
+        _append_card_payment(pago=pago, form=form)
 
-        pago = _sub(gcond, "gPaConEIni")
-        _sub(pago, "iTiPago", str(payment_type))
-        _sub(pago, "dDesTiPag", _payment_description(payment_type))
-        _sub(pago, "dMonTiPag", _as_sifen_amount4(amount))
-        _sub(pago, "cMoneTiPag", payment_currency)
-        _sub(pago, "dDMoneTiPag", payment_currency_desc)
-        payment_exchange = _coerce_decimal(
-            _first_non_none(form, "tipo_cambio", "dTiCamTiPag"),
-            field_name="condicion_operacion.formas_pago.tipo_cambio",
-            default=tipo_cambio,
-            min_value=Decimal("0.0001"),
-        )
-        if payment_currency != moneda and payment_exchange is not None:
-            _sub(pago, "dTiCamTiPag", _as_sifen_amount4(payment_exchange))
-
-        if payment_type == 2:
-            cheque_number = _clean_text(
-                _first_non_none(form, "numero_cheque", "dNumCheq")
-            )
-            bank = _clean_text(_first_non_none(form, "banco", "dBcoEmi"))
-            if not cheque_number or not bank:
-                raise SifenValidationError(
-                    "documents.condicion_operacion.cheque_invalid"
-                )
-            gcheq = _sub(pago, "gPagCheq")
-            _sub(gcheq, "dNumCheq", f"{int(cheque_number):08d}")
-            _sub(gcheq, "dBcoEmi", bank)
-
-        if payment_type in {3, 4}:
-            _append_card_payment(pago=pago, form=form)
+    if payment_type == 2:
+        cheque_number = _clean_text(_first_non_none(form, "numero_cheque", "dNumCheq"))
+        bank = _clean_text(_first_non_none(form, "banco", "dBcoEmi"))
+        if not cheque_number or not bank:
+            raise SifenValidationError("documents.condicion_operacion.cheque_invalid")
+        gcheq = _sub(pago, "gPagCheq")
+        _sub(gcheq, "dNumCheq", f"{int(cheque_number):08d}")
+        _sub(gcheq, "dBcoEmi", bank)
 
 
 def _append_card_payment(*, pago: ET.Element, form: dict) -> None:
@@ -1096,15 +966,12 @@ def _append_card_payment(*, pago: ET.Element, form: dict) -> None:
 def _append_credit_payment(
     *,
     gcond: ET.Element,
-    condicion_payload: dict,
+    credit: dict,
+    initial_delivery: Decimal | None,
     moneda: str,
-    moneda_descripcion: str,
 ) -> None:
-    credit = (
-        condicion_payload.get("credito")
-        if isinstance(condicion_payload.get("credito"), dict)
-        else condicion_payload
-    )
+    """gPagCred (E640-E659) in the order of XSD tgPagCred."""
+
     cond_cred = _resolve_code(
         _first_non_none(credit, "tipo", "iCondCred"),
         mapping={"plazo": 1, "cuotas": 2},
@@ -1117,6 +984,7 @@ def _append_credit_payment(
     _sub(gcred, "iCondCred", str(cond_cred))
     _sub(gcred, "dDCondCred", "Plazo" if cond_cred == 1 else "Cuota")
 
+    cuotas: list = []
     if cond_cred == 1:
         plazo = _clean_text(
             _first_non_none(credit, "descripcion", "plazo_descripcion", "dPlazoCre")
@@ -1126,22 +994,17 @@ def _append_credit_payment(
                 "documents.condicion_operacion.credito.plazo_required"
             )
         _sub(gcred, "dPlazoCre", plazo)
-        return
-
-    cuotas = credit.get("cuotas")
-    if not isinstance(cuotas, list) or not cuotas:
-        raise SifenValidationError(
-            "documents.condicion_operacion.credito.cuotas_required"
-        )
-    _sub(gcred, "dCuotas", str(len(cuotas)))
-    entrega = _coerce_decimal(
-        _first_non_none(credit, "monto_entrega_inicial", "dMonEnt"),
-        field_name="condicion_operacion.credito.monto_entrega_inicial",
-        default=None,
-        min_value=_ZERO,
-    )
-    if entrega is not None:
-        _sub(gcred, "dMonEnt", _as_sifen_amount4(entrega))
+    else:
+        cuotas = credit.get("cuotas")
+        if not isinstance(cuotas, list) or not cuotas:
+            raise SifenValidationError(
+                "documents.condicion_operacion.credito.cuotas_required"
+            )
+        _sub(gcred, "dCuotas", str(len(cuotas)))
+    if initial_delivery is not None:
+        # E645 is allowed with plazo and with cuotas; its payment forms are
+        # the gPaConEIni written before gPagCred (1551).
+        _sub(gcred, "dMonEnt", _as_sifen_amount4(initial_delivery))
     for cuota in cuotas:
         if not isinstance(cuota, dict):
             raise SifenValidationError(
@@ -1152,11 +1015,7 @@ def _append_credit_payment(
             _clean_text(_first_non_none(cuota, "moneda", "cMoneCuo")) or moneda
         ).upper()
         _sub(gcuota, "cMoneCuo", cuota_moneda)
-        _sub(
-            gcuota,
-            "dDMoneCuo",
-            _currency_description(cuota_moneda or moneda_descripcion),
-        )
+        _sub(gcuota, "dDMoneCuo", _currency_description(cuota_moneda))
         cuota_monto = _coerce_decimal(
             _first_non_none(cuota, "monto", "dMonCuota"),
             field_name="condicion_operacion.credito.cuota.monto",
@@ -1173,376 +1032,146 @@ def _append_credit_payment(
             )
 
 
+def _compute_amounts(typed_payload: dict) -> DocumentAmounts:
+    """Item and total amounts (see kilasifen.domain.documents.totals)."""
+
+    try:
+        return compute_document_amounts(typed_payload)
+    except TotalsRuleError as exc:
+        raise SifenValidationError(exc.code) from exc
+
+
+def _resolve_payment_plan(typed_payload: dict, amounts: DocumentAmounts) -> PaymentPlan:
+    try:
+        return resolve_payment_plan(typed_payload, amounts)
+    except TotalsRuleError as exc:
+        raise SifenValidationError(exc.code) from exc
+
+
 def _append_items(
     *,
-    dtip: ET.Element | None,
+    dtip: ET.Element,
     items: list[dict],
-    moneda: str,
-    condicion_tipo_cambio: int | None,
-) -> list[_ItemComputation]:
-    computations: list[_ItemComputation] = []
-    for index, item in enumerate(items, start=1):
-        qty = _coerce_decimal(
-            _first_non_none(item, "cantidad", "dCantProSer"),
-            field_name=f"items[{index}].cantidad",
-            default=None,
-            required=True,
-            min_value=Decimal("0.00000001"),
+    amounts: tuple[ItemAmounts, ...],
+) -> None:
+    for index, (item, values) in enumerate(zip(items, amounts), start=1):
+        current = _sub(dtip, "gCamItem")
+        _sub(
+            current,
+            "dCodInt",
+            _clean_text(_first_non_none(item, "codigo_interno", "codigo"))
+            or f"ITEM{index:03d}",
         )
-        unit_price = _coerce_decimal(
-            _first_non_none(item, "precio_unitario", "precioUnitario", "dPUniProSer"),
-            field_name=f"items[{index}].precio_unitario",
-            default=None,
-            required=True,
-            min_value=_ZERO,
+        _sub(
+            current,
+            "dDesProSer",
+            _clean_text(_first_non_none(item, "descripcion", "dDesProSer"))
+            or f"Ítem {index}",
         )
-        discount_particular = _coerce_decimal(
-            _first_non_none(item, "descuento_particular", "dDescItem"),
-            field_name=f"items[{index}].descuento_particular",
-            default=_ZERO,
-            min_value=_ZERO,
-        )
-        discount_global = _coerce_decimal(
-            _first_non_none(item, "descuento_global", "dDescGloItem"),
-            field_name=f"items[{index}].descuento_global",
-            default=_ZERO,
-            min_value=_ZERO,
-        )
-        anticipo_particular = _coerce_decimal(
-            _first_non_none(item, "anticipo_particular", "dAntPreUniIt"),
-            field_name=f"items[{index}].anticipo_particular",
-            default=_ZERO,
-            min_value=_ZERO,
-        )
-        anticipo_global = _coerce_decimal(
-            _first_non_none(item, "anticipo_global", "dAntGloPreUniIt"),
-            field_name=f"items[{index}].anticipo_global",
-            default=_ZERO,
-            min_value=_ZERO,
-        )
-        net_unit = (
-            unit_price
-            - discount_particular
-            - discount_global
-            - anticipo_particular
-            - anticipo_global
-        )
-        if net_unit < _ZERO:
-            raise SifenValidationError("documents.items.net_unit_negative")
-
-        total_item = (net_unit * qty).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-        total_bruto = (unit_price * qty).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-        if total_item < _ZERO:
-            raise SifenValidationError("documents.items.total_negative")
-
-        affectation = _resolve_item_affectation(item)
-        proportion = _resolve_item_proportion(item, affectation=affectation)
-        rate = _resolve_item_rate(item, affectation=affectation)
-        if affectation in {1, 4}:
-            taxable = (
-                total_item
-                * (proportion / Decimal("100"))
-                / (Decimal("1") + (Decimal(rate) / Decimal("100")))
-            ).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-            iva = (taxable * (Decimal(rate) / Decimal("100"))).quantize(
-                _ITEM_TOTAL_Q,
-                rounding=ROUND_HALF_UP,
-            )
-            base_exe = _ZERO
-        else:
-            taxable = _ZERO
-            iva = _ZERO
-            base_exe = total_item
-        taxable = _quantize_tax_value(taxable, moneda=moneda)
-        iva = _quantize_tax_value(iva, moneda=moneda)
-        base_exe = _quantize_tax_value(base_exe, moneda=moneda)
-        rate_item = None
-        total_item_gs = None
-        if moneda != "PYG" and condicion_tipo_cambio == 2:
-            rate_item = _coerce_decimal(
-                _first_non_none(item, "tipo_cambio_item", "dTiCamIt"),
-                field_name=f"items[{index}].tipo_cambio_item",
-                default=None,
-                required=True,
-                min_value=Decimal("0.0001"),
-            )
-            total_item_gs = _quantize_guarani_value(total_item * rate_item)
-
-        if dtip is not None:
-            current = _sub(dtip, "gCamItem")
-            _sub(
-                current,
-                "dCodInt",
-                _clean_text(_first_non_none(item, "codigo_interno", "codigo"))
-                or f"ITEM{index:03d}",
-            )
-            _sub(
-                current,
-                "dDesProSer",
-                _clean_text(_first_non_none(item, "descripcion", "dDesProSer"))
-                or f"Ítem {index}",
-            )
-            _sub(
-                current,
-                "cUniMed",
-                str(
-                    int(
-                        _clean_text(
-                            _first_non_none(
-                                item, "unidad_medida", "codigoUnidad", "cUniMed"
-                            )
+        _sub(
+            current,
+            "cUniMed",
+            str(
+                int(
+                    _clean_text(
+                        _first_non_none(
+                            item, "unidad_medida", "codigoUnidad", "cUniMed"
                         )
-                        or "77"
                     )
-                ),
-            )
-            _sub(
-                current,
-                "dDesUniMed",
-                _clean_text(
-                    _first_non_none(item, "descripcion_unidad", "unidad", "dDesUniMed")
+                    or "77"
                 )
-                or "UNI",
-            )
-            _sub(current, "dCantProSer", _as_sifen_quantity(qty))
-            cdc_anticipo = _clean_text(
-                _first_non_none(item, "cdc_anticipo", "dCDCAnticipo")
-            )
-            if cdc_anticipo:
-                _sub(current, "dCDCAnticipo", cdc_anticipo)
-
-            values = _sub(current, "gValorItem")
-            _sub(values, "dPUniProSer", _as_sifen_amount(unit_price))
-            if rate_item is not None:
-                _sub(values, "dTiCamIt", _as_sifen_amount4(rate_item))
-            _sub(values, "dTotBruOpeItem", _as_sifen_amount(total_bruto))
-
-            rests = _sub(values, "gValorRestaItem")
-            _sub(rests, "dDescItem", _as_sifen_amount(discount_particular))
-            discount_percentage = _coerce_decimal(
-                _first_non_none(item, "porcentaje_descuento_particular", "dPorcDesIt"),
-                field_name=f"items[{index}].porcentaje_descuento_particular",
-                default=None,
-                min_value=_ZERO,
-            )
-            if (
-                discount_percentage is None
-                and unit_price > _ZERO
-                and discount_particular > _ZERO
-            ):
-                discount_percentage = (
-                    (discount_particular / unit_price) * Decimal("100")
-                ).quantize(_PERCENT_Q, rounding=ROUND_HALF_UP)
-            if discount_percentage is not None:
-                _sub(rests, "dPorcDesIt", _as_sifen_percent(discount_percentage))
-            _sub(rests, "dDescGloItem", _as_sifen_amount(discount_global))
-            _sub(rests, "dAntPreUniIt", _as_sifen_amount(anticipo_particular))
-            _sub(rests, "dAntGloPreUniIt", _as_sifen_amount(anticipo_global))
-            _sub(rests, "dTotOpeItem", _as_sifen_amount(total_item))
-            if total_item_gs is not None:
-                _sub(rests, "dTotOpeGs", _as_sifen_amount(total_item_gs))
-
-            iva_node = _sub(current, "gCamIVA")
-            _sub(iva_node, "iAfecIVA", str(affectation))
-            _sub(iva_node, "dDesAfecIVA", _affectation_description(affectation))
-            _sub(iva_node, "dPropIVA", _as_sifen_percent(proportion))
-            _sub(iva_node, "dTasaIVA", str(rate))
-            _sub(iva_node, "dBasGravIVA", _as_sifen_amount(taxable))
-            _sub(iva_node, "dLiqIVAItem", _as_sifen_amount(iva))
-            _sub(iva_node, "dBasExe", _as_sifen_amount(base_exe))
-
-        computations.append(
-            _ItemComputation(
-                amount_exe=total_item if affectation == 3 else _ZERO,
-                amount_exo=total_item if affectation == 2 else _ZERO,
-                amount_5=total_item if rate == 5 else _ZERO,
-                amount_10=total_item if rate == 10 else _ZERO,
-                discount_particular=(discount_particular * qty).quantize(
-                    _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-                ),
-                discount_global=(discount_global * qty).quantize(
-                    _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-                ),
-                anticipo_particular=(anticipo_particular * qty).quantize(
-                    _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-                ),
-                anticipo_global=(anticipo_global * qty).quantize(
-                    _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-                ),
-                base_5=taxable if rate == 5 else _ZERO,
-                base_10=taxable if rate == 10 else _ZERO,
-                iva_5=iva if rate == 5 else _ZERO,
-                iva_10=iva if rate == 10 else _ZERO,
-                total_gs=total_item_gs,
-            )
+            ),
         )
-    return computations
+        _sub(
+            current,
+            "dDesUniMed",
+            _clean_text(
+                _first_non_none(item, "descripcion_unidad", "unidad", "dDesUniMed")
+            )
+            or "UNI",
+        )
+        _sub(current, "dCantProSer", _as_sifen_quantity(values.quantity))
+        cdc_anticipo = _clean_text(
+            _first_non_none(item, "cdc_anticipo", "dCDCAnticipo")
+        )
+        if cdc_anticipo:
+            _sub(current, "dCDCAnticipo", cdc_anticipo)
+        _append_item_values(current, values)
+        _append_item_tax(current, values)
 
 
-def _calculate_totals(
-    item_computations: list[_ItemComputation], *, moneda: str
-) -> _Totals:
-    sub_exe = sum((x.amount_exe for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    sub_exo = sum((x.amount_exo for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    sub_5 = sum((x.amount_5 for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    sub_10 = sum((x.amount_10 for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    total = (sub_exe + sub_exo + sub_5 + sub_10).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    total_discount_particular = sum(
-        (x.discount_particular for x in item_computations), _ZERO
-    ).quantize(
-        _ITEM_TOTAL_Q,
-        rounding=ROUND_HALF_UP,
-    )
-    total_discount_global = sum(
-        (x.discount_global for x in item_computations), _ZERO
-    ).quantize(
-        _ITEM_TOTAL_Q,
-        rounding=ROUND_HALF_UP,
-    )
-    total_anticipo_particular = sum(
-        (x.anticipo_particular for x in item_computations), _ZERO
-    ).quantize(
-        _ITEM_TOTAL_Q,
-        rounding=ROUND_HALF_UP,
-    )
-    total_anticipo_global = sum(
-        (x.anticipo_global for x in item_computations), _ZERO
-    ).quantize(
-        _ITEM_TOTAL_Q,
-        rounding=ROUND_HALF_UP,
-    )
-    base_5 = sum((x.base_5 for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    base_10 = sum((x.base_10 for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    iva_5 = sum((x.iva_5 for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    iva_10 = sum((x.iva_10 for x in item_computations), _ZERO).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    base_5 = _quantize_tax_value(base_5, moneda=moneda)
-    base_10 = _quantize_tax_value(base_10, moneda=moneda)
-    iva_5 = _quantize_tax_value(iva_5, moneda=moneda)
-    iva_10 = _quantize_tax_value(iva_10, moneda=moneda)
-    redondeo = _calculate_rounding(total=total, moneda=moneda)
-    total_neto = (total - redondeo).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    total_iva = (iva_5 + iva_10).quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-    total_iva = _quantize_tax_value(total_iva, moneda=moneda)
-    return _Totals(
-        sub_exe=sub_exe,
-        sub_exo=sub_exo,
-        sub_5=sub_5,
-        sub_10=sub_10,
-        total=total,
-        total_discount_particular=total_discount_particular,
-        total_discount_global=total_discount_global,
-        total_anticipo_particular=total_anticipo_particular,
-        total_anticipo_global=total_anticipo_global,
-        base_5=base_5,
-        base_10=base_10,
-        iva_5=iva_5,
-        iva_10=iva_10,
-        redondeo=redondeo,
-        total_neto=total_neto,
-        total_iva=total_iva,
-        total_gs=None,
-    )
+def _append_item_values(current: ET.Element, values: ItemAmounts) -> None:
+    """gValorItem (E720-EA009)."""
+
+    group = _sub(current, "gValorItem")
+    _sub(group, "dPUniProSer", _as_sifen_amount(values.unit_price))
+    if values.exchange_rate is not None:
+        _sub(group, "dTiCamIt", _as_sifen_amount4(values.exchange_rate))
+    _sub(group, "dTotBruOpeItem", _as_sifen_amount(values.gross_total))
+
+    rests = _sub(group, "gValorRestaItem")
+    _sub(rests, "dDescItem", _as_sifen_amount(values.discount))
+    if values.discount_percentage is not None:
+        _sub(rests, "dPorcDesIt", _as_sifen_percent(values.discount_percentage))
+    # EA004 = F010 * E721 / 100 (NT 01 A-1; 1860/1862).
+    _sub(rests, "dDescGloItem", _as_sifen_amount(values.global_discount))
+    _sub(rests, "dAntPreUniIt", _as_sifen_amount(values.advance))
+    _sub(rests, "dAntGloPreUniIt", _as_sifen_amount(values.global_advance))
+    _sub(rests, "dTotOpeItem", _as_sifen_amount(values.total))
+    if values.total_guaranies is not None:
+        _sub(rests, "dTotOpeGs", _as_sifen_amount(values.total_guaranies))
 
 
-def _append_totals(de: ET.Element, totals: _Totals) -> None:
+def _append_item_tax(current: ET.Element, values: ItemAmounts) -> None:
+    """gCamIVA (E730-E737): MT v150 E733/1904-1906 and NT 13 E735/E737."""
+
+    group = _sub(current, "gCamIVA")
+    _sub(group, "iAfecIVA", str(values.affectation))
+    _sub(group, "dDesAfecIVA", _affectation_description(values.affectation))
+    _sub(group, "dPropIVA", _as_sifen_percent(values.proportion))
+    _sub(group, "dTasaIVA", str(values.rate))
+    _sub(group, "dBasGravIVA", _as_sifen_amount(values.taxable_base))
+    _sub(group, "dLiqIVAItem", _as_sifen_amount(values.tax))
+    _sub(group, "dBasExe", _as_sifen_amount(values.exempt_base))
+
+
+def _append_totals(de: ET.Element, totals: DocumentTotals) -> None:
+    """gTotSub (F001-F023) in the order of XSD tgTotSub.
+
+    Optional subtotals are written whenever an item has that affectation or
+    rate, even with 0 (2352-2376); F025/F026 (commission) and F036/F037 are
+    not used, so F017 = F015 + F016 (2371).
+    """
+
     gtot = _sub(de, "gTotSub")
-    _sub_optional_amount(gtot, "dSubExe", totals.sub_exe)
-    _sub_optional_amount(gtot, "dSubExo", totals.sub_exo)
-    _sub_optional_amount(gtot, "dSub5", totals.sub_5)
-    _sub_optional_amount(gtot, "dSub10", totals.sub_10)
+    _sub_informed(gtot, "dSubExe", totals.exempt_subtotal)
+    _sub_informed(gtot, "dSubExo", totals.exonerated_subtotal)
+    _sub_informed(gtot, "dSub5", totals.subtotal_5)
+    _sub_informed(gtot, "dSub10", totals.subtotal_10)
     _sub(gtot, "dTotOpe", _as_sifen_amount(totals.total))
-    _sub(gtot, "dTotDesc", _as_sifen_amount(totals.total_discount_particular))
-    _sub(gtot, "dTotDescGlotem", _as_sifen_amount(totals.total_discount_global))
-    _sub(gtot, "dTotAntItem", _as_sifen_amount(totals.total_anticipo_particular))
-    _sub(gtot, "dTotAnt", _as_sifen_amount(totals.total_anticipo_global))
-    discount_total = (
-        totals.total_discount_particular + totals.total_discount_global
-    ).quantize(
-        _ITEM_TOTAL_Q,
-        rounding=ROUND_HALF_UP,
-    )
-    if totals.total > _ZERO:
-        pct = ((discount_total / totals.total) * Decimal("100")).quantize(
-            _PERCENT_Q, rounding=ROUND_HALF_UP
-        )
-    else:
-        pct = _ZERO
-    _sub(gtot, "dPorcDescTotal", _as_sifen_percent(pct))
-    _sub(gtot, "dDescTotal", _as_sifen_amount(discount_total))
+    _sub(gtot, "dTotDesc", _as_sifen_amount(totals.discount_total))
+    _sub(gtot, "dTotDescGlotem", _as_sifen_amount(totals.global_discount_total))
+    _sub(gtot, "dTotAntItem", _as_sifen_amount(totals.advance_total))
+    _sub(gtot, "dTotAnt", _as_sifen_amount(totals.global_advance_total))
     _sub(
-        gtot,
-        "dAnticipo",
-        _as_sifen_amount(
-            (totals.total_anticipo_particular + totals.total_anticipo_global)
-        ),
+        gtot, "dPorcDescTotal", _as_sifen_percent(totals.global_discount_percentage)
     )
-    _sub(gtot, "dRedon", _as_sifen_amount4(totals.redondeo))
-    _sub_optional_amount(gtot, "dComi", _ZERO)
-    _sub(gtot, "dTotGralOpe", _as_sifen_amount(totals.total_neto))
-    _sub_optional_amount(gtot, "dIVA5", totals.iva_5)
-    _sub_optional_amount(gtot, "dIVA10", totals.iva_10)
-    _sub_optional_amount(gtot, "dIVAComi", _ZERO)
-    _sub_optional_amount(gtot, "dTotIVA", totals.total_iva)
-    _sub_optional_amount(gtot, "dBaseGrav5", totals.base_5)
-    _sub_optional_amount(gtot, "dBaseGrav10", totals.base_10)
-    _sub_optional_amount(gtot, "dTBasGraIVA", totals.base_5 + totals.base_10)
-    if totals.total_gs is not None:
-        _sub(gtot, "dTotalGs", _as_sifen_amount(totals.total_gs))
+    _sub(gtot, "dDescTotal", _as_sifen_amount(totals.discounts))
+    _sub(gtot, "dAnticipo", _as_sifen_amount(totals.advances))
+    _sub(gtot, "dRedon", _as_sifen_amount4(totals.rounding))
+    _sub(gtot, "dTotGralOpe", _as_sifen_amount(totals.net_total))
+    _sub_informed(gtot, "dIVA5", totals.tax_5)
+    _sub_informed(gtot, "dIVA10", totals.tax_10)
+    _sub_informed(gtot, "dTotIVA", totals.total_tax)
+    _sub_informed(gtot, "dBaseGrav5", totals.base_5)
+    _sub_informed(gtot, "dBaseGrav10", totals.base_10)
+    _sub_informed(gtot, "dTBasGraIVA", totals.total_base)
+    _sub_informed(gtot, "dTotalGs", totals.total_guaranies)
 
 
-def _resolve_total_gs(
-    *,
-    totals: _Totals,
-    item_computations: list[_ItemComputation],
-    moneda: str,
-    condicion_tipo_cambio: int | None,
-    tipo_cambio: Decimal | None,
-) -> Decimal | None:
-    if moneda == "PYG":
-        return None
-    if condicion_tipo_cambio == 1 and tipo_cambio is not None:
-        return _quantize_guarani_value(totals.total_neto * tipo_cambio)
-    if condicion_tipo_cambio == 2:
-        total_item_gs = sum(
-            (item.total_gs or _ZERO for item in item_computations),
-            _ZERO,
-        )
-        return _quantize_guarani_value(total_item_gs)
-    return None
-
-
-def _quantize_tax_value(value: Decimal, *, moneda: str) -> Decimal:
-    if moneda == "PYG":
-        return _quantize_guarani_value(value)
-    return value.quantize(_ITEM_TOTAL_Q, rounding=ROUND_HALF_UP)
-
-
-def _quantize_guarani_value(value: Decimal) -> Decimal:
-    return value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
-
-
-def _sub_optional_amount(parent: ET.Element, name: str, value: Decimal) -> None:
-    if value == _ZERO:
-        return
-    _sub(parent, name, _as_sifen_amount(value))
+def _sub_informed(parent: ET.Element, name: str, value: Decimal | None) -> None:
+    if value is not None:
+        _sub(parent, name, _as_sifen_amount(value))
 
 
 def _append_associated_documents_if_any(*, de: ET.Element, typed_payload: dict) -> None:
@@ -1558,9 +1187,9 @@ def _append_associated_documents_if_any(*, de: ET.Element, typed_payload: dict) 
         _append_associated_document(de=de, asociado=asociado, required=False)
 
 
-def _append_outside_signature_group(*, root: ET.Element, dcarqr: str) -> None:
+def _append_outside_signature_group(*, root: ET.Element) -> None:
     gcam = _sub(root, "gCamFuFD")
-    _sub(gcam, "dCarQR", dcarqr)
+    _sub(gcam, "dCarQR", DCARQR_PENDING_SIGNATURE)
 
 
 def _append_associated_document(
@@ -1645,73 +1274,25 @@ def _append_associated_document(
     _sub(asoc, "dNumControl", numero_control)
 
 
-def _resolve_dcarqr_value(
-    *,
-    typed_payload: dict,
-    doc_id: str,
-    fecha_emision: str,
-    receptor: str,
-    total_neto: Decimal,
-    total_iva: Decimal,
-    items_count: int,
-) -> str:
-    provided = _clean_text(_first_non_none(typed_payload, "dCarQR", "dcarqr", "qr_url"))
-    if provided:
-        if len(provided) < 100 or len(provided) > 600:
-            raise SifenValidationError("documents.qr.length_invalid")
-        return provided
-
-    compact_date = (fecha_emision.replace("-", "").replace(":", "").replace("T", ""))[
-        :14
-    ]
-    payload = (
-        "https://ekuatia.set.gov.py/consultas-test/qr?"
-        f"nVersion=150&Id={doc_id}&dFeEmiDE={compact_date}"
-        f"&dRucRec={receptor}&dTotGralOpe={_as_sifen_amount(total_neto)}"
-        f"&dTotIVA={_as_sifen_amount(total_iva)}&cItems={items_count}"
-        "&DigestValue=0&IdCSC=0001&cHashQR=0"
-    )
-    if len(payload) < 100:
-        payload = f"{payload}&pad={'0' * (100 - len(payload))}"
-    if len(payload) > 600:
-        payload = payload[:600]
-    return payload
-
-
-def _resolve_qr_receptor(cliente: dict) -> str:
-    ruc = _clean_text(cliente.get("ruc"))
-    if ruc:
-        return ruc.replace("-", "")
-    doc = _clean_text(
-        _first_non_none(
-            cliente,
-            "numero_documento_identidad",
-            "numero_documento",
-            "dNumIDRec",
-        )
-    )
-    return doc or "0"
-
-
 def _build_doc_id(
     *,
     i_tide: int,
-    emitter: Emitter,
+    issuer: _Issuer,
     fecha_emision: str,
     establecimiento: str,
     punto: str,
     numero_documento: int,
-    tipo_contribuyente: int,
     codigo_seguridad: str,
 ) -> str:
+    # The CDC takes RUC, DV and iTipCont from the same source as gEmis (1000).
     return generate_cdc(
         i_tide=i_tide,
-        d_ruc_em=emitter.ruc,
-        d_dv_emi=emitter.dv,
+        d_ruc_em=issuer.ruc,
+        d_dv_emi=issuer.dv,
         d_est=establecimiento,
         d_pun_exp=punto,
         d_num_doc=str(numero_documento),
-        i_tip_cont=str(tipo_contribuyente),
+        i_tip_cont=str(issuer.profile.taxpayer_type),
         d_fe_emi_de=fecha_emision,
         i_tip_emi="1",
         d_cod_seg=codigo_seguridad,
@@ -1779,110 +1360,14 @@ def _resolve_code(
     return resolved
 
 
-def _resolve_currency_data(
-    typed_payload: dict,
-) -> tuple[str, str, int | None, Decimal | None]:
-    moneda = (_clean_text(typed_payload.get("moneda")) or "PYG").upper()
-    condicion_tipo_cambio = _coerce_int(
-        typed_payload.get("condicion_tipo_cambio"),
-        field_name="condicion_tipo_cambio",
-        default=None,
-        min_value=1,
-        max_value=2,
-    )
-    tipo_cambio = _coerce_decimal(
-        typed_payload.get("tipo_cambio"),
-        field_name="tipo_cambio",
-        default=None,
-        min_value=Decimal("0.0001"),
-    )
-    return moneda, _currency_description(moneda), condicion_tipo_cambio, tipo_cambio
-
-
-def _resolve_condition_payload(typed_payload: dict) -> dict:
-    condition = typed_payload.get("condicion_operacion")
-    if isinstance(condition, dict):
-        return condition
-    legacy = typed_payload.get("condicion")
-    if isinstance(legacy, dict):
-        return legacy
-    return {}
-
-
-def _resolve_item_affectation(item: dict) -> int:
-    if item.get("afectacion") is None and item.get("iAfecIVA") is None:
-        legacy_rate = _coerce_int(
-            _first_non_none(item, "iva", "tasa", "dTasaIVA"),
-            field_name="items.iva",
-            default=10,
-            min_value=0,
-            max_value=10,
-        )
-        if legacy_rate in {5, 10}:
-            return 1
-        return 3
-    return _resolve_code(
-        _first_non_none(item, "afectacion", "iAfecIVA"),
-        mapping=_AFFECTATION_CODE_BY_NAME,
-        default=1,
-        min_value=1,
-        max_value=4,
-        field_name="items.afectacion",
-    )
-
-
-def _resolve_item_proportion(item: dict, *, affectation: int) -> Decimal:
-    proportion = _coerce_decimal(
-        _first_non_none(item, "proporcion_gravada", "dPropIVA"),
-        field_name="items.proporcion_gravada",
-        default=Decimal("100"),
-        min_value=_ZERO,
-    )
-    if affectation != 4:
-        return Decimal("100")
-    if proportion <= _ZERO or proportion > Decimal("100"):
-        raise SifenValidationError("items.proporcion_gravada must be between 0 and 100")
-    return proportion
-
-
-def _resolve_item_rate(item: dict, *, affectation: int) -> int:
-    rate = _coerce_int(
-        _first_non_none(item, "tasa", "iva", "dTasaIVA"),
-        field_name="items.tasa",
-        default=10 if affectation in {1, 4} else 0,
-        min_value=0,
-        max_value=10,
-    )
-    if affectation in {2, 3}:
-        return 0
-    if rate not in {5, 10}:
-        raise SifenValidationError("items.tasa must be 5 or 10 for taxable IVA items")
-    return rate
-
-
 def _resolve_emission_datetime(payload: dict) -> str:
     raw = _first_non_none(payload, "fecha_emision", "fecha")
     if raw is None:
-        dt = datetime.now(_PY_TZ)
-    else:
-        if isinstance(raw, datetime):
-            dt = raw
-        elif isinstance(raw, date):
-            dt = datetime.combine(raw, time(0, 0, 0))
-        else:
-            value = str(raw).strip()
-            try:
-                dt = datetime.fromisoformat(value)
-            except ValueError:
-                try:
-                    dt = datetime.combine(date.fromisoformat(value), time(0, 0, 0))
-                except ValueError as exc:
-                    raise SifenValidationError(
-                        "fecha/fecha_emision has invalid format"
-                    ) from exc
-    if dt.tzinfo is not None:
-        dt = dt.astimezone(_PY_TZ).replace(tzinfo=None)
-    return dt.replace(microsecond=0).isoformat()
+        return format_sifen_datetime(paraguay_now())
+    try:
+        return parse_sifen_datetime(raw).isoformat()
+    except ValueError as exc:
+        raise SifenValidationError("fecha/fecha_emision has invalid format") from exc
 
 
 def _resolve_date(raw) -> date:
@@ -1897,18 +1382,6 @@ def _resolve_date(raw) -> date:
         raise SifenValidationError("invalid date format") from exc
 
 
-def _normalize_three_digits(value, fallback: str) -> str:
-    if value is None:
-        value = fallback
-    return f"{int(str(value)):03d}"
-
-
-def _normalize_nine_digits(value, fallback: str) -> str:
-    if value is None:
-        value = fallback
-    return f"{int(str(value)):09d}"
-
-
 def _split_ruc_dv(cliente: dict) -> tuple[str, str | None]:
     ruc = _clean_text(cliente.get("ruc"))
     if not ruc:
@@ -1920,30 +1393,30 @@ def _split_ruc_dv(cliente: dict) -> tuple[str, str | None]:
     return ruc, dv
 
 
-def _customer_nature(cliente: dict) -> int:
-    explicit = _coerce_int(
-        _first_non_none(cliente, "naturaleza", "iNatRec"),
-        field_name="cliente.naturaleza",
-        default=None,
-        min_value=1,
-        max_value=2,
-    )
-    if explicit is not None:
-        return explicit
-    return 1 if _clean_text(cliente.get("ruc")) else 2
+def _normalize_three_digits(value, fallback: str) -> str:
+    if value is None:
+        value = fallback
+    return f"{int(str(value)):03d}"
 
 
-def _customer_operation_type(cliente: dict) -> int:
-    explicit = _coerce_int(
-        _first_non_none(cliente, "tipo_operacion", "iTiOpe"),
-        field_name="cliente.tipo_operacion",
-        default=None,
-        min_value=1,
-        max_value=4,
-    )
-    if explicit is not None:
-        return explicit
-    return 1 if _clean_text(cliente.get("ruc")) else 2
+def _resolve_security_code(
+    persisted: str | None, typed_payload: dict, numero_documento: int
+) -> str:
+    """dCodSeg persisted at creation (MT v150 §10.3); never a constant."""
+
+    raw = persisted or typed_payload.get("codigo_seguridad")
+    if raw is None:
+        raise SifenValidationError("documents.codigo_seguridad.missing")
+    try:
+        return normalize_security_code(raw, document_number=numero_documento)
+    except InvalidSecurityCodeError as exc:
+        raise SifenValidationError(exc.code) from exc
+
+
+
+
+
+
 
 
 def _transaction_description(code: int) -> str:
@@ -1990,58 +1463,23 @@ def _printed_doc_type_description(code: int) -> str:
     return _PRINTED_DOC_TYPE_DESCRIPTION.get(code, _PRINTED_DOC_TYPE_DESCRIPTION[1])
 
 
-def _doc_identity_description(code: int) -> str:
-    return _DOC_ID_TYPE_DESCRIPTION.get(code, "Documento")
-
-
 def _currency_description(code: str) -> str:
-    currency = code.upper()
-    known = {
-        "PYG": "Guarani",
-        "USD": "Dólar",
-        "EUR": "Euro",
-        "BRL": "Real",
-        "ARS": "Peso argentino",
-    }
-    return known.get(currency, currency)
+    """D016/E610/E654: the ISO 4217 name of the code in the XSD (1206/1555).
 
+    A code outside ``cMondT``, or whose official name does not fit the 3-20
+    characters of those fields, cannot be described truthfully: refused.
+    """
 
-def _calculate_rounding(*, total: Decimal, moneda: str) -> Decimal:
-    if total <= _ZERO:
-        return _ZERO
-    if moneda == "PYG":
-        divisor = Decimal("50")
-    else:
-        divisor = Decimal("0.50")
-    redondeo = (total % divisor).quantize(_AMOUNT4_Q, rounding=ROUND_HALF_UP)
-    return redondeo
-
-
-def _assert_totals_consistency(totals: _Totals) -> None:
-    expected_total = (
-        totals.sub_exe + totals.sub_exo + totals.sub_5 + totals.sub_10
-    ).quantize(
-        _ITEM_TOTAL_Q,
-        rounding=ROUND_HALF_UP,
-    )
-    expected_iva = (totals.iva_5 + totals.iva_10).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    expected_base = (totals.base_5 + totals.base_10).quantize(
-        _ITEM_TOTAL_Q, rounding=ROUND_HALF_UP
-    )
-    if totals.total != expected_total:
-        raise SifenValidationError("documents.totals.mismatch")
-    if totals.total_iva != expected_iva:
-        raise SifenValidationError("documents.totals.mismatch")
-    if expected_base < _ZERO:
-        raise SifenValidationError("documents.totals.mismatch")
+    description = descripcion_moneda(code.upper())
+    if description is None or not 3 <= len(description) <= _CURRENCY_DESCRIPTION_MAX:
+        raise SifenValidationError("documents.moneda.unsupported")
+    return description
 
 
 def _finalize_xml(root: ET.Element) -> str:
     xml_bytes = ET.tostring(root, encoding="UTF-8", xml_declaration=True)
     xml_text = xml_bytes.decode("UTF-8")
-    if "ds:" in xml_text:
+    if _has_ds_namespace_prefix(xml_text):
         raise SifenValidationError("documents.signature.namespace_prefix_not_allowed")
     if "<!--" in xml_text:
         raise SifenValidationError("documents.xml.comments_not_allowed")
@@ -2060,6 +1498,16 @@ def _finalize_xml(root: ET.Element) -> str:
     if filtered_errors:
         raise SifenValidationError(f"documents.xml.invalid_schema:{filtered_errors[0]}")
     return xml_text
+
+
+def _has_ds_namespace_prefix(xml_text: str) -> bool:
+    """Tell whether the XML uses a ``ds:`` element or declares that prefix.
+
+    Only markup counts: text content is escaped by the serializer, so a
+    description such as ``"Brands: X"`` never matches.
+    """
+
+    return _DS_PREFIX_PATTERN.search(xml_text) is not None
 
 
 def _assert_no_field_boundary_whitespace(root: ET.Element) -> None:

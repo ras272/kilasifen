@@ -1,9 +1,10 @@
 """SQLAlchemy implementation of the document repository."""
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from kilasifen.domain.documents.models import Document
+from kilasifen.infrastructure.db.locks import locked_fresh
 from kilasifen.infrastructure.db.models import DocumentModel
 from kilasifen.repositories.documents import DocumentRepository
 
@@ -39,6 +40,13 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
                 establishment=document.establishment,
                 point=document.point,
                 document_number=document.document_number,
+                sifen_approved_at=document.sifen_approved_at,
+                sifen_protocol=document.sifen_protocol,
+                sifen_messages=document.sifen_messages,
+                retryable_server_error=document.retryable_server_error,
+                timbrado=document.timbrado,
+                security_code=document.security_code,
+                fiscal_warnings=list(document.fiscal_warnings) or None,
                 created_at=document.created_at,
                 updated_at=document.updated_at,
             )
@@ -63,6 +71,11 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             existing.establishment = document.establishment
             existing.point = document.point
             existing.document_number = document.document_number
+            existing.sifen_approved_at = document.sifen_approved_at
+            existing.sifen_protocol = document.sifen_protocol
+            existing.sifen_messages = document.sifen_messages
+            existing.retryable_server_error = document.retryable_server_error
+            existing.timbrado = document.timbrado
             existing.updated_at = document.updated_at
         self.session.flush()
         return document
@@ -73,7 +86,16 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             return None
         return _to_domain(model)
 
-    def get_by_idempotency_key(self, emitter_id: str, idempotency_key: str) -> Document | None:
+    def get_for_update(self, document_id: str) -> Document | None:
+        statement = select(DocumentModel).where(DocumentModel.id == document_id)
+        model = self.session.scalar(locked_fresh(statement))
+        if model is None:
+            return None
+        return _to_domain(model)
+
+    def get_by_idempotency_key(
+        self, emitter_id: str, idempotency_key: str
+    ) -> Document | None:
         statement = select(DocumentModel).where(
             DocumentModel.emitter_id == emitter_id,
             DocumentModel.idempotency_key == idempotency_key,
@@ -103,12 +125,18 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
             return None
         return _to_domain(model)
 
-    def list_by_associated_cdc(self, *, emitter_id: str, associated_cdc: str) -> list[Document]:
+    def list_by_associated_cdc(
+        self, *, emitter_id: str, associated_cdc: str
+    ) -> list[Document]:
         statement = select(DocumentModel).where(DocumentModel.emitter_id == emitter_id)
         models = list(self.session.scalars(statement))
         matched: list[Document] = []
         for model in models:
-            snapshot = model.payload_snapshot if isinstance(model.payload_snapshot, dict) else None
+            snapshot = (
+                model.payload_snapshot
+                if isinstance(model.payload_snapshot, dict)
+                else None
+            )
             if not snapshot:
                 continue
             typed_contract = snapshot.get("typed_contract")
@@ -124,7 +152,7 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
                 matched.append(_to_domain(model))
         return matched
 
-    def list_numbers_in_range(
+    def list_in_number_range(
         self,
         *,
         emitter_id: str,
@@ -133,17 +161,26 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
         point: str,
         number_from: int,
         number_to: int,
-    ) -> list[int]:
-        statement = select(DocumentModel.document_number).where(
-            DocumentModel.emitter_id == emitter_id,
-            DocumentModel.document_type == document_type,
-            DocumentModel.establishment == establishment,
-            DocumentModel.point == point,
-            DocumentModel.document_number.is_not(None),
-            DocumentModel.document_number >= number_from,
-            DocumentModel.document_number <= number_to,
+        timbrado: str,
+    ) -> list[Document]:
+        statement = (
+            select(DocumentModel)
+            .where(
+                DocumentModel.emitter_id == emitter_id,
+                DocumentModel.document_type == document_type,
+                DocumentModel.establishment == establishment,
+                DocumentModel.point == point,
+                DocumentModel.document_number.is_not(None),
+                DocumentModel.document_number >= number_from,
+                DocumentModel.document_number <= number_to,
+                or_(
+                    DocumentModel.timbrado == timbrado,
+                    DocumentModel.timbrado.is_(None),
+                ),
+            )
+            .order_by(DocumentModel.document_number.asc())
         )
-        return sorted(int(number) for number in self.session.scalars(statement) if number is not None)
+        return [_to_domain(model) for model in self.session.scalars(statement)]
 
     def list_recent(
         self,
@@ -160,7 +197,9 @@ class SqlAlchemyDocumentRepository(DocumentRepository):
         if emitter_id:
             statement = statement.where(DocumentModel.emitter_id == emitter_id)
         if internal_status:
-            statement = statement.where(DocumentModel.internal_status == internal_status)
+            statement = statement.where(
+                DocumentModel.internal_status == internal_status
+            )
         if document_type:
             statement = statement.where(DocumentModel.document_type == document_type)
         if external_id:
@@ -200,4 +239,11 @@ def _to_domain(model: DocumentModel) -> Document:
         establishment=model.establishment,
         point=model.point,
         document_number=model.document_number,
+        sifen_approved_at=model.sifen_approved_at,
+        sifen_protocol=model.sifen_protocol,
+        sifen_messages=model.sifen_messages,
+        retryable_server_error=bool(model.retryable_server_error),
+        timbrado=model.timbrado,
+        security_code=model.security_code,
+        fiscal_warnings=tuple(model.fiscal_warnings or ()),
     )

@@ -6,7 +6,7 @@ This script validates the operational path end-to-end:
 2. Emitter availability
 3. Active certificate and active stamping
 4. Document creation and job processing convergence
-5. Optional webhook replay flow
+5. Optional webhook test-event flow
 
 It prints explicit PASS/FAIL output and exits with non-zero code on failure.
 Because it exercises the deprecated raw XML route, its credential must be a
@@ -22,7 +22,7 @@ import os
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -254,11 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--webhook-endpoint-id",
         default=os.getenv("KILA_WEBHOOK_ENDPOINT_ID"),
-        help="Optional: if provided, runs webhook replay smoke too.",
-    )
-    parser.add_argument(
-        "--webhook-event-type",
-        default=os.getenv("KILA_WEBHOOK_EVENT_TYPE", "document.approved"),
+        help="Optional: if provided, sends a signed webhook.test event too.",
     )
     return parser
 
@@ -363,14 +359,13 @@ def main() -> int:
         if args.webhook_endpoint_id:
             run_check(
                 checks,
-                "webhook_replay",
+                "webhook_test_event",
                 lambda: run_webhook_smoke(
                     client=client,
+                    emitter_id=emitter_id,
                     endpoint_id=args.webhook_endpoint_id,
-                    event_type=args.webhook_event_type,
                     timeout_seconds=args.job_timeout_seconds,
                     interval_seconds=args.poll_interval_seconds,
-                    source_document_id=document_id,
                 ),
             )
 
@@ -408,7 +403,7 @@ def check_emitter_exists(client: KilaApiClient, emitter_id: str) -> str:
 
 
 def create_smoke_emitter(client: KilaApiClient, args: argparse.Namespace) -> str:
-    suffix = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     external_id = f"smoke-{suffix}"
     created = client.post(
         "/v1/emitters",
@@ -527,14 +522,14 @@ def build_document_payload(
     if not doc_id:
         raise SmokeFailure("Could not extract doc_id from generated XML.")
 
-    unique = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    unique = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     external_id = f"smoke-doc-{unique}"
     idempotency_key = f"smoke-idem-{uuid.uuid4()}"
     payload = {
         "generated_xml": generated_xml,
         "doc_id": doc_id,
         "source": "smoke_kila_api_e2e",
-        "generated_at": datetime.now(UTC).isoformat(),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     return payload, external_id, idempotency_key
 
@@ -542,13 +537,13 @@ def build_document_payload(
 def build_default_unsigned_xml() -> str:
     helper = load_ares_example_module()
     numero_documento = str(int(time.time()) % 9999999).zfill(7)
-    fecha_emision = datetime.now(UTC).replace(microsecond=0).isoformat()
+    fecha_emision = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     unsigned = helper.build_unsigned_de_base(
         numero_documento=numero_documento,
         fecha_emision=fecha_emision,
         timbrado="80024135",
         fecha_inicio_timbrado="2024-03-11",
-        codigo_seguridad="123456789",
+        codigo_seguridad=helper.random_security_code(),
         establecimiento="001",
         punto_expedicion="001",
         codigo_actividad="82999",
@@ -633,29 +628,26 @@ def validate_document_terminal_state(
 def run_webhook_smoke(
     *,
     client: KilaApiClient,
+    emitter_id: str,
     endpoint_id: str,
-    event_type: str,
     timeout_seconds: int,
     interval_seconds: int,
-    source_document_id: str,
 ) -> str:
-    replay = client.post(
-        f"/v1/webhooks/{endpoint_id}/deliveries/replay",
-        payload={
-            "event_type": event_type,
-            "payload": {"document_id": source_document_id, "source": "smoke"},
-        },
+    sent = client.post(
+        f"/v1/emitters/{emitter_id}/webhooks/{endpoint_id}/test",
         expected_statuses=(201,),
     )
-    delivery = replay["delivery"]
-    job = replay["job"]
+    delivery = sent["delivery"]
+    job = sent["job"]
     final_job = poll_job_until_terminal(
         client,
         job_id=job["id"],
         timeout_seconds=timeout_seconds,
         interval_seconds=interval_seconds,
     )
-    delivery_state = client.get(f"/v1/webhook-deliveries/{delivery['id']}")["delivery"]
+    delivery_state = client.get(
+        f"/v1/emitters/{emitter_id}/webhook-deliveries/{delivery['id']}"
+    )["delivery"]
     if delivery_state["final_status"] not in TERMINAL_DELIVERY_STATUSES:
         raise SmokeFailure(
             f"Webhook delivery not terminal: {delivery_state['final_status']}"

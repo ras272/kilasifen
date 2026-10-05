@@ -1,4 +1,6 @@
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -7,8 +9,11 @@ from kilasifen.application.certificates.service import CertificateService
 from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.common.errors import ConflictError
 from kilasifen.domain.emitters.models import Emitter
+from kilasifen.engine.sdk.signer import clear_pkcs12_signer_cache, get_pkcs12_signer
 
-_REFERENCE_NOW = datetime.now(UTC)
+_REFERENCE_NOW = datetime.now(timezone.utc)
+_TEST_CERTIFICATE_PATH = Path(__file__).resolve().parents[1] / "test_cert.pfx"
+_TEST_CERTIFICATE_PASSWORD = "test1234"
 
 
 @pytest.mark.parametrize(
@@ -57,9 +62,47 @@ def test_activation_rejects_invalid_certificate_metadata(
         service.activate_certificate(certificate.id)
 
 
-def _service(certificate: Certificate) -> CertificateService:
+def test_activation_rejection_keeps_cached_signers() -> None:
+    certificate = _certificate(
+        valid_from=_REFERENCE_NOW - timedelta(days=2),
+        valid_until=_REFERENCE_NOW - timedelta(days=1),
+        detected_ruc="80024135",
+    )
+    evict = Mock()
+    service = _service(certificate, evict_cached_signers=evict)
+
+    with pytest.raises(ConflictError):
+        service.activate_certificate(certificate.id)
+
+    evict.assert_not_called()
+
+
+def test_activation_evicts_decrypted_keys_from_the_signer_cache() -> None:
+    certificate = _certificate(
+        valid_from=_REFERENCE_NOW - timedelta(days=1),
+        valid_until=_REFERENCE_NOW + timedelta(days=1),
+        detected_ruc="80024135",
+    )
+    pkcs12_data = _TEST_CERTIFICATE_PATH.read_bytes()
+    cached_before = get_pkcs12_signer(pkcs12_data, _TEST_CERTIFICATE_PASSWORD)
+    assert get_pkcs12_signer(pkcs12_data, _TEST_CERTIFICATE_PASSWORD) is cached_before
+
+    activated = _service(certificate).activate_certificate(certificate.id)
+
+    assert activated.is_active is True
+    cached_after = get_pkcs12_signer(pkcs12_data, _TEST_CERTIFICATE_PASSWORD)
+    assert cached_after is not cached_before
+
+
+def _service(
+    certificate: Certificate,
+    *,
+    evict_cached_signers: Callable[[], None] = clear_pkcs12_signer_cache,
+) -> CertificateService:
     certificate_repository = Mock()
     certificate_repository.get.return_value = certificate
+    certificate_repository.list_for_emitter.return_value = [certificate]
+    certificate_repository.save.side_effect = lambda saved: saved
     emitter_repository = Mock()
     emitter_repository.get_status_for_update.return_value = "active"
     emitter_repository.get.return_value = Emitter(
@@ -79,6 +122,7 @@ def _service(certificate: Certificate) -> CertificateService:
         certificate_repository=certificate_repository,
         emitter_repository=emitter_repository,
         certificate_store=Mock(),
+        evict_cached_signers=evict_cached_signers,
     )
 
 
@@ -108,4 +152,4 @@ def _certificate(
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

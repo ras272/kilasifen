@@ -89,8 +89,9 @@ def test_inactive_emitter_allows_reads_and_non_secret_metadata_update(
                     "idempotency_key": "inactive-document",
                     "factura": {
                         "cliente": {
-                            "ruc": "80000001-1",
-                            "razon_social": "CLIENTE",
+                            "ruc": "80025298-5",
+                            "razon_social": "CLIENTE FICTICIO",
+                            "tipo_contribuyente": 2,
                         },
                         "items": [
                             {

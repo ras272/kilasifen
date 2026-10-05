@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from contextvars import ContextVar, Token
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 _correlation_id_ctx: ContextVar[str | None] = ContextVar(
     "kila_sifen_correlation_id",
@@ -23,7 +23,7 @@ class JsonLogFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         payload = {
-            "timestamp": datetime.now(UTC).isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

@@ -4,9 +4,11 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
+from kilasifen.api.schemas.common import SuccessEnvelope
+
 
 class CertificateResponse(BaseModel):
-    """Certificate metadata returned by the API."""
+    """Metadatos de un certificado; nunca incluye la clave ni la contraseña."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -23,3 +25,23 @@ class CertificateResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+
+
+class CertificateData(BaseModel):
+    """Certificado del emisor."""
+
+    certificate: CertificateResponse
+
+
+class CertificateListData(BaseModel):
+    """Certificados del emisor."""
+
+    certificates: list[CertificateResponse]
+
+
+class CertificateEnvelope(SuccessEnvelope[CertificateData]):
+    """Respuesta con un certificado."""
+
+
+class CertificateListEnvelope(SuccessEnvelope[CertificateListData]):
+    """Respuesta con los certificados del emisor."""

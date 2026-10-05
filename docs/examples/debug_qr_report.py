@@ -7,7 +7,7 @@ from urllib.parse import parse_qsl, urlsplit
 
 from lxml import etree
 
-from pysifen.sdk.fiscal import build_qr_payload_from_signed_xml
+from kilasifen.engine.sdk.fiscal import build_qr_payload_from_signed_xml
 
 SIFEN_NS = "http://ekuatia.set.gov.py/sifen/xsd"
 DS_NS = "http://www.w3.org/2000/09/xmldsig#"
@@ -30,7 +30,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _validate_against_schema(xml_bytes: bytes) -> tuple[bool, list[str]]:
-    schema_doc = etree.parse("pysifen/de/schemas/v150/siRecepDE_v150.xsd")
+    schema_doc = etree.parse("kilasifen/engine/de/schemas/v150/siRecepDE_v150.xsd")
     schema = etree.XMLSchema(schema_doc)
     doc = etree.fromstring(xml_bytes)
     is_valid = schema.validate(doc)

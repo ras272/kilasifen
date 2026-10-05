@@ -11,15 +11,16 @@ from __future__ import annotations
 
 import argparse
 import os
+import secrets
 from pathlib import Path
 
 from lxml import etree
 
-from pysifen import TEST
-from pysifen.assinatura import sign_xml
-from pysifen.de.bindings.v150.fe_v141 import RDe
-from pysifen.sdk.client import SifenClient
-from pysifen.sdk.fiscal import build_qr_payload, generate_cdc
+from kilasifen.engine import TEST
+from kilasifen.engine.de.bindings.v150.fe_v141 import RDe
+from kilasifen.engine.firma import sign_xml
+from kilasifen.engine.sdk.client import SifenClient
+from kilasifen.engine.sdk.fiscal import build_qr_payload, generate_cdc
 
 
 def _read_secret(name: str) -> str:
@@ -79,7 +80,8 @@ def run_smoke(args: argparse.Namespace) -> int:
             i_tip_cont=args.tipo_contribuyente,
             d_fe_emi_de=args.fecha_emision,
             i_tip_emi=args.tipo_emision,
-            d_cod_seg=args.codigo_seguridad,
+            d_cod_seg=args.codigo_seguridad
+            or f"{secrets.randbelow(999_999_999) + 1:09d}",
         )
         qr = build_qr_payload(
             cdc=cdc,
@@ -112,7 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ruc", default="80024135-5")
     parser.add_argument(
         "--xml",
-        default="pysifen/de/samples/v150/factura_electronica.xml",
+        default="kilasifen/engine/de/samples/v150/factura_electronica.xml",
     )
     parser.add_argument("--timeout", type=float, default=30)
     parser.add_argument("--send-de", action="store_true")
@@ -124,7 +126,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tipo-contribuyente", default="2")
     parser.add_argument("--fecha-emision", default="2026-04-24T12:00:00")
     parser.add_argument("--tipo-emision", default="1")
-    parser.add_argument("--codigo-seguridad", default="123456789")
+    parser.add_argument(
+        "--codigo-seguridad",
+        default=None,
+        help="dCodSeg; por defecto uno aleatorio (MT v150 §10.3).",
+    )
     parser.add_argument("--id-csc", default="0001")
     parser.add_argument("--csc", default="ABCD0000000000000000000000000000")
     parser.add_argument("--receptor-ruc", default="80069563")

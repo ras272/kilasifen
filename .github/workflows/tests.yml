@@ -2,9 +2,8 @@ name: Tests
 
 on:
   push:
-    branches: [master, main]
-  pull_request:
-    branches: [master, main]
+    branches: [main]
+  pull_request: # any base branch
   schedule:
     - cron: "0 6 * * 1" # Every Monday at 06:00 UTC
 
@@ -26,11 +25,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install uv==0.11.19
-          uv sync --frozen --extra sign --extra transmissao --extra test
+          uv sync --frozen --extra sign --extra transmision --extra test
 
       - name: Lint engine package
         run: |
-          uv run ruff check pysifen/ --select F
+          uv run ruff check kilasifen/engine/ --select F
 
       - name: Run engine regressions
         run: |
@@ -81,7 +80,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install uv==0.11.19
-          uv sync --frozen --extra sign --extra transmissao --extra test
+          uv sync --frozen --extra sign --extra transmision --extra test
 
       - name: Lint platform package
         run: |
@@ -89,7 +88,7 @@ jobs:
 
       - name: Run platform tests
         run: |
-          uv run pytest tests/api tests/application tests/infrastructure -v --tb=short
+          uv run pytest tests/api tests/application tests/domain tests/infrastructure -v --tb=short
 
       - name: Migration smoke check
         run: |
@@ -132,13 +131,13 @@ jobs:
       - name: Smoke test top-level public API
         run: |
           python - <<'PY'
-          from pysifen import (
+          from kilasifen.engine import (
               ENDPOINTS,
               PRODUCCION,
               TEST,
               ConsultaSIFEN,
-              TransmissaoDE,
-              TransmissaoEvento,
+              TransmisionDE,
+              TransmisionEvento,
               __all__,
               __version__,
               get_endpoint,
@@ -151,9 +150,9 @@ jobs:
           assert TEST == 2
           assert isinstance(ENDPOINTS, dict)
           assert callable(get_endpoint)
-          assert TransmissaoDE.__name__ == "TransmissaoDE"
+          assert TransmisionDE.__name__ == "TransmisionDE"
           assert ConsultaSIFEN.__name__ == "ConsultaSIFEN"
-          assert TransmissaoEvento.__name__ == "TransmissaoEvento"
+          assert TransmisionEvento.__name__ == "TransmisionEvento"
           expected = {
               "__version__",
               "sign_xml",
@@ -161,9 +160,9 @@ jobs:
               "TEST",
               "ENDPOINTS",
               "get_endpoint",
-              "TransmissaoDE",
+              "TransmisionDE",
               "ConsultaSIFEN",
-              "TransmissaoEvento",
+              "TransmisionEvento",
           }
           assert set(__all__) == expected
           print("public api smoke ok")
@@ -188,15 +187,19 @@ jobs:
       - name: Check committed OpenAPI contract
         run: uv run python scripts/export_openapi.py --check
 
+      # setup-node's pnpm cache needs pnpm installed beforehand.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.4
+          run_install: false
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: pnpm
           cache-dependency-path: apps/docs/pnpm-lock.yaml
-
-      - name: Enable pnpm
-        run: corepack enable
 
       - name: Install docs dependencies
         working-directory: apps/docs
@@ -255,7 +258,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install uv==0.11.19
-          uv sync --frozen --extra test
+          uv sync --frozen --extra sign --extra test
 
       - name: Check for schema updates
         env:

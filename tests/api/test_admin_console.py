@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -353,12 +353,12 @@ def _seed_webhook_failure(client: TestClient, emitter_id: str) -> tuple[str, str
             event_subscriptions=["document.approved"],
             retry_policy={"max_attempts": 3},
         )
-        delivery, job = service.replay_delivery_for_emitter(
+        [(delivery, job)] = service.publish_event(
             emitter_id=emitter_id,
-            endpoint_id=endpoint.id,
             event_type="document.approved",
             payload={"document_id": "doc-admin-1"},
         )
+        assert delivery.webhook_endpoint_id == endpoint.id
         deliveries = SqlAlchemyWebhookRepository(session)
         deliveries.save_delivery(
             replace(
@@ -404,4 +404,4 @@ class _NoopWebhookQueue:
 
 
 def _now() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)

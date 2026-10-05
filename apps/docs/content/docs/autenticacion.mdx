@@ -7,8 +7,11 @@ icon: KeyRound
 Cada request protegido usa una credencial privada en el header `X-API-Key`.
 
 ```http
-X-API-Key: kila_live_••••••••••••••••
+X-API-Key: ks_••••••••••••••••
 ```
+
+Las claves de consumidor empiezan con `ks_`. No hay claves «live» y «test»: el
+ambiente de SIFEN lo fija la instancia de KilaSifen, no la clave.
 
 ## Dónde guardar la clave
 
@@ -16,21 +19,42 @@ Guardala en el secret manager o variables cifradas del backend consumidor. No
 debe aparecer en Git, logs, analytics, localStorage ni código enviado al
 navegador.
 
+## Obtener y verificar una clave
+
+Un consumidor no crea sus propias claves: las emite un administrador de la
+plataforma con `POST /v1/admin/consumers/{consumer_id}/credentials`, con 1 a 4
+scopes de consumidor. La respuesta muestra el secreto completo (`api_key`) una
+sola vez; después sólo queda visible `key_prefix`.
+
+```bash
+curl https://TU_API/v1/auth/check \
+  -H "X-API-Key: $KILA_API_KEY"
+```
+
+`/v1/auth/check` responde `200` con `{"authenticated": true}` si la clave es
+válida, y `401` si falta (`auth.missing_api_key`) o no es válida
+(`auth.invalid_api_key`). No informa los scopes.
+
 ## Scopes
 
 | Scope | Permite |
 | --- | --- |
-| `tenant:read` | Leer emisores y recursos propios. |
-| `tenant:write` | Modificar metadatos no secretos de emisores propios. |
-| `fiscal:write` | Crear documentos y eventos fiscales. |
-| `secrets:write` | Administrar PFX y otros secretos fiscales. |
-| `platform:admin` | Administrar consumidores y asignar RUC/emisores; nunca se entrega a un ERP. |
+| `tenant:read` | Leer emisores y su `/health`, documentos, XML, KuDE, jobs, timbrados, webhooks y entregas, y consultar SIFEN (estado de un documento por CDC y RUC). |
+| `tenant:write` | Actualizar el emisor (razón social, perfil fiscal), desactivarlo (no hay ruta para reactivarlo) y administrar webhooks: registrar, actualizar, probar y reenviar entregas. Cambiar el CSC requiere además `secrets:write`. |
+| `fiscal:write` | Crear facturas, notas de crédito y notas de débito; cancelar, inutilizar y leer esos eventos; crear y activar timbrados; reconciliar un documento. |
+| `secrets:write` | Cargar, listar y activar certificados PKCS#12; junto con `tenant:write`, cambiar el CSC. |
+| `platform:admin` | Superusuario: pasa por alto los scopes y la pertenencia de emisores. Administra consumidores y credenciales, crea emisores y usa las rutas raw, `/v1/jobs`, `/v1/webhook-deliveries` y la consola `/admin`, donde se reintentan los jobs. La API nunca lo emite (`422 credentials.invalid_scopes`): sólo existe como clave de arranque en `KILA_SIFEN_API_KEYS`. Nunca se entrega a un ERP. |
 
-Un recurso perteneciente a otro consumidor responde `404`, no `403`, para no
+Una clave sin el scope necesario recibe `403 auth.insufficient_scope`. Un
+recurso perteneciente a otro consumidor responde `404`, no `403`, para no
 revelar su existencia.
 
 ## Rotación
 
-Creá una segunda credencial, desplegala en el consumidor, confirmá tráfico con
-la nueva clave y recién entonces revocá la anterior. La API muestra el secreto
-completo una sola vez al crearlo.
+1. Pedí al administrador una segunda credencial para tu consumidor
+   (`POST /v1/admin/consumers/{consumer_id}/credentials`) y guardá el
+   `api_key` en ese momento: no se vuelve a mostrar.
+2. Desplegala en tu backend y verificala con `GET /v1/auth/check`.
+3. Cuando todo el tráfico use la nueva clave, pedí revocar la anterior
+   (`POST /v1/admin/consumers/{consumer_id}/credentials/{credential_id}/revoke`).
+   Desde ese momento la clave revocada responde `401 auth.invalid_api_key`.

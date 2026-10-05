@@ -16,6 +16,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -70,6 +71,8 @@ class EmitterModel(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
     csc: Mapped[str | None] = mapped_column(Text)
     csc_id: Mapped[str | None] = mapped_column(String(16))
+    # Data declared in the RUC (gEmis); NULL until the emitter registers it.
+    fiscal_profile: Mapped[dict | None] = mapped_column(JSON)
 
     certificates: Mapped[list["CertificateModel"]] = relationship(
         back_populates="emitter"
@@ -182,6 +185,15 @@ class DocumentModel(TimestampMixin, Base):
     establishment: Mapped[str | None] = mapped_column(String(3))
     point: Mapped[str | None] = mapped_column(String(3))
     document_number: Mapped[int | None] = mapped_column(Integer)
+    sifen_approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    sifen_protocol: Mapped[str | None] = mapped_column(String(32))
+    sifen_messages: Mapped[list | None] = mapped_column(JSON)
+    retryable_server_error: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    timbrado: Mapped[str | None] = mapped_column(String(8))
+    security_code: Mapped[str | None] = mapped_column(String(9))
+    fiscal_warnings: Mapped[list[str] | None] = mapped_column(JSON)
 
     emitter: Mapped[EmitterModel] = relationship(back_populates="documents")
     events: Mapped[list["EventModel"]] = relationship(back_populates="document")

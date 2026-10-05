@@ -10,6 +10,7 @@ from kilasifen.config import get_settings
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.session import build_engine
 from kilasifen.testing.database import managed_test_database_url
+from kilasifen.testing.fiscal_profiles import fictional_fiscal_profile_payload
 
 API_KEY = "sandbox-test-key"
 
@@ -49,6 +50,7 @@ def emitter_id(client: TestClient) -> str:
             "dv": "5",
             "legal_name": "KILASIFEN SANDBOX",
             "tax_environment": "test",
+            "fiscal_profile": fictional_fiscal_profile_payload(),
         },
     )
     assert response.status_code == 201
@@ -68,7 +70,11 @@ def test_factura_accepts_typed_test_outcome_header(
         json={
             "external_id": "sandbox-factura-1",
             "factura": {
-                "cliente": {"ruc": "80069563-1", "razon_social": "TIPS S.A"},
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razon_social": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                 "items": [
                     {
                         "descripcion": "Servicio sandbox",
@@ -100,7 +106,11 @@ def test_test_outcome_header_rejects_unknown_values(
         },
         json={
             "factura": {
-                "cliente": {"ruc": "80069563-1", "razon_social": "TIPS S.A"},
+                "cliente": {
+                    "ruc": "80069563-1",
+                    "razon_social": "TIPS S.A",
+                    "tipo_contribuyente": 2,
+                },
                 "items": [
                     {
                         "descripcion": "Servicio sandbox",
@@ -183,6 +193,7 @@ def test_api_rejects_sandbox_header_outside_test_before_creating_document(
                         "cliente": {
                             "ruc": "80069563-1",
                             "razon_social": "TIPS S.A",
+                            "tipo_contribuyente": 2,
                         },
                         "items": [
                             {

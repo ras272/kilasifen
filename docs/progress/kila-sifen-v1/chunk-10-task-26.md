@@ -65,6 +65,6 @@ integration to skip approved inutilized numbers.
   in endpoint tests; XML validation and signing remain covered at builder/service
   layer boundaries.
 - Manual text mentions `dTiGDE` for event payload, but current
-  `pysifen.bindings.evento_v150` path used by the gateway validates the
+  `kilasifen.engine.bindings.evento_v150` path used by the gateway validates the
   implemented structure without that explicit node. This needs confirmation when
   upgrading bindings/spec source.

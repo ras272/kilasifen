@@ -6,8 +6,9 @@ pytest.importorskip("requests", reason="requests not installed")
 
 
 def test_error_hierarchy_exports():
-    from pysifen.sdk import (
+    from kilasifen.engine.sdk import (
         SifenError,
+        SifenRequestNotSentError,
         SifenSignatureError,
         SifenTimeoutError,
         SifenTransportClosedError,
@@ -22,11 +23,64 @@ def test_error_hierarchy_exports():
     assert issubclass(SifenTransportClosedError, SifenTransportError)
     assert issubclass(SifenTimeoutError, SifenTransportError)
     assert issubclass(SifenUnexpectedResponseError, SifenTransportError)
+    # Los manejadores existentes de SifenTransportError siguen atrapandolo.
+    assert issubclass(SifenRequestNotSentError, SifenTransportError)
+    assert not issubclass(SifenRequestNotSentError, SifenTimeoutError)
+
+
+def test_unexpected_response_message_is_spanish_and_omits_the_body():
+    from kilasifen.engine.sdk.errors import SifenUnexpectedResponseError
+
+    error = SifenUnexpectedResponseError(
+        expected_root="rRetEnviDe",
+        actual_root="rResEnviConsRUC",
+        code="0160",
+        response_message="XML Mal Formado.",
+        raw_body=b"<rResEnviConsRUC>Comercial Ficticia SA</rResEnviConsRUC>",
+    )
+
+    assert str(error) == (
+        "Respuesta inesperada del SIFEN: se esperaba rRetEnviDe y se recibio "
+        "rResEnviConsRUC (0160): XML Mal Formado."
+    )
+    assert error.args == (str(error),)
+    assert error.raw_body == "<rResEnviConsRUC>Comercial Ficticia SA</rResEnviConsRUC>"
+
+
+@pytest.mark.parametrize(
+    "cuerpo, esperado",
+    [
+        (None, None),
+        ("<a/>", "<a/>"),
+        (b"\xff<a/>", "�<a/>"),
+        (bytearray(b"<b/>"), "<b/>"),
+    ],
+    ids=["sin_cuerpo", "texto", "bytes_no_utf8", "bytearray"],
+)
+def test_unexpected_response_raw_body_is_text(cuerpo, esperado):
+    from kilasifen.engine.sdk.errors import SifenUnexpectedResponseError
+
+    error = SifenUnexpectedResponseError(
+        expected_root="a", actual_root="invalid_xml", raw_body=cuerpo
+    )
+    assert error.raw_body == esperado
+
+
+def test_unexpected_response_raw_body_is_truncated():
+    from kilasifen.engine.sdk.errors import (
+        MAX_CUERPO_CRUDO,
+        SifenUnexpectedResponseError,
+    )
+
+    error = SifenUnexpectedResponseError(
+        expected_root="a", actual_root="html", raw_body="y" * (MAX_CUERPO_CRUDO + 10)
+    )
+    assert error.raw_body == "y" * MAX_CUERPO_CRUDO
 
 
 def test_sign_xml_wraps_unexpected_errors(monkeypatch):
-    from pysifen.assinatura import sign_xml
-    from pysifen.sdk.errors import SifenSignatureError
+    from kilasifen.engine.firma import sign_xml
+    from kilasifen.engine.sdk.errors import SifenSignatureError
 
     def boom(*args, **kwargs):
         raise ValueError("invalid")
@@ -45,8 +99,8 @@ def test_sign_xml_wraps_unexpected_errors(monkeypatch):
 def test_transport_wraps_timeout(monkeypatch):
     from requests.exceptions import Timeout
 
-    from pysifen.sdk.errors import SifenTimeoutError
-    from pysifen.transmissao.base import _create_transport
+    from kilasifen.engine.sdk.errors import SifenTimeoutError
+    from kilasifen.engine.transmision.base import _create_transport
 
     transport = _create_transport("cert.pem", "key.pem")
 
@@ -64,8 +118,8 @@ def test_transport_wraps_timeout(monkeypatch):
 def test_transport_wraps_http_error(monkeypatch):
     from requests.exceptions import HTTPError
 
-    from pysifen.sdk.errors import SifenTransportError
-    from pysifen.transmissao.base import _create_transport
+    from kilasifen.engine.sdk.errors import SifenTransportError
+    from kilasifen.engine.transmision.base import _create_transport
 
     transport = _create_transport("cert.pem", "key.pem")
 
