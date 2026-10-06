@@ -47,6 +47,8 @@ node_modules/
 Thumbs.db
 
 # --- Trabajo local (no forma parte del proyecto) ---
+# Datos, XML y KuDE de scripts/sifen_test_smoke.py (RUC y certificado reales).
+.sifen-test/
 *.log
 tmp/
 tmp_*.xml
