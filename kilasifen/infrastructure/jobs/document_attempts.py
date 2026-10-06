@@ -19,7 +19,8 @@ and I/O. What the next attempt does follows SIFEN's last word on the CDC
   makes it approved (cancelled if a cancellation is registered) and it is
   never sent again; 0420 lets the same signed DE travel again;
 - a rejection with 1001/1002 is only believed after that query;
-- a rejection with 0161/0162 (server failures) is sent again;
+- a rejection with 0161/0162 (server failures), or with a lone 0160 that
+  carries no validation detail, is sent again (DECISIONES F67);
 - a request that provably never left is sent again.
 
 Every resend carries the same signed ``rDE`` (same CDC, signature and
@@ -44,7 +45,7 @@ from kilasifen.domain.common.fiscal_states import (
 )
 from kilasifen.domain.common.sifen_results import (
     DUPLICATE_DOCUMENT_CODES,
-    SERVER_FAILURE_CODES,
+    is_retryable_rejection,
 )
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.documents.transmission_deadlines import (
@@ -61,6 +62,7 @@ from kilasifen.infrastructure.sifen.query import (
 )
 from kilasifen.infrastructure.sifen.reconciliation import (
     answer_codes,
+    answer_messages,
     document_found_at_sifen,
     document_not_approved_at_sifen,
 )
@@ -77,8 +79,8 @@ _NOT_DELIVERED_MESSAGE = (
     "0420); a manual retry sends the same signed document again"
 )
 _SERVER_FAILURE_EXHAUSTED_MESSAGE = (
-    "SIFEN kept answering a server failure (0161/0162); a manual retry sends "
-    "the same signed document again"
+    "SIFEN kept answering a server failure (0161/0162) or a bare 0160; a manual "
+    "retry sends the same signed document again"
 )
 
 
@@ -425,6 +427,9 @@ def _record_rejection(document: Document, job: Job) -> tuple[Document, Job]:
       (DECISIONES F64): the document stays ``rejected`` with
       ``retryable_server_error`` and its signed XML is sent again within the
       attempt budget.
+    - A lone 0160 without a validation detail (same §12.2.6 group) follows
+      the same path (DECISIONES F67, ``is_retryable_rejection``); a 0160
+      with a detail is a content error and is final.
     """
 
     code = document.sifen_result_code
@@ -440,7 +445,7 @@ def _record_rejection(document: Document, job: Job) -> tuple[Document, Job]:
         document,
         internal_status="rejected",
         sifen_status="rejected",
-        retryable_server_error=bool(codes & SERVER_FAILURE_CODES),
+        retryable_server_error=is_retryable_rejection(answer_messages(document)),
     )
     if rejected.retryable_server_error:
         return rejected, replace(

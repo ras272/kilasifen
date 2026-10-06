@@ -378,6 +378,85 @@ def test_a_server_failure_in_any_message_is_sent_again(code: str) -> None:
     assert select_action(recorded.document) is AttemptAction.RESEND
 
 
+def _malformed(message: str, *other_codes: str) -> SubmissionOutcome:
+    """A Rechazado 0160 with ``message``, followed by ``other_codes``."""
+
+    messages = (SifenMessage(code="0160", message=message),) + tuple(
+        SifenMessage(code=code, message=f"mensaje {code}") for code in other_codes
+    )
+    return SubmissionOutcome(
+        response_raw="<rRetEnviDe/>",
+        sifen_status="rejected",
+        result_code="0160",
+        result_message=message,
+        messages=messages,
+    )
+
+
+def test_a_bare_0160_is_a_rejection_that_is_sent_again() -> None:
+    # MT v150 §12.2.6 (AE01, p. 153) and §6.5 (p. 26); DECISIONES F67: the
+    # test environment answered it to valid requests that passed later.
+    recorded = conclude_attempt(
+        _document(status="submitting"),
+        _job(status="processing", attempts=1),
+        attempt_number=1,
+        result=SifenAnswered(_malformed("XML Mal Formado.")),
+    )
+
+    document, job = recorded.document, recorded.job
+    assert document.internal_status == "rejected"
+    assert document.retryable_server_error is True
+    assert job.status == "retry_scheduled" and recorded.retryable is True
+    assert job.error_snapshot["code"] == "0160"
+    assert select_action(document) is AttemptAction.RESEND
+
+    exhausted = conclude_attempt(
+        _document(status="submitting"),
+        _job(status="processing", attempts=MAX_DOCUMENT_ATTEMPTS),
+        attempt_number=MAX_DOCUMENT_ATTEMPTS,
+        result=SifenAnswered(_malformed("XML Mal Formado.")),
+    )
+    assert exhausted.document.internal_status == "rejected"
+    assert exhausted.job.status == "failed"
+    assert exhausted.job.error_snapshot["category"] == "retry_exhausted"
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Guia de Mejores Practicas DNIT oct-2024 (p. 11).
+        "XML malformado: [El valor del elemento: dDirRec es invalido, "
+        "El valor del elemento: dDirLocEnt es invalido]",
+        "XML malformado: cvc-datatype-valid.1.2.3: 'Otro' is not a valid value "
+        "of union type",
+    ],
+)
+def test_a_0160_with_a_validation_detail_is_final(message: str) -> None:
+    # A content error: the same DE would be rejected again (DECISIONES F67).
+    recorded = conclude_attempt(
+        _document(status="submitting"),
+        _job(status="processing", attempts=1),
+        attempt_number=1,
+        result=SifenAnswered(_malformed(message)),
+    )
+
+    assert recorded.document.internal_status == "rejected"
+    assert recorded.document.retryable_server_error is False
+    assert recorded.job.status == "failed"
+
+
+def test_a_0160_next_to_another_code_is_final() -> None:
+    recorded = conclude_attempt(
+        _document(status="submitting"),
+        _job(status="processing", attempts=1),
+        attempt_number=1,
+        result=SifenAnswered(_malformed("XML Mal Formado.", "1330")),
+    )
+
+    assert recorded.document.retryable_server_error is False
+    assert recorded.job.status == "failed"
+
+
 def test_a_fiscal_rejection_is_final() -> None:
     recorded = conclude_attempt(
         _document(status="submitting"),

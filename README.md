@@ -606,9 +606,9 @@ Hallazgos de una auditoría reciente, que se corregirán a continuación:
   `reconciliation_required` (una cancelación cuyo CDC responde `0420`, una
   inutilización con `4066` o una cancelación con `4003` sin la cancelación
   visible): un reintento del operador repite la consulta o el envío.
-- Un reenvío del mismo DE (después de `0420` o de `0161`/`0162`) no vuelve a
-  controlar la ventana de `dFeEmiDE` (rechazos `1150`/`1151`): solo deja el
-  aviso en `deadline_alerts`.
+- Un reenvío del mismo DE (después de `0420`, de `0161`/`0162` o de un `0160`
+  sin detalle) no vuelve a controlar la ventana de `dFeEmiDE` (rechazos
+  `1150`/`1151`): solo deja el aviso en `deadline_alerts`.
 - La consulta de RUC guarda para auditoría un request con un `dId` distinto
   del que viajó (la consulta por CDC sí guarda el real).
 
@@ -617,7 +617,9 @@ plataforma; el detalle está en `docs/normativa/matriz.md`:
 
 - Un rechazo `0161`/`0162` (falla del servidor del SIFEN) se trata como
   reenviable: el documento queda `rejected` con `retryable_server_error` y el
-  mismo DE firmado se reenvía dentro de los cinco intentos.
+  mismo DE firmado se reenvía dentro de los cinco intentos. Lo mismo un
+  rechazo cuyo único código es un `0160` sin detalle de validación: el
+  ambiente de pruebas lo respondió a pedidos válidos (decisión F67).
 - Cada reenvío lleva un `dId` nuevo: no hay regla oficial sobre si el `dId`
   debe ser único.
 - Si el SIFEN responde `0420` al consultar el CDC de un DTE que tenía una

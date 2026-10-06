@@ -29,10 +29,10 @@ señalar la contradicción en el commit o PR.
    `max_retries > 0`; la plataforma y `SifenClient` igual los usan con
    `max_retries=0`. La plataforma consulta el CDC (siConsDE) antes de
    reenviar: un DE solo vuelve a viajar cuando la consulta responde `0420`, el
-   request no salió o el rechazo fue `0161`/`0162`, y siempre es el mismo `rDE`
-   firmado en un `rEnviDe` nuevo; una cancelación incierta se verifica en
-   `xContEv` antes de reenviarse (`docs/normativa/matriz.md`, decisiones
-   F60-F64 y F70).
+   request no salió o el rechazo fue `0161`/`0162` o un `0160` solo y sin
+   detalle de validación, y siempre es el mismo `rDE` firmado en un `rEnviDe`
+   nuevo; una cancelación incierta se verifica en `xContEv` antes de
+   reenviarse (`docs/normativa/matriz.md`, decisiones F60-F64, F67 y F70).
 
 ## Qué es KilaSifen
 
@@ -130,7 +130,7 @@ python -m pytest tests/api tests/application tests/domain tests/infrastructure -
   Apuntándola a PostgreSQL, cada test trabaja en un schema propio; el marcador
   `requires_postgres` identifica los que necesitan ese backend.
 - Referencia medida el 2026-10-06 (Python 3.14, sin
-  `KILA_SIFEN_TEST_DATABASE_URL`, `python -m pytest tests/ -q`): 2079 passed,
+  `KILA_SIFEN_TEST_DATABASE_URL`, `python -m pytest tests/ -q`): 2090 passed,
   10 skipped (ocho de ellos solo corren contra PostgreSQL). Ya no queda ningún
   xfail. Si el número cambia, que sea por tests agregados o quitados a
   propósito.
@@ -438,9 +438,9 @@ Plataforma (hallazgos de auditoría pendientes):
   con un `xContenDE` ilegible) y una cuyo CDC responde `0420`. No existe un
   endpoint para resolver a mano esos eventos: el reintento del operador
   repite la consulta o el envío.
-- Un reenvío del mismo DE (tras `0420` o `0161`/`0162`) no vuelve a
-  controlar la ventana de `dFeEmiDE` (1150/1151, MT v150 §12.4 val. 19-20):
-  solo deja el aviso en `deadline_alerts`.
+- Un reenvío del mismo DE (tras `0420`, `0161`/`0162` o `0160` sin detalle)
+  no vuelve a controlar la ventana de `dFeEmiDE` (1150/1151, MT v150 §12.4
+  val. 19-20): solo deja el aviso en `deadline_alerts`.
 - `KilaSifenQueryGateway.query_ruc` guarda para auditoría un request con un
   `dId` distinto del que viajó (`query_document` ya guarda el real).
 - La respuesta de `GET /documents/{id}` (`api/schemas/documents.py`) todavía
@@ -455,8 +455,9 @@ Plataforma (hallazgos de auditoría pendientes):
   de la SET. El 2026-10-06 ese ambiente aprobó facturas, NC y ND con IVA de 2
   decimales, una cancelación y una inutilización, y mostró la forma real de
   `xContenDE`. También respondió a veces `0160` «XML Mal Formado» (HTTP 400)
-  a pedidos válidos que pasaron segundos después: un DE rechazado así queda
-  `rejected` en la plataforma, que no reenvía tras un `0160`.
+  a pedidos válidos que pasaron segundos después. Un DE rechazado sólo con
+  ese `0160` sin detalle se reenvía como un `0161`/`0162` (decisión F67); un
+  evento rechazado así no: los eventos no tienen esa regla ni la de F64.
 - `KilaSifenEmissionEngine` sin `mapper` lee
   `KILA_SIFEN_TEST_EMITTER_NAME_LITERAL` con `get_settings()`; los workers
   deberían pasar el literal explícito. El literal correcto del ambiente de

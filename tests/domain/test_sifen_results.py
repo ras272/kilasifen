@@ -5,6 +5,7 @@ import pytest
 from kilasifen.domain.common.sifen_results import (
     ReceptionState,
     classify_reception,
+    is_retryable_rejection,
     normalize_result_state,
 )
 
@@ -56,6 +57,29 @@ def test_reception_is_classified_by_dEstRes_and_only_then_by_0260(
     expected: ReceptionState,
 ) -> None:
     assert classify_reception(state_text, codes) is expected
+
+
+@pytest.mark.parametrize(
+    ("answer", "retryable"),
+    [
+        # DECISIONES F64: server failures, in any message.
+        ([("0161", "Servidor de procesamiento momentaneamente sin respuesta")], True),
+        ([("1330", "mensaje"), ("0162", "Servidor paralizado")], True),
+        # DECISIONES F67: a lone 0160 without validation detail.
+        ([("0160", "XML Mal Formado.")], True),
+        ([("0160", None)], True),
+        (
+            [("0160", "XML malformado: [El valor del elemento: dDirRec es invalido]")],
+            False,
+        ),
+        ([("0160", "XML Mal Formado."), ("1330", "mensaje")], False),
+        ([("1330", "mensaje")], False),
+    ],
+)
+def test_which_rejections_let_the_same_de_travel_again(
+    answer: list[tuple[str, str | None]], retryable: bool
+) -> None:
+    assert is_retryable_rejection(answer) is retryable
 
 
 def test_normalization_drops_accents_case_and_extra_blanks() -> None:

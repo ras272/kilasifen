@@ -107,6 +107,19 @@ def answer_codes(document: Document) -> frozenset[str]:
     return frozenset(codes)
 
 
+def answer_messages(document: Document) -> tuple[tuple[str, str | None], ...]:
+    """``(code, message)`` of every ``gResProc`` of the last siRecepDE answer."""
+
+    pairs = [
+        (str(message["code"]), message.get("message"))
+        for message in _messages(document)
+        if message.get("code")
+    ]
+    if document.sifen_result_code and not pairs:
+        pairs.append((document.sifen_result_code, document.sifen_result_message))
+    return tuple(pairs)
+
+
 def _messages(document: Document) -> list[dict]:
     return [
         message

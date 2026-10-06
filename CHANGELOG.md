@@ -572,6 +572,11 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
   (84 caracteres) el nombre del emisor tapaba su RUC y la descripción tapaba
   los importes; dos escenarios golden de NC también desbordaban. El bloque del
   emisor toma la altura de su columna más alta.
+- Un rechazo de siRecepDE cuyo único código es `0160` y no trae detalle de
+  validación («XML Mal Formado.») ya no es definitivo: el mismo `rDE` firmado
+  se reenvía como ante `0161`/`0162` (decisión F67; MT v150 §12.2.6 y §6.5).
+  El ambiente de pruebas respondió ese `0160` a pedidos válidos que pasaron
+  segundos después. Un `0160` con detalle sigue siendo definitivo.
 - La lectura de `xContenDE` acepta la forma que mandó el ambiente de pruebas:
   `rDE`, `dProtAut` y `xContEv` sin `rContDe` y una declaración XML dentro de
   cada `xEvento`. Antes devolvía «sin contenedor»: una cancelación incierta

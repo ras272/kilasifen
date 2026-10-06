@@ -8,6 +8,7 @@ Sources: Manual Tecnico SIFEN v150 (10/09/2019) and Notas Tecnicas 01-27
 from __future__ import annotations
 
 import unicodedata
+from collections.abc import Iterable
 from enum import Enum
 
 #: siRecepDE: "Autorizacion del DE satisfactoria" (MT v150 §12.3.1.3 BC01,
@@ -35,6 +36,41 @@ DUPLICATE_DOCUMENT_CODES = frozenset({"1001", "1002"})
 #: procesamiento momentaneamente sin respuesta" and 0162 "Servidor de
 #: procesamiento paralizado" (MT v150 §12.2.6, p. 153).
 SERVER_FAILURE_CODES = frozenset({"0161", "0162"})
+
+#: AE01 "XML malformado": a generic rejection of the input message of any
+#: web service, in the same group as 0161/0162 (MT v150 §12.2.6, p. 153).
+XML_MALFORMED_CODE = "0160"
+
+def is_retryable_rejection(answer: Iterable[tuple[str, str | None]]) -> bool:
+    """Whether a siRecepDE Rechazado lets the same signed DE travel again.
+
+    ``answer`` holds the ``(code, message)`` of every ``gResProc``.
+
+    - 0161/0162 in any message: server failures (DECISIONES F64).
+    - 0160 alone and without a validation detail (DECISIONES F67). SIFEN
+      reports a content error as "XML malformado: <detalle>" (Guia de
+      Mejores Practicas, oct-2024, p. 11), which needs a corrected DE and
+      stays final. A bare "XML Mal Formado." was answered by the test
+      environment on 2026-10-06 to valid requests that passed seconds later.
+      MT v150 §6.5 (p. 26) lets a rejected DE keep its CDC and be submitted
+      again "cuantas veces sea necesario".
+    """
+
+    pairs = [(str(code), message) for code, message in answer]
+    codes = {code for code, _ in pairs}
+    if codes & SERVER_FAILURE_CODES:
+        return True
+    return codes == {XML_MALFORMED_CODE} and not any(
+        _validation_detail(message) for _, message in pairs
+    )
+
+
+def _validation_detail(message: str | None) -> str:
+    """What follows "XML malformado:" in a 0160 message, if anything."""
+
+    _, separator, detail = (message or "").partition(":")
+    return detail.strip() if separator else ""
+
 
 #: Cancellation answers that a retry can get although an earlier attempt was
 #: registered: 4002 (CDC no longer approved), 4003 (duplicate), 4009 and 4010

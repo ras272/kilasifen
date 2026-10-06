@@ -14,7 +14,8 @@ class Document:
     from it (MT v150 §6.2.1 p. 25). ``sifen_protocol`` is ``dProtAut`` and
     ``sifen_messages`` every ``gResProc`` of the last answer, as
     ``{"code", "message"}`` items. ``retryable_server_error`` marks a
-    rejection with 0161/0162 whose signed XML is sent again. ``timbrado`` is
+    rejection with 0161/0162, or with a lone 0160 without validation detail,
+    whose signed XML is sent again. ``timbrado`` is
     the ``dNumTim`` the signed DE carries.
     """
 

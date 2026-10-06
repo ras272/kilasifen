@@ -298,7 +298,8 @@ reenvía; con `0420` («no existe o no está aprobado») vuelve a `queued` y el
 intento siguiente reenvía el mismo DE firmado (mismo CDC y firma) en un
 `rEnviDe` con `dId` nuevo (Decreto 872/2023 Art. 29). Un rechazo que trae
 `1001`/`1002` en cualquiera de sus mensajes solo queda firme después de esa
-consulta, y uno con `0161`/`0162` (falla del servidor) se reenvía. Si al agotar los intentos SIFEN no dio una respuesta
+consulta, y uno con `0161`/`0162` (falla del servidor) o con un `0160` sin
+detalle como único código (decisión F67) se reenvía. Si al agotar los intentos SIFEN no dio una respuesta
 sobre el CDC, el documento queda `reconciliation_required`; el ERP usa el
 endpoint `reconcile` con la misma intención original. Cuando la falla prueba
 que el request no salió (`transport_not_sent` en el job) el documento vuelve a

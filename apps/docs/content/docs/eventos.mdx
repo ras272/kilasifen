@@ -130,8 +130,8 @@ son DTE o que podrían serlo:
 - en envío o pendientes (`processing`, `submitting`, `submitted`,
   `retry_pending`, `reconciliation_required`);
 - con su DE firmado y un job activo que los va a enviar (el mismo DE después
-  de un `0420`, un request que no salió o un rechazo `0161`/`0162` por
-  reenviar).
+  de un `0420`, un request que no salió o un rechazo `0161`/`0162` o `0160`
+  sin detalle por reenviar).
 
 No bloquean los rechazados, los fallidos, los que están en cola sin armar, los
 cancelados, los inutilizados ni los que ningún job va a enviar.
@@ -227,7 +227,7 @@ El `201` trae `event`, `job`, `inutilization` (el rango guardado; el
 | Documento con ese número | ¿Se inutiliza? |
 | --- | --- |
 | Ninguno (salto de numeración) | Sí. Si SIFEN acepta números todavía no alcanzados por la numeración no está determinado: probalo en test. |
-| `rejected` (rechazo de SIFEN) | Sí, si su job no lo va a reenviar (un rechazo `0161`/`0162` con el job activo no). |
+| `rejected` (rechazo de SIFEN) | Sí, si su job no lo va a reenviar (un rechazo `0161`/`0162`, o `0160` sin detalle, con el job activo no). |
 | `failed` (validación local) | Sí, si ningún job lo va a reintentar. |
 | `queued` | Sí, si ningún job lo va a enviar (por ejemplo, intentos agotados después de un `0420`). |
 | `approved`, `approved_with_observation` | No: es un DTE (SIFEN rechaza con `4065`). |

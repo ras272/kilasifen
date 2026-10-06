@@ -24,7 +24,7 @@ columna «Qué sigue».
 | `reconciliation_required` | Se agotaron los intentos automáticos sin saber qué tiene SIFEN para el CDC. | Un reintento del operador o `POST .../reconcile` vuelven a consultar. |
 | `approved` | Terminal. DTE aprobado. | Sólo puede pasar a `cancelled`. |
 | `approved_with_observation` | Terminal. DTE aprobado con observación: la única de un DE en el MT v150 es `1005`, transmisión extemporánea (con posible sanción). Es un DTE válido. | Sólo puede pasar a `cancelled`. |
-| `rejected` | Terminal. SIFEN rechazó el DE. | Definitivo, salvo `0161`/`0162`, que KilaSifen reenvía. Si no se reenvía, el número se inutiliza. |
+| `rejected` | Terminal. SIFEN rechazó el DE. | Definitivo, salvo `0161`/`0162` y un `0160` sin detalle, que KilaSifen reenvía. Si no se reenvía, el número se inutiliza. |
 | `failed` | Terminal. No se pudo armar o firmar (validación local); nunca llegó a SIFEN. | Un reintento del operador lo vuelve a preparar una vez corregida la causa; si no, el número se inutiliza. |
 | `cancelled` | Terminal y definitivo: SIFEN registró su cancelación. | Nada. |
 | `inutilized` | Terminal y definitivo: su número se inutilizó con un evento aprobado. | Nada. |
@@ -70,11 +70,11 @@ una clave `platform:admin`; no hay un endpoint público para el ERP.
 | `duplicate_reconciliation` | `retry_pending` | Rechazo con `1001`/`1002`; se consulta el CDC antes de creerlo. |
 | `reconciliation_pending` | `retry_pending` | La consulta respondió otro código (por ejemplo `0421`); se vuelve a consultar. |
 | `resubmission` | `queued` | La consulta respondió `0420`; se reenvía el mismo DE firmado. |
-| `retryable_server_error` | `rejected` | Rechazo `0161`/`0162`; se reenvía el mismo DE firmado. |
+| `retryable_server_error` | `rejected` | Rechazo `0161`/`0162`, o `0160` sin detalle; se reenvía el mismo DE firmado. |
 | `emitter_busy` | sin cambio | Otra operación retuvo el emisor; el intento no se consumió y se reprograma 30 s después. |
 | `sifen_rejection` | `rejected` | Rechazo definitivo. |
 | `fiscal_validation` | `failed` o pendiente | Validación local antes de firmar (documento `failed`), o una consulta del CDC rechazada por configuración antes de salir: en ese caso el documento sigue pendiente y un reintento del operador vuelve a consultar una vez corregida. |
-| `retry_exhausted` | `queued` o `rejected` | Se agotaron los intentos sin un DTE aprobado (`0420`, request que no salió o `0161`/`0162`); un reintento del operador reenvía el mismo DE firmado. |
+| `retry_exhausted` | `queued` o `rejected` | Se agotaron los intentos sin un DTE aprobado (`0420`, request que no salió, `0161`/`0162` o `0160` sin detalle); un reintento del operador reenvía el mismo DE firmado. |
 | `reconciliation_required` | `reconciliation_required` | Se agotaron los intentos sin conocer el resultado. |
 | `concurrent_update` | terminal | Otra operación cerró el documento mientras el intento esperaba a SIFEN. |
 
@@ -158,9 +158,10 @@ administración, y ese reintento consulta el CDC antes de decidir.
 | --- | --- |
 | `1001`, `1002` (CDC o documento duplicado) | Solo saltan si otro documento ya está **autorizado**. Si cualquier mensaje del rechazo trae uno de esos códigos, el documento queda `retry_pending` y se consulta el CDC: con `0422` queda `approved`; con `0420` el rechazo se vuelve definitivo, con el primer error que informó SIFEN. |
 | `0161`, `0162` (servidor de SIFEN sin respuesta o paralizado, en cualquier mensaje del rechazo) | El documento queda `rejected` con el error del job `retryable_server_error` y el mismo DE firmado se reenvía con espera creciente, dentro de los cinco intentos. Al agotarlos (`retry_exhausted`), un reintento del operador lo vuelve a enviar. Que estos códigos se puedan reenviar es una interpretación de KilaSifen: la norma no lo determina. |
+| `0160` sin detalle (el único código del rechazo, sin detalle de validación, como «XML Mal Formado.») | Igual que `0161`/`0162`: el mismo DE firmado se reenvía dentro de los cinco intentos. El ambiente de pruebas de SIFEN respondió así a pedidos válidos que pasaron segundos después. Un `0160` con detalle («XML malformado: [El valor del elemento: …]») es un error de los datos y es definitivo. |
 | Cualquier otro | Rechazo definitivo (job `failed`, `sifen_rejection`), con el primer error que informó SIFEN. KilaSifen no corrige ni reenvía un DE rechazado: corregí los datos y creá un documento nuevo, que recibe otro número y otro CDC. Como el CDC cambia, inutilizá el número rechazado (MT v150 §11.1.1; Decreto 872/2023 Art. 29). El Decreto también permite, si ya se configuró el hecho generador del impuesto, corregir el DE y reenviarlo con el mismo CDC mientras su estructura de datos no cambie; KilaSifen no ofrece ese camino. |
 
-<Callout type="warn" title="Un rechazo 0161/0162 no es definitivo">
+<Callout type="warn" title="Un rechazo 0161/0162, o 0160 sin detalle, no es definitivo">
   Igual se publica `document.rejected`, y si el reenvío se aprueba llega
   después `document.approved`. Ni el webhook ni el documento traen la marca de
   reenvío, y `sifen_result_code` es el primer mensaje de SIFEN, que puede no
@@ -173,7 +174,8 @@ administración, y ese reintento consulta el CDC antes de decidir.
 ## Avisos de plazo
 
 Al terminar cada intento sobre un documento pendiente (o rechazado con
-`0161`/`0162` y por reenviar) que ya tiene XML firmado, el job agrega a
+`0161`/`0162` o `0160` sin detalle, y por reenviar) que ya tiene XML
+firmado, el job agrega a
 `error_snapshot` la lista `deadline_alerts` si corresponde algún aviso:
 
 | Aviso | Cuándo |

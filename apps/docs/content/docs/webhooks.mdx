@@ -104,7 +104,7 @@ en UTC.
 | --- | --- | --- |
 | `document.approved` | SIFEN aprobó el DE: en la respuesta al envío, o con `0422` en la consulta por CDC que hace el worker. | Estado del documento |
 | `document.approved_with_observation` | Aprobado con observación (por ejemplo `1005`, transmisión extemporánea). | Estado del documento |
-| `document.rejected` | Rechazo de SIFEN. No siempre es final: si algún mensaje del rechazo es `0161` o `0162` (falla del servidor), el mismo DE se reenvía y puede llegar después `document.approved`. El webhook no trae esa marca: mirá el job del documento (ver [Estados y reintentos](/docs/estados-y-reintentos#rechazos-que-se-confirman-o-se-reenvían)). | Estado del documento |
+| `document.rejected` | Rechazo de SIFEN. No siempre es final: si algún mensaje del rechazo es `0161` o `0162` (falla del servidor), o si su único código es un `0160` sin detalle, el mismo DE se reenvía y puede llegar después `document.approved`. El webhook no trae esa marca: mirá el job del documento (ver [Estados y reintentos](/docs/estados-y-reintentos#rechazos-que-se-confirman-o-se-reenvían)). | Estado del documento |
 | `document.failed` | El documento no se pudo armar ni firmar (validación local); nunca llegó a SIFEN. | Estado del documento |
 | `document.retry_pending` | Resultado incierto, o rechazo `1001`/`1002` por confirmar; el próximo intento consulta el CDC. | Estado del documento |
 | `document.queued` | Volvió a la cola sin DTE en SIFEN: el request no salió, o SIFEN respondió `0420`. El mismo DE firmado se reenvía mientras queden intentos. | Estado del documento |
