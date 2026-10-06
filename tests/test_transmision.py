@@ -1159,7 +1159,9 @@ class TestTransmisionBase:
         texto = transmision_base._serialize(REnviConsRuc(dId=31415, dRUCCons="4567012"))
         assert isinstance(texto, str)
         assert texto.startswith('<?xml version="1.0" encoding="UTF-8"?>\n')
-        assert "<ns0:rEnviConsRUC" in texto
+        # MT v150 sec. 7.2: sin prefijos, el namespace del SIFEN por defecto.
+        assert f'<rEnviConsRUC xmlns="{NS_SIFEN}">' in texto
+        assert "ns0:" not in texto
         assert "4567012" in texto
 
     def test_parsear_texto_xml_a_binding(self, transmision_base: Any) -> None:
@@ -3108,6 +3110,70 @@ CASOS_REQUEST_POR_CONSULTA = [
         id="consultar_dte_async",
     ),
 ]
+
+
+CASOS_CONSULTA_SIN_PREFIJOS = [
+    pytest.param(
+        lambda c: c.consultar_ruc("80024135-5"),
+        f'<rResEnviConsRUC xmlns="{NS_SIFEN}"><dCodRes>0502</dCodRes>'
+        "<dMsgRes>RUC encontrado</dMsgRes></rResEnviConsRUC>",
+        "rEnviConsRUC",
+        id="consultar_ruc",
+    ),
+    pytest.param(
+        lambda c: c.consultar_de(_cdc_ficticio(37)),
+        f'<rEnviConsDeResponse xmlns="{NS_SIFEN}"><dFecProc>{FECHA_PROCESO}'
+        "</dFecProc><dCodRes>0420</dCodRes><dMsgRes>No existe</dMsgRes>"
+        "</rEnviConsDeResponse>",
+        "rEnviConsDeRequest",
+        id="consultar_de",
+    ),
+    pytest.param(
+        lambda c: c.consultar_lote(2026031400017),
+        f'<rResEnviConsLoteDe xmlns="{NS_SIFEN}"><dFecProc>{FECHA_PROCESO}'
+        "</dFecProc><dCodResLot>0361</dCodResLot><dMsgResLot>En proceso"
+        "</dMsgResLot></rResEnviConsLoteDe>",
+        "rEnviConsLoteDe",
+        id="consultar_lote",
+    ),
+]
+
+
+class TestMensajesSinPrefijos:
+    """MT v150 sec. 7.2 (p. 33): "no se podra utilizar ... Prefijos de namespace".
+
+    Se usa el cliente xsdata real con un transporte doble: xsdata escribe
+    ``ns0:`` si no se le indica otra cosa.
+    """
+
+    @pytest.mark.parametrize(
+        ("consultar", "respuesta", "raiz"), CASOS_CONSULTA_SIN_PREFIJOS
+    )
+    def test_las_consultas_viajan_sin_prefijos(
+        self,
+        consulta: Any,
+        monkeypatch: pytest.MonkeyPatch,
+        consultar: Callable[[Any], Any],
+        respuesta: str,
+        raiz: str,
+    ) -> None:
+        transporte_doble = TransporteFalso()
+        transporte_doble.respuesta = respuesta.encode()
+        monkeypatch.setattr(
+            base, "_create_transport", lambda *a, **k: transporte_doble
+        )
+        monkeypatch.setattr(
+            TransmisionBase, "_get_cert_files", lambda self: ("cert.pem", "key.pem")
+        )
+
+        consultar(consulta)
+
+        [(args, kwargs)] = transporte_doble.envios
+        enviado = kwargs["data"] if "data" in kwargs else args[1]
+        texto = enviado.decode() if isinstance(enviado, bytes) else enviado
+        assert f'<{raiz} xmlns="{NS_SIFEN}">' in texto
+        assert "ns0:" not in texto
+        assert "xmlns:" not in texto
 
 
 class TestConsultaSIFEN:

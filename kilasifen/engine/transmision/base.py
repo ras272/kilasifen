@@ -89,6 +89,7 @@ __all__ = ["RequestsTransport", "TransmisionBase"]
 
 _NS_SOAP11 = "http://schemas.xmlsoap.org/soap/envelope/"
 _NS_SOAP12 = "http://www.w3.org/2003/05/soap-envelope"
+_NS_SIFEN = "http://ekuatia.set.gov.py/sifen/xsd"
 
 _TIPO_CONTENIDO_SOAP12 = "application/soap+xml; charset=utf-8"
 
@@ -191,10 +192,29 @@ def _parser() -> XmlParser:
     return XmlParser()
 
 
+class _SerializadorSinPrefijos(XmlSerializer):
+    """Serializador que deja el namespace del SIFEN como espacio por defecto.
+
+    El MT v150 (sec. 7.2, p. 33) no admite prefijos de namespace en los
+    mensajes ("no se podra utilizar ... Prefijos de namespace"; validacion
+    AB07, codigo 0106) y su ejemplo de request declara el namespace del SIFEN
+    por defecto en la raiz del cuerpo. Sin ``ns_map`` xsdata escribiria
+    ``ns0:``. Un ``ns_map`` explicito se respeta.
+    """
+
+    def render(self, obj: Any, ns_map: dict | None = None) -> str:
+        if ns_map is None:
+            ns_map = {None: _NS_SIFEN}
+        return super().render(obj, ns_map=ns_map)
+
+
 @lru_cache(maxsize=1)
 def _serializador() -> XmlSerializer:
-    """Serializador xsdata compartido: declaracion XML, UTF-8, sin sangria."""
-    return XmlSerializer(
+    """Serializador xsdata compartido: declaracion XML, UTF-8, sin sangria.
+
+    No escribe prefijos: el namespace del SIFEN queda como espacio por defecto.
+    """
+    return _SerializadorSinPrefijos(
         config=SerializerConfig(encoding="UTF-8", xml_declaration=True)
     )
 
@@ -782,8 +802,8 @@ class TransmisionBase:
     def _serialize(self, obj: Any, ns_map: dict[str | None, str] | None = None) -> str:
         """Serializa un binding a texto XML con declaracion y sin sangria.
 
-        Sin ``ns_map`` xsdata asigna prefijos propios (``ns0:``...); con
-        ``{None: namespace}`` ese namespace queda como espacio por defecto.
+        Sin ``ns_map`` el namespace del SIFEN queda como espacio por defecto,
+        sin prefijos (MT v150 sec. 7.2); un ``ns_map`` explicito se respeta.
         """
         return _serializador().render(obj, ns_map=ns_map)
 
@@ -855,6 +875,10 @@ class TransmisionBase:
             transport=transporte,
             parser=_parser_de_respuestas(),
         )
+        # Sin prefijos de namespace (MT v150 sec. 7.2): el serializador por
+        # defecto de xsdata escribe ``ns0:``. Se asigna despues porque
+        # ``Client`` descarta el parser recibido si tambien recibe serializador.
+        cliente.serializer = _serializador()
         self._clients[servicio] = cliente
         return cliente
 
