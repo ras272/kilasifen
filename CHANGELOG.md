@@ -312,6 +312,13 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 
 ### Added
 
+- `scripts/sifen_test_smoke.py`: prueba real contra el ambiente de test del
+  SIFEN por el mismo camino que el worker (facturas, NC, ND, cancelación,
+  inutilización, consultas y KuDE). Sólo habla con `sifen-test.set.gov.py`:
+  borra en el proceso las direcciones de producción y rechaza cualquier otro
+  host. Los datos del emisor van en `.sifen-test/` (fuera de git) y la
+  contraseña del certificado se lee del Administrador de credenciales de
+  Windows o se pide por teclado.
 - API fiscal *headless* (`kilasifen.api`) sobre PostgreSQL, Redis/RQ y un
   outbox transaccional: emisores, certificados, timbrados, documentos
   tipados (factura, nota de crédito y nota de débito), eventos de
@@ -554,6 +561,23 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 
 ### Fixed
 
+- Engine: los mensajes al SIFEN salen sin prefijos de namespace
+  (`<rEnviConsRUC xmlns="http://ekuatia.set.gov.py/sifen/xsd">`), como pide
+  el MT v150 §7.2. Antes la consulta RUC, la consulta por CDC de la
+  plataforma, las consultas de lote, el envío por lote y `enviar_evento`
+  salían con `ns0:`.
+- KuDE: la razón social, los nombres, las descripciones de ítem y las
+  direcciones se parten en líneas dentro de su celda en lugar de recortarse o
+  de dibujarse sobre la columna vecina. Con el literal de prueba de la Guía
+  (84 caracteres) el nombre del emisor tapaba su RUC y la descripción tapaba
+  los importes; dos escenarios golden de NC también desbordaban. El bloque del
+  emisor toma la altura de su columna más alta.
+- La lectura de `xContenDE` acepta la forma que mandó el ambiente de pruebas:
+  `rDE`, `dProtAut` y `xContEv` sin `rContDe` y una declaración XML dentro de
+  cada `xEvento`. Antes devolvía «sin contenedor»: una cancelación incierta
+  nunca se veía registrada (decisión F70) y la consulta por CDC no traía el
+  protocolo. Cada evento conserva el protocolo y el estado de su propia
+  respuesta, no los del primero.
 - Engine: `enviar_lote` arma el lote con el formato oficial (decisión F65).
   Antes unía los `rDE` con saltos de línea, los codificaba en base64 a mano y
   el binding volvía a codificarlos, sin ZIP ni `rLoteDE`: el SIFEN lo tomaba

@@ -129,14 +129,20 @@ python -m pytest tests/api tests/application tests/domain tests/infrastructure -
 - Sin `KILA_SIFEN_TEST_DATABASE_URL` los tests de plataforma usan SQLite.
   Apuntándola a PostgreSQL, cada test trabaja en un schema propio; el marcador
   `requires_postgres` identifica los que necesitan ese backend.
-- Referencia medida tras ordenar los bloqueos de la segunda transacción de
-  los intentos (Python 3.14, sin `KILA_SIFEN_TEST_DATABASE_URL`,
-  `python -m pytest tests/ -q`): 1308 passed, 10 skipped (cuatro de ellos solo
-  corren contra PostgreSQL). Ya no queda ningún xfail. Si el número cambia,
-  que sea por tests agregados o quitados a propósito.
+- Referencia medida el 2026-10-06 (Python 3.14, sin
+  `KILA_SIFEN_TEST_DATABASE_URL`, `python -m pytest tests/ -q`): 2079 passed,
+  10 skipped (ocho de ellos solo corren contra PostgreSQL). Ya no queda ningún
+  xfail. Si el número cambia, que sea por tests agregados o quitados a
+  propósito.
 - Chequeo de versiones nuevas de los XSD en la SET (hace red; se corre a mano
   o desde el job semanal del workflow):
   `CHECK_SCHEMA_UPDATES=1 python -m pytest tests/test_schema_versions.py::TestSchemaUpdates`.
+- Prueba real contra el SIFEN de test (hace red; sólo `sifen-test.set.gov.py`,
+  con producción bloqueada en el proceso): `scripts/sifen_test_smoke.py`. Los
+  datos del emisor van en `.sifen-test/config.json` (fuera de git) y la
+  contraseña del certificado en el Administrador de credenciales de Windows
+  (`cmdkey /generic:kilasifen-sifen-test /user:sifen-test /pass`), nunca en
+  argumentos, variables ni archivos. `--dry-run` arma y valida sin red.
 
 ### Lint
 
@@ -254,7 +260,10 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   La verificación del certificado del servidor queda siempre activada. La
   plataforma arma el `rEnviDe` con `_build_enviar_de_request_xml` y el `dId`
   real, lo guarda con el documento y lo envía tal cual con
-  `TransmisionDE._send_raw_xml`, no con `enviar_de(rde)`.
+  `TransmisionDE._send_raw_xml`, no con `enviar_de(rde)`. Los mensajes salen
+  sin prefijos de namespace (MT v150 §7.2): el serializador compartido de
+  `base.py` deja el namespace del SIFEN por defecto, también en los clientes
+  xsdata.
 - **Lote.** `transmision/de.py` arma el ZIP del lote (`_build_lote_zip`):
   una entrada `.xml` con `<rLoteDE>` sin namespace, una sola declaración y
   los `rDE` sin blancos; al binding `REnvioLote.xDE` se le pasan los bytes
@@ -440,10 +449,14 @@ Plataforma (hallazgos de auditoría pendientes):
   consulta por CDC y el reenvío por `0161`/`0162` en el `error_snapshot` del
   job).
 - Los puntos que la normativa deja abiertos en respuestas, reenvíos, eventos e
-  inutilización (`0161`/`0162`, reglas del `dId`, forma de `xContenDE`, `0420`
-  de un DTE cancelado, hora de aprobación por consulta, entre otros) siguen la
-  opción documentada en `docs/normativa/matriz.md`; conviene confirmarlos en
-  el ambiente de test de la SET.
+  inutilización (`0161`/`0162`, reglas del `dId`, `0420` de un DTE cancelado,
+  hora de aprobación por consulta, entre otros) siguen la opción documentada
+  en `docs/normativa/matriz.md`; conviene confirmarlos en el ambiente de test
+  de la SET. El 2026-10-06 ese ambiente aprobó facturas, NC y ND con IVA de 2
+  decimales, una cancelación y una inutilización, y mostró la forma real de
+  `xContenDE`. También respondió a veces `0160` «XML Mal Formado» (HTTP 400)
+  a pedidos válidos que pasaron segundos después: un DE rechazado así queda
+  `rejected` en la plataforma, que no reenvía tras un `0160`.
 - `KilaSifenEmissionEngine` sin `mapper` lee
   `KILA_SIFEN_TEST_EMITTER_NAME_LITERAL` con `get_settings()`; los workers
   deberían pasar el literal explícito. El literal correcto del ambiente de
