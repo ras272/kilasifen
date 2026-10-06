@@ -9,11 +9,17 @@
   (WS_SiConsDE_v141.xsd:49) and carries the container ``rContDe{rDE,
   dProtAut, xContEv 0-n}`` (MT v150 Schemas XML 11-12, pp. 51-52), whose
   XSD SET did not publish. It is accepted escaped as text or embedded as
-  elements; its exact form is NO DETERMINADO.
+  elements, with or without ``rContDe``. The test environment (2026-10-06)
+  sent it escaped, without ``rContDe`` (``rDE``, ``dProtAut`` and
+  ``xContEv`` as siblings) and with an XML declaration before the ``rDE``
+  and inside every ``xEvento``; each ``rContEv`` pairs ``xEvento`` with its
+  own ``rResEnviEventoDe`` (state and protocol of that event).
 """
 
 from __future__ import annotations
 
+import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 from xml.etree import ElementTree as ET
@@ -37,6 +43,11 @@ EVENT_KINDS = {
     "rGEveNom": "nominacion",
 }
 CANCELLATION_EVENT_KIND = EVENT_KINDS["rGeVeCan"]
+
+#: Container root of the MT; siblings that arrive without it are wrapped in it.
+_CONTAINER_ROOT = "rContDe"
+#: XML declarations repeated inside a container text (not other instructions).
+_XML_DECLARATION = re.compile(r"<\?xml\s[^>]*\?>")
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,19 +188,40 @@ def read_document_container(response_body: bytes | str) -> DocumentContainer | N
 
 def _container_root(content: ET.Element) -> ET.Element | None:
     embedded = [child for child in content if isinstance(child.tag, str)]
-    if embedded:
+    if len(embedded) == 1:
         return embedded[0]
+    if embedded:
+        holder = ET.Element(_CONTAINER_ROOT)
+        holder.extend(embedded)
+        return holder
     text = (content.text or "").strip()
     if not text:
         return None
-    try:
-        return ET.fromstring(text.encode("utf-8"))
-    except ET.ParseError:
-        return None
+    return _parse_fragment(text)
+
+
+def _parse_fragment(text: str) -> ET.Element | None:
+    """Parse container text that may lack a single root.
+
+    XML declarations are dropped wherever they appear and sibling elements
+    are wrapped in ``rContDe``, as the test environment sends them.
+    """
+
+    cleaned = _XML_DECLARATION.sub("", text).strip()
+    for candidate in (cleaned, f"<{_CONTAINER_ROOT}>{cleaned}</{_CONTAINER_ROOT}>"):
+        try:
+            return ET.fromstring(candidate.encode("utf-8"))
+        except ET.ParseError:
+            continue
+    return None
 
 
 def _read_registered_events(node: ET.Element) -> list[RegisteredEvent]:
-    """Read the events of one ``xContEv`` (embedded or escaped)."""
+    """Read the events of one ``xContEv`` (embedded or escaped).
+
+    Each ``rContEv`` pairs the event with SIFEN's answer
+    (``rResEnviEventoDe``): its protocol and state belong to that event only.
+    """
 
     holder = node
     if not [child for child in node if isinstance(child.tag, str)]:
@@ -197,25 +229,43 @@ def _read_registered_events(node: ET.Element) -> list[RegisteredEvent]:
         if parsed is None:
             return []
         holder = parsed
-    answer = _first_element(holder, "rResEnviEventoDe")
-    protocol = _first_text(answer, "dProtAut") if answer is not None else None
-    state_text = _first_text(answer, "dEstRes") if answer is not None else None
+    groups = [
+        element
+        for element in holder.iter()
+        if isinstance(element.tag, str) and _local(element.tag) == "rContEv"
+    ] or [holder]
     events: list[RegisteredEvent] = []
-    for element in holder.iter():
+    for group in groups:
+        answer = _first_element(group, "rResEnviEventoDe")
+        protocol = _first_text(answer, "dProtAut") if answer is not None else None
+        state_text = _first_text(answer, "dEstRes") if answer is not None else None
+        for element in _event_elements(group):
+            kind = EVENT_KINDS.get(_local(element.tag))
+            if kind is None:
+                continue
+            events.append(
+                RegisteredEvent(
+                    kind=kind,
+                    cdc=_child_text(element, "Id"),
+                    protocol=protocol,
+                    state_text=state_text,
+                )
+            )
+    return events
+
+
+def _event_elements(group: ET.Element) -> Iterator[ET.Element]:
+    """Elements of one event group, reading an ``xEvento`` sent as text."""
+
+    for element in group.iter():
         if not isinstance(element.tag, str):
             continue
-        kind = EVENT_KINDS.get(_local(element.tag))
-        if kind is None:
-            continue
-        events.append(
-            RegisteredEvent(
-                kind=kind,
-                cdc=_child_text(element, "Id"),
-                protocol=protocol,
-                state_text=state_text,
-            )
-        )
-    return events
+        yield element
+        text = (element.text or "").strip()
+        if _local(element.tag) == "xEvento" and not len(element) and text:
+            parsed = _parse_fragment(text)
+            if parsed is not None:
+                yield from (e for e in parsed.iter() if isinstance(e.tag, str))
 
 
 def _message(node: ET.Element) -> SifenMessage:
