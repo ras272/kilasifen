@@ -282,9 +282,9 @@ Antes de tocar `apps/docs`, leer su `AGENTS.md`.
   perfil fiscal persistido (`domain/emitters/fiscal_profile.py`); `gDatRec`,
   de `domain/documents/receiver.py`, que también usa la API; los montos de
   `gCamItem`, `gTotSub` y `gCamCond` (IVA por ítem con las fórmulas de la
-  NT 13 y 8 decimales, subtotales, descuento global, redondeo opcional y
-  pagos), de `domain/documents/totals.py`, el mismo calculador que valida la
-  API; `dCodSeg` se
+  NT 13, 2 decimales en PYG y 8 en otras monedas, subtotales, descuento
+  global, redondeo opcional y pagos), de `domain/documents/totals.py`, el
+  mismo calculador que valida la API; `dCodSeg` se
   elige al crear el documento (`documents.security_code`) y `dFecFirma` es
   la hora de la firma. Antes de firmar `dCarQR` lleva un marcador sin datos
   fiscales (`DCARQR_PENDING_SIGNATURE`); después de firmar

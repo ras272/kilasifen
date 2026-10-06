@@ -22,9 +22,12 @@ Items
   (NT 13 §1.1 and §2.2; 1909-1911); E736 = E735 * E734/100 (1912/1913);
   E737 = 100*EA008*(100-E733) / (10000 + E734*E733) for E731=4 and 0
   otherwise (NT 13 §1.2 and §2.1; 1921).
-- E735/E736/E737 keep up to 8 decimals (XSD ``tMontoBase``) instead of
-  being rounded to whole guaranies one by one, and every total is the exact
-  sum of what the items carry (Dto 872/2023 Art. 6 num. 5; 1913, 2367-2375).
+- E735/E736 are not rounded to whole guaranies one by one (that lands on
+  the 0.50 edge of the MT v150 §F p. 103 tolerance in 9-18% of items):
+  in PYG they carry 2 decimals, the precision SIFEN integrators use in
+  production, and in other currencies up to 8 (XSD ``tMontoBase``). E737 is
+  the exact remainder, and every total is the exact sum of what the items
+  carry (Dto 872/2023 Art. 6 num. 5; 1913, 2367-2375).
 - Amounts take at most 8 decimals (``tMontoBase``, ``tdCantProSer``) and
   exchange rates at most 4 (``tTipoCambioBase``): the XML carries exactly
   the values the totals were computed with.
@@ -109,6 +112,11 @@ _AMOUNT4_PLACES = 4  # tMontoBase4 (E608, E645), tdCRed (F013)
 _RATE_PLACES = 4  # tTipoCambioBase (D018, E725, E611)
 _AMOUNT_Q = Decimal("0.00000001")
 _AMOUNT4_Q = Decimal("0.0001")
+#: E735/E736 in guaranies: 2 decimals. MT v150 E735/E736 are N 1-15p(0-8) and
+#: MT §F p. 103 accepts 50 cents up or down in calculations with decimals;
+#: 2 decimals keep each item within 0.005 of the formula and match what SIFEN
+#: integrators run in production (docs/normativa/matriz.md, decision F42).
+_PYG_TAX_Q = Decimal("0.01")
 #: Wide enough for 15 integer + 8 decimal digits multiplied by percentages.
 _CONTEXT = Context(prec=60, rounding=ROUND_HALF_UP)
 
@@ -224,6 +232,7 @@ def compute_document_amounts(typed_payload: dict) -> DocumentAmounts:
                 item,
                 global_percentage=global_percentage,
                 per_item_exchange=currency != GUARANI and exchange_condition == 2,
+                tax_quantum=_PYG_TAX_Q if currency == GUARANI else _AMOUNT_Q,
             )
             for item in raw_items
         )
@@ -325,6 +334,7 @@ def _compute_item(
     *,
     global_percentage: Decimal,
     per_item_exchange: bool,
+    tax_quantum: Decimal = _AMOUNT_Q,
 ) -> ItemAmounts:
     quantity = _amount(
         _first(item, "cantidad", "dCantProSer"),
@@ -362,7 +372,11 @@ def _compute_item(
     proportion = _item_proportion(item, affectation=affectation)
     rate = _item_rate(item, affectation=affectation)
     taxable_base, tax, exempt_base = _item_taxes(
-        total, affectation=affectation, proportion=proportion, rate=rate
+        total,
+        affectation=affectation,
+        proportion=proportion,
+        rate=rate,
+        quantum=tax_quantum,
     )
 
     exchange_rate = None
@@ -401,24 +415,37 @@ def _compute_item(
 
 
 def _item_taxes(
-    total: Decimal, *, affectation: int, proportion: Decimal, rate: int
+    total: Decimal,
+    *,
+    affectation: int,
+    proportion: Decimal,
+    rate: int,
+    quantum: Decimal = _AMOUNT_Q,
 ) -> tuple[Decimal, Decimal, Decimal]:
-    """E735, E736 and E737 of one item (NT 13 §1.1-§1.2, MT 1912/1913)."""
+    """E735, E736 and E737 of one item (NT 13 §1.1-§1.2, MT 1912/1913).
+
+    ``quantum`` is the precision of E735/E736: 0.01 in PYG, 1e-8 otherwise.
+    """
 
     if affectation in (AFFECTATION_EXONERATED, AFFECTATION_EXEMPT):
         return ZERO, ZERO, ZERO
     rate_decimal = Decimal(rate)
     denominator = Decimal("10000") + rate_decimal * proportion
-    taxable_base = _quantize(HUNDRED * total * proportion / denominator)
+    taxable_base = (HUNDRED * total * proportion / denominator).quantize(
+        quantum, rounding=ROUND_HALF_UP
+    )
     # E736 = E735 * E734 / 100 on the E735 actually written (1913).
-    tax = _quantize(taxable_base * rate_decimal / HUNDRED)
+    tax = (taxable_base * rate_decimal / HUNDRED).quantize(
+        quantum, rounding=ROUND_HALF_UP
+    )
     if affectation == AFFECTATION_TAXED:
         return taxable_base, tax, ZERO
     # E737 = 100*EA008*(100-E733)/(10000+E734*E733) equals EA008 - E735 - E736
     # algebraically. Taking the remainder keeps E735 + E736 + E737 = EA008, so
     # F008 is exactly the sum of EA008 (no 114999.99999999 for 115000), and
-    # it differs from the formula by less than 1e-8, far inside the 0.50
-    # tolerance of MT v150 §F p. 103 for calculations with decimals.
+    # it differs from the formula by at most two quanta (0.02 in PYG), far
+    # inside the 0.50 tolerance of MT v150 §F p. 103 for calculations with
+    # decimals.
     exempt_base = max(total - taxable_base - tax, ZERO)
     return taxable_base, tax, exempt_base
 

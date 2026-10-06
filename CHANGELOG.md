@@ -202,9 +202,11 @@ revisar la guía de migración de esta sección.
     exento o exonerado se escribe con `dPropIVA` 0 y `dBasExe` 0, y el
     gravado parcial con las fórmulas de la NT 13.
   - El IVA por ítem (`dBasGravIVA`, `dLiqIVAItem`, `dBasExe`) y sus totales
-    llevan hasta 8 decimales también en PYG, en lugar de redondearse a
-    guaraníes enteros campo por campo; los subtotales se informan con 0 cuando
-    algún ítem los necesita.
+    llevan decimales en lugar de redondearse a guaraníes enteros campo por
+    campo: 2 en PYG y hasta 8 en otras monedas. En un gravado parcial
+    `dBasExe` es el resto del ítem, y los totales son la suma exacta de lo
+    que llevan los ítems. Los subtotales se informan con 0 cuando algún ítem
+    los necesita.
   - Pagos: `formas_pago[].moneda` y `cuotas[].moneda` toman por defecto la
     moneda de la operación (antes PYG); `dTiCamTiPag` se informa si y sólo si
     el pago no es en PYG (con el `tipo_cambio` de la operación como default

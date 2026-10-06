@@ -194,8 +194,10 @@ Reglas fiscales que se validan al crear (fuentes en `docs/normativa/matriz.md`):
 - IVA por ítem: `afectacion` `gravado` (proporción 100), `exento` o
   `exonerado` (proporción 0, `tasa` 0) y `gravado_parcial`, que exige
   `proporcion_gravada` entre 0 y 100 sin incluirlos. Base gravada, IVA y base
-  exenta salen de las fórmulas de la NT 13 con hasta 8 decimales, también en
-  PYG; los totales son la suma exacta de los ítems.
+  exenta salen de las fórmulas de la NT 13: base gravada e IVA con 2
+  decimales en PYG y hasta 8 en otras monedas, y la base exenta de un
+  gravado parcial como el resto del ítem; los totales son la suma exacta de
+  los ítems.
 - Descuento global: `porcentaje_descuento_global` (0 por defecto) se aplica a
   cada ítem como `porcentaje * precio_unitario / 100`. `items[].descuento_global`
   es opcional y, si se envía, tiene que coincidir con ese cálculo (±0,8).
@@ -254,8 +256,7 @@ estado responde `409 documents.kude_not_available` con
 `n/total`, la fecha de inicio del timbrado como `DD-MM-AAAA` (NT 10), el
 «Total en Guaraníes» (`dTotalGs` si la moneda no es PYG) y las cantidades
 y los montos con todos los dígitos del XML, sin redondear (MT v150 §13.2 y
-§6.6): sólo cambian los separadores (`952.38095238` se imprime
-`952,38095238`).
+§6.6): sólo cambian los separadores (`2380.95` se imprime `2.380,95`).
 `/kude/data` devuelve los literales del XML: `totales.total_general_operacion`
 es `dTotGralOpe` y `totales.total_general_guaranies` es `dTotalGs` fuera de
 PYG. El `qr.url` es el `dCarQR` del XML, calculado con los valores literales

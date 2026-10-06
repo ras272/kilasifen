@@ -95,12 +95,12 @@ def test_partial_item_and_its_subtotals_follow_nt13() -> None:
 
     iva = _item_iva(root)
     assert iva["dPropIVA"] == "30"
-    assert iva["dBasGravIVA"] == "29126.21359223"
-    assert iva["dLiqIVAItem"] == "2912.62135922"
-    assert iva["dBasExe"] == "67961.16504855"
+    assert iva["dBasGravIVA"] == "29126.21"
+    assert iva["dLiqIVAItem"] == "2912.62"
+    assert iva["dBasExe"] == "67961.17"
     totals = _totals(root)
-    assert totals["dSubExe"] == "67961.16504855"  # 2353: E737 of E731=4
-    assert totals["dSub10"] == "32038.83495145"  # 2359: E735 + E736
+    assert totals["dSubExe"] == "67961.17"  # 2353: E737 of E731=4
+    assert totals["dSub10"] == "32038.83"  # 2359: E735 + E736
     assert totals["dTotOpe"] == "100000"
 
 
@@ -114,11 +114,13 @@ def test_iva_keeps_decimals_and_totals_are_their_exact_sum() -> None:
 
     iva = _item_iva(root)
     # R3 §3.2: 16 Gs at 10 % gave E735 = 15 and E736 = 1 (15 * 0.1 = 1.5).
-    assert iva["dBasGravIVA"] == "14.54545455"
-    assert iva["dLiqIVAItem"] == "1.45454546"
+    # PYG carries 2 decimals (decision F42): E735 = 1600/110 = 14.5454... ->
+    # 14.55 and E736 = 14.55 * 0.1 = 1.455 -> 1.46.
+    assert iva["dBasGravIVA"] == "14.55"
+    assert iva["dLiqIVAItem"] == "1.46"
     totals = _totals(root)
-    assert totals["dIVA10"] == totals["dTotIVA"] == "1.45454546"
-    assert totals["dBaseGrav10"] == totals["dTBasGraIVA"] == "14.54545455"
+    assert totals["dIVA10"] == totals["dTotIVA"] == "1.46"
+    assert totals["dBaseGrav10"] == totals["dTBasGraIVA"] == "14.55"
 
 
 def test_zero_valued_subtotals_are_written_when_an_item_needs_them() -> None:

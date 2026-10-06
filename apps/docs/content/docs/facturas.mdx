@@ -164,8 +164,10 @@ Como el número lo asigna KilaSifen, no podés anticipar ese choque.
 - Cada ítem declara `afectacion`: `gravado` (con `tasa` 5 o 10), `exento` u
   `exonerado` (con `tasa` 0) o `gravado_parcial`, que exige
   `proporcion_gravada` mayor que 0 y menor que 100. KilaSifen calcula la base
-  gravada, el IVA y la base exenta con las fórmulas de la NT 13, con hasta
-  8 decimales también en guaraníes.
+  gravada, el IVA y la base exenta con las fórmulas de la NT 13: la base
+  gravada y el IVA llevan 2 decimales en guaraníes y hasta 8 en otras
+  monedas, y en un ítem gravado parcial la base exenta es lo que resta del
+  total del ítem. Los totales son la suma exacta de los ítems.
 - `porcentaje_descuento_global` (0 por defecto) se aplica a cada ítem como
   `porcentaje * precio_unitario / 100`. No hace falta enviar
   `descuento_global` por ítem; si lo enviás, tiene que coincidir con ese

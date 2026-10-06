@@ -13,7 +13,7 @@ from kilasifen.infrastructure.kude.formatting import format_decimal, format_kude
         ("100", "100"),
         ("1234567", "1.234.567"),
         ("0", "0"),
-        # IVA with 8 decimals (NT 13) keeps every decimal: nc_parcial golden.
+        # IVA with 8 decimals (tMontoBase, other currencies) keeps every decimal.
         ("952.38095238", "952,38095238"),
         ("2727.27272727", "2.727,27272727"),
         ("3679.65367965", "3.679,65367965"),

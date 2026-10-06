@@ -69,12 +69,16 @@ def test_partial_item_follows_the_nt13_formulas() -> None:
               proporcion_gravada="30")
     ).items[0]
 
-    # [100 * EA008 * E733] / [10000 + E734 * E733] = 3e8 / 10300
-    assert values.taxable_base == D("29126.21359223")
-    assert values.tax == D("2912.62135922")
-    # [100 * EA008 * (100 - E733)] / [10000 + E734 * E733] = 7e8 / 10300,
-    # within 1e-8 so that E735 + E736 + E737 is exactly EA008.
-    assert abs(values.exempt_base - D(700_000_000) / D(10300)) < D("0.00000001")
+    # [100 * EA008 * E733] / [10000 + E734 * E733] = 3e8 / 10300 = 29126.2136...
+    # written with the 2 decimals of PYG (decision F42).
+    assert values.taxable_base == D("29126.21")
+    # E736 = E735 * E734 / 100 on the E735 written: 2912.621 -> 2912.62.
+    assert values.tax == D("2912.62")
+    # [100 * EA008 * (100 - E733)] / [10000 + E734 * E733] = 7e8 / 10300 is
+    # 67961.165...; E737 is the remainder 67961.17, inside the 0.50 tolerance
+    # of MT v150 §F p. 103, so that E735 + E736 + E737 is exactly EA008.
+    assert values.exempt_base == D("67961.17")
+    assert abs(values.exempt_base - D(700_000_000) / D(10300)) <= D("0.02")
     assert values.taxable_base + values.tax + values.exempt_base == D("100000")
 
 
@@ -122,13 +126,30 @@ def test_rate_contradicting_the_affectation_is_refused(
 
 @pytest.mark.parametrize("rate", [5, 10])
 def test_item_iva_is_exactly_the_base_times_the_rate(rate: int) -> None:
-    # 1913: E736 = E735 * E734 / 100 on the values written, up to the 8th
-    # decimal of tMontoBase. With whole-guarani rounding of E735 and E736 the
-    # difference reached 0.50 in 9-18 % of the amounts (R3 §3.2).
+    # 1913: E736 = E735 * E734 / 100 on the values written. In PYG both carry
+    # 2 decimals (decision F42), so they differ by half a cent at most, far
+    # inside the 0.50 tolerance of MT v150 §F p. 103. With whole-guarani
+    # rounding the difference reached 0.50 in 9-18 % of the amounts (R3 §3.2).
     for price in range(1, 2000):
         values = _amounts(_item(precio_unitario=str(price), tasa=rate)).items[0]
-        assert abs(values.tax - values.taxable_base * rate / 100) <= D("0.000000005")
-        assert abs(values.taxable_base + values.tax - price) <= D("0.00000001")
+        assert values.taxable_base == values.taxable_base.quantize(D("0.01"))
+        assert values.tax == values.tax.quantize(D("0.01"))
+        assert abs(values.tax - values.taxable_base * rate / 100) <= D("0.005")
+        assert abs(values.taxable_base + values.tax - price) <= D("0.01")
+
+
+def test_foreign_currency_iva_keeps_eight_decimals() -> None:
+    # Decision F42 only narrows PYG; other currencies keep the 8 decimals of
+    # tMontoBase. 120.99 USD at 10 %: E735 = 120.99 / 1.1 = 109.990909...
+    values = _amounts(
+        _item(precio_unitario="120.99"),
+        moneda="USD",
+        tipo_cambio="7300",
+        condicion_tipo_cambio=1,
+    ).items[0]
+
+    assert values.taxable_base == D("109.99090909")
+    assert values.tax == D("10.99909091")
 
 
 def test_amounts_with_more_than_eight_decimals_are_refused() -> None:
@@ -152,11 +173,11 @@ def test_subtotals_follow_nt13_with_a_partial_item() -> None:
     ).totals
 
     # 2353: EA008 (E731=3) + E737 (E731=4).
-    assert totals.exempt_subtotal == D("20000") + D("67961.16504855")
+    assert totals.exempt_subtotal == D("20000") + D("67961.17")
     # 2355: EA008 (E731=2).
     assert totals.exonerated_subtotal == D("15000")
     # 2359: E735 + E736 (E731=4), not the whole EA008.
-    assert totals.subtotal_10 == D("29126.21359223") + D("2912.62135922")
+    assert totals.subtotal_10 == D("29126.21") + D("2912.62")
     assert totals.subtotal_5 is None
     # 2362: F008 = F002 + F003 + F004 + F005, here exactly the sum of EA008.
     assert totals.total == (
@@ -202,10 +223,11 @@ def test_subtotals_exist_with_zero_when_an_item_needs_them() -> None:
 
 def test_a_tiny_taxed_item_keeps_its_iva_total() -> None:
     # 2368: with E736 rounded to whole guaranies a 5 Gs item at 10 % lost F016.
+    # With 2 decimals: E735 = 500/110 = 4.5454... -> 4.55; E736 = 0.455 -> 0.46.
     totals = _amounts(_item(precio_unitario="5")).totals
 
-    assert totals.tax_10 == D("0.45454546")
-    assert totals.total_tax == D("0.45454546")
+    assert totals.tax_10 == D("0.46")
+    assert totals.total_tax == D("0.46")
 
 
 def test_document_without_taxed_items_informs_no_iva_totals() -> None:

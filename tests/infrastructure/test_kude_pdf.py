@@ -283,18 +283,18 @@ def test_pyg_kude_prints_every_decimal_of_the_xml(monkeypatch):
         monkeypatch, _document_for_scenario("factura_b2b_iva10", "factura")
     )
 
-    # dIVA10 is 9090.90909091 in the XML (NT 13): MT v150 §13.2 forbids a
-    # rounded 9.091, which is in no field of the signed XML.
-    assert _printed_after(texts, "Liquidación IVA 10%") == "9.090,90909091"
+    # dIVA10 is 9090.91 in the XML (NT 13, 2 decimals in PYG): MT v150 §13.2
+    # forbids a rounded 9.091, which is in no field of the signed XML.
+    assert _printed_after(texts, "Liquidación IVA 10%") == "9.090,91"
     assert "9.091" not in texts
     assert _printed_after(texts, "TOTAL EN GUARANÍES") == "100.000"
     assert not any(text.startswith("TOTAL PYG") for text in texts)
 
 
 def test_nc_parcial_kude_prints_the_iva_of_the_xml_and_adds_up(monkeypatch):
-    # The KuDE must match the DTE (MT v150 §6.6): dIVA5 952.38095238, dIVA10
-    # 2727.27272727 and dTotIVA 3679.65367965, so F017 = F015 + F016 (2371)
-    # holds on paper too.
+    # The KuDE must match the DTE (MT v150 §6.6): dIVA5 952.38, dIVA10
+    # 2727.27 and dTotIVA 3679.65, so F017 = F015 + F016 (2371) holds on
+    # paper too.
     texts = _drawn_texts(
         monkeypatch, _document_for_scenario("nc_parcial", "nota_credito")
     )
@@ -302,9 +302,9 @@ def test_nc_parcial_kude_prints_the_iva_of_the_xml_and_adds_up(monkeypatch):
     iva_5 = _printed_after(texts, "Liquidación IVA 5%")
     iva_10 = _printed_after(texts, "Liquidación IVA 10%")
     total = _printed_after(texts, "Total IVA")
-    assert iva_5 == "952,38095238"
-    assert iva_10 == "2.727,27272727"
-    assert total == "3.679,65367965"
+    assert iva_5 == "952,38"
+    assert iva_10 == "2.727,27"
+    assert total == "3.679,65"
     assert Decimal(_undo_separators(iva_5)) + Decimal(
         _undo_separators(iva_10)
     ) == Decimal(_undo_separators(total))
@@ -378,7 +378,7 @@ def test_kude_prints_the_rounding_and_the_exonerated_subtotal(monkeypatch):
     assert _printed_after(rounding, "Redondeo") == "37"
     assert _printed_after(rounding, "TOTAL EN GUARANÍES") == "107.400"
     assert _printed_after(exonerated, "Subtotal exonerado") == "15.000"
-    assert _printed_after(exonerated, "Subtotal exentas") == "67.961,16504855"
+    assert _printed_after(exonerated, "Subtotal exentas") == "67.961,17"
     # dRedon 0 and an absent dSubExo print no row.
     assert "Redondeo" not in exonerated
     assert "Subtotal exonerado" not in rounding
@@ -476,7 +476,7 @@ def test_kude_data_keeps_the_xml_literals_and_separates_f014_from_f023():
     assert usd["totales"]["total_iva"] == "10.95454546"
     assert pyg["totales"]["total_general_operacion"] == "100000"
     assert pyg["totales"]["total_general_guaranies"] == "100000"
-    assert pyg["totales"]["liquidacion_iva_10"] == "9090.90909091"
+    assert pyg["totales"]["liquidacion_iva_10"] == "9090.91"
     assert pyg["timbrado"]["fecha_inicio_vigencia"] == "2024-03-11"
 
 
