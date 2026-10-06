@@ -11,7 +11,11 @@ is printed, at least, on the first page.
 MT v150 §13.2 (p. 193) and §6.6 (p. 27): the KuDE carries nothing that is
 not in the signed XML and matches the DTE, so numbers print every digit of
 their XML literal (``formatting.format_decimal``); they shrink or continue
-on the next line inside their cell, but are never rounded or cut.
+on the next line inside their cell, but are never rounded or cut. Names,
+descriptions and addresses wrap inside their cell for the same reason: cut,
+they would leave part of the XML out, and drawn whole on one line they ran
+over the next column (the 84-character literal of the test environment
+covered the emitter RUC and the item amounts).
 """
 
 from __future__ import annotations
@@ -206,42 +210,49 @@ def _draw_emisor_block(pdf: FPDF, data: dict) -> None:
     pdf.cell(22, 4, "LOGO", align="C")
     pdf.set_text_color(*INK)
 
-    # Emisor info (next to logo)
+    # Emisor info (next to logo); every text wraps inside the column.
     info_x = left_x + 25
     info_w = left_w - 25
     pdf.set_xy(info_x, top)
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(info_w, LH_BODY, _safe(emisor["razon_social"]), new_x="LEFT", new_y="NEXT")
-    pdf.set_x(info_x)
-    pdf.set_font("Helvetica", "", T_BODY_SMALL)
+    _draw_wrapped(
+        pdf,
+        _safe(emisor["razon_social"]),
+        width=info_w,
+        line_h=LH_BODY,
+        size=10,
+        style="B",
+    )
     if emisor.get("nombre_fantasia"):
-        pdf.cell(
-            info_w,
-            LH_TIGHT,
+        _draw_wrapped(
+            pdf,
             _safe(emisor["nombre_fantasia"]),
-            new_x="LEFT",
-            new_y="NEXT",
+            width=info_w,
+            line_h=LH_TIGHT,
+            size=T_BODY_SMALL,
         )
-        pdf.set_x(info_x)
     if actividad.get("descripcion"):
         pdf.set_text_color(*MUTED)
-        pdf.cell(
-            info_w,
-            LH_TIGHT,
+        _draw_wrapped(
+            pdf,
             _safe(actividad["descripcion"]),
-            new_x="LEFT",
-            new_y="NEXT",
+            width=info_w,
+            line_h=LH_TIGHT,
+            size=T_BODY_SMALL,
         )
         pdf.set_text_color(*INK)
-        pdf.set_x(info_x)
     address_bits = []
     if emisor.get("direccion"):
         address_bits.append(_safe(emisor["direccion"]))
     if emisor.get("ciudad"):
         address_bits.append(_safe(emisor["ciudad"]))
     if address_bits:
-        pdf.cell(info_w, LH_TIGHT, " · ".join(address_bits), new_x="LEFT", new_y="NEXT")
-        pdf.set_x(info_x)
+        _draw_wrapped(
+            pdf,
+            " · ".join(address_bits),
+            width=info_w,
+            line_h=LH_TIGHT,
+            size=T_BODY_SMALL,
+        )
     contact_bits: list[str] = []
     if emisor.get("telefono"):
         contact_bits.append(f"Tel: {_safe(emisor['telefono'])}")
@@ -249,8 +260,15 @@ def _draw_emisor_block(pdf: FPDF, data: dict) -> None:
         contact_bits.append(_safe(emisor["email"]))
     if contact_bits:
         pdf.set_text_color(*MUTED)
-        pdf.cell(info_w, LH_TIGHT, " · ".join(contact_bits), new_x="LEFT", new_y="NEXT")
+        _draw_wrapped(
+            pdf,
+            " · ".join(contact_bits),
+            width=info_w,
+            line_h=LH_TIGHT,
+            size=T_BODY_SMALL,
+        )
         pdf.set_text_color(*INK)
+    left_bottom = pdf.get_y()
 
     # Right column: timbrado + RUC
     pdf.set_xy(right_x, top)
@@ -274,8 +292,8 @@ def _draw_emisor_block(pdf: FPDF, data: dict) -> None:
     pdf.set_x(right_x)
     _draw_kv_row(pdf, "Tipo", timbrado["tipo_documento_label"], right_w)
 
-    # Ensure y is below the tallest column
-    pdf.set_y(max(pdf.get_y(), top + 22 + GAP_XS))
+    # Below the tallest column and the logo.
+    pdf.set_y(max(left_bottom, pdf.get_y(), top + 22 + GAP_XS))
 
 
 # ---------- Generales + receptor in two columns ---------------------------
@@ -313,8 +331,9 @@ def _draw_general_and_receptor(pdf: FPDF, data: dict) -> None:
     right_x = MARGIN_X + half + GAP_M
     _draw_section_label(pdf, "Receptor", x=right_x, w=half, y=top)
     pdf.set_xy(right_x, top + 4)
-    pdf.set_font("Helvetica", "B", 9.5)
-    pdf.cell(half, LH_BODY, _safe(r["razon_social"]), new_x="LEFT", new_y="NEXT")
+    _draw_wrapped(
+        pdf, _safe(r["razon_social"]), width=half, line_h=LH_BODY, size=9.5, style="B"
+    )
     pdf.set_x(right_x)
     pdf.set_font("Helvetica", "", T_BODY_SMALL)
     if r.get("ruc_dv"):
@@ -443,7 +462,9 @@ def _draw_items_table(pdf: FPDF, data: dict) -> None:
             if column in _ITEM_NUMBER_COLUMNS:
                 layout.append(_fit_number(pdf, text, width, size=T_BODY_SMALL))
             else:
-                layout.append((T_BODY_SMALL, [_truncate(text, width)]))
+                layout.append(
+                    (T_BODY_SMALL, _wrap_text(pdf, text, width, size=T_BODY_SMALL))
+                )
         row_h = max(
             _ITEM_ROW_H,
             max(len(lines) * _line_height(size) for size, lines in layout),
@@ -697,21 +718,20 @@ def _draw_kv_row(
 ) -> None:
     if value is None:
         value = ""
+    x = pdf.get_x()
     label_w = min(22, total_w * 0.32)
     value_w = total_w - label_w
+    style = "B" if value_bold else ""
+    lines = _wrap_text(pdf, _safe(value), value_w, size=value_size, style=style)
     pdf.set_font("Helvetica", "", T_LABEL)
     pdf.set_text_color(*MUTED)
     pdf.cell(label_w, LH_BODY, _safe(label), align="L")
     pdf.set_text_color(*INK)
-    pdf.set_font("Helvetica", "B" if value_bold else "", value_size)
-    pdf.cell(
-        value_w,
-        LH_BODY,
-        _truncate(_safe(value), value_w),
-        align="L",
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
+    pdf.set_font("Helvetica", style, value_size)
+    for number, line in enumerate(lines):
+        if number:
+            pdf.set_x(x + label_w)
+        pdf.cell(value_w, LH_BODY, line, align="L", new_x="LMARGIN", new_y="NEXT")
 
 
 def _label_caps(pdf: FPDF, label: str) -> None:
@@ -841,11 +861,54 @@ def _safe(value) -> str:
     return text.encode("latin-1", "replace").decode("latin-1")
 
 
-def _truncate(text: str, width_mm: float) -> str:
-    max_chars = max(3, int(width_mm * 1.7))
-    if len(text) <= max_chars:
-        return text
-    return text[: max_chars - 1] + "."
+def _wrap_text(
+    pdf: FPDF, text: str, width: float, *, size: float, style: str = ""
+) -> list[str]:
+    """Lines of ``text`` that fit ``width`` in Helvetica ``size``; nothing is cut.
+
+    Lines break between words; a word wider than the cell continues on the
+    next line. MT v150 §13.2: the KuDE shows what the signed XML says.
+    """
+
+    pdf.set_font("Helvetica", style, size)
+    available = width - 2 * pdf.c_margin
+    lines: list[str] = []
+    for paragraph in str(text).splitlines() or [""]:
+        line = ""
+        for word in paragraph.split(" "):
+            candidate = f"{line} {word}" if line else word
+            if pdf.get_string_width(candidate) <= available:
+                line = candidate
+                continue
+            if line:
+                lines.append(line)
+            line = ""
+            for char in word:
+                if line and pdf.get_string_width(line + char) > available:
+                    lines.append(line)
+                    line = char
+                else:
+                    line += char
+        lines.append(line)
+    return lines
+
+
+def _draw_wrapped(
+    pdf: FPDF,
+    text: str,
+    *,
+    width: float,
+    line_h: float,
+    size: float,
+    style: str = "",
+) -> None:
+    """Draw ``text`` from the current position in as many lines as it needs."""
+
+    x = pdf.get_x()
+    for line in _wrap_text(pdf, text, width, size=size, style=style):
+        pdf.set_x(x)
+        pdf.cell(width, line_h, line, new_x="LEFT", new_y="NEXT")
+    pdf.set_x(x)
 
 
 __all__: Iterable[str] = ("render_kude_pdf",)

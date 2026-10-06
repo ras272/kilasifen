@@ -168,6 +168,23 @@ def _record_drawing(monkeypatch) -> list[tuple[int, str]]:
     return drawn
 
 
+def _record_overflows(monkeypatch) -> list[tuple[str, float]]:
+    """Record every drawn text wider than its cell, with the excess in mm."""
+
+    overflows: list[tuple[str, float]] = []
+    original_cell = pdf_renderer._KudePdf.cell
+
+    def cell(self, w=None, h=None, text="", *args, **kwargs):
+        width = w if w else self.w - self.r_margin - self.x
+        excess = self.get_string_width(str(text)) + 2 * self.c_margin - width
+        if text and excess > 0.01:
+            overflows.append((str(text), round(excess, 2)))
+        return original_cell(self, w, h, text, *args, **kwargs)
+
+    monkeypatch.setattr(pdf_renderer._KudePdf, "cell", cell)
+    return overflows
+
+
 def _page_count(pdf: bytes) -> int:
     return int(re.search(rb"/Count (\d+)", pdf).group(1))
 
@@ -382,6 +399,60 @@ def test_kude_prints_the_rounding_and_the_exonerated_subtotal(monkeypatch):
     # dRedon 0 and an absent dSubExo print no row.
     assert "Redondeo" not in exonerated
     assert "Subtotal exonerado" not in rounding
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    get_typed_contract_scenarios(),
+    ids=lambda s: s.name,
+)
+def test_no_text_runs_over_its_cell(monkeypatch, scenario):
+    overflows = _record_overflows(monkeypatch)
+
+    render_kude_pdf(
+        document=_document_for_scenario(scenario.name, scenario.document_type),
+        emitter=_emitter(),
+    )
+
+    assert overflows == []
+
+
+#: dNomEmi and first item that the Guia de Pruebas DNIT (feb/2026, §2) asks
+#: for in the test environment: on one line they covered the RUC and amounts.
+_TEST_LITERAL = (
+    "DOCUMENTO ELECTRÓNICO SIN VALOR COMERCIAL NI FISCAL - GENERADO EN AMBIENTE "
+    "DE PRUEBA"
+)
+
+
+def test_long_names_and_descriptions_wrap_whole_inside_their_cells(monkeypatch):
+    document = _document_for_scenario("factura_b2b_iva10", "factura")
+    long_receiver = "CLIENTE DE PRUEBA CON UNA RAZON SOCIAL MUY LARGA " * 3
+    signed_xml = re.sub(
+        "<dNomEmi>[^<]*</dNomEmi>",
+        f"<dNomEmi>{_TEST_LITERAL}</dNomEmi>",
+        document.signed_xml,
+    )
+    signed_xml = re.sub(
+        "<dNomRec>[^<]*</dNomRec>", f"<dNomRec>{long_receiver}</dNomRec>", signed_xml
+    )
+    signed_xml = re.sub(
+        "<dDesProSer>[^<]*</dDesProSer>",
+        f"<dDesProSer>{_TEST_LITERAL}</dDesProSer>",
+        signed_xml,
+        count=1,
+    )
+    drawn = _record_drawing(monkeypatch)
+    overflows = _record_overflows(monkeypatch)
+
+    render_kude_pdf(document=_with_signed_xml(document, signed_xml), emitter=_emitter())
+
+    assert overflows == []
+    # MT v150 §13.2: wrapped, never cut. Every word of each text is printed.
+    printed = " ".join(text for _, text in drawn).split()
+    for text in (_TEST_LITERAL, long_receiver):
+        for word in text.split():
+            assert word in printed
 
 
 _LONGEST_AMOUNT = "999999999999999.99999999"  # tMontoBase: 15 + 8 digits
