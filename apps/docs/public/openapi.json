@@ -5738,6 +5738,7 @@
             "title": "Result Message"
           },
           "status": {
+            "description": "`found`: el SIFEN devolvió el contribuyente (`0502`). `not_found`: el RUC no existe (`0500`). `error`: cualquier otro código, por ejemplo `0501`; no dice si el RUC existe.",
             "title": "Status",
             "type": "string"
           },
@@ -5944,6 +5945,18 @@
       "TaxpayerResponse": {
         "description": "Contribuyente según el SIFEN.",
         "properties": {
+          "dv": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dígito verificador calculado por KilaSifen con el módulo 11 oficial: el SIFEN no lo devuelve.",
+            "title": "Dv"
+          },
           "electronic_taxpayer": {
             "anyOf": [
               {

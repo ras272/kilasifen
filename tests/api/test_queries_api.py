@@ -15,6 +15,7 @@ from kilasifen.domain.certificates.models import Certificate
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
 from kilasifen.domain.jobs.models import Job
+from kilasifen.engine.sdk.errors import SifenUnexpectedResponseError
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.db.base import Base
 from kilasifen.infrastructure.db.repositories.certificates import (
@@ -34,6 +35,10 @@ from kilasifen.infrastructure.db.session import (
 )
 from kilasifen.infrastructure.sifen.query import DocumentQueryOutcome, RucQueryOutcome
 from kilasifen.testing.database import managed_test_database_url
+from kilasifen.testing.typed_documents import (
+    FICTIONAL_EMITTER_DV,
+    FICTIONAL_EMITTER_RUC,
+)
 
 API_KEY = "secret-key"
 
@@ -99,6 +104,62 @@ def test_query_ruc_returns_normalized_business_payload(client: TestClient) -> No
     assert payload["taxpayer"]["state_code"] == "ACT"
     assert payload["taxpayer"]["state"] == "Activo"
     assert payload["taxpayer"]["electronic_taxpayer"] is True
+
+
+def test_query_ruc_returns_the_computed_dv_for_autocompletion(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def found(self, **kwargs) -> RucQueryOutcome:
+        return RucQueryOutcome(
+            queried_ruc=FICTIONAL_EMITTER_RUC,
+            request_xml="<query-ruc-request/>",
+            response_raw="<query-ruc-response/>",
+            result_code="0502",
+            result_message="RUC encontrado",
+            status="found",
+            taxpayer_ruc=FICTIONAL_EMITTER_RUC,
+            taxpayer_legal_name="CONTRIBUYENTE FICTICIO SA",
+            taxpayer_state_code="ACT",
+            taxpayer_state="ACTIVO",
+            electronic_taxpayer=False,
+            taxpayer_dv=FICTIONAL_EMITTER_DV,
+        )
+
+    monkeypatch.setattr(FakeQueryGateway, "query_ruc", found)
+
+    response = client.get(
+        f"/v1/emitters/emitter-1/queries/ruc/{FICTIONAL_EMITTER_RUC}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 200
+    taxpayer = response.json()["data"]["ruc_query"]["taxpayer"]
+    assert (taxpayer["ruc"], taxpayer["dv"]) == (
+        FICTIONAL_EMITTER_RUC,
+        FICTIONAL_EMITTER_DV,
+    )
+
+
+def test_query_ruc_without_an_answer_from_sifen_is_a_503(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unanswered(self, **kwargs) -> RucQueryOutcome:
+        raise SifenUnexpectedResponseError(
+            expected_root="rResEnviConsRUC",
+            actual_root="rRetEnviDe",
+            code="0160",
+            response_message="XML Mal Formado.",
+        )
+
+    monkeypatch.setattr(FakeQueryGateway, "query_ruc", unanswered)
+
+    response = client.get(
+        f"/v1/emitters/emitter-1/queries/ruc/{FICTIONAL_EMITTER_RUC}",
+        headers={"X-API-Key": API_KEY},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "queries.sifen_unavailable"
 
 
 def test_query_document_returns_normalized_payload_and_persists_trace(

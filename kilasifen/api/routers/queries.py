@@ -45,6 +45,7 @@ def query_ruc(
     if outcome.taxpayer_ruc and outcome.taxpayer_legal_name:
         taxpayer = TaxpayerResponse(
             ruc=outcome.taxpayer_ruc,
+            dv=outcome.taxpayer_dv,
             legal_name=outcome.taxpayer_legal_name,
             state_code=outcome.taxpayer_state_code,
             state=outcome.taxpayer_state,

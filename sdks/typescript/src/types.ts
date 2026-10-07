@@ -481,6 +481,8 @@ export interface DocumentListOptions extends RequestOptions {
 
 export interface Taxpayer {
   ruc: string;
+  /** Computed by KilaSifen with the official modulo 11; SIFEN does not return it. */
+  dv: string | null;
   legal_name: string;
   state_code: string | null;
   state: string | null;
@@ -489,6 +491,7 @@ export interface Taxpayer {
 
 export interface RucQuery {
   queried_ruc: string;
+  /** found (0502), not_found (0500) or error (any other code, e.g. 0501). */
   status: string;
   result_code: string | null;
   result_message: string | null;

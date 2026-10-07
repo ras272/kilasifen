@@ -323,6 +323,9 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 - `POST /v1/emitters/{emitter_id}/jobs/{job_id}/retry` (`fiscal:write`): el
   ERP reencola un job de documento, evento o webhook de su emisor, igual que
   el reintento de la consola `/admin`.
+- Consulta RUC para autocompletar: `taxpayer.dv` trae el DV calculado con el
+  módulo 11 oficial (SIFEN no lo devuelve), y un `0160` sin detalle o un
+  `0161`/`0162` se vuelve a consultar hasta dos veces, a los 2 y 4 segundos.
 - `scripts/sifen_test_smoke.py`: prueba real contra el ambiente de test del
   SIFEN por el mismo camino que el worker (facturas, NC, ND, cancelación,
   inutilización, consultas y KuDE). Sólo habla con `sifen-test.set.gov.py`:
@@ -392,6 +395,11 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 
 ### Changed
 
+- La consulta RUC distingue `status: error` (cualquier código que no sea
+  `0502` ni `0500`, por ejemplo `0501`) de `not_found` (`0500`, el RUC no
+  existe); antes los dos salían como `not_found`. Si SIFEN no contesta la
+  consulta, la API responde `503 queries.sifen_unavailable` en lugar de
+  `500 server.internal_error`.
 - Una credencial de consumidor admite hasta cinco scopes (antes cuatro), para
   que una sola clave de ERP pueda tener los cinco de consumidor.
 - El transporte SOAP admite `close()` y uso como *context manager*, con

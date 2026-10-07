@@ -118,14 +118,42 @@ La respuesta viene en `data.ruc_query`:
 | Campo | Contenido |
 | --- | --- |
 | `queried_ruc` | El RUC consultado, sin DV. |
-| `status` | `found` si SIFEN devolvió los datos del contribuyente; cualquier otra respuesta da `not_found`. |
+| `status` | `found` si SIFEN devolvió los datos del contribuyente (`0502`); `not_found` si el RUC no existe (`0500`); `error` con cualquier otro código, por ejemplo `0501`, que no dice si el RUC existe. |
 | `result_code`, `result_message` | `dCodRes` y `dMsgRes`: `0502` RUC encontrado, `0500` RUC no existe, `0501` RUC sin permiso para usar el servicio de consulta (MT v150 §9.6.2, Tabla H). |
-| `taxpayer` | Con `found`: `ruc`, `legal_name`, `state_code`, `state` (su descripción) y `electronic_taxpayer` (si es facturador electrónico). |
+| `taxpayer` | Con `found`: `ruc`, `dv`, `legal_name`, `state_code`, `state` (su descripción) y `electronic_taxpayer` (si es facturador electrónico). SIFEN no devuelve el DV: KilaSifen lo calcula con el módulo 11 oficial. |
 
 `state_code` es `ACT` (activo), `SUS` (suspensión temporal), `SAD` (suspensión
 administrativa), `BLQ` (bloqueado), `CAN` (cancelado) o `CDE` (cancelado
-definitivo). `not_found` no siempre significa que el RUC no existe: un `0501`
-también sale así, así que decidí por `result_code`.
+definitivo).
+
+Si SIFEN contesta un `0160` sin detalle, o un `0161`/`0162`, KilaSifen repite
+la consulta hasta dos veces, a los 2 y a los 4 segundos: el ambiente de pruebas
+contestó así a consultas válidas que pasaron segundos después. Si después de
+eso no hay respuesta, o SIFEN no contesta (timeout o conexión cortada), la API
+responde `503 queries.sifen_unavailable`: no se sabe nada del RUC y se puede
+volver a consultar más tarde.
+
+<Callout type="info" title="Autocompletar un RUC">
+  Con esta consulta tu ERP puede completar la razón social y el DV cuando el
+  usuario carga un RUC, y avisar si el contribuyente no está activo o si es
+  facturador electrónico. Es todo lo que da SIFEN (MT v150 §9.6): ningún
+  servicio oficial devuelve la dirección, las actividades económicas, el
+  teléfono ni si es persona física o jurídica.
+
+  - La consulta usa el certificado activo de un emisor: sólo funciona
+    después de que ese emisor cargó y activó su certificado.
+  - Consultá cuando el RUC está completo (por ejemplo, al salir del campo), no
+    con cada tecla, y guardá el resultado en tu ERP: cada consulta llega a
+    SIFEN.
+  - Con `not_found`, el RUC no existe. Con `error` o un `503`, dejá cargar los
+    datos a mano.
+  - En el ambiente de pruebas, `not_found` puede ser falso: ahí SIFEN respondió
+    `0500` para RUC reales que existen, mientras encontraba otros. Dejá cargar
+    los datos a mano también en ese caso.
+  - La consulta masiva de RUC de la NT 11 (un archivo diario con esos mismos
+    datos de todos los contribuyentes) no está disponible: la NT no publica la
+    dirección del servicio ni el formato del archivo.
+</Callout>
 
 La consulta RUC permite comprobar información tributaria expuesta por SIFEN; no
 es una central de riesgo crediticio.
@@ -139,7 +167,8 @@ es una central de riesgo crediticio.
 | `409` | `documents.cdc_required_for_query` | El documento todavía no tiene CDC. |
 | `409` | `certificates.active_required`, `emitters.inactive` | El emisor no tiene un certificado activo, o está inactivo. |
 | `422` | `queries.invalid_cdc`, `queries.invalid_ruc` | CDC o RUC mal formado. Hoy también sale así si el certificado activo no se puede leer; el `message` trae ese error. |
-| `500` | `server.internal_error` | SIFEN no respondió (timeout o conexión cortada), o el ambiente del emisor no coincide con el del despliegue. Reintentá más tarde con backoff. |
+| `500` | `server.internal_error` | SIFEN no respondió una consulta por CDC (timeout o conexión cortada), o el ambiente del emisor no coincide con el del despliegue. Reintentá más tarde con backoff. |
+| `503` | `queries.sifen_unavailable` | La consulta RUC no obtuvo respuesta de SIFEN, también después de repetir un `0160` sin detalle. Reintentá más tarde. |
 
 ## Descargar artefactos
 

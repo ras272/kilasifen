@@ -26,7 +26,11 @@ from datetime import datetime, timezone
 from kilasifen.application.emitters.guards import (
     require_active_emitter_without_lock,
 )
-from kilasifen.domain.common.errors import ConflictError, NotFoundError
+from kilasifen.domain.common.errors import (
+    ConflictError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
 from kilasifen.domain.common.fiscal_states import (
     DOCUMENT_APPROVED_STATUSES,
     DOCUMENT_CANCELLED_STATUS,
@@ -35,6 +39,7 @@ from kilasifen.domain.common.fiscal_states import (
 )
 from kilasifen.domain.documents.models import Document
 from kilasifen.domain.emitters.models import Emitter
+from kilasifen.engine.sdk.errors import SifenTransportError
 from kilasifen.infrastructure.crypto.certificate_store import EncryptedCertificateStore
 from kilasifen.infrastructure.sifen.query import (
     QUERY_FOUND,
@@ -78,12 +83,18 @@ class QueryService:
         certificate_bytes, certificate_password = self._get_active_certificate_material(
             emitter_id
         )
-        return self.query_gateway.query_ruc(
-            emitter=emitter,
-            certificate_bytes=certificate_bytes,
-            certificate_password=certificate_password,
-            ruc=ruc,
-        )
+        try:
+            return self.query_gateway.query_ruc(
+                emitter=emitter,
+                certificate_bytes=certificate_bytes,
+                certificate_password=certificate_password,
+                ruc=ruc,
+            )
+        except SifenTransportError as exc:
+            # SIFEN did not answer, or did not answer the RUC query (also after
+            # the gateway asked again past a transient 0160): nothing is known
+            # about the RUC, and the caller may try later.
+            raise ServiceUnavailableError("queries.sifen_unavailable") from exc
 
     def query_document(
         self,

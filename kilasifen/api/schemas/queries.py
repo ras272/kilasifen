@@ -11,6 +11,13 @@ class TaxpayerResponse(BaseModel):
     """Contribuyente según el SIFEN."""
 
     ruc: str
+    dv: str | None = Field(
+        default=None,
+        description=(
+            "Dígito verificador calculado por KilaSifen con el módulo 11 "
+            "oficial: el SIFEN no lo devuelve."
+        ),
+    )
     legal_name: str
     state_code: str | None
     state: str | None
@@ -21,7 +28,13 @@ class RucQueryResponse(BaseModel):
     """Resultado normalizado de la consulta de RUC."""
 
     queried_ruc: str
-    status: str
+    status: str = Field(
+        description=(
+            "`found`: el SIFEN devolvió el contribuyente (`0502`). `not_found`: "
+            "el RUC no existe (`0500`). `error`: cualquier otro código, por "
+            "ejemplo `0501`; no dice si el RUC existe."
+        )
+    )
     result_code: str | None
     result_message: str | None
     taxpayer: TaxpayerResponse | None
