@@ -133,7 +133,9 @@ def test_openapi_declares_the_correlation_header_on_every_response(
         ("/v1/emitters/{emitter_id}/certificates", "get", "`secrets:write`"),
         ("/v1/emitters/{emitter_id}/webhooks", "post", "`tenant:write`"),
         ("/v1/jobs", "get", "`platform:admin`"),
-        ("/v1/emitters", "post", "`platform:admin`"),
+        ("/v1/emitters", "post", "`emitters:create`"),
+        ("/v1/emitters", "get", "`tenant:read`"),
+        ("/v1/emitters/{emitter_id}/jobs/{job_id}/retry", "post", "`fiscal:write`"),
     ],
 )
 def test_openapi_documents_the_scope_each_operation_enforces(

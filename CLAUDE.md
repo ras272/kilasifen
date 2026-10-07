@@ -129,8 +129,8 @@ python -m pytest tests/api tests/application tests/domain tests/infrastructure -
 - Sin `KILA_SIFEN_TEST_DATABASE_URL` los tests de plataforma usan SQLite.
   Apuntándola a PostgreSQL, cada test trabaja en un schema propio; el marcador
   `requires_postgres` identifica los que necesitan ese backend.
-- Referencia medida el 2026-10-06 (Python 3.14, sin
-  `KILA_SIFEN_TEST_DATABASE_URL`, `python -m pytest tests/ -q`): 2090 passed,
+- Referencia medida el 2026-10-07 (Python 3.14, sin
+  `KILA_SIFEN_TEST_DATABASE_URL`, `python -m pytest tests/ -q`): 2107 passed,
   10 skipped (ocho de ellos solo corren contra PostgreSQL). Ya no queda ningún
   xfail. Si el número cambia, que sea por tests agregados o quitados a
   propósito.
@@ -436,8 +436,8 @@ Plataforma (hallazgos de auditoría pendientes):
   posterior queda `reconciliation_required` para un operador. Lo mismo
   una cancelación con `4003` cuya cancelación no aparece en `xContEv` (o
   con un `xContenDE` ilegible) y una cuyo CDC responde `0420`. No existe un
-  endpoint para resolver a mano esos eventos: el reintento del operador
-  repite la consulta o el envío.
+  endpoint para resolver a mano esos eventos: reintentar el job (consola o
+  `POST .../jobs/{job_id}/retry`) repite la consulta o el envío.
 - Un reenvío del mismo DE (tras `0420`, `0161`/`0162` o `0160` sin detalle)
   no vuelve a controlar la ventana de `dFeEmiDE` (1150/1151, MT v150 §12.4
   val. 19-20): solo deja el aviso en `deadline_alerts`.
@@ -487,8 +487,10 @@ Plataforma (hallazgos de auditoría pendientes):
   DETERMINADOS por la SET (notas 9 y 10 de `docs/normativa/matriz.md`); la
   plataforma aplica la opción documentada allí.
 - Un job cuyo worker muere durante la llamada al SIFEN queda `processing`
-  (documento `submitting`) hasta que un operador lo reencola; no hay reaper
-  que lo detecte solo. El reintento consulta el CDC antes de decidir.
+  (documento `submitting`) hasta que alguien lo reencola (la consola o
+  `POST /v1/emitters/{emitter_id}/jobs/{job_id}/retry`, que también usa el
+  ERP); no hay reaper que lo detecte solo. El reintento consulta el CDC antes
+  de decidir.
 
 Proyecto:
 

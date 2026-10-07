@@ -4,8 +4,10 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from kilasifen.api.deps import (
     get_admin_principal,
+    get_admin_service,
     get_job_service,
     require_emitter_read,
+    require_fiscal_write,
 )
 from kilasifen.api.schemas.common import Pagination
 from kilasifen.api.schemas.jobs import (
@@ -15,6 +17,7 @@ from kilasifen.api.schemas.jobs import (
     JobListEnvelope,
     JobResponse,
 )
+from kilasifen.application.admin.service import AdminConsoleService
 from kilasifen.application.jobs.service import JobService
 
 router = APIRouter(tags=["jobs"])
@@ -31,6 +34,39 @@ def get_job(
     service: JobService = Depends(get_job_service),
 ) -> JobEnvelope:
     job = service.get_job_for_emitter(emitter_id=emitter_id, job_id=job_id)
+    return JobEnvelope(
+        data=JobData(job=JobResponse.model_validate(job)),
+        correlation_id=request.state.correlation_id,
+    )
+
+
+@router.post(
+    "/emitters/{emitter_id}/jobs/{job_id}/retry",
+    response_model=JobEnvelope,
+    description=(
+        "Vuelve a encolar un job de documento, evento o webhook del emisor que "
+        "no terminó bien: `failed`, trabado en `queued` o `processing` (por "
+        "ejemplo, porque se cayó el worker) o con un reintento programado. Es el "
+        "mismo reintento del operador en la consola y responde el job en "
+        "`queued`. El worker aplica las reglas de siempre: si el documento pudo "
+        "llegar al SIFEN, consulta el CDC antes de decidir y sólo reenvía el "
+        "mismo XML firmado, así que reintentar no duplica el documento. Nunca "
+        "corren dos intentos a la vez: si el job sigue corriendo, vale lo que "
+        "decida esa corrida (si termina en `failed`, se puede volver a pedir); "
+        "si su worker se cayó, el job vuelve a correr cuando la cola da por "
+        "muerta esa corrida, en unos minutos. Un job `succeeded` responde `409`."
+    ),
+)
+def retry_job(
+    emitter_id: str,
+    job_id: str,
+    request: Request,
+    _principal=Depends(require_fiscal_write),
+    jobs: JobService = Depends(get_job_service),
+    admin: AdminConsoleService = Depends(get_admin_service),
+) -> JobEnvelope:
+    jobs.get_job_for_emitter(emitter_id=emitter_id, job_id=job_id)
+    job = admin.retry_job(job_id)
     return JobEnvelope(
         data=JobData(job=JobResponse.model_validate(job)),
         correlation_id=request.state.correlation_id,

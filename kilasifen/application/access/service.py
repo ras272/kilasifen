@@ -10,6 +10,7 @@ from kilasifen.domain.common.errors import (
 )
 from kilasifen.repositories.access import AccessRepository
 from kilasifen.security import (
+    EMITTERS_CREATE_SCOPE,
     FISCAL_WRITE_SCOPE,
     SECRETS_WRITE_SCOPE,
     TENANT_READ_SCOPE,
@@ -17,7 +18,13 @@ from kilasifen.security import (
 )
 
 ALLOWED_CONSUMER_SCOPES = frozenset(
-    {TENANT_READ_SCOPE, TENANT_WRITE_SCOPE, FISCAL_WRITE_SCOPE, SECRETS_WRITE_SCOPE}
+    {
+        TENANT_READ_SCOPE,
+        TENANT_WRITE_SCOPE,
+        FISCAL_WRITE_SCOPE,
+        SECRETS_WRITE_SCOPE,
+        EMITTERS_CREATE_SCOPE,
+    }
 )
 
 

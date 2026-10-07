@@ -89,5 +89,16 @@ class EmitterRepository(ABC):
         """List all emitters."""
 
     @abstractmethod
+    def list_filtered(
+        self,
+        *,
+        owner_consumer_id: str | None,
+        external_id: str | None,
+        ruc: str | None,
+        limit: int,
+    ) -> list[Emitter]:
+        """Newest emitters first, only those of ``owner_consumer_id`` if given."""
+
+    @abstractmethod
     def grant_owner(self, *, consumer_id: str, emitter_id: str) -> None:
         """Assign the emitter to exactly one consumer."""

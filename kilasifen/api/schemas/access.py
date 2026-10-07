@@ -16,7 +16,7 @@ class ConsumerCreateRequest(BaseModel):
 class CredentialCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=1, max_length=128)
-    scopes: list[str] = Field(min_length=1, max_length=4)
+    scopes: list[str] = Field(min_length=1, max_length=5)
 
 
 class ConsumerResponse(BaseModel):

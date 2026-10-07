@@ -89,7 +89,8 @@ exactamente la que viajó, con su `dId`) sin cambiar su estado.
   `reconciliation_required` que esperaba confirmar un rechazo `1001`/`1002`
   queda `rejected`. Si no, vuelve a `queued`: si su job sigue programado, el
   worker reenvía el mismo DE firmado; si el job ya terminó (`failed`), hace
-  falta un reintento del operador o inutilizar el número. Un documento
+  falta [reintentar el job](/docs/estados-y-reintentos#reintentar-un-job) o
+  inutilizar el número. Un documento
   `submitting` no se toca: lo resuelve su worker;
 - en cualquier otro estado, incluido `queued`, o con `error`, sólo queda
   registrada la consulta.

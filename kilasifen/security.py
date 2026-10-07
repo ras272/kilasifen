@@ -15,6 +15,9 @@ TENANT_READ_SCOPE = "tenant:read"
 TENANT_WRITE_SCOPE = "tenant:write"
 FISCAL_WRITE_SCOPE = "fiscal:write"
 SECRETS_WRITE_SCOPE = "secrets:write"
+#: Creates emitters owned by the credential's own consumer (self-service
+#: onboarding of an ERP's customers); never someone else's.
+EMITTERS_CREATE_SCOPE = "emitters:create"
 
 _PBKDF2_ALGORITHM = "sha256"
 _PBKDF2_ITERATIONS = 210_000

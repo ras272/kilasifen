@@ -195,6 +195,30 @@ class SqlAlchemyEmitterRepository(EmitterRepository):
             for model in self.session.scalars(statement)
         ]
 
+    def list_filtered(
+        self,
+        *,
+        owner_consumer_id: str | None,
+        external_id: str | None,
+        ruc: str | None,
+        limit: int,
+    ) -> list[Emitter]:
+        statement = select(EmitterModel)
+        if owner_consumer_id is not None:
+            statement = statement.join(
+                ConsumerEmitterModel,
+                ConsumerEmitterModel.emitter_id == EmitterModel.id,
+            ).where(ConsumerEmitterModel.consumer_id == owner_consumer_id)
+        if external_id is not None:
+            statement = statement.where(EmitterModel.external_id == external_id)
+        if ruc is not None:
+            statement = statement.where(EmitterModel.ruc == ruc)
+        statement = statement.order_by(EmitterModel.created_at.desc()).limit(limit)
+        return [
+            _to_domain(model, self.secret_store)
+            for model in self.session.scalars(statement)
+        ]
+
     def grant_owner(self, *, consumer_id: str, emitter_id: str) -> None:
         if self.session.get(ConsumerModel, consumer_id) is None:
             raise NotFoundError("consumers.not_found")

@@ -79,6 +79,28 @@ class EmitterService:
             )
         return saved
 
+    def list_emitters(
+        self,
+        *,
+        owner_consumer_id: str | None,
+        external_id: str | None = None,
+        ruc: str | None = None,
+        limit: int = 50,
+    ) -> list[Emitter]:
+        """Emitters of ``owner_consumer_id`` (all when None), newest first.
+
+        ``external_id`` must match exactly; ``ruc`` may come as ``RUC-DV``,
+        and only the RUC is compared.
+        """
+
+        normalized_ruc = ruc.strip().split("-", 1)[0] if ruc else None
+        return self.repository.list_filtered(
+            owner_consumer_id=owner_consumer_id,
+            external_id=external_id,
+            ruc=normalized_ruc or None,
+            limit=limit,
+        )
+
     def get_emitter(self, emitter_id: str) -> Emitter:
         emitter = self.repository.get(emitter_id)
         if emitter is None:

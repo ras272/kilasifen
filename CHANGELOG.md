@@ -312,6 +312,17 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 
 ### Added
 
+- Alta de emisores desde el ERP (ADR-0003): el scope de consumidor
+  `emitters:create` permite `POST /v1/emitters`, y el emisor queda siempre a
+  nombre del consumidor de la credencial (`403 emitters.owner_not_allowed` si
+  `owner_consumer_id` es de otro consumidor). Como RUC y `external_id` son
+  únicos en toda la plataforma, se otorga sólo a integradores de confianza.
+- `GET /v1/emitters` (`tenant:read`): lista los emisores del consumidor (con
+  `platform:admin`, todos), con filtros `external_id`, `ruc` (con o sin DV) y
+  `limit`. Sirve para recuperar un alta cuya respuesta se perdió.
+- `POST /v1/emitters/{emitter_id}/jobs/{job_id}/retry` (`fiscal:write`): el
+  ERP reencola un job de documento, evento o webhook de su emisor, igual que
+  el reintento de la consola `/admin`.
 - `scripts/sifen_test_smoke.py`: prueba real contra el ambiente de test del
   SIFEN por el mismo camino que el worker (facturas, NC, ND, cancelación,
   inutilización, consultas y KuDE). Sólo habla con `sifen-test.set.gov.py`:
@@ -381,6 +392,8 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 
 ### Changed
 
+- Una credencial de consumidor admite hasta cinco scopes (antes cuatro), para
+  que una sola clave de ERP pueda tener los cinco de consumidor.
 - El transporte SOAP admite `close()` y uso como *context manager*, con
   timeouts, reintentos de consultas y reutilización de la sesión.
 - Engine: la consulta DTE sincrónica y asincrónica (`consultar_dte`,

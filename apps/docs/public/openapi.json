@@ -787,7 +787,7 @@
             "items": {
               "type": "string"
             },
-            "maxItems": 4,
+            "maxItems": 5,
             "minItems": 1,
             "title": "Scopes",
             "type": "array"
@@ -1948,6 +1948,7 @@
                 "type": "null"
               }
             ],
+            "description": "Identificador del cliente en el ERP, único en la plataforma. Sirve para recuperar el emisor con `GET /v1/emitters?external_id=` si se pierde la respuesta del alta.",
             "title": "External Id"
           },
           "fiscal_profile": {
@@ -1979,6 +1980,7 @@
                 "type": "null"
               }
             ],
+            "description": "Consumidor dueño del emisor. Con `emitters:create` sólo puede ser el consumidor de la credencial (si se omite, se usa ése); con `platform:admin`, cualquiera.",
             "title": "Owner Consumer Id"
           },
           "ruc": {
@@ -2247,6 +2249,42 @@
           "checked_at"
         ],
         "title": "EmitterHealthResponse",
+        "type": "object"
+      },
+      "EmitterListData": {
+        "description": "Emisores del consumidor de la credencial.",
+        "properties": {
+          "emitters": {
+            "items": {
+              "$ref": "#/components/schemas/EmitterResponse"
+            },
+            "title": "Emitters",
+            "type": "array"
+          }
+        },
+        "required": [
+          "emitters"
+        ],
+        "title": "EmitterListData",
+        "type": "object"
+      },
+      "EmitterListEnvelope": {
+        "description": "Respuesta con una lista de emisores.",
+        "properties": {
+          "correlation_id": {
+            "description": "Identificador de la solicitud; es el mismo valor del header `X-Correlation-ID`. Conservalo en los logs del ERP y en los tickets.",
+            "title": "Correlation Id",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EmitterListData"
+          }
+        },
+        "required": [
+          "data",
+          "correlation_id"
+        ],
+        "title": "EmitterListEnvelope",
         "type": "object"
       },
       "EmitterPayload": {
@@ -7170,8 +7208,241 @@
       }
     },
     "/v1/emitters": {
+      "get": {
+        "description": "Emisores del consumidor de la credencial, del más nuevo al más viejo (con `platform:admin`, todos). `external_id` y `ruc` (con o sin DV) filtran; sirven para recuperar el `emitter_id` de un alta cuya respuesta se perdió.\n\n**Scope:** `tenant:read` (también `platform:admin`).",
+        "operationId": "list_emitters_v1_emitters_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "external_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "External Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ruc",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 10,
+                  "minLength": 3,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ruc"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmitterListEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Falta la API key o no es válida.",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "La credencial no tiene el scope que exige la operación.",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "El recurso no existe o la credencial no tiene acceso a ese emisor.",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflicto de idempotencia o una precondición no cumplida (certificado activo, CSC, emisor activo, estado del documento).",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "El body supera el límite configurado; ver `details.max_bytes`.",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "El request o la configuración del emisor no permiten procesarlo; no se aplicó ningún cambio. Ver `code` y `details`.",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Límite de pedidos superado; reintentar después de `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos a esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Una dependencia no está disponible; reintentar con backoff.",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Listar emisores",
+        "tags": [
+          "emitters"
+        ]
+      },
       "post": {
-        "description": "**Scope:** `platform:admin`.",
+        "description": "Da de alta un emisor (un RUC). Con `emitters:create` el emisor queda siempre a nombre del consumidor de la credencial: es el alta autoservicio de los clientes de un ERP. Con `platform:admin` puede asignarse a cualquier consumidor con `owner_consumer_id`. RUC+DV y `external_id` son únicos en la plataforma (`409`); si se pierde la respuesta, el emisor se recupera con `GET /v1/emitters?external_id=`.\n\n**Scope:** `emitters:create` (también `platform:admin`).",
         "operationId": "create_emitter_v1_emitters_post",
         "requestBody": {
           "content": {
@@ -11855,6 +12126,175 @@
           }
         ],
         "summary": "Obtener job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/v1/emitters/{emitter_id}/jobs/{job_id}/retry": {
+      "post": {
+        "description": "Vuelve a encolar un job de documento, evento o webhook del emisor que no terminó bien: `failed`, trabado en `queued` o `processing` (por ejemplo, porque se cayó el worker) o con un reintento programado. Es el mismo reintento del operador en la consola y responde el job en `queued`. El worker aplica las reglas de siempre: si el documento pudo llegar al SIFEN, consulta el CDC antes de decidir y sólo reenvía el mismo XML firmado, así que reintentar no duplica el documento. Nunca corren dos intentos a la vez: si el job sigue corriendo, vale lo que decida esa corrida (si termina en `failed`, se puede volver a pedir); si su worker se cayó, el job vuelve a correr cuando la cola da por muerta esa corrida, en unos minutos. Un job `succeeded` responde `409`.\n\n**Scope:** `fiscal:write` (también `platform:admin`).",
+        "operationId": "retry_job_v1_emitters__emitter_id__jobs__job_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "emitter_id",
+            "required": true,
+            "schema": {
+              "title": "Emitter Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Falta la API key o no es válida.",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "La credencial no tiene el scope que exige la operación.",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "El recurso no existe o la credencial no tiene acceso a ese emisor.",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "El request o la configuración del emisor no permiten procesarlo; no se aplicó ningún cambio. Ver `code` y `details`.",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Límite de pedidos superado; reintentar después de `Retry-After`.",
+            "headers": {
+              "Retry-After": {
+                "description": "Segundos a esperar antes de reintentar.",
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Una dependencia no está disponible; reintentar con backoff.",
+            "headers": {
+              "X-Correlation-ID": {
+                "description": "Identificador de la solicitud, igual a `correlation_id` del body. Conservalo en los logs del ERP y en los tickets de soporte.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "KilaApiKey": []
+          }
+        ],
+        "summary": "Reintentar job",
         "tags": [
           "jobs"
         ]

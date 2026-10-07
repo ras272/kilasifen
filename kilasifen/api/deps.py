@@ -64,6 +64,7 @@ from kilasifen.infrastructure.sifen.raw_xml_policy import require_signable_raw_p
 from kilasifen.infrastructure.webhooks.deliverer import WebhookDeliverer
 from kilasifen.infrastructure.webhooks.security import WebhookUrlPolicy
 from kilasifen.security import (
+    EMITTERS_CREATE_SCOPE,
     FISCAL_WRITE_SCOPE,
     PLATFORM_ADMIN_SCOPE,
     SECRETS_WRITE_SCOPE,
@@ -136,6 +137,24 @@ def get_admin_principal(
     """Require the distinct platform-administrator scope."""
 
     principal.require_scope(PLATFORM_ADMIN_SCOPE)
+    return principal
+
+
+def require_emitter_create(
+    principal: ApiKeyPrincipal = Depends(get_api_key_principal),
+) -> ApiKeyPrincipal:
+    """Create emitters: ``emitters:create`` (own consumer) or a platform admin."""
+
+    principal.require_scope(EMITTERS_CREATE_SCOPE)
+    return principal
+
+
+def require_tenant_read(
+    principal: ApiKeyPrincipal = Depends(get_api_key_principal),
+) -> ApiKeyPrincipal:
+    """Read across the emitters the credential's consumer owns."""
+
+    principal.require_scope(TENANT_READ_SCOPE)
     return principal
 
 

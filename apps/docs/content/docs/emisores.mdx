@@ -20,17 +20,23 @@ Las dos primeras se cargan en esta página. Certificado y timbrado se cargan en
 
 ## Crear
 
-El alta la hace un administrador de la plataforma (`platform:admin`). Una
-clave de ERP recibe `403 auth.insufficient_scope` en esta ruta, pero puede leer
-(`tenant:read`) y actualizar (`tenant:write`) los emisores de su consumidor.
+Hay dos formas de dar de alta un emisor:
+
+- **Desde tu ERP.** Una clave de consumidor con el scope `emitters:create`
+  crea emisores, y cada uno queda a nombre del consumidor de esa clave. Así tu
+  ERP da de alta a cada cliente nuevo sin pasos manuales.
+- **Por un administrador.** Una clave `platform:admin` crea emisores para
+  cualquier consumidor, indicado en `owner_consumer_id`.
+
+Sin `emitters:create` ni `platform:admin`, la respuesta es
+`403 auth.insufficient_scope`.
 
 ```bash
 curl -X POST https://TU_API/v1/emitters \
-  -H "X-API-Key: $KILA_PLATFORM_ADMIN_KEY" \
+  -H "X-API-Key: $KILA_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "owner_consumer_id": "CONSUMER_ID",
-    "external_id": "empresa_42",
+    "external_id": "mi-erp:empresa_42",
     "ruc": "44444401",
     "dv": "7",
     "legal_name": "Empresa Ejemplo S.A.",
@@ -43,7 +49,7 @@ curl -X POST https://TU_API/v1/emitters \
   "data": {
     "emitter": {
       "id": "3bddb53e-504f-4027-a59b-403968d425ab",
-      "external_id": "empresa_42",
+      "external_id": "mi-erp:empresa_42",
       "ruc": "44444401",
       "dv": "7",
       "legal_name": "Empresa Ejemplo S.A.",
@@ -61,15 +67,22 @@ curl -X POST https://TU_API/v1/emitters \
 }
 ```
 
-- `owner_consumer_id` es el `id` del consumidor de tu ERP (lo devuelve
-  `POST /v1/admin/consumers`). Mandalo siempre. Si falta, el emisor queda
-  asignado al consumidor de la clave administradora, y no hay endpoint para
-  reasignarlo. Con un id inexistente, la respuesta es `404 consumers.not_found`.
-- `external_id` es opcional y es tu referencia. Es único en toda la
+- `owner_consumer_id` es el consumidor dueño del emisor.
+  - Con una clave de ERP, omitilo: el emisor queda a nombre de tu consumidor.
+    Si mandás el `id` de otro consumidor, la respuesta es
+    `403 emitters.owner_not_allowed` y no se crea nada.
+  - Un administrador lo manda siempre. Si falta, el emisor queda asignado al
+    consumidor de la clave administradora, y no hay endpoint para
+    reasignarlo. Con un id inexistente, la respuesta es
+    `404 consumers.not_found`.
+- `external_id` es opcional y es tu referencia del cliente. Mandalo siempre:
+  con él recuperás el emisor si se pierde la respuesta del alta (ver
+  [Listar y recuperar](#listar-y-recuperar)). Es único en toda la
   plataforma, no por consumidor: si ya existe, la respuesta es
-  `409 emitters.external_id_conflict`.
-- Guardá el `id` de la respuesta y usalo en todas las rutas. No hay listado de
-  emisores (`GET /v1/emitters` no existe) ni búsqueda por `external_id`.
+  `409 emitters.external_id_conflict`. Usá un valor que no choque con el de
+  otro integrador, por ejemplo un prefijo de tu ERP y el id interno del
+  cliente.
+- Guardá el `id` de la respuesta y usalo en todas las rutas.
 - `tax_environment` tiene que ser el ambiente SIFEN de la instalación
   (`KILA_SIFEN_SIFEN_ENVIRONMENT`). Si no lo es, la respuesta es
   `422 emitters.tax_environment_mismatch`, con el valor permitido en
@@ -77,6 +90,70 @@ curl -X POST https://TU_API/v1/emitters \
   emisor de producción se da de alta en la instalación de producción.
 - En el alta también se pueden enviar `csc`, `csc_id` y `fiscal_profile`
   (ver abajo).
+
+<Callout type="warn" title="A quién darle emitters:create">
+  RUC + DV y `external_id` son únicos en toda la plataforma. Por eso una clave
+  con `emitters:create` puede averiguar si un RUC ya está dado de alta (la
+  respuesta es `409` aunque sea de otro consumidor) y puede ocupar un RUC
+  antes que el ERP que de verdad lo atiende. No le alcanza para emitir por ese
+  RUC, porque activar un certificado exige que sea del mismo RUC, pero sí para
+  bloquear su alta hasta que intervenga un administrador. Otorgalo sólo a
+  integradores de confianza.
+</Callout>
+
+## Listar y recuperar
+
+```http
+GET /v1/emitters?external_id=mi-erp:empresa_42
+```
+
+Requiere `tenant:read`. Devuelve los emisores de tu consumidor, del más nuevo
+al más viejo; con `platform:admin`, los de todos los consumidores. Los filtros
+son opcionales:
+
+| Parámetro | Uso |
+| --- | --- |
+| `external_id` | El valor exacto que mandaste en el alta. |
+| `ruc` | Con o sin DV: `44444401` o `44444401-7`. |
+| `limit` | De 1 a 200 resultados; por defecto, 50. |
+
+```json title="Respuesta 200"
+{
+  "data": {
+    "emitters": [
+      {
+        "id": "3bddb53e-504f-4027-a59b-403968d425ab",
+        "external_id": "mi-erp:empresa_42",
+        "ruc": "44444401",
+        "dv": "7",
+        "legal_name": "Empresa Ejemplo S.A.",
+        "tax_environment": "test",
+        "status": "active",
+        "csc_configured": false,
+        "csc_id": null,
+        "fiscal_profile": null,
+        "fiscal_profile_complete": false,
+        "created_at": "2026-10-05T16:11:46.289890Z",
+        "updated_at": "2026-10-05T16:11:46.289890Z"
+      }
+    ]
+  },
+  "correlation_id": "5a1c4e1e-3f0b-4f3e-9d55-2f6a8f0b7c11"
+}
+```
+
+Si el alta se cortó antes de que llegara la respuesta (un timeout o una caída
+de red), no sabés si el emisor se creó. No repitas el alta a ciegas:
+
+1. Buscalo con `GET /v1/emitters?external_id=...`.
+2. Si aparece, guardá su `id` y seguí con el certificado y el timbrado.
+3. Si no aparece, repetí el alta. Si esa respuesta es
+   `409 emitters.external_id_conflict`, el primer intento sí se hizo: volvé al
+   paso 1.
+
+Si el alta responde `409 emitters.tax_id_conflict`, buscá con `?ruc=`. Si el
+emisor aparece, ya es tuyo. Si no aparece, ese RUC está dado de alta a nombre
+de otro consumidor: hablá con el administrador de la plataforma.
 
 ## Identidad fiscal
 

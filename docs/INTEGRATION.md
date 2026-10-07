@@ -7,8 +7,8 @@ KilaSifen es independiente. La API key vive sólo en el backend ERP y viaja como
 ## Ownership y scopes
 
 Cada clave pertenece a un consumidor y sólo ve sus emisores. Un ID ajeno responde
-`404`. Scopes: `tenant:read`, `tenant:write`, `fiscal:write`, `secrets:write` y el
-separado `platform:admin`, que nunca se entrega a un ERP.
+`404`. Scopes: `tenant:read`, `tenant:write`, `fiscal:write`, `secrets:write`,
+`emitters:create` y el separado `platform:admin`, que nunca se entrega a un ERP.
 
 El administrador crea consumidor y clave (mostrada una sola vez):
 
@@ -17,8 +17,14 @@ POST /v1/admin/consumers
 POST /v1/admin/consumers/{consumer_id}/credentials
 ```
 
-El RUC es una identidad global de plataforma. Por eso sólo una credencial con
-`platform:admin` puede darlo de alta y asignarlo al consumidor en una operación:
+El RUC es una identidad global de plataforma: RUC + DV y `external_id` son
+únicos entre todos los consumidores. Una credencial con `emitters:create` da de
+alta emisores que quedan siempre a nombre de su propio consumidor (un
+`owner_consumer_id` ajeno responde `403 emitters.owner_not_allowed`);
+`platform:admin` puede asignarlos a cualquier consumidor. Como la unicidad es
+global, `emitters:create` permite saber si un RUC ya existe y ocuparlo antes que
+el ERP que lo atiende: se otorga sólo a integradores de confianza (ADR-0003).
+Alta por el administrador, en una operación:
 
 ```json
 POST /v1/emitters
@@ -62,9 +68,14 @@ crear un documento tipado responde `422 emitters.fiscal_profile_required`.
 
 Compatibilidad: la ruta y el resto del payload no cambian; si
 `owner_consumer_id` se omite, el emisor queda asignado al consumidor de la clave
-administradora. Desde esta versión, una clave tenant que intentaba crear un
-emisor recibe `403 auth.insufficient_scope`. Lecturas y actualizaciones de
-emisores ya asignados conservan sus scopes anteriores.
+que lo crea. Una clave sin `emitters:create` ni `platform:admin` recibe
+`403 auth.insufficient_scope`. Lecturas y actualizaciones de emisores ya
+asignados conservan sus scopes anteriores.
+
+`GET /v1/emitters` (`tenant:read`) lista los emisores del consumidor, del más
+nuevo al más viejo, con filtros `external_id`, `ruc` (con o sin DV) y `limit`
+(1-200). Es la forma de recuperar el `id` de un alta cuya respuesta se perdió:
+repetirla responde `409`.
 
 `POST /v1/emitters/{id}/deactivate` es un kill switch. Un emisor inactivo sigue
 siendo legible y permite corregir metadatos no secretos, pero toda nueva
@@ -236,6 +247,7 @@ código SIFEN `6`; también se aceptan los códigos `1..8` del Manual Técnico 1
 ```text
 GET  /v1/emitters/{emitter_id}/documents/{document_id}
 GET  /v1/emitters/{emitter_id}/jobs/{job_id}
+POST /v1/emitters/{emitter_id}/jobs/{job_id}/retry
 GET  /v1/emitters/{emitter_id}/documents/{document_id}/xml
 GET  /v1/emitters/{emitter_id}/documents/{document_id}/kude
 GET  /v1/emitters/{emitter_id}/documents/{document_id}/kude/data
@@ -304,7 +316,10 @@ sobre el CDC, el documento queda `reconciliation_required`; el ERP usa el
 endpoint `reconcile` con la misma intención original. Cuando la falla prueba
 que el request no salió (`transport_not_sent` en el job) el documento vuelve a
 `queued` y se reenvía el mismo DE firmado; si se agotan los intentos, el job
-queda `failed` y el documento `queued`, listo para un reintento manual.
+queda `failed` y el documento `queued`, listo para un reintento manual
+(`POST .../jobs/{job_id}/retry` con `fiscal:write`, o la consola `/admin`).
+Reintentar nunca corre dos intentos a la vez y, si el DE pudo llegar a SIFEN,
+consulta el CDC antes de reenviar el mismo DE firmado.
 Mientras SIFEN no aprueba un documento, el job avisa en
 `error_snapshot.deadline_alerts` cuando se acercan o pasan las 72 h desde la
 firma (observación `1005`) o las 720 h desde la emisión (rechazo `1150`). El

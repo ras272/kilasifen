@@ -164,8 +164,25 @@ class EmitterFiscalProfileModel(_ProfileModel):
 class EmitterCreateRequest(BaseModel):
     """Alta de un emisor."""
 
-    owner_consumer_id: str | None = Field(default=None, min_length=1, max_length=36)
-    external_id: str | None = Field(default=None, max_length=128)
+    owner_consumer_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=36,
+        description=(
+            "Consumidor dueño del emisor. Con `emitters:create` sólo puede ser el "
+            "consumidor de la credencial (si se omite, se usa ése); con "
+            "`platform:admin`, cualquiera."
+        ),
+    )
+    external_id: str | None = Field(
+        default=None,
+        max_length=128,
+        description=(
+            "Identificador del cliente en el ERP, único en la plataforma. Sirve "
+            "para recuperar el emisor con `GET /v1/emitters?external_id=` si se "
+            "pierde la respuesta del alta."
+        ),
+    )
     ruc: str = Field(
         min_length=3,
         max_length=8,
@@ -261,6 +278,12 @@ class EmitterData(BaseModel):
     emitter: EmitterResponse
 
 
+class EmitterListData(BaseModel):
+    """Emisores del consumidor de la credencial."""
+
+    emitters: list[EmitterResponse]
+
+
 class EmitterHealthData(BaseModel):
     """Preparación operativa del emisor."""
 
@@ -269,6 +292,10 @@ class EmitterHealthData(BaseModel):
 
 class EmitterEnvelope(SuccessEnvelope[EmitterData]):
     """Respuesta con un emisor."""
+
+
+class EmitterListEnvelope(SuccessEnvelope[EmitterListData]):
+    """Respuesta con una lista de emisores."""
 
 
 class EmitterHealthEnvelope(SuccessEnvelope[EmitterHealthData]):

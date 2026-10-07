@@ -17,15 +17,15 @@ columna «Qué sigue».
 
 | Estado | Significado | Qué sigue |
 | --- | --- | --- |
-| `queued` | En cola y sin nada aprobado en SIFEN: todavía no salió, el request no llegó a SIFEN o SIFEN respondió `0420` a la consulta del CDC. | El próximo intento arma y firma el DE o, si ya está firmado, reenvía el mismo DE. Si el job ya terminó, hace falta un reintento del operador o inutilizar el número. Si el intento ni siquiera arranca, ver [abajo](#cuando-el-intento-no-arranca). |
+| `queued` | En cola y sin nada aprobado en SIFEN: todavía no salió, el request no llegó a SIFEN o SIFEN respondió `0420` a la consulta del CDC. | El próximo intento arma y firma el DE o, si ya está firmado, reenvía el mismo DE. Si el job ya terminó, hace falta [reintentar el job](#reintentar-un-job) o inutilizar el número. Si el intento ni siquiera arranca, ver [abajo](#cuando-el-intento-no-arranca). |
 | `submitting` | El XML firmado y el request exacto están guardados y el worker los está enviando. | El mismo intento registra la respuesta. Si el worker se cae, queda así ([ver abajo](#si-el-worker-se-cae)). |
 | `submitted` | Estado heredado: SIFEN recibió el request sin un resultado clasificable. | El próximo intento consulta el CDC. |
 | `retry_pending` | Resultado incierto: timeout, conexión cortada, SOAP Fault, respuesta ilegible o sin `dEstRes` reconocible, rechazo `1001`/`1002` por confirmar o consulta del CDC fallida. | El próximo intento consulta el CDC. |
-| `reconciliation_required` | Se agotaron los intentos automáticos sin saber qué tiene SIFEN para el CDC. | Un reintento del operador o `POST .../reconcile` vuelven a consultar. |
+| `reconciliation_required` | Se agotaron los intentos automáticos sin saber qué tiene SIFEN para el CDC. | Reintentar el job o `POST .../reconcile` vuelven a consultar. |
 | `approved` | Terminal. DTE aprobado. | Sólo puede pasar a `cancelled`. |
 | `approved_with_observation` | Terminal. DTE aprobado con observación: la única de un DE en el MT v150 es `1005`, transmisión extemporánea (con posible sanción). Es un DTE válido. | Sólo puede pasar a `cancelled`. |
 | `rejected` | Terminal. SIFEN rechazó el DE. | Definitivo, salvo `0161`/`0162` y un `0160` sin detalle, que KilaSifen reenvía. Si no se reenvía, el número se inutiliza. |
-| `failed` | Terminal. No se pudo armar o firmar (validación local); nunca llegó a SIFEN. | Un reintento del operador lo vuelve a preparar una vez corregida la causa; si no, el número se inutiliza. |
+| `failed` | Terminal. No se pudo armar o firmar (validación local); nunca llegó a SIFEN. | Reintentar el job lo vuelve a preparar una vez corregida la causa; si no, el número se inutiliza. |
 | `cancelled` | Terminal y definitivo: SIFEN registró su cancelación. | Nada. |
 | `inutilized` | Terminal y definitivo: su número se inutilizó con un evento aprobado. | Nada. |
 
@@ -42,7 +42,7 @@ publica el worker se describen en [Webhooks](/docs/webhooks).
 
 | Estado | Significado |
 | --- | --- |
-| `queued` | Espera que un worker lo tome (también después de un reintento del operador). |
+| `queued` | Espera que un worker lo tome (también después de reintentar el job). |
 | `processing` | Un worker está ejecutando un intento. |
 | `retry_scheduled` | Hay otro intento programado para `scheduled_at`. |
 | `succeeded` | Terminado: el documento quedó aprobado, o SIFEN ya lo tenía cancelado. |
@@ -51,11 +51,39 @@ publica el worker se describen en [Webhooks](/docs/webhooks).
 `attempts` cuenta cada intento, sea un envío o una consulta del CDC. Hay hasta
 cinco intentos automáticos, con esperas de 30 s, 2 min, 10 min y 30 min (unos
 43 minutos en total): una caída de SIFEN más larga deja el job `failed`.
-Pasados los cinco, cada reintento del operador ejecuta un solo intento: si ese
+Pasados los cinco, cada reintento del job ejecuta un solo intento: si ese
 intento consulta el CDC y SIFEN responde `0420`, el reenvío necesita otro
-reintento. El reintento de jobs, al que esta página llama «reintento del
-operador», existe sólo en la consola de administración (`/admin`), que exige
-una clave `platform:admin`; no hay un endpoint público para el ERP.
+reintento.
+
+## Reintentar un job
+
+```http
+POST /v1/emitters/{emitter_id}/jobs/{job_id}/retry
+```
+
+Requiere `fiscal:write`. Vuelve a encolar un job de documento, evento o
+webhook del emisor que no terminó bien: `failed`, trabado en `queued` o
+`processing`, o con un reintento programado que no querés esperar. Es lo
+mismo que hace un operador desde la consola de administración (`/admin`).
+
+- Responde `200` con el job en `queued`.
+- Un job `succeeded` responde `409 jobs.retry_not_allowed`, y uno de un
+  emisor desactivado, `409 emitters.inactive`.
+- Un emisor o un job que no son tuyos responden `404`.
+
+Reintentar no duplica el documento. Si el DE pudo llegar a SIFEN, el intento
+consulta el CDC antes de decidir y sólo reenvía el mismo DE firmado, con el
+mismo CDC. Tampoco corren dos intentos a la vez:
+
+- si el job sigue corriendo, vale lo que decida esa corrida; si termina en
+  `failed`, podés volver a pedirlo;
+- si su worker se cayó, el job vuelve a correr cuando la cola da por muerta
+  esa corrida, en unos minutos.
+
+Usalo para destrabar un documento (ver [Si el worker se cae](#si-el-worker-se-cae))
+o después de corregir la causa de un `failed`, por ejemplo cargando el
+timbrado. No lo pongas en un bucle automático: un rechazo definitivo o un
+`failed` por la fecha de emisión no se arreglan reintentando.
 
 ## Categorías de `error_snapshot`
 
@@ -73,8 +101,8 @@ una clave `platform:admin`; no hay un endpoint público para el ERP.
 | `retryable_server_error` | `rejected` | Rechazo `0161`/`0162`, o `0160` sin detalle; se reenvía el mismo DE firmado. |
 | `emitter_busy` | sin cambio | Otra operación retuvo el emisor; el intento no se consumió y se reprograma 30 s después. |
 | `sifen_rejection` | `rejected` | Rechazo definitivo. |
-| `fiscal_validation` | `failed` o pendiente | Validación local antes de firmar (documento `failed`), o una consulta del CDC rechazada por configuración antes de salir: en ese caso el documento sigue pendiente y un reintento del operador vuelve a consultar una vez corregida. |
-| `retry_exhausted` | `queued` o `rejected` | Se agotaron los intentos sin un DTE aprobado (`0420`, request que no salió, `0161`/`0162` o `0160` sin detalle); un reintento del operador reenvía el mismo DE firmado. |
+| `fiscal_validation` | `failed` o pendiente | Validación local antes de firmar (documento `failed`), o una consulta del CDC rechazada por configuración antes de salir: en ese caso el documento sigue pendiente y reintentar el job vuelve a consultar una vez corregida. |
+| `retry_exhausted` | `queued` o `rejected` | Se agotaron los intentos sin un DTE aprobado (`0420`, request que no salió, `0161`/`0162` o `0160` sin detalle); reintentar el job reenvía el mismo DE firmado. |
 | `reconciliation_required` | `reconciliation_required` | Se agotaron los intentos sin conocer el resultado. |
 | `concurrent_update` | terminal | Otra operación cerró el documento mientras el intento esperaba a SIFEN. |
 
@@ -137,8 +165,8 @@ documento sigue pendiente y el job queda `failed` (`fiscal_validation`).
 
 Si al quinto intento el resultado sigue sin conocerse, el documento pasa a
 `reconciliation_required`. Si SIFEN respondió `0420` en el último intento, el
-documento queda `queued` y el job `failed` (`retry_exhausted`): un reintento
-del operador lo reenvía.
+documento queda `queued` y el job `failed` (`retry_exhausted`): reintentar el
+job lo reenvía.
 
 El ERP no debe crear una segunda intención para «destrabar» un documento: la
 plataforma ya reenvía el mismo DE cuando SIFEN lo permite.
@@ -149,15 +177,15 @@ Si el worker se cae durante el envío, el documento queda en `submitting` y el
 job en `processing`, y nada los retoma de forma automática. Si SIFEN ya lo
 aprobó, `POST .../reconcile` lo cierra (consulta `0422`: `approved` y job
 `succeeded`). Con `0420` la reconciliación no toca un documento `submitting`:
-hace falta que un operador reintente el job desde la consola de
-administración, y ese reintento consulta el CDC antes de decidir.
+hace falta [reintentar el job](#reintentar-un-job), y ese intento consulta el
+CDC antes de decidir.
 
 ## Rechazos que se confirman o se reenvían
 
 | Código | Qué hace KilaSifen |
 | --- | --- |
 | `1001`, `1002` (CDC o documento duplicado) | Solo saltan si otro documento ya está **autorizado**. Si cualquier mensaje del rechazo trae uno de esos códigos, el documento queda `retry_pending` y se consulta el CDC: con `0422` queda `approved`; con `0420` el rechazo se vuelve definitivo, con el primer error que informó SIFEN. |
-| `0161`, `0162` (servidor de SIFEN sin respuesta o paralizado, en cualquier mensaje del rechazo) | El documento queda `rejected` con el error del job `retryable_server_error` y el mismo DE firmado se reenvía con espera creciente, dentro de los cinco intentos. Al agotarlos (`retry_exhausted`), un reintento del operador lo vuelve a enviar. Que estos códigos se puedan reenviar es una interpretación de KilaSifen: la norma no lo determina. |
+| `0161`, `0162` (servidor de SIFEN sin respuesta o paralizado, en cualquier mensaje del rechazo) | El documento queda `rejected` con el error del job `retryable_server_error` y el mismo DE firmado se reenvía con espera creciente, dentro de los cinco intentos. Al agotarlos (`retry_exhausted`), reintentar el job lo vuelve a enviar. Que estos códigos se puedan reenviar es una interpretación de KilaSifen: la norma no lo determina. |
 | `0160` sin detalle (el único código del rechazo, sin detalle de validación, como «XML Mal Formado.») | Igual que `0161`/`0162`: el mismo DE firmado se reenvía dentro de los cinco intentos. El ambiente de pruebas de SIFEN respondió así a pedidos válidos que pasaron segundos después. Un `0160` con detalle («XML malformado: [El valor del elemento: …]») es un error de los datos y es definitivo. |
 | Cualquier otro | Rechazo definitivo (job `failed`, `sifen_rejection`), con el primer error que informó SIFEN. KilaSifen no corrige ni reenvía un DE rechazado: corregí los datos y creá un documento nuevo, que recibe otro número y otro CDC. Como el CDC cambia, inutilizá el número rechazado (MT v150 §11.1.1; Decreto 872/2023 Art. 29). El Decreto también permite, si ya se configuró el hecho generador del impuesto, corregir el DE y reenviarlo con el mismo CDC mientras su estructura de datos no cambie; KilaSifen no ofrece ese camino. |
 
@@ -167,7 +195,7 @@ administración, y ese reintento consulta el CDC antes de decidir.
   reenvío, y `sifen_result_code` es el primer mensaje de SIFEN, que puede no
   ser `0161`/`0162`. Antes de reemitir o inutilizar un `rejected`, mirá su job:
   con `retryable_server_error` (job `retry_scheduled`) KilaSifen lo va a
-  reenviar, y con `retry_exhausted` un reintento del operador también puede
+  reenviar, y con `retry_exhausted` reintentar el job también puede
   reenviarlo. Un rechazo definitivo tiene la categoría `sifen_rejection`.
 </Callout>
 
@@ -186,7 +214,7 @@ firmado, el job agrega a
 | `emission_rejection` | Pasaron las 720 h: SIFEN lo rechaza con `1150`. |
 
 La lista es una foto del momento en que terminó el intento: no se recalcula
-mientras el job está detenido (`failed`), un reintento del operador la borra y
+mientras el job está detenido (`failed`), reintentar el job la borra y
 no genera webhooks, sólo el log `worker.document_job.transmission_deadline`.
 Para vigilar el plazo por tu cuenta, leé `dFecFirma` y `dFeEmiDE` del XML
 firmado (`GET .../xml`). Las 24 h de anticipación son una elección de
@@ -211,7 +239,8 @@ con su DE firmado, el job queda `retry_scheduled` con la categoría
 `transport_not_sent` y el próximo intento envía el mismo DE firmado en un
 `rEnviDe` nuevo, sin volver a firmar. Si SIFEN sigue inalcanzable al agotar los
 intentos, el job pasa a `failed` (`retry_exhausted`) pero el documento sigue
-`queued`: un reintento manual del job vuelve a enviar el mismo XML firmado.
+`queued`: [reintentar el job](#reintentar-un-job) vuelve a enviar el mismo XML
+firmado.
 
 ## Cuando el intento no arranca
 
@@ -220,8 +249,8 @@ certificado activo, el intento no arranca: documento y job quedan `queued`, con
 `attempts` en 0 y sin `error_snapshot`, y nada vuelve a despachar el job. Crear
 el documento no revisa el certificado: antes de emitir, comprobá
 `has_active_certificate` en `GET /v1/emitters/{emitter_id}/health`. Para
-destrabarlo, activá el certificado (o el emisor) y pedí a un operador que
-reintente el job.
+destrabarlo, activá un certificado y [reintentá el job](#reintentar-un-job). Un
+emisor desactivado no se puede reactivar: sus documentos en cola no salen.
 
 ## Validación local (`failed`)
 
@@ -240,7 +269,7 @@ en `error_snapshot.message`:
 
 La ventana de la fecha de emisión ya se controla al crear el documento (`422`,
 ver [Facturas](/docs/facturas)); el worker la vuelve a controlar al firmar,
-porque el tiempo pasa. Un reintento del operador vuelve a preparar un documento
+porque el tiempo pasa. Reintentar el job vuelve a preparar un documento
 `failed`: sirve después de corregir la causa (por ejemplo, cargar el
 timbrado). Si la causa es la fecha de emisión, reintentar no sirve: inutilizá
 el número y creá un documento nuevo.

@@ -22,7 +22,7 @@ navegador.
 ## Obtener y verificar una clave
 
 Un consumidor no crea sus propias claves: las emite un administrador de la
-plataforma con `POST /v1/admin/consumers/{consumer_id}/credentials`, con 1 a 4
+plataforma con `POST /v1/admin/consumers/{consumer_id}/credentials`, con 1 a 5
 scopes de consumidor. La respuesta muestra el secreto completo (`api_key`) una
 sola vez; después sólo queda visible `key_prefix`.
 
@@ -39,15 +39,24 @@ válida, y `401` si falta (`auth.missing_api_key`) o no es válida
 
 | Scope | Permite |
 | --- | --- |
-| `tenant:read` | Leer emisores y su `/health`, documentos, XML, KuDE, jobs, timbrados, webhooks y entregas, y consultar SIFEN (estado de un documento por CDC y RUC). |
+| `tenant:read` | Leer y listar emisores (`GET /v1/emitters`) y su `/health`, documentos, XML, KuDE, jobs, timbrados, webhooks y entregas, y consultar SIFEN (estado de un documento por CDC y RUC). |
 | `tenant:write` | Actualizar el emisor (razón social, perfil fiscal), desactivarlo (no hay ruta para reactivarlo) y administrar webhooks: registrar, actualizar, probar y reenviar entregas. Cambiar el CSC requiere además `secrets:write`. |
-| `fiscal:write` | Crear facturas, notas de crédito y notas de débito; cancelar, inutilizar y leer esos eventos; crear y activar timbrados; reconciliar un documento. |
+| `fiscal:write` | Crear facturas, notas de crédito y notas de débito; cancelar, inutilizar y leer esos eventos; crear y activar timbrados; reconciliar un documento y reintentar un job del emisor. |
 | `secrets:write` | Cargar, listar y activar certificados PKCS#12; junto con `tenant:write`, cambiar el CSC. |
-| `platform:admin` | Superusuario: pasa por alto los scopes y la pertenencia de emisores. Administra consumidores y credenciales, crea emisores y usa las rutas raw, `/v1/jobs`, `/v1/webhook-deliveries` y la consola `/admin`, donde se reintentan los jobs. La API nunca lo emite (`422 credentials.invalid_scopes`): sólo existe como clave de arranque en `KILA_SIFEN_API_KEYS`. Nunca se entrega a un ERP. |
+| `emitters:create` | Dar de alta emisores, que quedan siempre a nombre del consumidor de la clave (ver [Emisores](/docs/emisores#crear)). Otorgalo sólo a integradores de confianza: RUC y `external_id` son únicos en toda la plataforma. |
+| `platform:admin` | Superusuario: pasa por alto los scopes y la pertenencia de emisores. Administra consumidores y credenciales, crea emisores para cualquier consumidor, lista los de todos y usa las rutas raw, `/v1/jobs`, `/v1/webhook-deliveries` y la consola `/admin`. La API nunca lo emite (`422 credentials.invalid_scopes`): sólo existe como clave de arranque en `KILA_SIFEN_API_KEYS`. Nunca se entrega a un ERP. |
 
 Una clave sin el scope necesario recibe `403 auth.insufficient_scope`. Un
 recurso perteneciente a otro consumidor responde `404`, no `403`, para no
 revelar su existencia.
+
+## Clave de un ERP
+
+Un ERP que da de alta a sus clientes y emite por ellos necesita los cinco
+scopes de consumidor: `emitters:create`, `tenant:read`, `tenant:write`,
+`fiscal:write` y `secrets:write`. Si tu ERP sólo emite para emisores que ya
+dio de alta un administrador, alcanza con `tenant:read` y `fiscal:write`, más
+`secrets:write` si también carga los certificados.
 
 ## Rotación
 

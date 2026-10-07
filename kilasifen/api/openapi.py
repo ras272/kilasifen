@@ -19,13 +19,16 @@ from fastapi.routing import APIRoute
 from kilasifen.api.deps import (
     get_admin_principal,
     get_api_key_principal,
+    require_emitter_create,
     require_emitter_read,
     require_emitter_write,
     require_fiscal_write,
     require_secrets_write,
+    require_tenant_read,
 )
 from kilasifen.api.errors import CORRELATION_ID_HEADER
 from kilasifen.security import (
+    EMITTERS_CREATE_SCOPE,
     FISCAL_WRITE_SCOPE,
     PLATFORM_ADMIN_SCOPE,
     SECRETS_WRITE_SCOPE,
@@ -43,6 +46,8 @@ _CORRELATION_HEADER = {
 
 _SCOPE_BY_DEPENDENCY: dict[Callable[..., Any], str] = {
     get_admin_principal: PLATFORM_ADMIN_SCOPE,
+    require_emitter_create: EMITTERS_CREATE_SCOPE,
+    require_tenant_read: TENANT_READ_SCOPE,
     require_emitter_read: TENANT_READ_SCOPE,
     require_emitter_write: TENANT_WRITE_SCOPE,
     require_fiscal_write: FISCAL_WRITE_SCOPE,
