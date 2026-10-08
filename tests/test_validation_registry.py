@@ -3,8 +3,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from kilasifen.engine.binding import BindingMixin
-from kilasifen.engine.sdk.validation import resolve_schema_path, validate_xml
+from kilasifen.engine.sdk import validation
+from kilasifen.engine.sdk.validation import (
+    precargar_esquemas,
+    resolve_schema_path,
+    validate_xml,
+)
 from tests._muestras import FACTURA
 
 SAMPLE_PATH = (
@@ -172,3 +179,16 @@ def test_invalid_xml_returns_reproducible_errors():
     assert first
     assert first == second
     assert any("dSisFact" in error for error in first)
+
+
+def test_precargar_esquemas_compila_una_sola_vez_cada_xsd() -> None:
+    validation._load_schema.cache_clear()
+
+    precargar_esquemas("rDE", "rDE", "rEnviEventoDe")
+
+    assert validation._load_schema.cache_info().currsize == 2
+
+
+def test_precargar_esquemas_rechaza_una_raiz_sin_xsd() -> None:
+    with pytest.raises(ValueError, match="rDesconocida"):
+        precargar_esquemas("rDesconocida")

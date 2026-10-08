@@ -197,9 +197,13 @@ docker compose up --build
 ```
 
 Procesos por separado: `uvicorn kilasifen.api.app:create_app --factory`,
-`rq worker documents events webhooks -u $KILA_SIFEN_REDIS_URL` y
-`python -m kilasifen.infrastructure.jobs.outbox_worker`. Los tres son
-obligatorios: sin el outbox ningún job llega al worker. `.env.example` deja en
+`rq worker documents events webhooks -w kilasifen.infrastructure.jobs.worker_classes.PreloadedWorker -u $KILA_SIFEN_REDIS_URL`
+y `python -m kilasifen.infrastructure.jobs.outbox_worker`. Los tres son
+obligatorios: sin el outbox ningún job llega al worker. `PreloadedWorker`
+carga el código de los jobs y compila los XSD una sola vez antes de bifurcar
+cada job (sin él, cada job pagaba ~1 s de imports); necesita `fork`, así que
+en Windows va `CrossPlatformSimpleWorker`. En un servicio ya creado alcanza
+con la variable `RQ_WORKER_CLASS` con esa misma clase. `.env.example` deja en
 `true` `KILA_SIFEN_DOCUMENT_AUTO_ENQUEUE` (lo lee la API) y
 `KILA_SIFEN_DOCUMENT_PUBLISH_WEBHOOKS` (lo lee el worker); en el código valen
 `false`.

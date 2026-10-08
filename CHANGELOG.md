@@ -395,6 +395,12 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 
 ### Changed
 
+- `PreloadedWorker`: el worker de RQ carga el código de los jobs y compila los
+  XSD una sola vez, antes de bifurcar cada job; antes cada documento, evento o
+  webhook pagaba alrededor de 1 s de imports. Compose y el runbook de Railway
+  lo usan; en un servicio ya creado alcanza con la variable `RQ_WORKER_CLASS`.
+  `kilasifen.engine.sdk.validation.precargar_esquemas` compila los XSD de las
+  raíces pedidas, y el módulo pasó sus docstrings a español.
 - Índices para las búsquedas que hace cada pedido (revisión `20261008_16`): el
   job de un documento, los jobs de un emisor, la clave por prefijo, los
   documentos de un emisor por fecha o por CDC y los eventos de un documento.

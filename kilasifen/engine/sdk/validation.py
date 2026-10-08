@@ -1,4 +1,4 @@
-"""Validação XML determinística baseada em registro explícito de schemas."""
+"""Validacion XML determinista con un registro explicito de XSD por raiz."""
 from __future__ import annotations
 
 from functools import lru_cache
@@ -35,7 +35,7 @@ def get_schema_dir(
     schema_family: str = "de",
     schema_version: str = "v150",
 ) -> Path:
-    """Retorna diretório local de schemas para família/versão."""
+    """Carpeta local de los XSD de una familia y version."""
     return (
         Path(__file__).resolve().parents[1]
         / schema_family
@@ -49,7 +49,7 @@ def resolve_schema_path(
     schema_family: str = "de",
     schema_version: str = "v150",
 ) -> Path | None:
-    """Resolve o entrypoint XSD pelo nome local do root XML."""
+    """XSD de entrada que corresponde al nombre local de la raiz."""
     registry = SCHEMA_REGISTRY.get(schema_version, {})
     schema_name = registry.get(root_local_name)
     if schema_name is None:
@@ -59,9 +59,33 @@ def resolve_schema_path(
 
 @lru_cache(maxsize=None)
 def _load_schema(schema_path: str) -> etree.XMLSchema:
-    """Compila e reutiliza XMLSchema por caminho absoluto."""
+    """Compila un XSD una vez por ruta absoluta y lo reutiliza."""
     schema_doc = etree.parse(schema_path)
     return etree.XMLSchema(schema_doc)
+
+
+def precargar_esquemas(
+    *raices: str,
+    schema_family: str = "de",
+    schema_version: str = "v150",
+) -> None:
+    """Compila y deja en cache los XSD de esas raices.
+
+    Sirve para compilarlos una sola vez en un proceso que despues se bifurca,
+    como el worker de RQ: cada hijo hereda los esquemas ya compilados.
+
+    Raises:
+        ValueError: si una raiz no tiene un XSD registrado.
+    """
+    for raiz in raices:
+        ruta = resolve_schema_path(
+            raiz, schema_family=schema_family, schema_version=schema_version
+        )
+        if ruta is None:
+            raise ValueError(
+                f"No hay XSD registrado para la raiz {raiz!r} en {schema_version!r}"
+            )
+        _load_schema(str(ruta.resolve()))
 
 
 def validate_xml(
@@ -69,7 +93,7 @@ def validate_xml(
     schema_family: str = "de",
     schema_version: str = "v150",
 ) -> list[str]:
-    """Valida XML com schema determinístico baseado no root."""
+    """Valida un XML contra el XSD que le corresponde por su raiz."""
     try:
         xml_doc = etree.fromstring(xml_string.encode("utf-8"))
     except etree.XMLSyntaxError as exc:

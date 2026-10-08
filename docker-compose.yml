@@ -74,7 +74,7 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    command: rq worker documents events webhooks -u ${KILA_SIFEN_REDIS_URL}
+    command: rq worker documents events webhooks -w kilasifen.infrastructure.jobs.worker_classes.PreloadedWorker -u ${KILA_SIFEN_REDIS_URL}
     healthcheck:
       # The image HEALTHCHECK probes HTTP /v1/health; this process serves no HTTP.
       disable: true

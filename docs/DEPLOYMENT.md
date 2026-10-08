@@ -14,7 +14,7 @@ Railway:
 | Servicio | Proceso | Start command | Pre-deploy | Healthcheck |
 | --- | --- | --- | --- | --- |
 | `api` | Uvicorn | vacío: usa el `CMD` del `Dockerfile` | `alembic upgrade head` | `/v1/health` |
-| `worker` | RQ, colas `documents`, `events` y `webhooks` | `/bin/sh -c "exec rq worker documents events webhooks --url $KILA_SIFEN_REDIS_URL"` | vacío | vacío |
+| `worker` | RQ, colas `documents`, `events` y `webhooks` | `/bin/sh -c "exec rq worker documents events webhooks -w kilasifen.infrastructure.jobs.worker_classes.PreloadedWorker --url $KILA_SIFEN_REDIS_URL"` | vacío | vacío |
 | `outbox` | despachador del outbox | `python -m kilasifen.infrastructure.jobs.outbox_worker` | vacío | vacío |
 
 - PostgreSQL es la fuente durable. Redis guarda colas, leases de
@@ -42,7 +42,11 @@ una variable hay que envolverlo en un shell: `/bin/sh -c "exec ..."`. El
   `/bin/sh -c "exec uvicorn kilasifen.api.app:create_app --factory --host 0.0.0.0 --port $PORT"`.
 - `worker`: necesita `$KILA_SIFEN_REDIS_URL`, por eso va con `/bin/sh -c`.
   Sin el shell, RQ recibiría como URL el texto literal
-  `$KILA_SIFEN_REDIS_URL`.
+  `$KILA_SIFEN_REDIS_URL`. `-w ...PreloadedWorker` carga el código de los jobs
+  una sola vez en lugar de en cada job (alrededor de 1 s menos por documento).
+  En un servicio ya creado, la variable
+  `RQ_WORKER_CLASS=kilasifen.infrastructure.jobs.worker_classes.PreloadedWorker`
+  hace lo mismo sin cambiar el start command.
 - `outbox` y el pre-deploy de `api` no usan variables en la línea de comando:
   leen `KILA_SIFEN_*` desde el entorno, así que la forma exec alcanza.
 
