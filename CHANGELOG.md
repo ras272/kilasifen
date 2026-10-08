@@ -598,6 +598,10 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 
 ### Fixed
 
+- Las consultas al SIFEN de la API (RUC y CDC) ya no retienen su transacción
+  ni su conexión a la base mientras el SIFEN responde: una ráfaga de
+  autocompletados de RUC podía agotar el pool (15 conexiones por proceso) y
+  frenar todas las rutas.
 - Engine: los mensajes al SIFEN salen sin prefijos de namespace
   (`<rEnviConsRUC xmlns="http://ekuatia.set.gov.py/sifen/xsd">`), como pide
   el MT v150 §7.2. Antes la consulta RUC, la consulta por CDC de la

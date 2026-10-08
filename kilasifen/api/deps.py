@@ -399,6 +399,7 @@ def get_query_service(
         job_repository=SqlAlchemyJobRepository(session),
         certificate_store=EncryptedCertificateStore(settings.encryption_key),
         query_gateway=KilaSifenQueryGateway(settings.sifen_environment),
+        end_read_transaction=session.commit,
     )
 
 

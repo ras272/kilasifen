@@ -20,6 +20,7 @@ and never sends anything:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -70,19 +71,29 @@ class QueryService:
         job_repository: JobRepository,
         certificate_store: EncryptedCertificateStore,
         query_gateway: SifenQueryGateway,
+        end_read_transaction: Callable[[], None] | None = None,
     ):
+        """``end_read_transaction`` runs before each SIFEN call.
+
+        It ends the transaction of the reads made so far (the API passes its
+        session's ``commit``), so no database connection or transaction is
+        held while SIFEN answers, which can take seconds.
+        """
+
         self.emitter_repository = emitter_repository
         self.certificate_repository = certificate_repository
         self.document_repository = document_repository
         self.job_repository = job_repository
         self.certificate_store = certificate_store
         self.query_gateway = query_gateway
+        self._end_read_transaction = end_read_transaction or _keep_transaction
 
     def query_ruc(self, *, emitter_id: str, ruc: str) -> RucQueryOutcome:
         emitter = self._get_emitter(emitter_id)
         certificate_bytes, certificate_password = self._get_active_certificate_material(
             emitter_id
         )
+        self._end_read_transaction()
         try:
             return self.query_gateway.query_ruc(
                 emitter=emitter,
@@ -114,6 +125,7 @@ class QueryService:
         certificate_bytes, certificate_password = self._get_active_certificate_material(
             emitter_id
         )
+        self._end_read_transaction()
         outcome = self.query_gateway.query_document(
             emitter=emitter,
             certificate_bytes=certificate_bytes,
@@ -208,6 +220,10 @@ class QueryService:
             self.certificate_store.decrypt_bytes(certificate.encrypted_p12),
             self.certificate_store.decrypt_text(certificate.encrypted_password),
         )
+
+
+def _keep_transaction() -> None:
+    """Default for callers that manage their own transaction."""
 
 
 def _reconcile(document: Document, outcome: DocumentQueryOutcome) -> Document | None:

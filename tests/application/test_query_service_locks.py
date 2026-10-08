@@ -37,6 +37,7 @@ from kilasifen.infrastructure.sifen.query import (
     QUERY_FOUND,
     QUERY_NOT_FOUND_OR_NOT_APPROVED,
     DocumentQueryOutcome,
+    RucQueryOutcome,
 )
 from kilasifen.infrastructure.sifen.responses import (
     DocumentContainer,
@@ -260,6 +261,38 @@ def test_a_plain_query_changes_no_status(
     assert document.last_query_response_raw == "<found/>"
 
 
+def test_no_transaction_is_held_while_sifen_answers(
+    database_url: str,
+    store: EncryptedCertificateStore,
+) -> None:
+    session_factory = _seed(database_url, store, status="retry_pending")
+    seen: list[bool] = []
+
+    with session_scope(session_factory) as session:
+        gateway = _Gateway(
+            status="found",
+            during_call=lambda: seen.append(session.in_transaction()),
+        )
+        service = QueryService(
+            emitter_repository=SqlAlchemyEmitterRepository(session, store),
+            certificate_repository=SqlAlchemyCertificateRepository(session),
+            document_repository=SqlAlchemyDocumentRepository(session),
+            job_repository=SqlAlchemyJobRepository(session),
+            certificate_store=store,
+            query_gateway=gateway,
+            end_read_transaction=session.commit,
+        )
+        document, _ = service.query_document(
+            emitter_id="emitter-1", document_id="document-1", reconcile=True
+        )
+        service.query_ruc(emitter_id="emitter-1", ruc="44444401")
+
+    # Both SIFEN calls ran with the reads committed; the reconciliation still
+    # decided on the row read again afterwards.
+    assert seen == [False, False]
+    assert document.internal_status == "approved"
+
+
 class _Gateway:
     def __init__(
         self,
@@ -271,6 +304,24 @@ class _Gateway:
         self.status = status
         self.during_call = during_call
         self.cancelled = cancelled
+
+    def query_ruc(self, **kwargs) -> RucQueryOutcome:
+        del kwargs
+        if self.during_call is not None:
+            self.during_call()
+        return RucQueryOutcome(
+            queried_ruc="44444401",
+            request_xml="<query/>",
+            response_raw="<found/>",
+            result_code="0502",
+            result_message="RUC encontrado",
+            status="found",
+            taxpayer_ruc="44444401",
+            taxpayer_legal_name="CONTRIBUYENTE FICTICIO SA",
+            taxpayer_state_code="ACT",
+            taxpayer_state="ACTIVO",
+            electronic_taxpayer=False,
+        )
 
     def query_document(self, **kwargs) -> DocumentQueryOutcome:
         del kwargs
