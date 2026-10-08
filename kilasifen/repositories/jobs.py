@@ -25,6 +25,12 @@ class JobRepository(ABC):
         """Load the latest job for a related entity."""
 
     @abstractmethod
+    def latest_for_entities(
+        self, entity_type: str, entity_ids: list[str]
+    ) -> dict[str, Job]:
+        """Latest job of each related entity, in one query."""
+
+    @abstractmethod
     def list_recent(
         self,
         *,

@@ -395,6 +395,11 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 
 ### Changed
 
+- Índices para las búsquedas que hace cada pedido (revisión `20261008_16`): el
+  job de un documento, los jobs de un emisor, la clave por prefijo, los
+  documentos de un emisor por fecha o por CDC y los eventos de un documento.
+  Listar documentos lee todos sus jobs en una sola consulta; antes hacía una por
+  documento y sin índice (con 300 000 jobs, 1,5 s por página de 50).
 - Las claves de consumidor se verifican con SHA-256 y no con PBKDF2 (ADR-0004):
   un pedido autenticado pasa de unos 61 ms a 4 ms de servidor. Las claves
   guardadas con PBKDF2 pasan solas a SHA-256 en su primer uso. Las claves de

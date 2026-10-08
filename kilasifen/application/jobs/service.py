@@ -58,6 +58,11 @@ class JobService:
     def get_for_entity(self, entity_type: str, entity_id: str) -> Job | None:
         return self.repository.get_for_entity(entity_type, entity_id)
 
+    def latest_for_entities(
+        self, entity_type: str, entity_ids: list[str]
+    ) -> dict[str, Job]:
+        return self.repository.latest_for_entities(entity_type, entity_ids)
+
     def list_jobs(
         self,
         *,

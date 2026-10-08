@@ -77,6 +77,25 @@ class SqlAlchemyJobRepository(JobRepository):
             return None
         return _to_domain(model)
 
+    def latest_for_entities(
+        self, entity_type: str, entity_ids: list[str]
+    ) -> dict[str, Job]:
+        if not entity_ids:
+            return {}
+        statement = (
+            select(JobModel)
+            .where(
+                JobModel.related_entity_type == entity_type,
+                JobModel.related_entity_id.in_(sorted(set(entity_ids))),
+            )
+            .order_by(JobModel.created_at.asc())
+        )
+        # Later rows overwrite earlier ones: each entity keeps its newest job.
+        return {
+            model.related_entity_id: _to_domain(model)
+            for model in self.session.scalars(statement)
+        }
+
     def list_recent(
         self,
         *,

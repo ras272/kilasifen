@@ -248,12 +248,13 @@ def list_documents(
         external_id=external_id,
         cdc=cdc,
     )
+    jobs = job_service.latest_for_entities(
+        "document", [document.id for document in documents]
+    )
     return DocumentListEnvelope(
         data=DocumentListData(
             documents=[
-                _document_with_job(
-                    document, job_service.get_for_entity("document", document.id)
-                )
+                _document_with_job(document, jobs.get(document.id))
                 for document in documents
             ],
             pagination=Pagination(limit=limit, offset=offset, count=len(documents)),

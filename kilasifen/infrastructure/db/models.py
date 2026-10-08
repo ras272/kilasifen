@@ -110,6 +110,9 @@ class ApiKeyModel(TimestampMixin, Base):
 
     consumer: Mapped[ConsumerModel] = relationship(back_populates="api_keys")
 
+    #: Every authenticated request looks its credential up by prefix.
+    __table_args__ = (Index("ix_api_keys_key_prefix", "key_prefix"),)
+
 
 class ConsumerEmitterModel(TimestampMixin, Base):
     __tablename__ = "consumer_emitters"
@@ -213,6 +216,9 @@ class DocumentModel(TimestampMixin, Base):
             "document_number",
             name="uq_documents_emitter_document_number",
         ),
+        # Listing an emitter's documents, newest first, and finding one by CDC.
+        Index("ix_documents_emitter_created", "emitter_id", "created_at"),
+        Index("ix_documents_emitter_cdc", "emitter_id", "cdc"),
     )
 
 
@@ -265,6 +271,18 @@ class JobModel(TimestampMixin, Base):
 
     emitter: Mapped[EmitterModel | None] = relationship(back_populates="jobs")
 
+    __table_args__ = (
+        # The job of a document, event or delivery: read with every document.
+        Index(
+            "ix_jobs_related_entity",
+            "related_entity_type",
+            "related_entity_id",
+            "created_at",
+        ),
+        # An emitter's recent jobs (listing and health counters).
+        Index("ix_jobs_emitter_created", "emitter_id", "created_at"),
+    )
+
 
 class JobOutboxModel(TimestampMixin, Base):
     __tablename__ = "job_outbox"
@@ -316,6 +334,9 @@ class EventModel(TimestampMixin, Base):
     inutilized_ranges: Mapped[list["InutilizedNumberRangeModel"]] = relationship(
         back_populates="event"
     )
+
+    #: The events of a document (cancellation checks, listings).
+    __table_args__ = (Index("ix_events_document_created", "document_id", "created_at"),)
 
 
 class InutilizedNumberRangeModel(TimestampMixin, Base):
