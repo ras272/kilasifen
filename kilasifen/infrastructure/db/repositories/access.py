@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from kilasifen.domain.access.models import ApiCredential, Consumer
 from kilasifen.infrastructure.db.models import ApiKeyModel, ConsumerModel
 from kilasifen.repositories.access import AccessRepository
-from kilasifen.security import hash_api_key, key_prefix
+from kilasifen.security import fingerprint_api_key, key_prefix
 
 
 class SqlAlchemyAccessRepository(AccessRepository):
@@ -43,7 +43,7 @@ class SqlAlchemyAccessRepository(AccessRepository):
             consumer_id=consumer_id,
             name=name,
             key_prefix=key_prefix(raw_key),
-            key_hash=hash_api_key(raw_key),
+            key_hash=fingerprint_api_key(raw_key),
             scopes=list(scopes),
             status="active",
         )

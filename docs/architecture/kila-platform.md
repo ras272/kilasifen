@@ -63,7 +63,8 @@ This makes operations auditable and replayable without parsing raw SOAP at runti
 
 ## Security boundaries
 
-- API keys stored as salted PBKDF2 hashes with scopes and ownership
+- API keys stored as hashes (SHA-256 for random consumer keys, salted PBKDF2
+  for operator bootstrap keys; ADR-0004) with scopes and ownership
 - CSC, `.p12`, and passwords encrypted at rest with a mandatory Fernet key
 - webhook signing with versioned HMAC over timestamp, delivery, event, and body
 - Redis-backed per-credential/emitter rate and concurrency leases

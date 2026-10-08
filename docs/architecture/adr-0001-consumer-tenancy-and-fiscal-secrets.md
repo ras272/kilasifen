@@ -1,6 +1,7 @@
 # ADR 0001: Consumer tenancy and fiscal-secret boundaries
 
-Status: accepted — 2026-08-16
+Status: accepted — 2026-08-16. Amended by ADR-0004 (2026-10-08): consumer
+keys are now stored as SHA-256 hashes; bootstrap keys keep salted PBKDF2.
 
 ## Decision
 

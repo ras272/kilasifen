@@ -20,6 +20,8 @@ SECRETS_WRITE_SCOPE = "secrets:write"
 EMITTERS_CREATE_SCOPE = "emitters:create"
 
 _PBKDF2_ALGORITHM = "sha256"
+_SLOW_HASH_ALGORITHM = "pbkdf2_sha256"
+_FAST_HASH_ALGORITHM = "sha256"
 _PBKDF2_ITERATIONS = 210_000
 _SALT_BYTES = 16
 _KEY_PREFIX_LENGTH = 12
@@ -65,6 +67,28 @@ def key_prefix(raw_key: str) -> str:
     return raw_key[:_KEY_PREFIX_LENGTH]
 
 
+def fingerprint_api_key(raw_key: str) -> str:
+    """Hash a consumer credential with SHA-256.
+
+    A consumer key is ``ks_`` plus 256 random bits (``secrets.token_urlsafe``),
+    so nobody can guess it from its hash however fast the hash is: a slow KDF
+    adds no protection there and cost ~50 ms of CPU on every request.
+    Operator-chosen bootstrap keys, whose entropy is unknown, keep the salted
+    PBKDF2 of :func:`hash_api_key`.
+    """
+
+    digest = hashlib.sha256(raw_key.encode("utf-8")).digest()
+    return "$".join(
+        (_FAST_HASH_ALGORITHM, base64.urlsafe_b64encode(digest).decode("ascii"))
+    )
+
+
+def is_slow_api_key_hash(encoded_hash: str) -> bool:
+    """Tell whether ``encoded_hash`` is the salted PBKDF2 format."""
+
+    return encoded_hash.startswith(f"{_SLOW_HASH_ALGORITHM}$")
+
+
 def hash_api_key(raw_key: str, *, salt: bytes | None = None) -> str:
     """Hash a credential with a salted, deliberately expensive KDF."""
 
@@ -77,7 +101,7 @@ def hash_api_key(raw_key: str, *, salt: bytes | None = None) -> str:
     )
     return "$".join(
         (
-            "pbkdf2_sha256",
+            _SLOW_HASH_ALGORITHM,
             str(_PBKDF2_ITERATIONS),
             base64.urlsafe_b64encode(salt).decode("ascii"),
             base64.urlsafe_b64encode(digest).decode("ascii"),
@@ -86,13 +110,22 @@ def hash_api_key(raw_key: str, *, salt: bytes | None = None) -> str:
 
 
 def verify_api_key(raw_key: str, encoded_hash: str) -> bool:
-    """Verify a stored credential hash using constant-time comparison."""
+    """Verify a stored credential hash (SHA-256 or PBKDF2) in constant time."""
 
+    if encoded_hash.startswith(f"{_FAST_HASH_ALGORITHM}$"):
+        try:
+            expected = base64.urlsafe_b64decode(
+                encoded_hash.split("$", 1)[1].encode("ascii")
+            )
+        except (ValueError, TypeError):
+            return False
+        actual = hashlib.sha256(raw_key.encode("utf-8")).digest()
+        return hmac.compare_digest(actual, expected)
     try:
         algorithm, iterations_text, salt_text, expected_text = encoded_hash.split(
             "$", 3
         )
-        if algorithm != "pbkdf2_sha256":
+        if algorithm != _SLOW_HASH_ALGORITHM:
             return False
         iterations = int(iterations_text)
         salt = base64.urlsafe_b64decode(salt_text.encode("ascii"))

@@ -395,6 +395,11 @@ todavía importa `pysifen`, aplicar primero la primera fila y después el resto.
 
 ### Changed
 
+- Las claves de consumidor se verifican con SHA-256 y no con PBKDF2 (ADR-0004):
+  un pedido autenticado pasa de unos 61 ms a 4 ms de servidor. Las claves
+  guardadas con PBKDF2 pasan solas a SHA-256 en su primer uso. Las claves de
+  arranque siguen con PBKDF2, que se calcula una vez por proceso y no en cada
+  pedido.
 - La consulta RUC distingue `status: error` (cualquier código que no sea
   `0502` ni `0500`, por ejemplo `0501`) de `not_found` (`0500`, el RUC no
   existe); antes los dos salían como `not_found`. Si SIFEN no contesta la

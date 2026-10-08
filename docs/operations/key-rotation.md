@@ -9,7 +9,9 @@
 4. Revocar la anterior con
    `POST /v1/admin/consumers/{consumer_id}/credentials/{credential_id}/revoke`.
 
-KilaSifen conserva sólo PBKDF2-SHA256 salado y el prefijo no secreto.
+KilaSifen conserva sólo el hash y el prefijo no secreto: SHA-256 para las
+claves `ks_` de consumidor y PBKDF2-SHA256 salado para las claves de arranque
+(ADR-0004).
 
 ## CSC y certificado
 

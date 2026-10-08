@@ -119,6 +119,8 @@ def create_app() -> FastAPI:
     )
     app.state.engine = engine
     app.state.session_factory = build_session_factory(engine)
+    #: Bootstrap keys whose stored hash this process already checked.
+    app.state.ensured_bootstrap_keys = {}
     app.state.request_limit_redis = request_limit_redis
     app.state.readiness_probe_cache = ReadinessProbeCache(
         settings.readiness_cache_seconds
